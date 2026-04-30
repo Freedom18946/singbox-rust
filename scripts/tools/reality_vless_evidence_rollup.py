@@ -208,6 +208,7 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
     latest_stable_divergence = []
     latest_mixed_run_health = []
     recovered = []
+    latest_stable_same_failure = []
     latest_health_counts: collections.Counter[str] = collections.Counter()
     latest_run_health_counts: collections.Counter[str] = collections.Counter()
     for name, values in sorted(by_outbound.items()):
@@ -237,6 +238,10 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
                 latest_mixed_run_health.append(name)
         elif latest_state == "latest_same_failure":
             latest_same_failure.append(name)
+            if latest_run_counts.get("run_same_failure", 0) > 0 and len(latest_run_health_kinds) == 1:
+                latest_stable_same_failure.append(name)
+            elif len(latest_run_health_kinds) > 1:
+                latest_mixed_run_health.append(name)
         elif latest_state == "latest_all_ok" and historical_has_non_all_ok:
             recovered.append(name)
         by_outbound_json[name] = {
@@ -271,6 +276,8 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
         "latest_mixed_run_health_outbound_count": len(latest_mixed_run_health),
         "latest_same_failure_outbounds": latest_same_failure,
         "latest_same_failure_outbound_count": len(latest_same_failure),
+        "latest_stable_same_failure_outbounds": latest_stable_same_failure,
+        "latest_stable_same_failure_outbound_count": len(latest_stable_same_failure),
         "recovered_outbounds": recovered,
         "recovered_outbound_count": len(recovered),
         "latest_health_counts": dict(sorted(latest_health_counts.items())),
@@ -296,6 +303,7 @@ def markdown_table(rollup: dict[str, Any]) -> str:
         f"- latest divergence outbounds: {rollup.get('latest_divergence_outbound_count', 0)}",
         f"- latest stable divergence outbounds: {rollup.get('latest_stable_divergence_outbound_count', 0)}",
         f"- latest mixed run-health outbounds: {rollup.get('latest_mixed_run_health_outbound_count', 0)}",
+        f"- latest stable same-failure outbounds: {rollup.get('latest_stable_same_failure_outbound_count', 0)}",
         f"- recovered outbounds: {rollup.get('recovered_outbound_count', 0)}",
         "",
         "## Rounds",

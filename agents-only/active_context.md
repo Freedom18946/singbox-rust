@@ -840,6 +840,7 @@
   - `cargo check --workspace` → PASS
   - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected dynamic-family diff)
   - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
   - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
 ## Round 35（probe-outbound live failure classification）
@@ -884,6 +885,7 @@
   - `cargo check --workspace` → PASS
   - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected dynamic-family diff)
   - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
   - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
 ## Round 34（REALITY read-loop partial-record drain）
@@ -1815,3 +1817,43 @@
   - `cargo check --workspace` → PASS
   - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0 (`match=false` remains expected dynamic-family diff)
   - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
+## Round 58（pure same-failure stable bucket isolation）
+
+- 本轮只做 Round 58 收口，不修改 REALITY ClientHello sampler、Vision raw/direct dataplane、REALITY read-loop。
+- 工具推进：
+  - `scripts/tools/reality_vless_probe_plan.py`
+    - 新增 `--only-latest-run-health`，用于选择 latest round 中所有 run-health 都落在指定集合内的 outbound。
+  - `scripts/tools/reality_vless_evidence_rollup.py`
+    - 顶层新增 `latest_stable_same_failure_outbounds` / `latest_stable_same_failure_outbound_count`。
+  - `scripts/tools/README.md`
+    - 补充 `--latest-run-health` 与 `--only-latest-run-health` 的区别。
+  - `scripts/tools/test_reality_probe_tools.py`
+    - 新增 stable same-failure rollup test 与 only-run-health planner tests。
+- Round 58 live run：
+  - plan:
+    - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --latest-health latest_same_failure --only-latest-run-health run_same_failure --output-json /tmp/reality-vless-same-failure-plan-r58.json`
+  - batch:
+    - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/reality-vless-same-failure-plan-r58.json --target example.com:80 --runs 2 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r58-same-failure`
+  - selected_count: `4`
+  - executed_runs: `8`
+  - has_divergence: `false`
+  - by outbound:
+    - `JP-A-BGP-0.3`: two same-class `reality_dial_eof`
+    - `JP-A-BGP-1.0`: two same-class `timeout`
+    - `UK-A-BGP-0.5`: two same-class `connection_reset`
+    - `US-A-BGP-0.5`: two same-class `connection_reset`
+- evidence：
+  - `agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json`
+- Updated rollup:
+  - rounds: `11`
+  - executed runs: `62`
+  - all_ok runs: `21`
+  - latest stable same-failure outbounds: `4`
+  - latest mixed run-health outbounds: `HK-A-BGP-2.0`
+  - recovered: `TW-A-BGP-1.0`, `US-A-BGP-0.8`
+- gate：
+  - `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`37 tests`)
+  - `jq empty` for Round 58 evidence and live rollup → PASS
+  - ASCII scan for Round 58 evidence and live rollup → PASS
+  - `cargo check --workspace` → PASS

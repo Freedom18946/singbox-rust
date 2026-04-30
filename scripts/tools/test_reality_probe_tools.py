@@ -598,6 +598,7 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         self.assertEqual(built["latest_run_health_counts"]["run_same_failure"], 1)
         self.assertEqual(built["latest_mixed_run_health_outbounds"], ["HK-A"])
         self.assertEqual(built["latest_stable_divergence_outbound_count"], 0)
+        self.assertEqual(built["latest_stable_same_failure_outbound_count"], 0)
 
     def test_build_rollup_tracks_stable_latest_divergence_runs(self):
         with tempfile.TemporaryDirectory() as tmp:
@@ -638,6 +639,46 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         self.assertEqual(built["latest_stable_divergence_outbounds"], ["HK-A"])
         self.assertEqual(built["latest_stable_divergence_outbound_count"], 1)
         self.assertEqual(built["latest_mixed_run_health_outbound_count"], 0)
+
+    def test_build_rollup_tracks_stable_latest_same_failure_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round12.json"
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "12",
+                        {"reality_all_timeout": 2},
+                        {"timeout": 18},
+                        {
+                            "JP-A": {
+                                "label_counts": {"reality_all_timeout": 2},
+                                "class_counts": {"timeout": 18},
+                            }
+                        },
+                        runs=[
+                            {
+                                "outbound": "JP-A",
+                                "run_index": 1,
+                                "status": "completed",
+                                "labels": ["reality_all_timeout"],
+                                "class_counts": {"timeout": 9},
+                            },
+                            {
+                                "outbound": "JP-A",
+                                "run_index": 2,
+                                "status": "completed",
+                                "labels": ["reality_all_timeout"],
+                                "class_counts": {"timeout": 9},
+                            },
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        self.assertEqual(built["latest_same_failure_outbounds"], ["JP-A"])
+        self.assertEqual(built["latest_stable_same_failure_outbounds"], ["JP-A"])
+        self.assertEqual(built["latest_stable_same_failure_outbound_count"], 1)
 
     def test_markdown_table_contains_round_rows(self):
         built = {
@@ -770,6 +811,40 @@ class RealityProbePlanTests(unittest.TestCase):
             built["selected"][0]["latest_run_health_counts"],
             {"run_same_failure": 1},
         )
+
+    def test_build_plan_can_require_only_latest_run_health(self):
+        built = plan.build_plan(
+            self.sample_config(),
+            self.sample_rollup(),
+            None,
+            False,
+            False,
+            False,
+            ["latest_same_failure"],
+            None,
+            ["run_same_failure"],
+        )
+        self.assertEqual(built["only_latest_run_health_filter"], ["run_same_failure"])
+        self.assertEqual([item["key"] for item in built["selected"]], ["JP-A-BGP-1.0"])
+
+    def test_build_plan_only_latest_run_health_excludes_mixed(self):
+        rollup_data = self.sample_rollup()
+        rollup_data["by_outbound"]["JP-A-BGP-1.0"]["latest_run_health_counts"] = {
+            "run_divergence": 1,
+            "run_same_failure": 1,
+        }
+        built = plan.build_plan(
+            self.sample_config(),
+            rollup_data,
+            None,
+            False,
+            False,
+            False,
+            ["latest_same_failure"],
+            None,
+            ["run_same_failure"],
+        )
+        self.assertEqual(built["selected"], [])
 
     def test_build_plan_combines_latest_and_run_health_filters(self):
         built = plan.build_plan(

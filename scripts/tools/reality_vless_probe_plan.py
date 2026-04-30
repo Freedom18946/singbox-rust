@@ -93,6 +93,13 @@ def matches_run_health_filter(counts: dict[str, int], filters: set[str]) -> bool
     return any(counts.get(value, 0) > 0 for value in filters)
 
 
+def matches_only_run_health_filter(counts: dict[str, int], filters: set[str]) -> bool:
+    if not filters:
+        return True
+    present = {key for key, count in counts.items() if count > 0}
+    return bool(present) and present.issubset(filters)
+
+
 def build_plan(
     config: dict[str, Any],
     rollup: dict[str, Any],
@@ -102,10 +109,12 @@ def build_plan(
     include_internal: bool,
     latest_health_filter: list[str] | None = None,
     latest_run_health_filter: list[str] | None = None,
+    only_latest_run_health_filter: list[str] | None = None,
 ) -> dict[str, Any]:
     covered = covered_outbounds(rollup)
     health_filter = set(latest_health_filter or [])
     run_health_filter = set(latest_run_health_filter or [])
+    only_run_health_filter = set(only_latest_run_health_filter or [])
     buckets: dict[str, list[dict[str, Any]]] = {
         "uncovered": [],
         "prior_non_all_ok": [],
@@ -144,12 +153,16 @@ def build_plan(
         buckets[reason].append(planned)
         candidates.append(planned)
 
-    if health_filter or run_health_filter:
+    if health_filter or run_health_filter or only_run_health_filter:
         selected = [
             item
             for item in candidates
             if (not health_filter or item.get("latest_health") in health_filter)
             and matches_run_health_filter(item.get("latest_run_health_counts", {}), run_health_filter)
+            and matches_only_run_health_filter(
+                item.get("latest_run_health_counts", {}),
+                only_run_health_filter,
+            )
         ]
     else:
         selected = list(buckets["uncovered"])
@@ -165,6 +178,7 @@ def build_plan(
         "counts": {key: len(value) for key, value in buckets.items()},
         "latest_health_filter": sorted(health_filter),
         "latest_run_health_filter": sorted(run_health_filter),
+        "only_latest_run_health_filter": sorted(only_run_health_filter),
         "latest_health_counts": dict(sorted(health_counts.items())),
         "selected_count": len(selected),
         "selected": selected,
@@ -198,6 +212,13 @@ def main() -> None:
         default=[],
         help="Select ready outbounds whose latest round has at least one run with this health.",
     )
+    parser.add_argument(
+        "--only-latest-run-health",
+        action="append",
+        choices=sorted(LATEST_RUN_HEALTH_VALUES),
+        default=[],
+        help="Select ready outbounds whose latest round has only these run-health values.",
+    )
     parser.add_argument("--output-json")
     args = parser.parse_args()
 
@@ -212,6 +233,7 @@ def main() -> None:
         args.include_internal,
         args.latest_health,
         args.latest_run_health,
+        args.only_latest_run_health,
     )
     plan["config"] = str(config_path)
     plan["rollup_json"] = str(rollup_path)

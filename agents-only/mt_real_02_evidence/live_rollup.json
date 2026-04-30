@@ -1,8 +1,8 @@
 {
-  "total_rounds": 10,
-  "total_executed_runs": 54,
+  "total_rounds": 11,
+  "total_executed_runs": 62,
   "total_all_ok_runs": 21,
-  "total_non_all_ok_runs": 33,
+  "total_non_all_ok_runs": 41,
   "has_any_divergence": true,
   "latest_non_all_ok_outbounds": [
     "HK-A-BGP-2.0",
@@ -29,6 +29,13 @@
     "US-A-BGP-0.5"
   ],
   "latest_same_failure_outbound_count": 4,
+  "latest_stable_same_failure_outbounds": [
+    "JP-A-BGP-0.3",
+    "JP-A-BGP-1.0",
+    "UK-A-BGP-0.5",
+    "US-A-BGP-0.5"
+  ],
+  "latest_stable_same_failure_outbound_count": 4,
   "recovered_outbounds": [
     "TW-A-BGP-1.0",
     "US-A-BGP-0.8"
@@ -45,7 +52,7 @@
     "run_same_failure": 9
   },
   "status_counts": {
-    "completed": 54
+    "completed": 62
   },
   "label_counts": {
     "all_ok": 21,
@@ -53,20 +60,20 @@
     "app_pre_post_diverged": 3,
     "bridge_io_diverged": 1,
     "minimal_transport_diverged": 3,
-    "probe_io_all_connection_reset": 9,
+    "probe_io_all_connection_reset": 13,
     "probe_io_all_post_dial_eof": 3,
-    "probe_io_all_reality_dial_eof": 4,
-    "probe_io_all_timeout": 11,
-    "reality_all_connection_reset": 10,
-    "reality_all_reality_dial_eof": 5,
-    "reality_all_timeout": 9
+    "probe_io_all_reality_dial_eof": 6,
+    "probe_io_all_timeout": 13,
+    "reality_all_connection_reset": 14,
+    "reality_all_reality_dial_eof": 7,
+    "reality_all_timeout": 11
   },
   "class_counts": {
-    "connection_reset": 94,
+    "connection_reset": 130,
     "ok": 219,
     "post_dial_eof": 6,
-    "reality_dial_eof": 47,
-    "timeout": 120
+    "reality_dial_eof": 65,
+    "timeout": 138
   },
   "rounds": [
     {
@@ -330,6 +337,37 @@
         "connection_reset": 2,
         "reality_dial_eof": 1,
         "timeout": 33
+      }
+    },
+    {
+      "round": "58",
+      "date": "2026-04-30",
+      "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+      "description": "pure same-failure latest bucket recheck",
+      "total": 8,
+      "executed_runs": 8,
+      "all_ok_runs": 0,
+      "has_divergence": false,
+      "uniform_failure_labels": {
+        "reality_all_connection_reset": 4,
+        "reality_all_reality_dial_eof": 2,
+        "reality_all_timeout": 2
+      },
+      "status_counts": {
+        "completed": 8
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 4,
+        "probe_io_all_reality_dial_eof": 2,
+        "probe_io_all_timeout": 2,
+        "reality_all_connection_reset": 4,
+        "reality_all_reality_dial_eof": 2,
+        "reality_all_timeout": 2
+      },
+      "class_counts": {
+        "connection_reset": 36,
+        "reality_dial_eof": 18,
+        "timeout": 18
       }
     }
   ],
@@ -892,20 +930,21 @@
       "rounds": [
         "47",
         "54",
-        "56"
+        "56",
+        "58"
       ],
       "status_counts": {
-        "completed": 5
+        "completed": 7
       },
       "label_counts": {
-        "probe_io_all_reality_dial_eof": 4,
-        "reality_all_reality_dial_eof": 5
+        "probe_io_all_reality_dial_eof": 6,
+        "reality_all_reality_dial_eof": 7
       },
       "class_counts": {
-        "reality_dial_eof": 45
+        "reality_dial_eof": 63
       },
       "run_health_counts": {
-        "run_same_failure": 5
+        "run_same_failure": 7
       },
       "history": [
         {
@@ -1027,9 +1066,54 @@
               }
             }
           ]
+        },
+        {
+          "round": "58",
+          "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "probe_io_all_reality_dial_eof": 2,
+            "reality_all_reality_dial_eof": 2
+          },
+          "class_counts": {
+            "reality_dial_eof": 18
+          },
+          "run_health_counts": {
+            "run_same_failure": 2
+          },
+          "runs": [
+            {
+              "ordinal": 1,
+              "run_index": 1,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_reality_dial_eof",
+                "reality_all_reality_dial_eof"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "reality_dial_eof": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 2,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_reality_dial_eof",
+                "reality_all_reality_dial_eof"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "reality_dial_eof": 9
+              }
+            }
+          ]
         }
       ],
-      "latest_round": "56",
+      "latest_round": "58",
       "latest_status_counts": {
         "completed": 2
       },
@@ -1051,20 +1135,21 @@
       "rounds": [
         "42",
         "54",
-        "56"
+        "56",
+        "58"
       ],
       "status_counts": {
-        "completed": 5
+        "completed": 7
       },
       "label_counts": {
-        "probe_io_all_timeout": 4,
-        "reality_all_timeout": 5
+        "probe_io_all_timeout": 6,
+        "reality_all_timeout": 7
       },
       "class_counts": {
-        "timeout": 45
+        "timeout": 63
       },
       "run_health_counts": {
-        "run_same_failure": 4
+        "run_same_failure": 6
       },
       "history": [
         {
@@ -1171,9 +1256,54 @@
               }
             }
           ]
+        },
+        {
+          "round": "58",
+          "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "probe_io_all_timeout": 2,
+            "reality_all_timeout": 2
+          },
+          "class_counts": {
+            "timeout": 18
+          },
+          "run_health_counts": {
+            "run_same_failure": 2
+          },
+          "runs": [
+            {
+              "ordinal": 2,
+              "run_index": 1,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "timeout": 9
+              }
+            },
+            {
+              "ordinal": 2,
+              "run_index": 2,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "timeout": 9
+              }
+            }
+          ]
         }
       ],
-      "latest_round": "56",
+      "latest_round": "58",
       "latest_status_counts": {
         "completed": 2
       },
@@ -1694,20 +1824,21 @@
       "rounds": [
         "44",
         "54",
-        "56"
+        "56",
+        "58"
       ],
       "status_counts": {
-        "completed": 5
+        "completed": 7
       },
       "label_counts": {
-        "probe_io_all_connection_reset": 4,
-        "reality_all_connection_reset": 5
+        "probe_io_all_connection_reset": 6,
+        "reality_all_connection_reset": 7
       },
       "class_counts": {
-        "connection_reset": 45
+        "connection_reset": 63
       },
       "run_health_counts": {
-        "run_same_failure": 5
+        "run_same_failure": 7
       },
       "history": [
         {
@@ -1829,9 +1960,54 @@
               }
             }
           ]
+        },
+        {
+          "round": "58",
+          "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "probe_io_all_connection_reset": 2,
+            "reality_all_connection_reset": 2
+          },
+          "class_counts": {
+            "connection_reset": 18
+          },
+          "run_health_counts": {
+            "run_same_failure": 2
+          },
+          "runs": [
+            {
+              "ordinal": 4,
+              "run_index": 1,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_connection_reset",
+                "reality_all_connection_reset"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "connection_reset": 9
+              }
+            },
+            {
+              "ordinal": 4,
+              "run_index": 2,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_connection_reset",
+                "reality_all_connection_reset"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "connection_reset": 9
+              }
+            }
+          ]
         }
       ],
-      "latest_round": "56",
+      "latest_round": "58",
       "latest_status_counts": {
         "completed": 2
       },
@@ -1964,20 +2140,21 @@
       "rounds": [
         "50",
         "54",
-        "56"
+        "56",
+        "58"
       ],
       "status_counts": {
-        "completed": 5
+        "completed": 7
       },
       "label_counts": {
-        "probe_io_all_connection_reset": 5,
-        "reality_all_connection_reset": 5
+        "probe_io_all_connection_reset": 7,
+        "reality_all_connection_reset": 7
       },
       "class_counts": {
-        "connection_reset": 45
+        "connection_reset": 63
       },
       "run_health_counts": {
-        "run_same_failure": 5
+        "run_same_failure": 7
       },
       "history": [
         {
@@ -2101,9 +2278,54 @@
               }
             }
           ]
+        },
+        {
+          "round": "58",
+          "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+          "status_counts": {
+            "completed": 2
+          },
+          "label_counts": {
+            "probe_io_all_connection_reset": 2,
+            "reality_all_connection_reset": 2
+          },
+          "class_counts": {
+            "connection_reset": 18
+          },
+          "run_health_counts": {
+            "run_same_failure": 2
+          },
+          "runs": [
+            {
+              "ordinal": 3,
+              "run_index": 1,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_connection_reset",
+                "reality_all_connection_reset"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "connection_reset": 9
+              }
+            },
+            {
+              "ordinal": 3,
+              "run_index": 2,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_connection_reset",
+                "reality_all_connection_reset"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "connection_reset": 9
+              }
+            }
+          ]
         }
       ],
-      "latest_round": "56",
+      "latest_round": "58",
       "latest_status_counts": {
         "completed": 2
       },

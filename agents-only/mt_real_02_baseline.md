@@ -872,6 +872,7 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
   - sample remains `match=false` because Go/Rust single samples landed in different dynamic order families
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
 - `bash scripts/tools/reality_clienthello_trace.sh` → PASS
 
 ## 2026-04-25 进展更新：Round 34 REALITY read-loop partial-record drain
@@ -968,6 +969,7 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
   - sample remains `match=false` because Go/Rust single samples landed in different dynamic order families
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
 - `cargo build -p app --bin run --features 'acceptance,parity,clash_api'` → PASS
 
 ## 2026-04-25 进展更新：Round 35 probe-outbound live failure classification
@@ -5764,3 +5766,111 @@
 - `bash scripts/tools/reality_clienthello_diff.sh` → PASS / exit 0
   - sample remains `match=false` because Go/Rust single samples landed in different dynamic order families
 - `SB_REALITY_FAMILY_RUNS=40 bash scripts/tools/reality_clienthello_family.sh` → PASS
+
+## 2026-04-30 进展更新：Round 58 stable same-failure bucket isolation
+
+### 目标
+
+- Round 57 isolated `HK-A-BGP-2.0` as the only latest mixed run-health bucket.
+- Round 58 targets only pure latest same-failure buckets whose latest run-health is entirely `run_same_failure`.
+- 本轮不打开新方向，不修改 REALITY ClientHello sampler、Vision raw/direct dataplane、REALITY concrete read-loop。
+
+### 实现
+
+- `scripts/tools/reality_vless_probe_plan.py`
+  - Adds `--only-latest-run-health`.
+  - This differs from `--latest-run-health`: the existing filter matches if at least one latest run has the requested health, while the new filter requires every present latest run-health kind to be inside the requested set.
+  - This lets a plan choose stable same-failure buckets while excluding mixed buckets such as `HK-A-BGP-2.0`.
+- `scripts/tools/reality_vless_evidence_rollup.py`
+  - Adds `latest_stable_same_failure_outbounds`.
+  - Adds `latest_stable_same_failure_outbound_count`.
+  - Latest same-failure outbounds with more than one run-health kind are now kept in `latest_mixed_run_health_outbounds`.
+- `scripts/tools/test_reality_probe_tools.py`
+  - Adds stable same-failure rollup coverage.
+  - Adds planner coverage for `--only-latest-run-health`.
+  - Adds planner coverage proving mixed run-health is excluded by the only-run-health filter.
+- `scripts/tools/README.md`
+  - Documents latest run-health filtering and when to use the stricter only-run-health filter.
+
+### live execution
+
+- Planner command:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --latest-health latest_same_failure --only-latest-run-health run_same_failure --output-json /tmp/reality-vless-same-failure-plan-r58.json`
+- Selected:
+  - `JP-A-BGP-0.3`
+  - `JP-A-BGP-1.0`
+  - `US-A-BGP-0.5`
+  - `UK-A-BGP-0.5`
+- Batch command:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/reality-vless-same-failure-plan-r58.json --target example.com:80 --runs 2 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r58-same-failure`
+- Batch result:
+  - `selected_count = 4`
+  - `executed_runs = 8`
+  - `status_counts.completed = 8`
+  - `has_divergence = false`
+  - `all_ok_runs = 0`
+- By outbound:
+  - `JP-A-BGP-0.3`: `2/2` same-class `reality_dial_eof`
+  - `JP-A-BGP-1.0`: `2/2` same-class `timeout`
+  - `UK-A-BGP-0.5`: `2/2` same-class `connection_reset`
+  - `US-A-BGP-0.5`: `2/2` same-class `connection_reset`
+
+### evidence
+
+- Committed evidence:
+  - `agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json`
+- Updated rollup:
+  - `agents-only/mt_real_02_evidence/live_rollup.json`
+  - `agents-only/mt_real_02_evidence/live_rollup.md`
+
+### Rollup after Round 58
+
+- `total_rounds = 11`
+- `total_executed_runs = 62`
+- `total_all_ok_runs = 21`
+- `total_non_all_ok_runs = 41`
+- `latest_non_all_ok_outbound_count = 5`
+- `latest_health_counts.latest_all_ok = 16`
+- `latest_health_counts.latest_same_failure = 4`
+- `latest_health_counts.latest_divergence = 1`
+- `latest_run_health_counts.run_all_ok = 15`
+- `latest_run_health_counts.run_same_failure = 9`
+- `latest_run_health_counts.run_divergence = 3`
+- Latest stable same-failure:
+  - `JP-A-BGP-0.3`
+  - `JP-A-BGP-1.0`
+  - `UK-A-BGP-0.5`
+  - `US-A-BGP-0.5`
+- Latest mixed run-health:
+  - `HK-A-BGP-2.0`
+- Recovered:
+  - `TW-A-BGP-1.0`
+  - `US-A-BGP-0.8`
+
+### 判定
+
+- The four Round 58 outbounds remain stable node/path failure buckets:
+  - no app/minimal divergence;
+  - no bridge IO divergence;
+  - no per-run class instability inside the latest sample set.
+- `HK-A-BGP-2.0` remains a mixed run-health bucket and is intentionally excluded from pure same-failure selection.
+- Round 58 provides no structural evidence for changing the ClientHello sampler, Vision raw/direct dataplane, or REALITY read-loop.
+- The current evidence still says: classify and bucket first; only consider sampler/dataplane changes after stable structural divergence appears.
+
+### 验证
+
+- `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `37 tests`
+- JSON validation:
+  - `agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+- ASCII scan:
+  - `agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
+- Planner smoke:
+  - `latest_same_failure + only run_same_failure` selected `4`
+  - `latest_divergence + only run_same_failure` selected `0`
+  - `latest_divergence + latest-run-health run_divergence` selected `HK-A-BGP-2.0`
+- `git diff --check` → PASS
+- `cargo check --workspace` → PASS
