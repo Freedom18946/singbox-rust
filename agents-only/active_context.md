@@ -62,10 +62,10 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- R64 LC-003 implementation breakdown landed at
-  agents-only/archive/mt_real_02/r64_lc003_implementation_plan.md.
-- R65 will start the first Sub-WP per that plan; planner picks from
-  its DAG.
+- R65 completed LC-003 Sub-WP A: ServiceManager now persists
+  start_all() service outcomes for health_status().
+- R66 starts LC-003 Sub-WP B: wire service startup into Rust runtime
+  stages per agents-only/archive/mt_real_02/r64_lc003_implementation_plan.md.
 - CLAUDE.md 52/60 vs spec 52/56 fix is deferred to the post-LC-003
   cleanup round.
 
