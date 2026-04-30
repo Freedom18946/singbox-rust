@@ -3,10 +3,10 @@
 //! Services provide background functionality like DNS resolution,
 //! DERP relay, and Shadowsocks Manager API.
 
+use parking_lot::RwLock;
 use sb_config::ir::{ServiceIR, ServiceType};
 use std::collections::HashMap;
 use std::sync::Arc;
-use tokio::sync::RwLock;
 
 // Re-export canonical definitions from sb-types.
 // These were previously defined here; now sb-types is the single source of truth.
@@ -96,7 +96,7 @@ pub type ServiceBuilder = fn(&ServiceIR, &ServiceContext) -> Option<Arc<dyn Serv
 
 /// Registry for service builders.
 pub struct ServiceRegistry {
-    builders: parking_lot::RwLock<std::collections::HashMap<ServiceType, ServiceBuilder>>,
+    builders: RwLock<std::collections::HashMap<ServiceType, ServiceBuilder>>,
 }
 
 impl ServiceRegistry {
@@ -193,39 +193,39 @@ impl ServiceManager {
     /// Add a service with the given tag.
     pub async fn add_service(&self, tag: String, service: Arc<dyn Service>) {
         {
-            let mut guard = self.services.write().await;
+            let mut guard = self.services.write();
             guard.insert(tag.clone(), service);
         }
-        let mut statuses = self.statuses.write().await;
+        let mut statuses = self.statuses.write();
         statuses.remove(&tag);
     }
 
     /// Fetch a service by tag.
     pub async fn get(&self, tag: &str) -> Option<Arc<dyn Service>> {
-        let guard = self.services.read().await;
+        let guard = self.services.read();
         guard.get(tag).cloned()
     }
 
     /// Remove a service by tag.
     pub async fn remove(&self, tag: &str) -> Option<Arc<dyn Service>> {
         let removed = {
-            let mut guard = self.services.write().await;
+            let mut guard = self.services.write();
             guard.remove(tag)
         };
-        let mut statuses = self.statuses.write().await;
+        let mut statuses = self.statuses.write();
         statuses.remove(tag);
         removed
     }
 
     /// List all registered service tags.
     pub async fn list_tags(&self) -> Vec<String> {
-        let guard = self.services.read().await;
+        let guard = self.services.read();
         guard.keys().cloned().collect()
     }
 
     /// Number of registered services.
     pub async fn len(&self) -> usize {
-        let guard = self.services.read().await;
+        let guard = self.services.read();
         guard.len()
     }
 
@@ -237,76 +237,85 @@ impl ServiceManager {
     /// Clear all services.
     pub async fn clear(&self) {
         {
-            let mut guard = self.services.write().await;
+            let mut guard = self.services.write();
             guard.clear();
         }
-        let mut statuses = self.statuses.write().await;
+        let mut statuses = self.statuses.write();
         statuses.clear();
     }
 
     /// Start all registered services with fault isolation.
     /// Failed services are logged but don't prevent others from starting.
     pub async fn start_all(&self) -> Vec<(String, ServiceStatus)> {
+        for stage in [
+            StartStage::Initialize,
+            StartStage::Start,
+            StartStage::PostStart,
+            StartStage::Started,
+        ] {
+            self.start_stage(stage);
+        }
+
+        self.health_status().await
+    }
+
+    pub(crate) fn start_stage(&self, stage: StartStage) {
         let services: Vec<(String, Arc<dyn Service>)> = {
-            let guard = self.services.read().await;
+            let guard = self.services.read();
             guard
                 .iter()
                 .map(|(tag, service)| (tag.clone(), service.clone()))
                 .collect()
         };
-        {
-            let mut statuses = self.statuses.write().await;
+
+        if stage == StartStage::Initialize {
+            let mut statuses = self.statuses.write();
             statuses.clear();
         }
 
-        let mut results = Vec::new();
-
         for (tag, service) in services {
             {
-                let mut statuses = self.statuses.write().await;
+                let statuses = self.statuses.read();
+                if matches!(statuses.get(&tag), Some(ServiceStatus::Failed(_))) {
+                    tracing::debug!(
+                        service = %tag,
+                        ?stage,
+                        "Skipping failed service in later startup stage"
+                    );
+                    continue;
+                }
+            }
+            {
+                let mut statuses = self.statuses.write();
                 statuses.insert(tag.clone(), ServiceStatus::Starting);
             }
-            let status = match Self::start_service(&service, &tag) {
-                Ok(()) => ServiceStatus::Running,
+            let status = match service.start(stage) {
+                Ok(()) if stage == StartStage::Started => ServiceStatus::Running,
+                Ok(()) => ServiceStatus::Starting,
                 Err(e) => {
                     tracing::error!(
                         service = %tag,
+                        ?stage,
                         error = %e,
-                        "Service failed to start (isolated)"
+                        "Service startup stage failed (isolated)"
                     );
                     ServiceStatus::Failed(e.to_string())
                 }
             };
             {
-                let mut statuses = self.statuses.write().await;
+                let mut statuses = self.statuses.write();
                 statuses.insert(tag.clone(), status.clone());
             }
-            results.push((tag.clone(), status));
         }
-
-        results
-    }
-
-    fn start_service(
-        service: &Arc<dyn Service>,
-        tag: &str,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        tracing::info!(service = %tag, "Starting service");
-        service.start(StartStage::Initialize)?;
-        service.start(StartStage::Start)?;
-        service.start(StartStage::PostStart)?;
-        service.start(StartStage::Started)?;
-        tracing::info!(service = %tag, "Service started successfully");
-        Ok(())
     }
 
     /// Get the health status of all services.
     pub async fn health_status(&self) -> Vec<(String, ServiceStatus)> {
         let tags: Vec<String> = {
-            let guard = self.services.read().await;
+            let guard = self.services.read();
             guard.keys().cloned().collect()
         };
-        let statuses = self.statuses.read().await;
+        let statuses = self.statuses.read();
         tags.into_iter()
             // Registered services without a start result have not run yet.
             .map(|tag| {
@@ -562,6 +571,101 @@ mod tests {
             health_by_tag.get("fail-svc"),
             Some(ServiceStatus::Failed(message)) if message == "intentional failure"
         ));
+    }
+
+    #[tokio::test]
+    async fn service_manager_start_stage_fault_isolation() {
+        use crate::context::Startable;
+        use std::sync::Mutex;
+
+        struct RecordingService {
+            stages: Mutex<Vec<StartStage>>,
+        }
+        impl Service for RecordingService {
+            fn service_type(&self) -> &str {
+                "ok"
+            }
+            fn tag(&self) -> &str {
+                "ok-svc"
+            }
+            fn start(
+                &self,
+                stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                self.stages.lock().unwrap().push(stage);
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+        }
+
+        struct FailOnStartService {
+            stages: Mutex<Vec<StartStage>>,
+        }
+        impl Service for FailOnStartService {
+            fn service_type(&self) -> &str {
+                "fail"
+            }
+            fn tag(&self) -> &str {
+                "fail-svc"
+            }
+            fn start(
+                &self,
+                stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                self.stages.lock().unwrap().push(stage);
+                if stage == StartStage::Start {
+                    return Err("start stage failed intentionally".into());
+                }
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+        }
+
+        let mgr = ServiceManager::new();
+        let ok = Arc::new(RecordingService {
+            stages: Mutex::new(Vec::new()),
+        });
+        let fail = Arc::new(FailOnStartService {
+            stages: Mutex::new(Vec::new()),
+        });
+
+        mgr.add_service("ok-svc".into(), ok.clone()).await;
+        mgr.add_service("fail-svc".into(), fail.clone()).await;
+
+        for stage in [
+            StartStage::Initialize,
+            StartStage::Start,
+            StartStage::PostStart,
+            StartStage::Started,
+        ] {
+            assert!(Startable::start(&mgr, stage).is_ok());
+        }
+
+        let health_by_tag: std::collections::HashMap<_, _> =
+            mgr.health_status().await.into_iter().collect();
+        assert_eq!(health_by_tag.get("ok-svc"), Some(&ServiceStatus::Running));
+        assert!(matches!(
+            health_by_tag.get("fail-svc"),
+            Some(ServiceStatus::Failed(message)) if message == "start stage failed intentionally"
+        ));
+
+        assert_eq!(
+            *ok.stages.lock().unwrap(),
+            vec![
+                StartStage::Initialize,
+                StartStage::Start,
+                StartStage::PostStart,
+                StartStage::Started,
+            ]
+        );
+        assert_eq!(
+            *fail.stages.lock().unwrap(),
+            vec![StartStage::Initialize, StartStage::Start]
+        );
     }
 
     #[tokio::test]

@@ -63,6 +63,7 @@ impl Startable for crate::endpoint::EndpointManager {
 impl Startable for crate::service::ServiceManager {
     fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::debug!(target: "sb_core::context", ?stage, "ServiceManager stage");
+        self.start_stage(stage);
         Ok(())
     }
 
