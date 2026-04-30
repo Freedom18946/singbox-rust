@@ -5875,6 +5875,53 @@
 - `git diff --check` → PASS
 - `cargo check --workspace` → PASS
 
+## 2026-04-30 progress update: MT-REAL-02 Stage-2 Closure
+
+### Decision
+
+MT-REAL-02 stage-2 evidence-driven loop is closed. This is stage
+closure, not project closure. The current evidence regime has
+saturated: every latest non-all_ok candidate is mechanically classified
+as node-level noise or cross-round mixed noise, with no stable
+sampler/dataplane signal.
+
+### Closure snapshot
+
+- Node-level dead buckets: JP-A-BGP-0.3 (reality_dial_eof),
+  JP-A-BGP-1.0 (timeout), UK-A-BGP-0.5 (connection_reset),
+  US-A-BGP-0.5 (connection_reset).
+- Mixed noise bucket: HK-A-BGP-2.0 (bi-modal plus phase-shifting).
+- Recovered nodes: TW-A-BGP-1.0 and US-A-BGP-0.8.
+- Latest all_ok baseline: 16 outbounds.
+
+### Archive pointers
+
+- Evidence timeline and falsified hypotheses:
+  agents-only/archive/mt_real_02/round_45_60_evidence_framework.md
+- Closure rationale and stage-3 options:
+  agents-only/archive/mt_real_02/closure_report.md
+
+### Framework fields
+
+Per outbound: latest_health, latest_run_health_counts,
+latest_divergence_phase_counts, latest_divergence_phase_dominance,
+latest_divergence_run_ratio, is_bi_modal, dominant_phase_history,
+is_phase_shifting.
+
+Top-level/planner: latest_*_outbounds,
+latest_phase_dominant/no_dominance/bi_modal/phase_shifting_outbounds,
+--latest-health, --latest-run-health, --only-latest-run-health,
+--latest-phase-dominance, --latest-bi-modal, --latest-phase-shifting.
+
+### Stage-3 order
+
+User-elected order: R62 path B framework abstraction, then R63 path C
+next BHV gap via dual_kernel_golden_spec.md S5. Path A sample expansion
+is on demand only.
+
+Do not restart MT-REAL-02 sampler/dataplane patch work unless a new
+sample regime first surfaces a stable structural signal.
+
 ## 2026-04-30 进展更新：Round 59-A divergence phase composition rollup
 
 ### 目标
