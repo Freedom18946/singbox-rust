@@ -940,6 +940,175 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         self.assertTrue(dominance["is_no_dominance"])
         self.assertEqual(built["latest_phase_no_dominance_outbounds"], ["HK-A"])
 
+    def test_rollup_marks_bi_modal_when_divergence_ratio_in_band_with_enough_runs(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round18.json"
+            runs = []
+            for index in range(1, 7):
+                runs.append(
+                    {
+                        "outbound": "A",
+                        "run_index": index,
+                        "status": "completed",
+                        "labels": ["app_pre_post_diverged"],
+                        "class_counts": {"ok": 1, "timeout": 8},
+                    }
+                )
+            for index in range(7, 13):
+                runs.append(
+                    {
+                        "outbound": "A",
+                        "run_index": index,
+                        "status": "completed",
+                        "labels": ["reality_all_timeout"],
+                        "class_counts": {"timeout": 9},
+                    }
+                )
+            for index in range(1, 3):
+                runs.append(
+                    {
+                        "outbound": "B",
+                        "run_index": index,
+                        "status": "completed",
+                        "labels": ["app_pre_post_diverged"],
+                        "class_counts": {"ok": 1, "timeout": 8},
+                    }
+                )
+            for index in range(3, 5):
+                runs.append(
+                    {
+                        "outbound": "B",
+                        "run_index": index,
+                        "status": "completed",
+                        "labels": ["reality_all_timeout"],
+                        "class_counts": {"timeout": 9},
+                    }
+                )
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "18",
+                        {"app_pre_post_diverged": 8, "reality_all_timeout": 8},
+                        {"ok": 8, "timeout": 136},
+                        {
+                            "A": {
+                                "label_counts": {
+                                    "app_pre_post_diverged": 6,
+                                    "reality_all_timeout": 6,
+                                },
+                                "class_counts": {"ok": 6, "timeout": 102},
+                            },
+                            "B": {
+                                "label_counts": {
+                                    "app_pre_post_diverged": 2,
+                                    "reality_all_timeout": 2,
+                                },
+                                "class_counts": {"ok": 2, "timeout": 34},
+                            },
+                        },
+                        runs=runs,
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        outbound_a = built["by_outbound"]["A"]
+        outbound_b = built["by_outbound"]["B"]
+        self.assertEqual(outbound_a["latest_round_run_count"], 12)
+        self.assertEqual(outbound_a["latest_divergence_run_count"], 6)
+        self.assertEqual(outbound_a["latest_divergence_run_ratio"], 0.5)
+        self.assertTrue(outbound_a["is_bi_modal"])
+        self.assertTrue(outbound_a["latest_divergence_phase_dominance"]["is_bi_modal"])
+        self.assertEqual(outbound_b["latest_round_run_count"], 4)
+        self.assertEqual(outbound_b["latest_divergence_run_ratio"], 0.5)
+        self.assertFalse(outbound_b["is_bi_modal"])
+        self.assertEqual(built["latest_bi_modal_outbounds"], ["A"])
+
+    def test_rollup_phase_shifting_detects_dominant_phase_change_over_history(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            rounds = [
+                ("1", {"A": "app_minimal_diverged", "B": "app_minimal_diverged", "C": "app_minimal_diverged"}),
+                ("2", {"A": "app_pre_post_diverged", "B": "app_minimal_diverged", "C": "app_pre_post_diverged"}),
+                ("3", {"A": "minimal_transport_diverged", "B": "app_minimal_diverged"}),
+            ]
+            paths = []
+            for round_name, phases in rounds:
+                path = tmp_path / f"round{round_name}.json"
+                by_outbound = {
+                    outbound: {
+                        "label_counts": {phase: 1},
+                        "class_counts": {"ok": 1, "timeout": 8},
+                    }
+                    for outbound, phase in phases.items()
+                }
+                runs = [
+                    {
+                        "outbound": outbound,
+                        "run_index": 1,
+                        "status": "completed",
+                        "labels": [phase],
+                        "class_counts": {"ok": 1, "timeout": 8},
+                    }
+                    for outbound, phase in phases.items()
+                ]
+                path.write_text(
+                    json.dumps(
+                        self.sample_evidence(
+                            round_name,
+                            {phase: 1 for phase in phases.values()},
+                            {"ok": len(phases), "timeout": len(phases) * 8},
+                            by_outbound,
+                            runs=runs,
+                        )
+                    ),
+                    encoding="utf-8",
+                )
+                paths.append(path)
+            built = rollup.build_rollup(paths)
+        self.assertTrue(built["by_outbound"]["A"]["is_phase_shifting"])
+        self.assertFalse(built["by_outbound"]["B"]["is_phase_shifting"])
+        self.assertFalse(built["by_outbound"]["C"]["is_phase_shifting"])
+        self.assertEqual(built["latest_phase_shifting_outbounds"], ["A"])
+
+    def test_rollup_dominant_phase_history_includes_only_rounds_with_data(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            paths = []
+            for round_name, outbound in [("1", "A"), ("2", "B"), ("3", "A"), ("4", "B"), ("5", "A")]:
+                path = tmp_path / f"round{round_name}.json"
+                phase = "app_minimal_diverged"
+                path.write_text(
+                    json.dumps(
+                        self.sample_evidence(
+                            round_name,
+                            {phase: 1},
+                            {"ok": 1, "timeout": 8},
+                            {
+                                outbound: {
+                                    "label_counts": {phase: 1},
+                                    "class_counts": {"ok": 1, "timeout": 8},
+                                }
+                            },
+                            runs=[
+                                {
+                                    "outbound": outbound,
+                                    "run_index": 1,
+                                    "status": "completed",
+                                    "labels": [phase],
+                                    "class_counts": {"ok": 1, "timeout": 8},
+                                }
+                            ],
+                        )
+                    ),
+                    encoding="utf-8",
+                )
+                paths.append(path)
+            built = rollup.build_rollup(paths)
+        history = built["by_outbound"]["A"]["dominant_phase_history"]
+        self.assertEqual([item["round"] for item in history], ["1", "3", "5"])
+        self.assertEqual(len(history), 3)
+
     def test_markdown_table_contains_round_rows(self):
         built = {
             "total_rounds": 1,
@@ -1192,6 +1361,88 @@ class RealityProbePlanTests(unittest.TestCase):
             [item["key"] for item in dominant_or_mid["selected"]],
             ["HK-A-BGP-0.3", "NEW-A-BGP-1.0"],
         )
+
+    def test_planner_filters_by_phase_shifting_and_bi_modal(self):
+        config = {
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": name,
+                    "server": "203.0.113.10",
+                    "server_port": 443,
+                    "uuid": "550e8400-e29b-41d4-a716-446655440000",
+                    "tls": {"reality": {"public_key": "PUB"}},
+                }
+                for name in ["A", "B", "C", "D"]
+            ]
+        }
+        rollup_data = {
+            "total_rounds": 1,
+            "total_executed_runs": 16,
+            "by_outbound": {
+                "A": {
+                    "latest_label_counts": {"app_minimal_diverged": 1},
+                    "latest_health": "latest_divergence",
+                    "latest_run_health_counts": {"run_divergence": 1},
+                    "is_bi_modal": False,
+                    "is_phase_shifting": True,
+                },
+                "B": {
+                    "latest_label_counts": {"app_minimal_diverged": 1},
+                    "latest_health": "latest_divergence",
+                    "latest_run_health_counts": {"run_divergence": 1},
+                    "is_bi_modal": True,
+                    "is_phase_shifting": False,
+                },
+                "C": {
+                    "latest_label_counts": {"app_minimal_diverged": 1},
+                    "latest_health": "latest_divergence",
+                    "latest_run_health_counts": {"run_divergence": 1},
+                    "is_bi_modal": True,
+                    "is_phase_shifting": True,
+                },
+                "D": {
+                    "latest_label_counts": {"app_minimal_diverged": 1},
+                    "latest_health": "latest_divergence",
+                    "latest_run_health_counts": {"run_divergence": 1},
+                    "is_bi_modal": False,
+                    "is_phase_shifting": False,
+                },
+            },
+        }
+        bi_modal = plan.build_plan(
+            config,
+            rollup_data,
+            None,
+            False,
+            False,
+            False,
+            latest_bi_modal_filter=True,
+        )
+        self.assertEqual([item["key"] for item in bi_modal["selected"]], ["B", "C"])
+
+        phase_shifting = plan.build_plan(
+            config,
+            rollup_data,
+            None,
+            False,
+            False,
+            False,
+            latest_phase_shifting_filter=True,
+        )
+        self.assertEqual([item["key"] for item in phase_shifting["selected"]], ["A", "C"])
+
+        both = plan.build_plan(
+            config,
+            rollup_data,
+            None,
+            False,
+            False,
+            False,
+            latest_bi_modal_filter=True,
+            latest_phase_shifting_filter=True,
+        )
+        self.assertEqual([item["key"] for item in both["selected"]], ["C"])
 
     def test_build_plan_can_include_internal_sentinels_explicitly(self):
         built = plan.build_plan(self.sample_config(), self.sample_rollup(), None, False, False, True)

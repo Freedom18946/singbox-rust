@@ -1940,3 +1940,77 @@
   - ASCII scan for live rollup JSON/MD → PASS
   - `git diff --check` → PASS
   - `cargo check --workspace` → PASS
+
+## Round 60（bi-modal + phase-shifting metrics + stable same-failure repeat）
+
+- 本轮继续 classify-first，不改 sampler / Vision / REALITY dataplane / Rust code。
+- R59-B 的真实信号：
+  - `HK-A-BGP-2.0` 12 runs 中 `6` runs divergence-bearing，`6` runs uniform timeout/same-failure。
+  - HK latest divergence split was therefore bi-modal: `latest_divergence_run_ratio=0.5`.
+  - HK dominant phase also shifted across rounds:
+    - R57: `app_minimal_diverged` (`2/3=0.6667`)
+    - R59-B: `app_pre_post_diverged` (`4/6=0.6667`)
+  - This is a cross-round drift / instability signal, not a sampler/dataplane signal.
+- 工具推进：
+  - `scripts/tools/reality_vless_evidence_rollup.py`
+    - per-outbound added:
+      - `latest_round_run_count`
+      - `latest_divergence_run_ratio`
+      - top-level `is_bi_modal`
+      - `latest_divergence_phase_dominance.is_bi_modal`
+      - `dominant_phase_history`
+      - `is_phase_shifting`
+    - top-level added:
+      - `latest_bi_modal_outbounds`
+      - `latest_phase_shifting_outbounds`
+    - thresholds:
+      - bi-modal iff `0.25 < latest_divergence_run_ratio < 0.75` and `latest_round_run_count >= 6`
+      - phase shifting iff the last 3 dominant-phase history entries are all non-null and include at least 2 distinct phases.
+  - `scripts/tools/reality_vless_probe_plan.py`
+    - added `--latest-bi-modal`
+    - added `--latest-phase-shifting`
+    - both compose as intersection filters with latest health, run-health, and phase-dominance filters.
+  - `scripts/tools/test_reality_probe_tools.py`
+    - added 4 tests; combined Python test count is now `47`.
+- Pre-R60 rollup check:
+  - `HK-A-BGP-2.0`:
+    - `latest_divergence_run_ratio=0.5`
+    - `is_bi_modal=true`
+    - `is_phase_shifting=true`
+  - top-level:
+    - `latest_bi_modal_outbounds=["HK-A-BGP-2.0"]`
+    - `latest_phase_shifting_outbounds=["HK-A-BGP-2.0"]`
+- R60 stable same-failure live:
+  - planner:
+    - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --latest-health latest_same_failure --only-latest-run-health run_same_failure --output-json /tmp/r60-stable-plan.json`
+    - selected `4`: `JP-A-BGP-0.3倍率`, `JP-A-BGP-1.0倍率`, `US-A-BGP-0.5倍率`, `UK-A-BGP-0.5倍率`
+  - batch:
+    - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/r60-stable-plan.json --target example.com:80 --runs 4 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r60-stable-longer`
+  - executed_runs: `16`
+  - label_counts:
+    - `probe_io_all_reality_dial_eof=4`, `reality_all_reality_dial_eof=4`
+    - `probe_io_all_timeout=4`, `reality_all_timeout=4`
+    - `probe_io_all_connection_reset=8`, `reality_all_connection_reset=8`
+  - by outbound:
+    - `JP-A-BGP-0.3`: 4/4 same-class `reality_dial_eof`
+    - `JP-A-BGP-1.0`: 4/4 same-class `timeout`
+    - `US-A-BGP-0.5`: 4/4 same-class `connection_reset`
+    - `UK-A-BGP-0.5`: 4/4 same-class `connection_reset`
+- evidence:
+  - `agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json`
+- Rollup after R60:
+  - rounds: `13`
+  - executed runs: `90`
+  - all_ok runs: `21`
+  - HK remains in `latest_bi_modal_outbounds` and `latest_phase_shifting_outbounds` because R60 did not run HK.
+  - the four stable same-failure nodes now have latest round `60`, `latest_health=latest_same_failure`, `latest_run_health_counts={"run_same_failure":4}`, `latest_divergence_run_ratio=0.0`, `is_bi_modal=false`.
+- 判定：
+  - HK is a bi-modal, phase-shifting mixed bucket; this jointly argues against sampler/dataplane change.
+  - The four R60 nodes remain stable same-class node-level buckets under 4-run repeat.
+- gate：
+  - `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`47 tests`)
+  - `jq empty agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `jq empty agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json` → PASS
+  - ASCII scan for live rollup JSON/MD + R60 evidence → PASS
+  - `git diff --check` → PASS
+  - `cargo check --workspace` → PASS

@@ -23,6 +23,10 @@ DIVERGENCE_PHASE_LABELS = frozenset(DIVERGENCE_PHASE_LABEL_ORDER)
 DIVERGENCE_LABELS = DIVERGENCE_PHASE_LABELS
 PHASE_DOMINANCE_DOMINANT_THRESHOLD = 0.75
 PHASE_DOMINANCE_NO_DOMINANCE_THRESHOLD = 0.50
+BI_MODAL_MIN_RATIO = 0.25
+BI_MODAL_MAX_RATIO = 0.75
+BI_MODAL_MIN_RUNS = 6
+PHASE_SHIFTING_WINDOW = 3
 RUN_HEALTH_VALUES = [
     "run_all_ok",
     "run_same_failure",
@@ -111,7 +115,27 @@ def divergence_run_count(runs: list[dict[str, Any]]) -> int:
     return count
 
 
-def phase_dominance(phase_counts: dict[str, int], run_count: int) -> dict[str, Any] | None:
+def round_run_count(runs: list[dict[str, Any]]) -> int:
+    return sum(1 for run in runs if isinstance(run, dict))
+
+
+def divergence_run_ratio(divergence_runs: int, round_runs: int) -> float | None:
+    if round_runs <= 0:
+        return None
+    return round(divergence_runs / round_runs, 4)
+
+
+def is_bi_modal_ratio(ratio: float | None, round_runs: int) -> bool:
+    if ratio is None or round_runs < BI_MODAL_MIN_RUNS:
+        return False
+    return BI_MODAL_MIN_RATIO < ratio < BI_MODAL_MAX_RATIO
+
+
+def phase_dominance(
+    phase_counts: dict[str, int],
+    run_count: int,
+    is_bi_modal: bool,
+) -> dict[str, Any] | None:
     if run_count <= 0:
         return None
     ordered = sorted(
@@ -125,6 +149,7 @@ def phase_dominance(phase_counts: dict[str, int], run_count: int) -> dict[str, A
             "dominant_ratio": 0.0,
             "is_dominant": False,
             "is_no_dominance": True,
+            "is_bi_modal": is_bi_modal,
         }
     dominant_phase, dominant_count = ordered[0]
     ratio = round(dominant_count / run_count, 4)
@@ -134,7 +159,38 @@ def phase_dominance(phase_counts: dict[str, int], run_count: int) -> dict[str, A
         "dominant_ratio": ratio,
         "is_dominant": ratio >= PHASE_DOMINANCE_DOMINANT_THRESHOLD,
         "is_no_dominance": ratio < PHASE_DOMINANCE_NO_DOMINANCE_THRESHOLD,
+        "is_bi_modal": is_bi_modal,
     }
+
+
+def dominant_phase_entry(item: dict[str, Any]) -> dict[str, Any]:
+    dominance = item.get("divergence_phase_dominance")
+    dominant_phase = None
+    dominant_count = 0
+    if isinstance(dominance, dict):
+        phase = dominance.get("dominant_phase")
+        count = dominance.get("dominant_count")
+        dominant_phase = phase if isinstance(phase, str) else None
+        dominant_count = count if isinstance(count, int) else 0
+    divergence_count = item.get("divergence_run_count", 0)
+    if not isinstance(divergence_count, int):
+        divergence_count = 0
+    return {
+        "round": str(item.get("round")),
+        "dominant_phase": dominant_phase,
+        "dominant_count": dominant_count,
+        "divergence_run_count": divergence_count,
+    }
+
+
+def phase_shifting(history: list[dict[str, Any]]) -> bool:
+    if len(history) < PHASE_SHIFTING_WINDOW:
+        return False
+    recent = history[-PHASE_SHIFTING_WINDOW:]
+    phases = [item.get("dominant_phase") for item in recent]
+    if any(not isinstance(phase, str) for phase in phases):
+        return False
+    return len(set(phases)) >= 2
 
 
 def compact_runs_by_outbound(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -239,15 +295,19 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
             merge_counts(entry["status_counts"], summary.get("status_counts"))
             merge_counts(entry["label_counts"], summary.get("label_counts"))
             merge_counts(entry["class_counts"], summary.get("class_counts"))
-            phase_counts = divergence_phase_counts(summary.get("runs", []))
+            runs = summary.get("runs", [])
+            phase_counts = divergence_phase_counts(runs)
             run_health_counts = collections.Counter(
                 run.get("run_health")
-                for run in summary.get("runs", [])
+                for run in runs
                 if isinstance(run, dict) and isinstance(run.get("run_health"), str)
             )
             merge_counts(entry["run_health_counts"], run_health_counts)
             merge_counts(entry["divergence_phase_counts"], phase_counts)
-            phase_run_count = divergence_run_count(summary.get("runs", []))
+            latest_round_runs = round_run_count(runs)
+            phase_run_count = divergence_run_count(runs)
+            phase_run_ratio = divergence_run_ratio(phase_run_count, latest_round_runs)
+            latest_is_bi_modal = is_bi_modal_ratio(phase_run_ratio, latest_round_runs)
             entry["history"].append(
                 {
                     "round": item["round"],
@@ -257,9 +317,16 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
                     "class_counts": summary.get("class_counts", {}),
                     "run_health_counts": dict(sorted(run_health_counts.items())),
                     "divergence_phase_counts": dict(sorted(phase_counts.items())),
+                    "round_run_count": latest_round_runs,
                     "divergence_run_count": phase_run_count,
-                    "divergence_phase_dominance": phase_dominance(dict(phase_counts), phase_run_count),
-                    "runs": summary.get("runs", []),
+                    "divergence_run_ratio": phase_run_ratio,
+                    "is_bi_modal": latest_is_bi_modal,
+                    "divergence_phase_dominance": phase_dominance(
+                        dict(phase_counts),
+                        phase_run_count,
+                        latest_is_bi_modal,
+                    ),
+                    "runs": runs,
                 }
             )
 
@@ -275,6 +342,8 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
     latest_stable_same_failure = []
     latest_phase_dominant = []
     latest_phase_no_dominance = []
+    latest_bi_modal = []
+    latest_phase_shifting = []
     latest_health_counts: collections.Counter[str] = collections.Counter()
     latest_run_health_counts: collections.Counter[str] = collections.Counter()
     latest_divergence_phase_total_counts: collections.Counter[str] = collections.Counter()
@@ -295,6 +364,15 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
         latest_phase_dominance = latest.get("divergence_phase_dominance")
         if not isinstance(latest_phase_dominance, dict):
             latest_phase_dominance = None
+        latest_round_run_count = latest.get("round_run_count", 0)
+        if not isinstance(latest_round_run_count, int):
+            latest_round_run_count = 0
+        latest_divergence_run_ratio = latest.get("divergence_run_ratio")
+        if not isinstance(latest_divergence_run_ratio, float):
+            latest_divergence_run_ratio = None
+        latest_is_bi_modal = latest.get("is_bi_modal") is True
+        dominant_history = [dominant_phase_entry(item) for item in history]
+        is_phase_shifting = phase_shifting(dominant_history)
         latest_has_non_all_ok = has_non_all_ok_labels(latest_labels)
         latest_state = latest_health(latest_labels)
         historical_has_non_all_ok = has_non_all_ok_labels(dict(sorted(values["label_counts"].items())))
@@ -330,6 +408,10 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
                 latest_phase_dominant.append(name)
             if latest_phase_dominance.get("is_no_dominance") is True:
                 latest_phase_no_dominance.append(name)
+        if latest_is_bi_modal:
+            latest_bi_modal.append(name)
+        if is_phase_shifting:
+            latest_phase_shifting.append(name)
         by_outbound_json[name] = {
             "rounds": sorted(values["rounds"], key=round_sort_key),
             "status_counts": dict(sorted(values["status_counts"].items())),
@@ -344,8 +426,13 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
             "latest_class_counts": latest_classes,
             "latest_run_health_counts": latest_run_counts,
             "latest_divergence_phase_counts": latest_phase_counts,
+            "latest_round_run_count": latest_round_run_count,
             "latest_divergence_run_count": latest_divergence_run_count,
+            "latest_divergence_run_ratio": latest_divergence_run_ratio,
             "latest_divergence_phase_dominance": latest_phase_dominance,
+            "is_bi_modal": latest_is_bi_modal,
+            "dominant_phase_history": dominant_history,
+            "is_phase_shifting": is_phase_shifting,
             "latest_has_non_all_ok": latest_has_non_all_ok,
             "latest_health": latest_state,
             "historical_has_non_all_ok": historical_has_non_all_ok,
@@ -380,6 +467,8 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
         },
         "latest_phase_dominant_outbounds": sorted(latest_phase_dominant),
         "latest_phase_no_dominance_outbounds": sorted(latest_phase_no_dominance),
+        "latest_bi_modal_outbounds": sorted(latest_bi_modal),
+        "latest_phase_shifting_outbounds": sorted(latest_phase_shifting),
         "recovered_outbounds": recovered,
         "recovered_outbound_count": len(recovered),
         "latest_health_counts": dict(sorted(latest_health_counts.items())),
@@ -475,6 +564,16 @@ def markdown_table(rollup: dict[str, Any]) -> str:
             f"- dominant outbounds (>=0.75): {dominant_text}",
             f"- no-dominance outbounds (<0.50): {no_dominance_text}",
             f"- mid-band outbounds (0.50-0.75): {mid_text}",
+            "",
+            "## Latest bi-modal outbounds",
+            "",
+            "- bi-modal (divergence_ratio in 0.25-0.75 with >=6 runs): "
+            f"{', '.join(rollup.get('latest_bi_modal_outbounds', [])) or '(none)'}",
+            "",
+            "## Phase-shifting outbounds",
+            "",
+            "- phase shifting (dominant phase changed across last 3 rounds): "
+            f"{', '.join(rollup.get('latest_phase_shifting_outbounds', [])) or '(none)'}",
             "",
         ]
     )

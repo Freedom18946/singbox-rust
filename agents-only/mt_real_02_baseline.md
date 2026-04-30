@@ -6055,3 +6055,127 @@
   - `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
 - `git diff --check` → PASS
 - `cargo check --workspace` → PASS
+
+## 2026-04-30 进展更新：Round 60 bi-modal and phase-shifting metrics
+
+### 目标
+
+- Make the HK two-mode behavior visible in rollup rather than hidden behind phase counts.
+- Detect cross-round dominant-phase drift that single-round dominance thresholds cannot express.
+- Recheck the four stable same-failure buckets with a 4-run live repeat after the HK bi-modal discovery.
+- Keep the work strictly in Python tooling, evidence, and docs; no sampler/dataplane/Rust code change.
+
+### 实现
+
+- `scripts/tools/reality_vless_evidence_rollup.py`
+  - Adds per-outbound:
+    - `latest_round_run_count`
+    - `latest_divergence_run_ratio`
+    - `is_bi_modal`
+    - `dominant_phase_history`
+    - `is_phase_shifting`
+  - Also adds `is_bi_modal` inside `latest_divergence_phase_dominance` when that block exists.
+  - Adds top-level:
+    - `latest_bi_modal_outbounds`
+    - `latest_phase_shifting_outbounds`
+  - Bi-modal definition:
+    - `0.25 < latest_divergence_run_ratio < 0.75`
+    - and `latest_round_run_count >= 6`
+  - Phase-shifting definition:
+    - inspect the last `3` dominant-phase history entries;
+    - all 3 must be non-null;
+    - at least 2 distinct dominant phases must appear.
+- `scripts/tools/reality_vless_probe_plan.py`
+  - Adds `--latest-bi-modal`.
+  - Adds `--latest-phase-shifting`.
+  - Both are intersection filters and compose with latest health, latest run health, only-latest-run-health, and phase-dominance filters.
+- `scripts/tools/test_reality_probe_tools.py`
+  - Adds tests for:
+    - bi-modal ratio with minimum sample threshold;
+    - phase shifting across 3 rounds;
+    - dominant phase history without null padding;
+    - planner bi-modal / phase-shifting intersection filtering.
+  - Combined Python test count is now `47`.
+
+### Pre-live rollup
+
+- Existing 12-evidence rollup now exposes:
+  - `HK-A-BGP-2.0.latest_divergence_run_ratio = 0.5`
+  - `HK-A-BGP-2.0.is_bi_modal = true`
+  - `HK-A-BGP-2.0.is_phase_shifting = true`
+- Top-level:
+  - `latest_bi_modal_outbounds = ["HK-A-BGP-2.0"]`
+  - `latest_phase_shifting_outbounds = ["HK-A-BGP-2.0"]`
+- Dominant phase history for HK:
+  - R47: `null`
+  - R54: `app_pre_post_diverged`
+  - R56: `app_minimal_diverged`
+  - R57: `app_minimal_diverged`
+  - R59-B: `app_pre_post_diverged`
+
+### live execution
+
+- Planner command:
+  - `python3 scripts/tools/reality_vless_probe_plan.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --rollup-json agents-only/mt_real_02_evidence/live_rollup.json --latest-health latest_same_failure --only-latest-run-health run_same_failure --output-json /tmp/r60-stable-plan.json`
+- Planner selected `4`:
+  - `JP-A-BGP-0.3倍率`
+  - `JP-A-BGP-1.0倍率`
+  - `US-A-BGP-0.5倍率`
+  - `UK-A-BGP-0.5倍率`
+- Batch command:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/r60-stable-plan.json --target example.com:80 --runs 4 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r60-stable-longer`
+- Actual execution:
+  - `executed_runs = 16`
+  - no divergence labels
+  - no `all_ok` runs
+- Per outbound:
+  - `JP-A-BGP-0.3`: `4/4` same-class `reality_dial_eof`
+  - `JP-A-BGP-1.0`: `4/4` same-class `timeout`
+  - `US-A-BGP-0.5`: `4/4` same-class `connection_reset`
+  - `UK-A-BGP-0.5`: `4/4` same-class `connection_reset`
+
+### evidence
+
+- New evidence:
+  - `agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json`
+- Interpretation:
+  - `JP-A-BGP-0.3: 4/4 still stable same-class node-level bucket (reality_dial_eof).`
+  - `JP-A-BGP-1.0: 4/4 still stable same-class node-level bucket (timeout).`
+  - `US-A-BGP-0.5: 4/4 still stable same-class node-level bucket (connection_reset).`
+  - `UK-A-BGP-0.5: 4/4 still stable same-class node-level bucket (connection_reset).`
+
+### Rollup after R60
+
+- `total_rounds = 13`
+- `total_executed_runs = 90`
+- `total_all_ok_runs = 21`
+- HK remains:
+  - `latest_round = 59-B`
+  - `latest_divergence_run_ratio = 0.5`
+  - `is_bi_modal = true`
+  - `is_phase_shifting = true`
+- Four stable same-failure nodes:
+  - latest round is `60`
+  - `latest_health = latest_same_failure`
+  - `latest_run_health_counts = {"run_same_failure": 4}`
+  - `latest_divergence_run_ratio = 0.0`
+  - `is_bi_modal = false`
+
+### 判定
+
+- HK is now explicitly classified as both bi-modal and phase-shifting.
+- That combined shape supports exclusion from sampler-candidate reasoning rather than a new sampler/dataplane direction.
+- The four stable same-failure buckets remain stable under a larger 4-run repeat; they did not reveal HK-like bi-modal behavior.
+
+### 验证
+
+- `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `47 tests`
+- `jq empty agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+- `jq empty agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json` → PASS
+- ASCII scan:
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
+  - `agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json` → PASS
+- `git diff --check` → PASS
+- `cargo check --workspace` → PASS

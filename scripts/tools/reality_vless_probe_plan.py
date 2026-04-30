@@ -110,6 +110,21 @@ def phase_dominance_kind(prior: dict[str, Any] | None) -> str | None:
     return "mid"
 
 
+def is_bi_modal(prior: dict[str, Any] | None) -> bool:
+    if prior is None:
+        return False
+    if prior.get("is_bi_modal") is True:
+        return True
+    dominance = latest_phase_dominance(prior)
+    return isinstance(dominance, dict) and dominance.get("is_bi_modal") is True
+
+
+def is_phase_shifting(prior: dict[str, Any] | None) -> bool:
+    if prior is None:
+        return False
+    return prior.get("is_phase_shifting") is True
+
+
 def matches_run_health_filter(counts: dict[str, int], filters: set[str]) -> bool:
     if not filters:
         return True
@@ -140,6 +155,8 @@ def build_plan(
     latest_run_health_filter: list[str] | None = None,
     only_latest_run_health_filter: list[str] | None = None,
     latest_phase_dominance_filter: list[str] | None = None,
+    latest_bi_modal_filter: bool = False,
+    latest_phase_shifting_filter: bool = False,
 ) -> dict[str, Any]:
     covered = covered_outbounds(rollup)
     health_filter = set(latest_health_filter or [])
@@ -168,6 +185,8 @@ def build_plan(
         run_counts = latest_run_health_counts(prior)
         phase_dominance = latest_phase_dominance(prior)
         phase_kind = phase_dominance_kind(prior)
+        bi_modal = is_bi_modal(prior)
+        phase_shifting = is_phase_shifting(prior)
         if health:
             health_counts[health] += 1
         planned = {
@@ -183,12 +202,21 @@ def build_plan(
             "latest_run_health_counts": run_counts,
             "latest_phase_dominance": phase_kind,
             "latest_divergence_phase_dominance": phase_dominance,
+            "is_bi_modal": bi_modal,
+            "is_phase_shifting": phase_shifting,
             "prior": prior,
         }
         buckets[reason].append(planned)
         candidates.append(planned)
 
-    if health_filter or run_health_filter or only_run_health_filter or phase_dominance_filter:
+    if (
+        health_filter
+        or run_health_filter
+        or only_run_health_filter
+        or phase_dominance_filter
+        or latest_bi_modal_filter
+        or latest_phase_shifting_filter
+    ):
         selected = [
             item
             for item in candidates
@@ -202,6 +230,8 @@ def build_plan(
                 item.get("latest_phase_dominance"),
                 phase_dominance_filter,
             )
+            and (not latest_bi_modal_filter or item.get("is_bi_modal") is True)
+            and (not latest_phase_shifting_filter or item.get("is_phase_shifting") is True)
         ]
     else:
         selected = list(buckets["uncovered"])
@@ -219,6 +249,8 @@ def build_plan(
         "latest_run_health_filter": sorted(run_health_filter),
         "only_latest_run_health_filter": sorted(only_run_health_filter),
         "latest_phase_dominance_filter": sorted(phase_dominance_filter),
+        "latest_bi_modal_filter": latest_bi_modal_filter,
+        "latest_phase_shifting_filter": latest_phase_shifting_filter,
         "latest_health_counts": dict(sorted(health_counts.items())),
         "selected_count": len(selected),
         "selected": selected,
@@ -266,6 +298,16 @@ def main() -> None:
         default=[],
         help="Select ready outbounds by latest divergence phase dominance bucket.",
     )
+    parser.add_argument(
+        "--latest-bi-modal",
+        action="store_true",
+        help="Select ready outbounds whose latest rollup state is bi-modal.",
+    )
+    parser.add_argument(
+        "--latest-phase-shifting",
+        action="store_true",
+        help="Select ready outbounds whose dominant divergence phase shifted across recent rounds.",
+    )
     parser.add_argument("--output-json")
     args = parser.parse_args()
 
@@ -282,6 +324,8 @@ def main() -> None:
         args.latest_run_health,
         args.only_latest_run_health,
         args.latest_phase_dominance,
+        args.latest_bi_modal,
+        args.latest_phase_shifting,
     )
     plan["config"] = str(config_path)
     plan["rollup_json"] = str(rollup_path)
@@ -300,6 +344,8 @@ def main() -> None:
                     "latest_run_health_counts": item["latest_run_health_counts"],
                     "latest_phase_dominance": item["latest_phase_dominance"],
                     "latest_divergence_phase_dominance": item["latest_divergence_phase_dominance"],
+                    "is_bi_modal": item["is_bi_modal"],
+                    "is_phase_shifting": item["is_phase_shifting"],
                 }
                 for item in plan["selected"]
             ],
