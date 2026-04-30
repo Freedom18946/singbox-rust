@@ -64,8 +64,8 @@ Planner filters: --latest-health, --latest-run-health,
 
 - R62 Path B: closed via R62-A generic health/phase metrics and R62-B
   planner predicates plus fake-protocol smoke tests.
-- R63 Path C: next focus; use dual_kernel_golden_spec.md S5 to select the next
-  high-priority BHV gap.
+- R63 Path C: reconnaissance landed; planner/user should pick R64 from
+  agents-only/archive/mt_real_02/r63_next_gap_proposal.md.
 - Do not restart sampler/dataplane patch work unless Stage-3 Path A
   captures a stable structural signal in a new sample regime.
 
