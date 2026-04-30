@@ -13,6 +13,14 @@ sys.path.insert(0, str(SCRIPT_DIR))
 
 import reality_vless_env_from_config as envtool  # noqa: E402
 import reality_vless_probe_batch as batch  # noqa: E402
+from dual_kernel_verification import (  # noqa: E402
+    passes_bi_modal,
+    passes_latest_health,
+    passes_latest_phase_dominance,
+    passes_latest_run_health,
+    passes_only_latest_run_health,
+    passes_phase_shifting,
+)
 
 LATEST_HEALTH_VALUES = {
     "latest_all_ok",
@@ -125,25 +133,6 @@ def is_phase_shifting(prior: dict[str, Any] | None) -> bool:
     return prior.get("is_phase_shifting") is True
 
 
-def matches_run_health_filter(counts: dict[str, int], filters: set[str]) -> bool:
-    if not filters:
-        return True
-    return any(counts.get(value, 0) > 0 for value in filters)
-
-
-def matches_only_run_health_filter(counts: dict[str, int], filters: set[str]) -> bool:
-    if not filters:
-        return True
-    present = {key for key, count in counts.items() if count > 0}
-    return bool(present) and present.issubset(filters)
-
-
-def matches_phase_dominance_filter(value: str | None, filters: set[str]) -> bool:
-    if not filters:
-        return True
-    return value in filters
-
-
 def build_plan(
     config: dict[str, Any],
     rollup: dict[str, Any],
@@ -209,30 +198,26 @@ def build_plan(
         buckets[reason].append(planned)
         candidates.append(planned)
 
-    if (
-        health_filter
-        or run_health_filter
-        or only_run_health_filter
-        or phase_dominance_filter
-        or latest_bi_modal_filter
-        or latest_phase_shifting_filter
-    ):
-        selected = [
-            item
-            for item in candidates
-            if (not health_filter or item.get("latest_health") in health_filter)
-            and matches_run_health_filter(item.get("latest_run_health_counts", {}), run_health_filter)
-            and matches_only_run_health_filter(
-                item.get("latest_run_health_counts", {}),
-                only_run_health_filter,
-            )
-            and matches_phase_dominance_filter(
-                item.get("latest_phase_dominance"),
-                phase_dominance_filter,
-            )
-            and (not latest_bi_modal_filter or item.get("is_bi_modal") is True)
-            and (not latest_phase_shifting_filter or item.get("is_phase_shifting") is True)
-        ]
+    filters = []
+    if health_filter:
+        filters.append(lambda item, allowed=health_filter: passes_latest_health(item, allowed))
+    if run_health_filter:
+        filters.append(lambda item, allowed=run_health_filter: passes_latest_run_health(item, allowed))
+    if only_run_health_filter:
+        filters.append(
+            lambda item, required=only_run_health_filter: passes_only_latest_run_health(item, required)
+        )
+    if phase_dominance_filter:
+        filters.append(
+            lambda item, allowed=phase_dominance_filter: passes_latest_phase_dominance(item, allowed)
+        )
+    if latest_bi_modal_filter:
+        filters.append(passes_bi_modal)
+    if latest_phase_shifting_filter:
+        filters.append(passes_phase_shifting)
+
+    if filters:
+        selected = [item for item in candidates if all(predicate(item) for predicate in filters)]
     else:
         selected = list(buckets["uncovered"])
         if include_failure_rechecks:

@@ -16,9 +16,9 @@ through R45-R60.
 Parity: 52/56 BHV (92.9%); ARCH-LIMIT-REALITY remains the accounting
 label.
 
-Current focus: stage-3 path selection. User-elected order is framework
-abstraction in R62, then next dual-kernel gap in R63. Stage-3 Path A
-(expand sample face) is on demand only.
+Current focus: stage-3 path selection. R62 framework abstraction is
+closed; next is the R63 dual-kernel gap. Stage-3 Path A (expand sample
+face) is on demand only.
 
 ## MT-REAL-02 Stage-2 Closure Summary
 
@@ -62,9 +62,9 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- R62 Path B: R62-A generic health/phase metric package done; R62-B
-  planner predicate extraction and fake-protocol smoke test pending.
-- R63 Path C: use dual_kernel_golden_spec.md S5 to select the next
+- R62 Path B: closed via R62-A generic health/phase metrics and R62-B
+  planner predicates plus fake-protocol smoke tests.
+- R63 Path C: next focus; use dual_kernel_golden_spec.md S5 to select the next
   high-priority BHV gap.
 - Do not restart sampler/dataplane patch work unless Stage-3 Path A
   captures a stable structural signal in a new sample regime.

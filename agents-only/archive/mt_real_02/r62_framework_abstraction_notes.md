@@ -48,3 +48,49 @@ must remain unchanged.
   backup.
 - R62-B should extract planner filter predicates and add a non-REALITY
   smoke test to prove the package is genuinely reusable.
+
+## Generic evidence schema (R62-B closure)
+
+R62-B closes the framework abstraction by extracting planner filter
+predicates from the protocol wrapper. A protocol-specific caller still
+owns evidence loading and plan rendering, but the filter semantics are
+now reusable.
+
+Per-outbound rollup entries consumed by the generic filters:
+
+- latest_label_counts
+- latest_run_health_counts (planner-facing latest run label counts)
+- latest_round_run_count
+- latest_divergence_run_count
+- latest_divergence_phase_counts
+- latest_divergence_phase_dominance
+- is_phase_shifting
+- dominant_phase_history
+
+Protocol-specific caller inputs:
+
+- divergence_phase_labels: frozenset[str]
+- outbound names, config shape, and evidence file layout
+- any protocol-specific phase label vocabulary
+
+Default thresholds, all overrideable at function call sites:
+
+- dominant_threshold=0.75
+- no_dominance_threshold=0.50
+- bi_modal ratio window=(0.25, 0.75)
+- bi_modal min_runs=6
+- phase_shifting window=3
+
+Planner filter primitives:
+
+- passes_latest_health
+- passes_latest_run_health
+- passes_only_latest_run_health
+- passes_latest_phase_dominance
+- passes_bi_modal
+- passes_phase_shifting
+
+The fake-protocol smoke tests use phase_alpha, phase_beta,
+phase_gamma, and phase_delta labels to verify that the health,
+phase-metric, and planner-filter layers have no dependency on the
+REALITY phase vocabulary.
