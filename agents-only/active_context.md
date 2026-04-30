@@ -1884,3 +1884,59 @@
   - `git diff --check` → PASS
   - `cargo check --workspace` → PASS
 - 下一步预告：Round 59-B 用新 rollup 视角对 `HK-A-BGP-2.0` 跑 longer repeat live batch，决定 `--runs 4` 或 `--runs 6` 以及 timeout 是否微调。
+
+## Round 59-B（HK longer repeat + phase dominance metric）
+
+- 本轮仍保持 classify-first，不改 ClientHello sampler、Vision raw/direct dataplane、REALITY read-loop，也不扩大 live 范围到非 HK 节点。
+- 工具推进：
+  - `scripts/tools/reality_vless_evidence_rollup.py`
+    - 每个 outbound 新增 `latest_divergence_run_count` 与 `latest_divergence_phase_dominance`。
+    - dominance denominator 严格使用含任意 divergence phase label 的 latest-run 数，不把 uniform timeout / same-failure run 算入分母。
+    - 阈值固定为 `>=0.75` dominant，`<0.50` no-dominance，中间为 mid-band。
+    - 顶层新增 `latest_phase_dominant_outbounds` 与 `latest_phase_no_dominance_outbounds`。
+  - `scripts/tools/reality_vless_probe_plan.py`
+    - 新增可重复 `--latest-phase-dominance {dominant,no_dominance,mid}`，可与 latest health / run health filters 组合。
+  - `scripts/tools/test_reality_probe_tools.py`
+    - 新增 dominance ratio、no-dominance tie-break、planner phase-dominance filter tests；Python tests 增至 `43` 个。
+- Pre-R59B corrected snapshot:
+  - `HK-A-BGP-2.0` latest round 仍来自 R57。
+  - `latest_divergence_run_count=3`，因为 R57 的 4 个 HK runs 里有 1 个是 same-failure run，不含 divergence phase label。
+  - `latest_divergence_phase_dominance={"dominant_phase":"app_minimal_diverged","dominant_count":2,"dominant_ratio":0.6667,"is_dominant":false,"is_no_dominance":false}`。
+  - 顶层 `latest_phase_dominant_outbounds=[]`，`latest_phase_no_dominance_outbounds=[]`。
+- Planner smoke:
+  - `latest_divergence + latest-run-health run_divergence + latest-phase-dominance no_dominance + mid` selected `1`: `HK-A-BGP-2.0倍率`。
+  - `latest_divergence + latest-run-health run_divergence + latest-phase-dominance dominant` selected `0`。
+- Round 59-B live run:
+  - batch:
+    - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/r59b-plan.json --target example.com:80 --runs 12 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r59b-hk-longer`
+  - selected_count: `1`
+  - executed_runs: `12`
+  - labels:
+    - `app_minimal_diverged=2`
+    - `app_pre_post_diverged=4`
+    - `bridge_io_diverged=1`
+    - `minimal_transport_diverged=1`
+    - `probe_io_all_timeout=11`
+    - `reality_all_timeout=10`
+  - latest run health after rollup: `run_divergence=6`, `run_same_failure=6`
+  - post-R59B dominance:
+    - `latest_divergence_run_count=6`
+    - `latest_divergence_phase_dominance={"dominant_phase":"app_pre_post_diverged","dominant_count":4,"dominant_ratio":0.6667,"is_dominant":false,"is_no_dominance":false}`
+- evidence:
+  - `agents-only/mt_real_02_evidence/round59b_hk_longer_repeat_summary.json`
+- Updated rollup:
+  - rounds: `12`
+  - executed runs: `74`
+  - all_ok runs: `21`
+  - latest phase dominant outbounds: `[]`
+  - latest phase no-dominance outbounds: `[]`
+  - `HK-A-BGP-2.0` remains mid-band.
+- 判定：
+  - HK 12 runs land in mid-band, with a tendency toward `app_pre_post_diverged` but not dominance.
+  - This is still not a sampler/dataplane signal; mark HK for one more longer-repeat round if continuing this branch.
+- gate：
+  - `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS (`43 tests`)
+  - `jq empty agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - ASCII scan for live rollup JSON/MD → PASS
+  - `git diff --check` → PASS
+  - `cargo check --workspace` → PASS

@@ -5949,3 +5949,109 @@
   - `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
 - `git diff --check` → PASS
 - `cargo check --workspace` → PASS
+
+## 2026-04-30 进展更新：Round 59-B HK longer repeat and phase dominance metric
+
+### 目标
+
+- Add a stable phase dominance metric for mixed divergence buckets.
+- Link planner selection to that metric without changing sampler/dataplane code.
+- Run a 12-sample HK longer repeat to decide whether the Round 57 mixed phase shape is no-dominance, dominant, or mid-band.
+
+### 实现
+
+- `scripts/tools/reality_vless_evidence_rollup.py`
+  - Adds per-outbound:
+    - `latest_divergence_run_count`
+    - `latest_divergence_phase_dominance`
+  - The denominator is the count of latest runs with at least one divergence phase label.
+  - Uniform timeout / same-failure runs are kept in run-health counts but do not enter the phase dominance denominator.
+  - Thresholds:
+    - `dominant_ratio >= 0.75` → dominant
+    - `dominant_ratio < 0.50` → no-dominance
+    - otherwise mid-band
+  - Adds top-level:
+    - `latest_phase_dominant_outbounds`
+    - `latest_phase_no_dominance_outbounds`
+- `scripts/tools/reality_vless_probe_plan.py`
+  - Adds repeatable `--latest-phase-dominance {dominant,no_dominance,mid}`.
+  - The filter composes with latest health, latest run health, and only-latest-run-health filters.
+- `scripts/tools/test_reality_probe_tools.py`
+  - Adds tests for dominance ratio, no-dominance tie-break, and planner phase dominance filtering.
+  - Combined Python test count is now `43`.
+
+### Pre-R59B snapshot
+
+- Strict denominator corrected the earlier planning assumption:
+  - R57 HK had `4` latest runs, but only `3` carried divergence phase labels.
+  - Pre-R59B `HK-A-BGP-2.0` therefore had:
+    - `latest_divergence_run_count = 3`
+    - `dominant_phase = app_minimal_diverged`
+    - `dominant_count = 2`
+    - `dominant_ratio = 0.6667`
+    - `is_dominant = false`
+    - `is_no_dominance = false`
+  - HK was mid-band, not no-dominance.
+- Planner smoke:
+  - `latest_divergence + run_divergence + phase no_dominance + mid` selected only `HK-A-BGP-2.0倍率`.
+  - `latest_divergence + run_divergence + phase dominant` selected `0`.
+
+### live execution
+
+- Batch command:
+  - `python3 scripts/tools/reality_vless_probe_batch.py --config agents-only/mt_real_01_evidence/phase3_ip_direct.json --plan-json /tmp/r59b-plan.json --target example.com:80 --runs 12 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r59b-hk-longer`
+- Actual execution:
+  - selected_count: `1`
+  - executed_runs: `12`
+  - by outbound: `HK-A-BGP-2.0倍率`
+- Raw label counts:
+  - `app_minimal_diverged=2`
+  - `app_pre_post_diverged=4`
+  - `bridge_io_diverged=1`
+  - `minimal_transport_diverged=1`
+  - `probe_io_all_timeout=11`
+  - `reality_all_timeout=10`
+
+### evidence
+
+- New evidence:
+  - `agents-only/mt_real_02_evidence/round59b_hk_longer_repeat_summary.json`
+- Interpretation written:
+  - `12 runs land in mid-band (max phase = app_pre_post_diverged at 0.6667). Tendency present but not dominant; defer sampler-related interpretation, mark for one more longer-repeat round.`
+
+### Rollup after R59-B
+
+- `total_rounds = 12`
+- `total_executed_runs = 74`
+- `total_all_ok_runs = 21`
+- HK latest run health:
+  - `run_divergence = 6`
+  - `run_same_failure = 6`
+- HK latest phase dominance:
+  - `latest_divergence_run_count = 6`
+  - `dominant_phase = app_pre_post_diverged`
+  - `dominant_count = 4`
+  - `dominant_ratio = 0.6667`
+  - `is_dominant = false`
+  - `is_no_dominance = false`
+- Top-level dominance lists:
+  - `latest_phase_dominant_outbounds = []`
+  - `latest_phase_no_dominance_outbounds = []`
+
+### 判定
+
+- HK remains a mixed run-health, mid-band phase bucket.
+- The 12-run repeat increases the denominator from `3` to `6`, but it still does not reach either no-dominance or dominant thresholds.
+- This provides no structural evidence for changing the ClientHello sampler, Vision raw/direct dataplane, or REALITY read-loop.
+- If this branch continues, HK should get one more longer-repeat round rather than sampler/dataplane work.
+
+### 验证
+
+- `PYTHONDONTWRITEBYTECODE=1 python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py` → PASS
+  - `43 tests`
+- `jq empty agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+- ASCII scan:
+  - `agents-only/mt_real_02_evidence/live_rollup.json` → PASS
+  - `agents-only/mt_real_02_evidence/live_rollup.md` → PASS
+- `git diff --check` → PASS
+- `cargo check --workspace` → PASS

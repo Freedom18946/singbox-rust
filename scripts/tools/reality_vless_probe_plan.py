@@ -26,6 +26,11 @@ LATEST_RUN_HEALTH_VALUES = {
     "run_divergence",
     "run_unknown",
 }
+LATEST_PHASE_DOMINANCE_VALUES = {
+    "dominant",
+    "no_dominance",
+    "mid",
+}
 
 
 def load_json(path: pathlib.Path) -> dict[str, Any]:
@@ -87,6 +92,24 @@ def latest_run_health_counts(prior: dict[str, Any] | None) -> dict[str, int]:
     }
 
 
+def latest_phase_dominance(prior: dict[str, Any] | None) -> dict[str, Any] | None:
+    if prior is None:
+        return None
+    value = prior.get("latest_divergence_phase_dominance")
+    return value if isinstance(value, dict) else None
+
+
+def phase_dominance_kind(prior: dict[str, Any] | None) -> str | None:
+    dominance = latest_phase_dominance(prior)
+    if dominance is None:
+        return None
+    if dominance.get("is_dominant") is True:
+        return "dominant"
+    if dominance.get("is_no_dominance") is True:
+        return "no_dominance"
+    return "mid"
+
+
 def matches_run_health_filter(counts: dict[str, int], filters: set[str]) -> bool:
     if not filters:
         return True
@@ -100,6 +123,12 @@ def matches_only_run_health_filter(counts: dict[str, int], filters: set[str]) ->
     return bool(present) and present.issubset(filters)
 
 
+def matches_phase_dominance_filter(value: str | None, filters: set[str]) -> bool:
+    if not filters:
+        return True
+    return value in filters
+
+
 def build_plan(
     config: dict[str, Any],
     rollup: dict[str, Any],
@@ -110,11 +139,13 @@ def build_plan(
     latest_health_filter: list[str] | None = None,
     latest_run_health_filter: list[str] | None = None,
     only_latest_run_health_filter: list[str] | None = None,
+    latest_phase_dominance_filter: list[str] | None = None,
 ) -> dict[str, Any]:
     covered = covered_outbounds(rollup)
     health_filter = set(latest_health_filter or [])
     run_health_filter = set(latest_run_health_filter or [])
     only_run_health_filter = set(only_latest_run_health_filter or [])
+    phase_dominance_filter = set(latest_phase_dominance_filter or [])
     buckets: dict[str, list[dict[str, Any]]] = {
         "uncovered": [],
         "prior_non_all_ok": [],
@@ -135,6 +166,8 @@ def build_plan(
         reason = classify_item(key, prior)
         health = latest_health(prior)
         run_counts = latest_run_health_counts(prior)
+        phase_dominance = latest_phase_dominance(prior)
+        phase_kind = phase_dominance_kind(prior)
         if health:
             health_counts[health] += 1
         planned = {
@@ -148,12 +181,14 @@ def build_plan(
             "reason": reason,
             "latest_health": health,
             "latest_run_health_counts": run_counts,
+            "latest_phase_dominance": phase_kind,
+            "latest_divergence_phase_dominance": phase_dominance,
             "prior": prior,
         }
         buckets[reason].append(planned)
         candidates.append(planned)
 
-    if health_filter or run_health_filter or only_run_health_filter:
+    if health_filter or run_health_filter or only_run_health_filter or phase_dominance_filter:
         selected = [
             item
             for item in candidates
@@ -162,6 +197,10 @@ def build_plan(
             and matches_only_run_health_filter(
                 item.get("latest_run_health_counts", {}),
                 only_run_health_filter,
+            )
+            and matches_phase_dominance_filter(
+                item.get("latest_phase_dominance"),
+                phase_dominance_filter,
             )
         ]
     else:
@@ -179,6 +218,7 @@ def build_plan(
         "latest_health_filter": sorted(health_filter),
         "latest_run_health_filter": sorted(run_health_filter),
         "only_latest_run_health_filter": sorted(only_run_health_filter),
+        "latest_phase_dominance_filter": sorted(phase_dominance_filter),
         "latest_health_counts": dict(sorted(health_counts.items())),
         "selected_count": len(selected),
         "selected": selected,
@@ -219,6 +259,13 @@ def main() -> None:
         default=[],
         help="Select ready outbounds whose latest round has only these run-health values.",
     )
+    parser.add_argument(
+        "--latest-phase-dominance",
+        action="append",
+        choices=sorted(LATEST_PHASE_DOMINANCE_VALUES),
+        default=[],
+        help="Select ready outbounds by latest divergence phase dominance bucket.",
+    )
     parser.add_argument("--output-json")
     args = parser.parse_args()
 
@@ -234,6 +281,7 @@ def main() -> None:
         args.latest_health,
         args.latest_run_health,
         args.only_latest_run_health,
+        args.latest_phase_dominance,
     )
     plan["config"] = str(config_path)
     plan["rollup_json"] = str(rollup_path)
@@ -250,6 +298,8 @@ def main() -> None:
                     "reason": item["reason"],
                     "latest_health": item["latest_health"],
                     "latest_run_health_counts": item["latest_run_health_counts"],
+                    "latest_phase_dominance": item["latest_phase_dominance"],
+                    "latest_divergence_phase_dominance": item["latest_divergence_phase_dominance"],
                 }
                 for item in plan["selected"]
             ],

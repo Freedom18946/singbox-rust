@@ -21,6 +21,8 @@ DIVERGENCE_PHASE_LABEL_ORDER = [
 ]
 DIVERGENCE_PHASE_LABELS = frozenset(DIVERGENCE_PHASE_LABEL_ORDER)
 DIVERGENCE_LABELS = DIVERGENCE_PHASE_LABELS
+PHASE_DOMINANCE_DOMINANT_THRESHOLD = 0.75
+PHASE_DOMINANCE_NO_DOMINANCE_THRESHOLD = 0.50
 RUN_HEALTH_VALUES = [
     "run_all_ok",
     "run_same_failure",
@@ -94,6 +96,45 @@ def divergence_phase_counts(runs: list[dict[str, Any]]) -> collections.Counter[s
             if label in labels:
                 counts[label] += 1
     return counts
+
+
+def divergence_run_count(runs: list[dict[str, Any]]) -> int:
+    count = 0
+    for run in runs:
+        if not isinstance(run, dict):
+            continue
+        labels = run.get("labels")
+        if not isinstance(labels, list):
+            continue
+        if any(label in DIVERGENCE_PHASE_LABELS for label in labels):
+            count += 1
+    return count
+
+
+def phase_dominance(phase_counts: dict[str, int], run_count: int) -> dict[str, Any] | None:
+    if run_count <= 0:
+        return None
+    ordered = sorted(
+        ((label, count) for label, count in phase_counts.items() if count > 0),
+        key=lambda item: (-item[1], item[0]),
+    )
+    if not ordered:
+        return {
+            "dominant_phase": None,
+            "dominant_count": 0,
+            "dominant_ratio": 0.0,
+            "is_dominant": False,
+            "is_no_dominance": True,
+        }
+    dominant_phase, dominant_count = ordered[0]
+    ratio = round(dominant_count / run_count, 4)
+    return {
+        "dominant_phase": dominant_phase,
+        "dominant_count": dominant_count,
+        "dominant_ratio": ratio,
+        "is_dominant": ratio >= PHASE_DOMINANCE_DOMINANT_THRESHOLD,
+        "is_no_dominance": ratio < PHASE_DOMINANCE_NO_DOMINANCE_THRESHOLD,
+    }
 
 
 def compact_runs_by_outbound(payload: dict[str, Any]) -> dict[str, list[dict[str, Any]]]:
@@ -206,6 +247,7 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
             )
             merge_counts(entry["run_health_counts"], run_health_counts)
             merge_counts(entry["divergence_phase_counts"], phase_counts)
+            phase_run_count = divergence_run_count(summary.get("runs", []))
             entry["history"].append(
                 {
                     "round": item["round"],
@@ -215,6 +257,8 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
                     "class_counts": summary.get("class_counts", {}),
                     "run_health_counts": dict(sorted(run_health_counts.items())),
                     "divergence_phase_counts": dict(sorted(phase_counts.items())),
+                    "divergence_run_count": phase_run_count,
+                    "divergence_phase_dominance": phase_dominance(dict(phase_counts), phase_run_count),
                     "runs": summary.get("runs", []),
                 }
             )
@@ -229,6 +273,8 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
     latest_mixed_run_health = []
     recovered = []
     latest_stable_same_failure = []
+    latest_phase_dominant = []
+    latest_phase_no_dominance = []
     latest_health_counts: collections.Counter[str] = collections.Counter()
     latest_run_health_counts: collections.Counter[str] = collections.Counter()
     latest_divergence_phase_total_counts: collections.Counter[str] = collections.Counter()
@@ -243,6 +289,12 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
         latest_statuses = evidence_tool.counter_value(latest, "status_counts")
         latest_run_counts = evidence_tool.counter_value(latest, "run_health_counts")
         latest_phase_counts = evidence_tool.counter_value(latest, "divergence_phase_counts")
+        latest_divergence_run_count = latest.get("divergence_run_count", 0)
+        if not isinstance(latest_divergence_run_count, int):
+            latest_divergence_run_count = 0
+        latest_phase_dominance = latest.get("divergence_phase_dominance")
+        if not isinstance(latest_phase_dominance, dict):
+            latest_phase_dominance = None
         latest_has_non_all_ok = has_non_all_ok_labels(latest_labels)
         latest_state = latest_health(latest_labels)
         historical_has_non_all_ok = has_non_all_ok_labels(dict(sorted(values["label_counts"].items())))
@@ -273,6 +325,11 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
                 latest_mixed_run_health.append(name)
         elif latest_state == "latest_all_ok" and historical_has_non_all_ok:
             recovered.append(name)
+        if latest_phase_dominance:
+            if latest_phase_dominance.get("is_dominant") is True:
+                latest_phase_dominant.append(name)
+            if latest_phase_dominance.get("is_no_dominance") is True:
+                latest_phase_no_dominance.append(name)
         by_outbound_json[name] = {
             "rounds": sorted(values["rounds"], key=round_sort_key),
             "status_counts": dict(sorted(values["status_counts"].items())),
@@ -287,6 +344,8 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
             "latest_class_counts": latest_classes,
             "latest_run_health_counts": latest_run_counts,
             "latest_divergence_phase_counts": latest_phase_counts,
+            "latest_divergence_run_count": latest_divergence_run_count,
+            "latest_divergence_phase_dominance": latest_phase_dominance,
             "latest_has_non_all_ok": latest_has_non_all_ok,
             "latest_health": latest_state,
             "historical_has_non_all_ok": historical_has_non_all_ok,
@@ -319,6 +378,8 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
             for label in DIVERGENCE_PHASE_LABEL_ORDER
             if latest_divergence_phase_total_counts.get(label, 0) > 0
         },
+        "latest_phase_dominant_outbounds": sorted(latest_phase_dominant),
+        "latest_phase_no_dominance_outbounds": sorted(latest_phase_no_dominance),
         "recovered_outbounds": recovered,
         "recovered_outbound_count": len(recovered),
         "latest_health_counts": dict(sorted(latest_health_counts.items())),
@@ -390,6 +451,33 @@ def markdown_table(rollup: dict[str, Any]) -> str:
             outbound_text = ", ".join(outbounds) if outbounds else "-"
             lines.append(f"- {label}: {count} ({outbound_text})")
         lines.append("")
+    dominant_outbounds = rollup.get("latest_phase_dominant_outbounds", [])
+    no_dominance_outbounds = rollup.get("latest_phase_no_dominance_outbounds", [])
+    by_outbound = rollup.get("by_outbound", {})
+    mid_outbounds = []
+    if isinstance(by_outbound, dict):
+        for name, value in by_outbound.items():
+            if not isinstance(name, str) or not isinstance(value, dict):
+                continue
+            dominance = value.get("latest_divergence_phase_dominance")
+            if not isinstance(dominance, dict):
+                continue
+            if dominance.get("is_dominant") is True or dominance.get("is_no_dominance") is True:
+                continue
+            mid_outbounds.append(name)
+    dominant_text = ", ".join(dominant_outbounds) if dominant_outbounds else "(none)"
+    no_dominance_text = ", ".join(no_dominance_outbounds) if no_dominance_outbounds else "(none)"
+    mid_text = ", ".join(sorted(mid_outbounds)) if mid_outbounds else "(none)"
+    lines.extend(
+        [
+            "## Latest phase dominance",
+            "",
+            f"- dominant outbounds (>=0.75): {dominant_text}",
+            f"- no-dominance outbounds (<0.50): {no_dominance_text}",
+            f"- mid-band outbounds (0.50-0.75): {mid_text}",
+            "",
+        ]
+    )
     return "\n".join(lines)
 
 

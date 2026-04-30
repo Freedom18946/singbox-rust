@@ -838,6 +838,108 @@ class RealityEvidenceRollupTests(unittest.TestCase):
         self.assertEqual(outbound["divergence_phase_counts"], {})
         self.assertEqual(built["latest_divergence_phase_summary"], {})
 
+    def test_rollup_computes_phase_dominance_ratio(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round16.json"
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "16",
+                        {"app_minimal_diverged": 3, "bridge_io_diverged": 1},
+                        {"ok": 4, "timeout": 32},
+                        {
+                            "HK-A": {
+                                "label_counts": {
+                                    "app_minimal_diverged": 3,
+                                    "bridge_io_diverged": 1,
+                                },
+                                "class_counts": {"ok": 4, "timeout": 32},
+                            }
+                        },
+                        runs=[
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 1,
+                                "status": "completed",
+                                "labels": ["app_minimal_diverged"],
+                                "class_counts": {"ok": 1, "timeout": 8},
+                            },
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 2,
+                                "status": "completed",
+                                "labels": ["app_minimal_diverged"],
+                                "class_counts": {"ok": 1, "timeout": 8},
+                            },
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 3,
+                                "status": "completed",
+                                "labels": ["app_minimal_diverged"],
+                                "class_counts": {"ok": 1, "timeout": 8},
+                            },
+                            {
+                                "outbound": "HK-A",
+                                "run_index": 4,
+                                "status": "completed",
+                                "labels": ["bridge_io_diverged"],
+                                "class_counts": {"ok": 1, "timeout": 8},
+                            },
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        outbound = built["by_outbound"]["HK-A"]
+        dominance = outbound["latest_divergence_phase_dominance"]
+        self.assertEqual(outbound["latest_divergence_run_count"], 4)
+        self.assertEqual(dominance["dominant_phase"], "app_minimal_diverged")
+        self.assertEqual(dominance["dominant_count"], 3)
+        self.assertEqual(dominance["dominant_ratio"], 0.75)
+        self.assertTrue(dominance["is_dominant"])
+        self.assertFalse(dominance["is_no_dominance"])
+        self.assertEqual(built["latest_phase_dominant_outbounds"], ["HK-A"])
+
+    def test_rollup_marks_no_dominance_when_below_threshold(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "round17.json"
+            labels = {
+                "app_minimal_diverged": 1,
+                "app_pre_post_diverged": 1,
+                "bridge_io_diverged": 1,
+                "minimal_transport_diverged": 1,
+            }
+            path.write_text(
+                json.dumps(
+                    self.sample_evidence(
+                        "17",
+                        labels,
+                        {"ok": 4, "timeout": 32},
+                        {"HK-A": {"label_counts": labels, "class_counts": {"ok": 4, "timeout": 32}}},
+                        runs=[
+                            {
+                                "outbound": "HK-A",
+                                "run_index": index,
+                                "status": "completed",
+                                "labels": [label],
+                                "class_counts": {"ok": 1, "timeout": 8},
+                            }
+                            for index, label in enumerate(sorted(labels), start=1)
+                        ],
+                    )
+                ),
+                encoding="utf-8",
+            )
+            built = rollup.build_rollup([path])
+        dominance = built["by_outbound"]["HK-A"]["latest_divergence_phase_dominance"]
+        self.assertEqual(dominance["dominant_phase"], "app_minimal_diverged")
+        self.assertEqual(dominance["dominant_count"], 1)
+        self.assertEqual(dominance["dominant_ratio"], 0.25)
+        self.assertFalse(dominance["is_dominant"])
+        self.assertTrue(dominance["is_no_dominance"])
+        self.assertEqual(built["latest_phase_no_dominance_outbounds"], ["HK-A"])
+
     def test_markdown_table_contains_round_rows(self):
         built = {
             "total_rounds": 1,
@@ -1016,6 +1118,80 @@ class RealityProbePlanTests(unittest.TestCase):
             ["run_all_ok"],
         )
         self.assertEqual(built["selected"], [])
+
+    def test_planner_filters_by_phase_dominance(self):
+        rollup_data = {
+            "total_rounds": 1,
+            "total_executed_runs": 12,
+            "by_outbound": {
+                "HK-A-BGP-0.3": {
+                    "latest_label_counts": {"app_minimal_diverged": 4},
+                    "latest_health": "latest_divergence",
+                    "latest_run_health_counts": {"run_divergence": 4},
+                    "latest_divergence_phase_dominance": {
+                        "dominant_phase": "app_minimal_diverged",
+                        "dominant_count": 3,
+                        "dominant_ratio": 0.75,
+                        "is_dominant": True,
+                        "is_no_dominance": False,
+                    },
+                },
+                "JP-A-BGP-1.0": {
+                    "latest_label_counts": {"app_minimal_diverged": 4},
+                    "latest_health": "latest_divergence",
+                    "latest_run_health_counts": {"run_divergence": 4},
+                    "latest_divergence_phase_dominance": {
+                        "dominant_phase": "app_minimal_diverged",
+                        "dominant_count": 1,
+                        "dominant_ratio": 0.25,
+                        "is_dominant": False,
+                        "is_no_dominance": True,
+                    },
+                },
+                "NEW-A-BGP-1.0": {
+                    "latest_label_counts": {"app_minimal_diverged": 5},
+                    "latest_health": "latest_divergence",
+                    "latest_run_health_counts": {"run_divergence": 5},
+                    "latest_divergence_phase_dominance": {
+                        "dominant_phase": "app_minimal_diverged",
+                        "dominant_count": 3,
+                        "dominant_ratio": 0.6,
+                        "is_dominant": False,
+                        "is_no_dominance": False,
+                    },
+                },
+            },
+        }
+        no_dominance = plan.build_plan(
+            self.sample_config(),
+            rollup_data,
+            None,
+            False,
+            False,
+            False,
+            None,
+            None,
+            None,
+            ["no_dominance"],
+        )
+        self.assertEqual([item["key"] for item in no_dominance["selected"]], ["JP-A-BGP-1.0"])
+
+        dominant_or_mid = plan.build_plan(
+            self.sample_config(),
+            rollup_data,
+            None,
+            False,
+            False,
+            False,
+            None,
+            None,
+            None,
+            ["dominant", "mid"],
+        )
+        self.assertEqual(
+            [item["key"] for item in dominant_or_mid["selected"]],
+            ["HK-A-BGP-0.3", "NEW-A-BGP-1.0"],
+        )
 
     def test_build_plan_can_include_internal_sentinels_explicitly(self):
         built = plan.build_plan(self.sample_config(), self.sample_rollup(), None, False, False, True)
