@@ -1,14 +1,11 @@
 //! HTTP handlers for Clash API endpoints
-//! Clash API 端点的 HTTP 处理程序
 //!
-//! # Strategic Role / 战略角色
+//! # Strategic Role
 //!
 //! These handlers map HTTP requests to internal manager calls. They are responsible for
 //! translating internal data structures (like `Connection`, `Provider`) into the specific
 //! JSON format expected by Clash clients.
 //!
-//! 这些处理程序将 HTTP 请求映射到内部管理器调用。它们负责将内部数据结构（如 `Connection`、
-//! `Provider`）转换为 Clash 客户端期望的特定 JSON 格式。
 
 use crate::{clash::server::ApiState, types::*};
 use axum::{
@@ -501,7 +498,7 @@ fn parse_url_components(url: &str) -> (&str, u16, &str) {
     (host, port, path)
 }
 
-/// Perform an HTTP URL test through an outbound — matches Go's urltest.URLTest()
+/// Perform an HTTP URL test through an outbound - matches Go's urltest.URLTest()
 ///
 /// Connects through the outbound, sends an HTTP/1.1 GET, reads the first response bytes,
 /// and returns the elapsed time in ms. Returns Err on timeout or failure.
@@ -592,7 +589,7 @@ fn lookup_proxy_history(
 
 use std::sync::Arc;
 
-/// Get all proxies — matches Go's getProxies() + proxyInfo()
+/// Get all proxies - matches Go's getProxies() + proxyInfo()
 ///
 /// Returns a map of all available proxies including the GLOBAL virtual group.
 pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
@@ -712,7 +709,7 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     Json(json!({ "proxies": proxies }))
 }
 
-/// Get a single proxy — matches Go's getProxy() / proxyInfo()
+/// Get a single proxy - matches Go's getProxy() / proxyInfo()
 ///
 /// Returns detailed information about a specific proxy by name.
 pub async fn get_proxy(
@@ -846,7 +843,7 @@ pub async fn select_proxy(
     StatusCode::SERVICE_UNAVAILABLE
 }
 
-/// Get proxy delay/latency — matches Go's getProxyDelay()
+/// Get proxy delay/latency - matches Go's getProxyDelay()
 ///
 /// Tests the latency of a specific proxy via HTTP URL test.
 /// Returns `{"delay": N}` on success, 504 on timeout, 503 on connect error.
@@ -896,7 +893,7 @@ pub async fn get_proxy_delay(
     }
 }
 
-/// Get connections — dual HTTP/WebSocket mode, matches Go's getConnections()
+/// Get connections - dual HTTP/WebSocket mode, matches Go's getConnections()
 ///
 /// HTTP: returns single snapshot. WebSocket: pushes snapshot every second.
 pub async fn get_connections_or_ws(
@@ -931,7 +928,7 @@ pub async fn close_connection(
     StatusCode::NO_CONTENT
 }
 
-/// Close all connections — matches Go's closeAllConnections()
+/// Close all connections - matches Go's closeAllConnections()
 ///
 /// Closes all active connections and returns 204 NoContent.
 pub async fn close_all_connections(State(state): State<ApiState>) -> impl IntoResponse {
@@ -1000,7 +997,7 @@ pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
     Json(json!({ "rules": rules }))
 }
 
-/// Get current configuration — matches Go's getConfigs() / configSchema
+/// Get current configuration - matches Go's getConfigs() / configSchema
 ///
 /// Returns the current runtime configuration matching the Go configSchema exactly.
 pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
@@ -1099,7 +1096,7 @@ fn extract_ports_from_config(config: &sb_config::ir::ConfigIR) -> (u16, u16, Opt
     (http_port, socks_port, mixed_port)
 }
 
-/// Update configuration (PATCH /configs) — matches Go's patchConfigs()
+/// Update configuration (PATCH /configs) - matches Go's patchConfigs()
 ///
 /// Handles partial configuration updates. Currently only processes `mode` changes.
 pub async fn update_configs(
@@ -1460,7 +1457,7 @@ pub async fn flush_dns_cache(State(state): State<ApiState>) -> impl IntoResponse
     }
 }
 
-/// Get version information — matches Go's version() handler
+/// Get version information - matches Go's version() handler
 ///
 /// Returns version info compatible with Clash dashboards.
 pub async fn get_version(State(_state): State<ApiState>) -> impl IntoResponse {
@@ -1532,7 +1529,7 @@ pub async fn get_capabilities(State(_state): State<ApiState>) -> impl IntoRespon
     Json(payload)
 }
 
-/// Get status/health check — matches Go's hello() handler
+/// Get status/health check - matches Go's hello() handler
 ///
 /// Returns `{"hello": "clash"}` as expected by Clash-compatible dashboards.
 pub async fn get_status(State(_state): State<ApiState>) -> impl IntoResponse {
@@ -1636,7 +1633,7 @@ pub async fn get_dns_query(
     }
 }
 
-/// Get all proxy groups — matches Go's getGroupProxies()
+/// Get all proxy groups - matches Go's getGroupProxies()
 ///
 /// Returns only OutboundGroup proxies as an array, using proxyInfo format.
 pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse {
@@ -1762,7 +1759,7 @@ pub async fn get_meta_group(
     }
 }
 
-/// Test proxy group delay — matches Go's getGroupDelay()
+/// Test proxy group delay - matches Go's getGroupDelay()
 ///
 /// Concurrently tests latency of all member proxies in a group.
 /// Returns `{tag1: delay1, tag2: delay2, ...}` map.
@@ -1799,7 +1796,7 @@ pub async fn get_meta_group_delay(
                             })
                             .collect()
                     } else {
-                        // Not a group — test the single outbound
+                        // Not a group - test the single outbound
                         vec![(group_name.clone(), Some(outbound.clone()))]
                     }
                 } else {
@@ -1861,7 +1858,7 @@ pub async fn get_meta_group_delay(
     Json(serde_json::Value::Object(results)).into_response()
 }
 
-/// Get memory usage — matches Go's memory() handler
+/// Get memory usage - matches Go's memory() handler
 ///
 /// Supports both HTTP (returns current stats) and WebSocket (pushes every second).
 /// Go checks `Upgrade: websocket` header; Axum uses `Option<WebSocketUpgrade>`.
@@ -1877,7 +1874,7 @@ pub async fn get_meta_memory(
             .into_response();
     }
 
-    // HTTP fallback — return current snapshot
+    // HTTP fallback - return current snapshot
     let inuse = crate::clash::websocket::get_process_memory_pub();
     Json(json!({
         "inuse": inuse,
@@ -1902,7 +1899,7 @@ pub async fn trigger_gc(State(_state): State<ApiState>) -> impl IntoResponse {
     StatusCode::NO_CONTENT
 }
 
-/// Replace entire configuration (PUT /configs) — matches Go behavior
+/// Replace entire configuration (PUT /configs) - matches Go behavior
 ///
 /// Go's handler does nothing and returns 204 NoContent.
 pub async fn replace_configs(

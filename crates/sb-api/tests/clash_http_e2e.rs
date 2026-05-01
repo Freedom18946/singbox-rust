@@ -275,7 +275,7 @@ async fn test_patch_configs_invalid_port() -> anyhow::Result<()> {
     });
 
     let response = server.patch("/configs", body).await?;
-    // Go's patchConfigs only processes mode, ignoring everything else → 204
+    // Go's patchConfigs only processes mode, ignoring everything else -> 204
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     Ok(())
 }
@@ -641,7 +641,7 @@ async fn test_healthcheck_proxy_provider_with_data() -> anyhow::Result<()> {
         )
         .await?;
 
-    // No outbound registry → graceful healthy → 204
+    // No outbound registry -> graceful healthy -> 204
     assert_eq!(response.status(), StatusCode::NO_CONTENT);
     Ok(())
 }
@@ -1015,7 +1015,7 @@ fn test_http_e2e_coverage_summary() {
 
     let total_tests: usize = test_categories.iter().map(|(_, count)| count).sum();
 
-    println!("✅ HTTP E2E Test Coverage:");
+    println!("[PASS] HTTP E2E Test Coverage:");
     for (category, count) in &test_categories {
         println!("   - {}: {} tests", category, count);
     }
