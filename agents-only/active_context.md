@@ -68,7 +68,10 @@ Planner filters: --latest-health, --latest-run-health,
 - R67 completed LC-003 Sub-WP B: ServiceManager drives staged
   service startup with fault-isolated persisted health.
 - R68''/R68''' closed pre-existing sb-api websocket e2e quarantine.
-- Main next: R68' sb-api ASCII cleanup -> R69 Sub-WP C.
+- R68' completed sb-api ASCII cleanup.
+- R69 completed LC-003 Sub-WP C: /services/health projects
+  ServiceManager start outcomes through run_engine Clash API wiring.
+- Main next: LC-003 Sub-WP D selection.
 - CLAUDE.md 52/60 vs spec 52/56 fix is deferred to the post-LC-003
   cleanup round.
 

@@ -21,6 +21,7 @@ use sb_common::conntrack::ConnTracker;
 use sb_config::ir::ConfigIR;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
+use sb_core::service::ServiceManager;
 use std::{net::SocketAddr, sync::Arc};
 use tokio::sync::{broadcast, oneshot, watch};
 use tower_http::cors::{Any, CorsLayer};
@@ -48,6 +49,8 @@ pub struct ApiState {
     pub dns_resolver: Option<Arc<DnsResolver>>,
     /// Provider manager for proxy and rule providers
     pub provider_manager: Option<Arc<ProviderManager>>,
+    /// Runtime service manager for service health reporting
+    pub service_manager: Option<Arc<ServiceManager>>,
     /// Global configuration IR
     pub global_config: Option<Arc<ConfigIR>>,
     /// Cache file service for persistence
@@ -83,6 +86,7 @@ impl ApiState {
             outbound_registry: None,
             dns_resolver: None,
             provider_manager: Some(Arc::new(ProviderManager::default())),
+            service_manager: None,
             global_config: None,
             cache_file: None,
             urltest_history: None,
@@ -116,6 +120,7 @@ impl ApiState {
             outbound_registry: None,
             dns_resolver: None,
             provider_manager: Some(Arc::new(ProviderManager::default())),
+            service_manager: None,
             global_config: None,
             cache_file: None,
             urltest_history: None,
@@ -176,6 +181,12 @@ impl ClashApiServer {
     /// Override the provider manager wiring.
     pub fn with_provider_manager(mut self, provider_manager: Arc<ProviderManager>) -> Self {
         self.state.provider_manager = Some(provider_manager);
+        self
+    }
+
+    /// Set runtime service manager for `/services/health`.
+    pub fn with_service_manager(mut self, service_manager: Arc<ServiceManager>) -> Self {
+        self.state.service_manager = Some(service_manager);
         self
     }
 

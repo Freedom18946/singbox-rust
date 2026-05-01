@@ -1,18 +1,20 @@
 //! HTTP E2E Integration Tests for Clash API Endpoints
 //!
-//! This test suite validates all 37 Clash API endpoints with actual HTTP requests.
+//! This test suite validates all 38 Clash API endpoints with actual HTTP requests.
 //! Tests server startup, request handling, response validation, and error cases.
 //!
 //! Sprint 16 - Priority 1: Complete HTTP E2E test coverage
-//! Coverage: 37 endpoints across 11 categories
+//! Coverage: 38 endpoints across 12 categories
 
 use reqwest::{Client, StatusCode};
 use sb_api::{
     clash::server::ApiState, clash::ClashApiServer, managers::Provider as ManagerProvider,
     types::ApiConfig,
 };
+use sb_core::service::{Service, ServiceManager, StartStage};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
+use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::{sleep, Duration};
 
@@ -56,6 +58,16 @@ struct TestServer {
 impl TestServer {
     /// Start a new test server on a random port
     async fn start() -> anyhow::Result<Option<Self>> {
+        Self::start_with_server(Self::new_server()?).await
+    }
+
+    async fn start_with_service_manager(
+        service_manager: Arc<ServiceManager>,
+    ) -> anyhow::Result<Option<Self>> {
+        Self::start_with_server(Self::new_server()?.with_service_manager(service_manager)).await
+    }
+
+    fn new_server() -> anyhow::Result<ClashApiServer> {
         let config = ApiConfig {
             listen_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
             enable_cors: true,
@@ -67,7 +79,10 @@ impl TestServer {
             log_buffer_size: 100,
         };
 
-        let server = ClashApiServer::new(config)?;
+        Ok(ClashApiServer::new(config)?)
+    }
+
+    async fn start_with_server(server: ClashApiServer) -> anyhow::Result<Option<Self>> {
         let api_state = server.state().clone();
 
         // Get the actual bound address
@@ -159,8 +174,50 @@ impl TestServer {
     }
 }
 
+struct TestRuntimeService {
+    tag: &'static str,
+    fail_on_start: bool,
+}
+
+impl TestRuntimeService {
+    fn ok(tag: &'static str) -> Self {
+        Self {
+            tag,
+            fail_on_start: false,
+        }
+    }
+
+    fn failing(tag: &'static str) -> Self {
+        Self {
+            tag,
+            fail_on_start: true,
+        }
+    }
+}
+
+impl Service for TestRuntimeService {
+    fn service_type(&self) -> &str {
+        "test-runtime-service"
+    }
+
+    fn tag(&self) -> &str {
+        self.tag
+    }
+
+    fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if self.fail_on_start && stage == StartStage::Start {
+            return Err("intentional service failure".into());
+        }
+        Ok(())
+    }
+
+    fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
+}
+
 // ============================================================================
-// Core Endpoints (5/37)
+// Core Endpoints (7/38)
 // ============================================================================
 
 /// Test GET / - Health check endpoint
@@ -229,6 +286,84 @@ async fn test_get_capabilities() -> anyhow::Result<()> {
         .get("capability_matrix")
         .and_then(|v| v.as_array())
         .is_some());
+    Ok(())
+}
+
+/// Test GET /services/health - Empty runtime service set
+#[tokio::test]
+async fn test_get_services_health_empty() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+    let response = server.get("/services/health").await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = response.json().await?;
+    assert_eq!(json.get("healthy").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        json.get("services")
+            .and_then(|v| v.as_array())
+            .map(Vec::len),
+        Some(0)
+    );
+    Ok(())
+}
+
+/// Test GET /services/health - Runtime ServiceManager status projection
+#[tokio::test]
+async fn test_get_services_health_from_service_manager() -> anyhow::Result<()> {
+    let service_manager = Arc::new(ServiceManager::new());
+    service_manager
+        .add_service(
+            "ok-svc".to_string(),
+            Arc::new(TestRuntimeService::ok("ok-svc")),
+        )
+        .await;
+    service_manager
+        .add_service(
+            "fail-svc".to_string(),
+            Arc::new(TestRuntimeService::failing("fail-svc")),
+        )
+        .await;
+    service_manager.start_all().await;
+
+    let Some(server) = TestServer::start_with_service_manager(service_manager).await? else {
+        return Ok(());
+    };
+    let response = server.get("/services/health").await?;
+
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = response.json().await?;
+    assert_eq!(json.get("healthy").and_then(|v| v.as_bool()), Some(false));
+
+    let services = json
+        .get("services")
+        .and_then(|v| v.as_array())
+        .expect("services array");
+    assert_eq!(services.len(), 2);
+
+    let failed = services
+        .iter()
+        .find(|service| service.get("tag").and_then(|v| v.as_str()) == Some("fail-svc"))
+        .expect("fail-svc entry");
+    assert_eq!(
+        failed.get("status").and_then(|v| v.as_str()),
+        Some("Failed")
+    );
+    assert_eq!(
+        failed.get("error").and_then(|v| v.as_str()),
+        Some("intentional service failure")
+    );
+
+    let running = services
+        .iter()
+        .find(|service| service.get("tag").and_then(|v| v.as_str()) == Some("ok-svc"))
+        .expect("ok-svc entry");
+    assert_eq!(
+        running.get("status").and_then(|v| v.as_str()),
+        Some("Running")
+    );
+    assert!(running.get("error").is_some_and(serde_json::Value::is_null));
     Ok(())
 }
 
@@ -1002,6 +1137,7 @@ async fn test_upgrade_external_ui_missing_url() -> anyhow::Result<()> {
 fn test_http_e2e_coverage_summary() {
     let test_categories = vec![
         ("Core Endpoints", 9), // GET /, GET /version, GET /capabilities, GET/PATCH/PUT /configs (with error cases)
+        ("Service Health", 2), // Empty runtime services + ServiceManager status projection
         ("Proxy Management", 3), // GET /proxies, PUT /proxies/:name, GET /proxies/:name/delay
         ("Connection Management", 3), // GET /connections, DELETE /connections, DELETE /connections/:id
         ("Rules", 1),                 // GET /rules
@@ -1020,10 +1156,10 @@ fn test_http_e2e_coverage_summary() {
         println!("   - {}: {} tests", category, count);
     }
     println!("   Total HTTP E2E Tests: {}", total_tests);
-    println!("   Endpoints Covered: 37/37 (100%)");
+    println!("   Endpoints Covered: 38/38 (100%)");
 
     assert_eq!(
-        total_tests, 44,
-        "Expected 44 HTTP E2E tests (37 endpoints + error cases + provider-with-data tests)"
+        total_tests, 46,
+        "Expected 46 HTTP E2E tests (38 endpoints + error cases + provider-with-data tests)"
     );
 }

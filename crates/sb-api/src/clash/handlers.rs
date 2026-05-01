@@ -13,7 +13,7 @@ use axum::{
     http::StatusCode,
     response::{IntoResponse, Json, Response},
 };
-use sb_core::outbound::OutboundImpl;
+use sb_core::{outbound::OutboundImpl, service::ServiceStatus};
 use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
@@ -2095,13 +2095,61 @@ pub async fn test_script(
 /// Get services health status (GET /services/health)
 ///
 /// Returns aggregated health status of all registered services.
-/// This is a basic implementation that returns a static healthy response.
-/// Full integration with RuntimeHealth would require additional plumbing.
-pub async fn get_services_health(State(_state): State<ApiState>) -> impl IntoResponse {
-    Json(json!({
-        "healthy": true,
-        "services": []
-    }))
+pub async fn get_services_health(State(state): State<ApiState>) -> impl IntoResponse {
+    let mut statuses = if let Some(service_manager) = &state.service_manager {
+        service_manager.health_status().await
+    } else {
+        Vec::new()
+    };
+    statuses.sort_by(|(left, _), (right, _)| left.cmp(right));
+
+    let services: Vec<ServiceHealthEntry> = statuses
+        .into_iter()
+        .map(|(tag, status)| ServiceHealthEntry::from_status(tag, status))
+        .collect();
+    let healthy = services.iter().all(|service| service.status == "Running");
+
+    Json(ServiceHealthResponse { healthy, services })
+}
+
+#[derive(Debug, Serialize)]
+struct ServiceHealthResponse {
+    healthy: bool,
+    services: Vec<ServiceHealthEntry>,
+}
+
+#[derive(Debug, Serialize)]
+struct ServiceHealthEntry {
+    tag: String,
+    status: &'static str,
+    error: Option<String>,
+}
+
+impl ServiceHealthEntry {
+    fn from_status(tag: String, status: ServiceStatus) -> Self {
+        match status {
+            ServiceStatus::Starting => Self {
+                tag,
+                status: "Starting",
+                error: None,
+            },
+            ServiceStatus::Running => Self {
+                tag,
+                status: "Running",
+                error: None,
+            },
+            ServiceStatus::Failed(error) => Self {
+                tag,
+                status: "Failed",
+                error: Some(error),
+            },
+            ServiceStatus::Stopped => Self {
+                tag,
+                status: "Stopped",
+                error: None,
+            },
+        }
+    }
 }
 
 /// Meta upgrade endpoint (GET /metaUpgrade)
