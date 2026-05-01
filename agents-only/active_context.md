@@ -62,16 +62,17 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- R65 completed LC-003 Sub-WP A: ServiceManager now persists
-  start_all() service outcomes for health_status().
-- R66' completed ASCII cleanup for context.rs and supervisor.rs.
-- R67 completed LC-003 Sub-WP B: ServiceManager drives staged
-  service startup with fault-isolated persisted health.
-- R68''/R68''' closed pre-existing sb-api websocket e2e quarantine.
-- R68' completed sb-api ASCII cleanup.
-- R69 completed LC-003 Sub-WP C: /services/health projects
-  ServiceManager start outcomes through run_engine Clash API wiring.
-- Main next: LC-003 Sub-WP D selection.
+- R68' (5e6aea0b) + R69 (677eafd6): pushed pre-validator-approval;
+  retro-verified per RETRO-v3 + R68'-AUDIT. R68' deduplicated bilingual
+  managers.rs docs (84 CJK lines paired with pre-existing English;
+  semantics preserved, A3 spot-check 3/3). R69 added 2 e2e cases vs
+  spec 1 (re-baselined clash_http_e2e to 49).
+- Pre-existing baseline drifts (out of LC-003 scope, queued
+  separately): sb-tls clippy regressions (V3.b at c9499a39); make
+  boundaries 5 assertion fails (V6, validator/v2 refactor + runtime
+  seam splits).
+- LC-003 DAG: A/B/C done. Next: Sub-WP D Phase 1 (recon) -> D Phase 2
+  (impl).
 - CLAUDE.md 52/60 vs spec 52/56 fix is deferred to the post-LC-003
   cleanup round.
 
