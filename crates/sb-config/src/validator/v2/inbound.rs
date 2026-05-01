@@ -187,6 +187,10 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
             "direct" => InboundType::Direct,
             "dns" => InboundType::Dns,
             "ssh" => InboundType::Ssh,
+            "shadowsocks" => InboundType::Shadowsocks,
+            "hysteria" => InboundType::Hysteria,
+            "hysteria2" => InboundType::Hysteria2,
+            "tuic" => InboundType::Tuic,
             _ => InboundType::Socks,
         };
         // Common fields
@@ -623,6 +627,10 @@ mod tests {
             ("direct", InboundType::Direct),
             ("dns", InboundType::Dns),
             ("ssh", InboundType::Ssh),
+            ("shadowsocks", InboundType::Shadowsocks),
+            ("hysteria", InboundType::Hysteria),
+            ("hysteria2", InboundType::Hysteria2),
+            ("tuic", InboundType::Tuic),
             ("unknown_type", InboundType::Socks), // fallback
         ];
         for (type_str, expected) in types {
@@ -632,6 +640,36 @@ mod tests {
                 ir.inbounds[0].ty, expected,
                 "type '{}' should map to {:?}",
                 type_str, expected
+            );
+        }
+    }
+
+    /// Regression: every inbound `type` listed in v2_schema.json must dispatch
+    /// to its dedicated `InboundType` variant via `lower_inbounds`. Prevents
+    /// silent fallthrough to `InboundType::Socks` for schema-blessed types
+    /// (the bug surfaced via Sub-WP D Phase 2-A2 G2 with `shadowsocks`).
+    #[test]
+    fn lower_inbounds_handles_all_schema_types() {
+        let schema_aligned: &[(&str, InboundType)] = &[
+            ("socks", InboundType::Socks),
+            ("http", InboundType::Http),
+            ("tun", InboundType::Tun),
+            ("mixed", InboundType::Mixed),
+            ("direct", InboundType::Direct),
+            ("hysteria", InboundType::Hysteria),
+            ("hysteria2", InboundType::Hysteria2),
+            ("tuic", InboundType::Tuic),
+            ("shadowsocks", InboundType::Shadowsocks),
+        ];
+        for (ty_str, expected) in schema_aligned {
+            let doc = json!({"inbounds": [{"type": ty_str, "listen": "127.0.0.1:0"}]});
+            let ir = lower(&doc);
+            assert_eq!(
+                ir.inbounds.first().map(|i| i.ty.clone()),
+                Some(expected.clone()),
+                "schema type '{}' must dispatch to {:?}",
+                ty_str,
+                expected
             );
         }
     }

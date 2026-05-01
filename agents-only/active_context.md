@@ -62,6 +62,10 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
+- v2-validator-inbound-completeness fix: lower_inbounds was silently
+  mapping `shadowsocks` (and `hysteria`/`hysteria2`/`tuic`) to
+  InboundType::Socks; explicit arms now cover all 4. Regression test
+  added. Unblocks Sub-WP D Phase 2-A2 RESUME.
 - R68' (5e6aea0b) + R69 (677eafd6): pushed pre-validator-approval;
   retro-verified per RETRO-v3 + R68'-AUDIT. R68' deduplicated bilingual
   managers.rs docs (84 CJK lines paired with pre-existing English;
@@ -70,11 +74,9 @@ Planner filters: --latest-health, --latest-run-health,
 - Pre-existing baseline drifts (out of LC-003 scope, queued
   separately): sb-tls clippy regressions (V3.b at c9499a39); make
   boundaries 5 assertion fails (V6, validator/v2 refactor + runtime
-  seam splits).
-- LC-003 DAG: A/B/C done. Next: Sub-WP D Phase 1 (recon) -> D Phase 2
-  (impl).
-- CLAUDE.md 52/60 vs spec 52/56 fix is deferred to the post-LC-003
-  cleanup round.
+  seam splits); inbound.rs 8 pre-existing CJK doc lines.
+- LC-003 DAG: A/B/C done. Next: Sub-WP D Phase 2-A2 RESUME (6 edits in
+  stash@{0}: sub-wp-D-A2-pending).
 
 ## Still-Valid Constraints
 
