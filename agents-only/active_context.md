@@ -62,21 +62,21 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- v2-validator-inbound-completeness fix: lower_inbounds was silently
-  mapping `shadowsocks` (and `hysteria`/`hysteria2`/`tuic`) to
-  InboundType::Socks; explicit arms now cover all 4. Regression test
-  added. Unblocks Sub-WP D Phase 2-A2 RESUME.
+- v2 validator fixes (4553af1e + this commit): inbound type dispatch
+  (fix-1 added shadowsocks/hysteria/hysteria2/tuic explicit arms) and
+  shadowsocks field lowering (fix-2 wires method/password from JSON to
+  IR). Cluster gap still open: vmess/vless/trojan/anytls/shadowtls/
+  naive inbounds also have hardcoded-None fields - deferred to future
+  v2-validator-completeness sweep WP.
 - R68' (5e6aea0b) + R69 (677eafd6): pushed pre-validator-approval;
   retro-verified per RETRO-v3 + R68'-AUDIT. R68' deduplicated bilingual
   managers.rs docs (84 CJK lines paired with pre-existing English;
   semantics preserved, A3 spot-check 3/3). R69 added 2 e2e cases vs
   spec 1 (re-baselined clash_http_e2e to 49).
-- Pre-existing baseline drifts (out of LC-003 scope, queued
-  separately): sb-tls clippy regressions (V3.b at c9499a39); make
-  boundaries 5 assertion fails (V6, validator/v2 refactor + runtime
-  seam splits); inbound.rs 8 pre-existing CJK doc lines.
-- LC-003 DAG: A/B/C done. Next: Sub-WP D Phase 2-A2 RESUME (6 edits in
-  stash@{0}: sub-wp-D-A2-pending).
+- Pre-existing baseline drifts (out of LC-003 scope, queued separate):
+  sb-tls clippy V3.b @c9499a39; make boundaries 5 assert fails (V6);
+  inbound.rs 8 CJK doc lines.
+- LC-003 DAG: A/B/C done. Next: Sub-WP D RESUME-r2 (stash@{0}).
 
 ## Still-Valid Constraints
 

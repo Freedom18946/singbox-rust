@@ -321,9 +321,16 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
                     }
                 })
             }),
-            // Protocol-specific fields (all default to None)
-            method: None,
-            password: None,
+            // Protocol-specific fields (most still default to None;
+            // shadowsocks `method`/`password` lowered for adapter parity).
+            method: i
+                .get("method")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
+            password: i
+                .get("password")
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
             users_shadowsocks: None,
             network: None,
             uuid: None,
@@ -672,6 +679,30 @@ mod tests {
                 expected
             );
         }
+    }
+
+    /// Regression: shadowsocks inbound builder requires `method` (and recommends
+    /// `password`); the v2 validator must wire both from JSON to IR. Previously
+    /// both were hardcoded to None, so even after fix-1 routed the type to
+    /// `InboundType::Shadowsocks`, the builder would warn-drop the inbound and
+    /// the managed_ssm_server registry would never see the tag (surfaced via
+    /// Sub-WP D Phase 2-A2 RESUME G2).
+    #[test]
+    fn lower_inbounds_lowers_shadowsocks_method_and_password() {
+        let doc = json!({
+            "inbounds": [{
+                "type": "shadowsocks",
+                "tag": "ss-test",
+                "listen": "127.0.0.1:0",
+                "method": "aes-256-gcm",
+                "password": "test-secret"
+            }]
+        });
+        let ir = lower(&doc);
+        let inbound = ir.inbounds.first().expect("inbound lowered");
+        assert_eq!(inbound.ty, InboundType::Shadowsocks);
+        assert_eq!(inbound.method.as_deref(), Some("aes-256-gcm"));
+        assert_eq!(inbound.password.as_deref(), Some("test-secret"));
     }
 
     #[test]
