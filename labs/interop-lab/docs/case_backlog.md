@@ -233,3 +233,15 @@
 2. P1 GUI replay 回归（L7 启动序列 + 切换序列）。
 3. P2 协议层与 WS 长稳回归。
 4. `env_limited` 样本补测并归因入档。
+
+## Known issue: resolved service error propagation gap (2026-05-03)
+
+`crates/sb-core/src/services/dns_forwarder.rs::start()` returns Ok(()) and
+spawns the bind via tokio::spawn; bind failures inside run_server() emit
+tracing::error! but never propagate to ServiceStatus::Failed. As a result,
+broken-by-design configurations (e.g., listen_port=1 on non-root) leave
+the service in Running state, defeating R67 fault-isolation visibility.
+
+Surfaced via Sub-WP D-ε P1'a recon. Fix path: capture run_server initial
+bind result via oneshot or AtomicBool back to start(), or restructure to
+sync-bind-first like ssmapi/derp do. Independent of LC-003 closure path.

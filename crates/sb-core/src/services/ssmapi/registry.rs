@@ -14,6 +14,12 @@ static REGISTRY: once_cell::sync::Lazy<DashMap<String, Weak<dyn ManagedSSMServer
 
 /// Register a managed Shadowsocks inbound for SSMAPI binding.
 pub fn register_managed_ssm_server(tag: &str, server: Weak<dyn ManagedSSMServer>) {
+    tracing::debug!(
+        target: "ssmapi_registry",
+        tag = %tag,
+        registry_ptr = ?(&*REGISTRY as *const DashMap<String, Weak<dyn ManagedSSMServer>>),
+        "register entry"
+    );
     if tag.trim().is_empty() {
         return;
     }
@@ -24,6 +30,13 @@ pub fn register_managed_ssm_server(tag: &str, server: Weak<dyn ManagedSSMServer>
 ///
 /// Returns `None` when the entry is missing or the Weak pointer has expired.
 pub fn get_managed_ssm_server(tag: &str) -> Option<Arc<dyn ManagedSSMServer>> {
+    tracing::debug!(
+        target: "ssmapi_registry",
+        tag = %tag,
+        registry_ptr = ?(&*REGISTRY as *const DashMap<String, Weak<dyn ManagedSSMServer>>),
+        registry_size = REGISTRY.len(),
+        "get entry"
+    );
     let tag = tag.trim();
     if tag.is_empty() {
         return None;

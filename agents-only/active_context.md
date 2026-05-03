@@ -68,15 +68,15 @@ Planner filters: --latest-health, --latest-run-health,
   IR). Cluster gap still open: vmess/vless/trojan/anytls/shadowtls/
   naive inbounds also have hardcoded-None fields - deferred to future
   v2-validator-completeness sweep WP.
-- R68' (5e6aea0b) + R69 (677eafd6): pushed pre-validator-approval;
-  retro-verified per RETRO-v3 + R68'-AUDIT. R68' deduplicated bilingual
-  managers.rs docs (84 CJK lines paired with pre-existing English;
-  semantics preserved, A3 spot-check 3/3). R69 added 2 e2e cases vs
-  spec 1 (re-baselined clash_http_e2e to 49).
-- Pre-existing baseline drifts (out of LC-003 scope, queued separate):
-  sb-tls clippy V3.b @c9499a39; make boundaries 5 assert fails (V6);
-  inbound.rs 8 CJK doc lines.
-- LC-003 DAG: A/B/C done. Next: Sub-WP D RESUME-r2 (stash@{0}).
+- WP ζ (this commit): 3 ssmapi_registry tracing::debug! diagnose
+  registry lookup paradox. Outcome 3' tag mismatch -- register tag=
+  "shadowsocks" (literal) vs get tag="ss-in" (configured). Next: WP
+  ssmapi-tag-string-canonical to fix ManagedSSMServer::tag() impl
+  on ShadowsocksInboundAdapter, then ε retry.
+- resolved-error-propagation filed in case_backlog.md as B-tier known
+  issue (spawn-Ok start() pattern silently swallows bind failures).
+- LC-003 DAG: A/B/C done. Sub-WP D RESUME-r2 6 files in stash@{0},
+  unblock pending ssmapi-tag-canonical fix WP.
 
 ## Still-Valid Constraints
 
