@@ -23,19 +23,11 @@ face) is on demand only.
 ## MT-REAL-02 Stage-2 Closure Summary
 
 Five latest non-all_ok candidates were falsified as noise by tooling
-and live evidence:
-
-- Node-level dead buckets: JP-A-BGP-0.3, JP-A-BGP-1.0,
-  UK-A-BGP-0.5, US-A-BGP-0.5.
-- Bi-modal plus phase-shifting noise: HK-A-BGP-2.0.
-- Recovered: TW-A-BGP-1.0, US-A-BGP-0.8.
-- Latest all_ok baseline: 16 outbounds.
-
-Evidence evolution and falsified hypotheses:
-`agents-only/archive/mt_real_02/round_45_60_evidence_framework.md`
-
+and live evidence. Latest all_ok baseline: 16 outbounds. Full evidence
+evolution and falsified hypotheses live in
+`agents-only/archive/mt_real_02/round_45_60_evidence_framework.md`.
 Stage-2 closure rationale and stage-3 options:
-`agents-only/archive/mt_real_02/closure_report.md`
+`agents-only/archive/mt_real_02/closure_report.md`.
 
 ## Evidence Framework Capability
 
@@ -62,21 +54,25 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- v2 validator fixes (4553af1e + this commit): inbound type dispatch
-  (fix-1 added shadowsocks/hysteria/hysteria2/tuic explicit arms) and
-  shadowsocks field lowering (fix-2 wires method/password from JSON to
-  IR). Cluster gap still open: vmess/vless/trojan/anytls/shadowtls/
-  naive inbounds also have hardcoded-None fields - deferred to future
+- v2 validator fixes (4553af1e + 6e5c1a85 + this commit): inbound
+  type dispatch (fix-1 added shadowsocks/hysteria/hysteria2/tuic
+  arms), shadowsocks field lowering (fix-2 wires method/password
+  from JSON to IR), and inbound tag lowering (fix-3 reads "tag"
+  || "name" so post-migration JSON populates IR.tag). Cluster gap
+  still open: vmess/vless/trojan/anytls/shadowtls/naive inbounds
+  also have hardcoded-None fields - deferred to future
   v2-validator-completeness sweep WP.
-- WP ζ (this commit): 3 ssmapi_registry tracing::debug! diagnose
-  registry lookup paradox. Outcome 3' tag mismatch -- register tag=
-  "shadowsocks" (literal) vs get tag="ss-in" (configured). Next: WP
-  ssmapi-tag-string-canonical to fix ManagedSSMServer::tag() impl
-  on ShadowsocksInboundAdapter, then ε retry.
+- WP fix-managed-ssm-server-tag (this commit): root cause = V per
+  audit -- compat::migrate_to_v2 renames inbound tag->name, but
+  lower_inbounds read only "tag" so IR.tag was always None for any
+  config flowing through migrate_to_v2. Fix reads "tag" then "name"
+  fallback. Trace verification confirms register tag now matches
+  configured "ss-in"; ssmapi services now resolve and bind. Unblocks
+  LC-003 Sub-WP D ε retry.
 - resolved-error-propagation filed in case_backlog.md as B-tier known
   issue (spawn-Ok start() pattern silently swallows bind failures).
 - LC-003 DAG: A/B/C done. Sub-WP D RESUME-r2 6 files in stash@{0},
-  unblock pending ssmapi-tag-canonical fix WP.
+  ε retry now unblocked.
 
 ## Still-Valid Constraints
 

@@ -355,6 +355,43 @@ mod tests {
         );
     }
 
+    /// Regression (LC-003 fix-managed-ssm-server-tag): the production loader
+    /// chain `compat::migrate_to_v2` → `validator::v2::to_ir_v1` must preserve
+    /// the user-configured inbound tag, even though migration renames the
+    /// JSON field `tag` → `name`. Without this, every inbound IR.tag is None
+    /// in production, which silently breaks ssmapi tag lookup, route detour,
+    /// and any other consumer that relies on the inbound tag.
+    #[test]
+    fn migrate_then_lower_preserves_inbound_tag() {
+        let raw = json!({
+            "inbounds": [{
+                "type": "shadowsocks",
+                "tag": "ss-in",
+                "listen": "127.0.0.1:18908",
+                "method": "aes-256-gcm",
+                "password": "x"
+            }]
+        });
+        let (migrated, _diags) = migrate_to_v2(&raw);
+        assert!(
+            migrated.pointer("/inbounds/0/tag").is_none(),
+            "migrate_to_v2 must remove inbound 'tag' (verified by sibling test)"
+        );
+        assert_eq!(
+            migrated.pointer("/inbounds/0/name"),
+            Some(&json!("ss-in")),
+            "migrate_to_v2 must rename inbound tag to name"
+        );
+
+        let ir = crate::validator::v2::to_ir_v1(&migrated);
+        let inbound = ir.inbounds.first().expect("inbound lowered");
+        assert_eq!(
+            inbound.tag.as_deref(),
+            Some("ss-in"),
+            "post-migration to_ir_v1 must populate IR.tag from the renamed 'name' field"
+        );
+    }
+
     #[test]
     fn migrate_v2_diag_socks5_normalized() {
         let input = json!({

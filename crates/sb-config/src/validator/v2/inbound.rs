@@ -258,7 +258,19 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
         };
 
         ir.inbounds.push(crate::ir::InboundIR {
-            tag: i.get("tag").and_then(|v| v.as_str()).map(|s| s.to_string()),
+            // Read both "tag" (raw V2 input, used by direct callers like
+            // tests) and "name" (canonical post-migration field, since
+            // compat::migrate_to_v2 renames inbound `tag` → `name`). Without
+            // the "name" fallback, IR.tag is None for every config that
+            // flows through migrate_to_v2 (i.e. all production loads via
+            // config_from_raw_value), which silently breaks ssmapi tag
+            // lookup and any other consumer that relies on the configured
+            // inbound tag.
+            tag: i
+                .get("tag")
+                .or_else(|| i.get("name"))
+                .and_then(|v| v.as_str())
+                .map(|s| s.to_string()),
             ty,
             listen,
             port,
@@ -703,6 +715,51 @@ mod tests {
         assert_eq!(inbound.ty, InboundType::Shadowsocks);
         assert_eq!(inbound.method.as_deref(), Some("aes-256-gcm"));
         assert_eq!(inbound.password.as_deref(), Some("test-secret"));
+    }
+
+    /// Regression (LC-003 fix-managed-ssm-server-tag): `compat::migrate_to_v2`
+    /// renames inbound `tag` → `name`, so post-migration JSON only carries
+    /// `name`. `lower_inbounds` must read both keys so production configs
+    /// (which always flow through migrate_to_v2 in `config_from_raw_value`)
+    /// preserve the user-configured tag in `InboundIR.tag`. Without this,
+    /// `build_shadowsocks_inbound` falls back to `ShadowsocksInboundAdapter::new`
+    /// which hardcodes `tag="shadowsocks"`, and the ssmapi service registry
+    /// stores the adapter under the wrong key.
+    #[test]
+    fn lower_inbounds_reads_name_field_for_tag_post_migration() {
+        let doc = json!({
+            "inbounds": [{
+                "type": "shadowsocks",
+                "name": "ss-in",
+                "listen": "127.0.0.1:18908",
+                "method": "aes-256-gcm",
+                "password": "x"
+            }]
+        });
+        let ir = lower(&doc);
+        let inbound = ir.inbounds.first().expect("inbound lowered");
+        assert_eq!(
+            inbound.tag.as_deref(),
+            Some("ss-in"),
+            "lower_inbounds must read 'name' as IR.tag (post-migration field)"
+        );
+    }
+
+    /// When both `tag` and `name` are present (raw V2 input, no migration),
+    /// `tag` wins. This preserves the historical lowering semantics that
+    /// existing tests rely on.
+    #[test]
+    fn lower_inbounds_prefers_tag_over_name() {
+        let doc = json!({
+            "inbounds": [{
+                "type": "http",
+                "tag": "tag-wins",
+                "name": "name-loses",
+                "listen": "127.0.0.1:0"
+            }]
+        });
+        let ir = lower(&doc);
+        assert_eq!(ir.inbounds[0].tag.as_deref(), Some("tag-wins"));
     }
 
     #[test]
