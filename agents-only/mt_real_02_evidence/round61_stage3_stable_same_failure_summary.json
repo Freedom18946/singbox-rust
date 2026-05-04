@@ -1,0 +1,197 @@
+{
+  "round": "61",
+  "date": "2026-05-04",
+  "description": "R67 stage-3 path A: stable same-failure recheck on 4 prior latest_same_failure outbounds (2 runs each)",
+  "source_summary": "/tmp/reality-vless-probe-batch-live-r61-stable/summary.json",
+  "command": "reality_vless_probe_batch.py --plan-json /tmp/reality-vless-r61-stable-same-failure-plan.json --runs 2 --target example.com:80 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "runs": 2,
+    "selected_count": 4
+  },
+  "summary": {
+    "total": 8,
+    "executed_runs": 8,
+    "status_counts": {
+      "completed": 8
+    },
+    "label_counts": {
+      "all_ok": 2,
+      "probe_io_all_connection_reset": 4,
+      "probe_io_all_reality_dial_eof": 2,
+      "reality_all_connection_reset": 4,
+      "reality_all_reality_dial_eof": 2
+    },
+    "class_counts": {
+      "connection_reset": 36,
+      "ok": 18,
+      "reality_dial_eof": 18
+    }
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 2,
+    "uniform_failure_labels": {
+      "reality_all_connection_reset": 4,
+      "reality_all_reality_dial_eof": 2
+    }
+  },
+  "by_outbound": {
+    "JP-A-BGP-0.3": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "probe_io_all_reality_dial_eof": 2,
+        "reality_all_reality_dial_eof": 2
+      },
+      "class_counts": {
+        "reality_dial_eof": 18
+      }
+    },
+    "JP-A-BGP-1.0": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "all_ok": 2
+      },
+      "class_counts": {
+        "ok": 18
+      }
+    },
+    "UK-A-BGP-0.5": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 2,
+        "reality_all_connection_reset": 2
+      },
+      "class_counts": {
+        "connection_reset": 18
+      }
+    },
+    "US-A-BGP-0.5": {
+      "status_counts": {
+        "completed": 2
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 2,
+        "reality_all_connection_reset": 2
+      },
+      "class_counts": {
+        "connection_reset": 18
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "JP-A-BGP-0.3",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_reality_dial_eof",
+        "reality_all_reality_dial_eof"
+      ],
+      "class_counts": {
+        "reality_dial_eof": 9
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-0.3",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_reality_dial_eof",
+        "reality_all_reality_dial_eof"
+      ],
+      "class_counts": {
+        "reality_dial_eof": 9
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-1.0",
+      "ordinal": 2,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "JP-A-BGP-1.0",
+      "ordinal": 2,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "US-A-BGP-0.5",
+      "ordinal": 3,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "US-A-BGP-0.5",
+      "ordinal": 3,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "UK-A-BGP-0.5",
+      "ordinal": 4,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "UK-A-BGP-0.5",
+      "ordinal": 4,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    }
+  ],
+  "interpretation": [
+    "JP-A-BGP-1.0 recovered to all_ok; the other 3 stayed in their respective node-level dead buckets (reality_dial_eof or connection_reset). probe_io and reality phases match on every failing run -> no transport-vs-app divergence. No structural signal."
+  ]
+}

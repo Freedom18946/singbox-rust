@@ -1,0 +1,106 @@
+{
+  "round": "61",
+  "date": "2026-05-04",
+  "description": "R67 stage-3 path A: phase-shifting bucket recheck on HK-A-BGP-2.0 (4 runs)",
+  "source_summary": "/tmp/reality-vless-probe-batch-live-r61-shifting/summary.json",
+  "command": "reality_vless_probe_batch.py --plan-json /tmp/reality-vless-r61-phase-shifting-plan.json --runs 4 --target example.com:80 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "runs": 4,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 4,
+    "executed_runs": 4,
+    "status_counts": {
+      "completed": 4
+    },
+    "label_counts": {
+      "probe_io_all_connection_reset": 4,
+      "reality_all_connection_reset": 4
+    },
+    "class_counts": {
+      "connection_reset": 36
+    }
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 0,
+    "uniform_failure_labels": {
+      "reality_all_connection_reset": 4
+    }
+  },
+  "by_outbound": {
+    "HK-A-BGP-2.0": {
+      "status_counts": {
+        "completed": 4
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 4,
+        "reality_all_connection_reset": 4
+      },
+      "class_counts": {
+        "connection_reset": 36
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-2.0",
+      "ordinal": 1,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    }
+  ],
+  "interpretation": [
+    "HK-A-BGP-2.0 returned uniform probe_io+reality connection_reset across 4/4 runs. A single same-failure round does not falsify the prior bi-modal/phase-shifting classification (closure_report requires is_phase_shifting=false stably across 3+ longer-repeat rounds). No new structural signal."
+  ]
+}

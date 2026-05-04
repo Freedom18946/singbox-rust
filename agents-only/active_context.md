@@ -22,12 +22,9 @@ face) is on demand only.
 
 ## MT-REAL-02 Stage-2 Closure Summary
 
-Five latest non-all_ok candidates were falsified as noise by tooling
-and live evidence. Latest all_ok baseline: 16 outbounds. Full evidence
-evolution and falsified hypotheses live in
-`agents-only/archive/mt_real_02/round_45_60_evidence_framework.md`.
-Stage-2 closure rationale and stage-3 options:
-`agents-only/archive/mt_real_02/closure_report.md`.
+Five latest non-all_ok candidates were falsified as noise. Full record
+in `agents-only/archive/mt_real_02/round_45_60_evidence_framework.md`;
+closure rationale + stage-3 paths in `archive/mt_real_02/closure_report.md`.
 
 ## Evidence Framework Capability
 
@@ -47,30 +44,36 @@ Planner filters: --latest-health, --latest-run-health,
 ## Current Build And Gate
 
 - cargo check --workspace: PASS
-- python3 -B -m unittest scripts/tools/test_reality_probe_tools.py
-  scripts/tools/test_reality_clienthello_family.py: 47 tests PASS
-- live_rollup.json/md reflects 13 rounds, 90 executed runs, 21 all_ok
-  runs.
+- python3 -B -m unittest test_reality_probe_tools
+  test_reality_clienthello_family test_dual_kernel_verification:
+  62 tests PASS (R67 2026-05-04)
+- live_rollup.json/md reflects 16 rounds, 105 executed runs, 24
+  all_ok runs (R67 2026-05-04 added 3 R61 stage-3 batches).
 
 ## Next Steps
 
-- R66 BHV-SV-005/006/007 (DIV-H-005) parity-promotion audit COMPLETED
-  (2026-05-04). Decision: **Class C — Go structural divergence**. Rust
-  honest: provider routes wired to `provider_manager` (handlers.rs:
-  1136-1264); `cargo test -p sb-api --test clash_http_e2e --
-  test_get_proxy_providers_with_data test_get_rule_providers_with_data
-  test_healthcheck_proxy_provider_with_data` → 3/3 PASS. Go fork
-  (`experimental/clashapi/{provider,ruleprovider}.go`): hard-coded
-  stubs (proxy `{providers: {}}` object, rule `{providers: []}` array
-  — shape divergence); `findProviderByName` / `findRuleProviderByName`
-  always 404 with `tunnel.{Proxy,Rule}Providers()` commented out;
-  per-name actions all `render.NoContent` with bodies commented out;
-  Go GET vs Rust POST on healthcheck. DIV-H-005,
-  mt_gui_04_{capability_inventory,gap_list} updated. BHV unchanged
-  (52/56). go_fork_source untouched.
-- R65 BHV-LC-003 (DIV-H-006) audit (commit 833753dc, 2026-05-04):
-  Class C — Rust honest broken-service fixture + live `/services/health`;
-  Go fork has no route, no `ServiceStatus`, fail-fast `Manager.Start`.
+- R67 MT-REAL-02 Stage-3 Path A Round 61 sample-face recon COMPLETED
+  (2026-05-04). Classification: **A — No new signal**. Three bounded
+  live batches (15 runs, 3 all_ok): (1) stable same-failure × 4
+  outbounds × 2 runs → JP-A-BGP-1.0 recovered, other 3 still in
+  same node-level dead bucket; (2) phase-shifting × HK-A-BGP-2.0 ×
+  4 runs → uniform probe_io+reality connection_reset, single round
+  does not falsify prior bi-modal per closure_report's 3+-round rule;
+  (3) sanity × 3 all_ok × 1 run → HK-A-BGP-0.3 healthy, HK-A-BGP-1.0
+  & 2.5 decayed to uniform connection_reset. probe_io class == reality
+  class on every failing run → no transport-vs-app signal. Three
+  evidence files in mt_real_02_evidence/round61_stage3_*; rollup
+  rebuilt (16 rounds, 105 runs, 24 all_ok; recovered 2→3; latest
+  stable same-failure 4→5; phase-shifting now empty in latest 3-round
+  window). No sampler/dataplane patch. BHV unchanged (52/56).
+- R66 BHV-SV-005/006/007 (DIV-H-005, commit b15e814c, 2026-05-04):
+  Class C — Rust honest provider routes (3/3 e2e PASS); Go fork has
+  hard-coded stubs, tunnel lookups commented out, method divergence
+  on healthcheck.
+- R65 BHV-LC-003 (DIV-H-006, commit 833753dc, 2026-05-04):
+  Class C — Rust honest broken-service fixture + live
+  `/services/health`; Go fork has no route, no `ServiceStatus`,
+  fail-fast `Manager.Start`.
 - v2 validator inbound field-lowering sweep
   (vmess/vless/trojan/anytls/shadowtls/naive) remains B-tier deferred.
 - resolved-error-propagation still on case_backlog.md as B-tier.

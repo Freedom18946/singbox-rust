@@ -1,0 +1,117 @@
+{
+  "round": "61",
+  "date": "2026-05-04",
+  "description": "R67 stage-3 path A: sanity recheck on 3 latest_all_ok outbounds with --include-covered (1 run each)",
+  "source_summary": "/tmp/reality-vless-probe-batch-live-r61-sanity/summary.json",
+  "command": "reality_vless_probe_batch.py --plan-json /tmp/reality-vless-r61-sanity-plan.json --runs 1 --target example.com:80 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000",
+  "selection": {
+    "config": "agents-only/mt_real_01_evidence/phase3_ip_direct.json",
+    "target": "example.com:80",
+    "runs": 1,
+    "selected_count": 3
+  },
+  "summary": {
+    "total": 3,
+    "executed_runs": 3,
+    "status_counts": {
+      "completed": 3
+    },
+    "label_counts": {
+      "all_ok": 1,
+      "probe_io_all_connection_reset": 2,
+      "reality_all_connection_reset": 2
+    },
+    "class_counts": {
+      "connection_reset": 18,
+      "ok": 9
+    }
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 1,
+    "uniform_failure_labels": {
+      "reality_all_connection_reset": 2
+    }
+  },
+  "by_outbound": {
+    "HK-A-BGP-0.3": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "all_ok": 1
+      },
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    "HK-A-BGP-1.0": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 1,
+        "reality_all_connection_reset": 1
+      },
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    "HK-A-BGP-2.5": {
+      "status_counts": {
+        "completed": 1
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 1,
+        "reality_all_connection_reset": 1
+      },
+      "class_counts": {
+        "connection_reset": 9
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "HK-A-BGP-0.3",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-1.0",
+      "ordinal": 2,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "HK-A-BGP-2.5",
+      "ordinal": 3,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    }
+  ],
+  "interpretation": [
+    "HK-A-BGP-0.3 still all_ok; HK-A-BGP-1.0 and HK-A-BGP-2.5 fell to uniform probe_io+reality connection_reset (node-level). Recovery/decay churn, no structural signal."
+  ]
+}

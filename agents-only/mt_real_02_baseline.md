@@ -6226,3 +6226,45 @@ sample regime first surfaces a stable structural signal.
   - `agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json` → PASS
 - `git diff --check` → PASS
 - `cargo check --workspace` → PASS
+
+---
+
+## Round 61 (R67 stage-3 path A sample-face recon)
+
+### 日期
+
+2026-05-04
+
+### 目标
+
+Cold-start re-check of the latest health buckets without touching
+sampler or dataplane. Three independently-planned bounded batches.
+
+### 三个批次结果
+
+**Batch A — stable same-failure (`run_same_failure` filter, 4 outbounds × 2 runs):**
+- JP-A-BGP-0.3倍率: 2/2 reality_dial_eof (still in node-level dead bucket)
+- JP-A-BGP-1.0倍率: 2/2 all_ok (recovered)
+- UK-A-BGP-0.5倍率: 2/2 connection_reset (still in node-level dead bucket)
+- US-A-BGP-0.5倍率: 2/2 connection_reset (still in node-level dead bucket)
+
+**Batch B — phase-shifting (HK-A-BGP-2.0倍率 × 4 runs):**
+- 4/4 uniform `probe_io_all_connection_reset` + `reality_all_connection_reset`
+- 单个均一同失败的 round 不能触发 closure_report 的 "is_phase_shifting=false stably across 3+ longer-repeat rounds" 重分类。
+
+**Batch C — sanity (3 latest_all_ok outbounds × 1 run):**
+- HK-A-BGP-0.3倍率: 1/1 all_ok
+- HK-A-BGP-1.0倍率: 1/1 connection_reset (newly decayed)
+- HK-A-BGP-2.5倍率: 1/1 connection_reset (newly decayed)
+
+### 判定（R67 分类 A：no new signal）
+
+- 所有失败 run 上 `probe_io` 与 `reality` 阶段同 class，无 transport-vs-app 偏差信号。
+- recovered=3, latest stable same-failure=5；`is_phase_shifting` 在最新 3-round 窗口因 R61 单 round 暂时清空，但按 closure_report 规则尚未达到稳定重分类阈值。
+- 最新 non-all_ok 仍是 node-level dead bucket + 衰减/恢复噪声，无 sampler/dataplane 信号。
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py` → 62 tests PASS
+- `cargo build -p app --features acceptance,clash_api,service_ssmapi --bin app` → PASS
+- 三个 batch summary 转 evidence + rollup 重建均通过；`live_rollup.json` 16 rounds, 105 runs, 24 all_ok。

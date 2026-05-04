@@ -1,16 +1,16 @@
 # MT-REAL-02 REALITY Live Evidence Rollup
 
-- rounds: 13
-- executed runs: 90
-- all_ok runs: 21
-- non-all_ok runs: 69
+- rounds: 16
+- executed runs: 105
+- all_ok runs: 24
+- non-all_ok runs: 81
 - has divergence: true
-- latest non-all_ok outbounds: 5
+- latest non-all_ok outbounds: 6
 - latest divergence outbounds: 1
 - latest stable divergence outbounds: 0
 - latest mixed run-health outbounds: 1
-- latest stable same-failure outbounds: 4
-- recovered outbounds: 2
+- latest stable same-failure outbounds: 5
+- recovered outbounds: 3
 
 ## Rounds
 
@@ -28,14 +28,17 @@
 | 57 | 4 | 0 | app_minimal_diverged=2, app_pre_post_diverged=1, minimal_transport_diverged=2, probe_io_all_timeout=4, reality_all_timeout=1 | connection_reset=2, reality_dial_eof=1, timeout=33 | true |
 | 58 | 8 | 0 | probe_io_all_connection_reset=4, probe_io_all_reality_dial_eof=2, probe_io_all_timeout=2, reality_all_connection_reset=4, reality_all_reality_dial_eof=2, reality_all_timeout=2 | connection_reset=36, reality_dial_eof=18, timeout=18 | false |
 | 60 | 16 | 0 | probe_io_all_connection_reset=8, probe_io_all_reality_dial_eof=4, probe_io_all_timeout=4, reality_all_connection_reset=8, reality_all_reality_dial_eof=4, reality_all_timeout=4 | connection_reset=72, reality_dial_eof=36, timeout=36 | false |
+| 61 | 8 | 2 | all_ok=2, probe_io_all_connection_reset=4, probe_io_all_reality_dial_eof=2, reality_all_connection_reset=4, reality_all_reality_dial_eof=2 | connection_reset=36, ok=18, reality_dial_eof=18 | false |
+| 61 | 4 | 0 | probe_io_all_connection_reset=4, reality_all_connection_reset=4 | connection_reset=36 | false |
+| 61 | 3 | 1 | all_ok=1, probe_io_all_connection_reset=2, reality_all_connection_reset=2 | connection_reset=18, ok=9 | false |
 | 59-B | 12 | 0 | app_minimal_diverged=2, app_pre_post_diverged=4, bridge_io_diverged=1, minimal_transport_diverged=1, probe_io_all_timeout=11, reality_all_timeout=10 | connection_reset=3, ok=1, reality_dial_eof=2, timeout=102 | true |
 
 ## Aggregates
 
-- labels: {"all_ok": 21, "app_minimal_diverged": 6, "app_pre_post_diverged": 7, "bridge_io_diverged": 2, "minimal_transport_diverged": 4, "probe_io_all_connection_reset": 21, "probe_io_all_post_dial_eof": 3, "probe_io_all_reality_dial_eof": 10, "probe_io_all_timeout": 28, "reality_all_connection_reset": 22, "reality_all_reality_dial_eof": 11, "reality_all_timeout": 25}
-- classes: {"connection_reset": 205, "ok": 220, "post_dial_eof": 6, "reality_dial_eof": 103, "timeout": 276}
-- latest health: {"latest_all_ok": 16, "latest_divergence": 1, "latest_same_failure": 4}
-- latest run health: {"run_all_ok": 15, "run_divergence": 6, "run_same_failure": 22}
+- labels: {"all_ok": 24, "app_minimal_diverged": 6, "app_pre_post_diverged": 7, "bridge_io_diverged": 2, "minimal_transport_diverged": 4, "probe_io_all_connection_reset": 31, "probe_io_all_post_dial_eof": 3, "probe_io_all_reality_dial_eof": 12, "probe_io_all_timeout": 28, "reality_all_connection_reset": 32, "reality_all_reality_dial_eof": 13, "reality_all_timeout": 25}
+- classes: {"connection_reset": 295, "ok": 247, "post_dial_eof": 6, "reality_dial_eof": 121, "timeout": 276}
+- latest health: {"latest_all_ok": 15, "latest_divergence": 1, "latest_same_failure": 5}
+- latest run health: {"run_all_ok": 17, "run_divergence": 6, "run_same_failure": 14}
 
 ## Latest divergence phase composition
 
@@ -56,4 +59,4 @@
 
 ## Phase-shifting outbounds
 
-- phase shifting (dominant phase changed across last 3 rounds): HK-A-BGP-2.0
+- phase shifting (dominant phase changed across last 3 rounds): (none)
