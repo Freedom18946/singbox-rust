@@ -10,15 +10,8 @@
 
 ## Strategic State
 
-Current phase: MT-REAL-02 stage-2 evidence-driven loop is closed
-through R45-R60.
-
-Parity: 52/56 BHV (92.9%); ARCH-LIMIT-REALITY remains the accounting
-label.
-
-Current focus: stage-3 path selection. R62 framework abstraction is
-closed; next is the R63 dual-kernel gap. Stage-3 Path A (expand sample
-face) is on demand only.
+Phase: MT-REAL-02 stage-2 closed (R45-R60); stage-3 path A active
+on demand. Parity 52/56 BHV (92.9%); ARCH-LIMIT-REALITY label.
 
 ## MT-REAL-02 Stage-2 Closure Summary
 
@@ -46,33 +39,38 @@ Planner filters: --latest-health, --latest-run-health,
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  68 tests PASS (R68 added 6 ordering tests).
-- live_rollup.json/md: 16 rounds, 105 runs, 24 all_ok (R68 rebuilt
-  with deterministic round ordering).
+  68 tests PASS.
+- live_rollup.json/md: 17 rounds, 109 runs, 24 all_ok (R69 added
+  R62 HK-confirmation #2).
 
 ## Next Steps
 
-- R68 rollup round-ordering audit COMPLETED (2026-05-04). Root cause:
-  `round_sort_key` returned `(0, int)` for pure-int rounds and
-  `(1, str)` for suffixed ones, so `"59-B"` sorted AFTER `"61"` and
-  pinned `HK-A-BGP-2.0.latest_round` to `59-B`. Fix: parse leading
-  int + suffix → `(major, suffix)`, giving `58 < 59 < 59-B < 60 < 61`;
-  also canonicalize `--evidence` input order by `(round_sort_key,
-  path basename)` so latest-state is argv-independent. After rebuild:
-  HK-A-BGP-2.0 → `latest_round=61`, `latest_health=latest_same_failure`,
-  no longer in `latest_divergence_outbounds` (now empty); joins
-  `latest_stable_same_failure_outbounds` (count 5→6). No sampler/
-  dataplane patch. BHV unchanged (52/56).
-- R67 stage-3 path A R61 recon (commit ba7aa8d7) classification A
-  (no new signal) still holds under repaired rollup; only the latest_*
-  attribution moved from divergence to same-failure for HK-A-BGP-2.0.
-- R66 BHV-SV-005/006/007 (DIV-H-005, commit b15e814c): Class C —
-  Rust honest provider routes; Go fork has hard-coded stubs.
-- R65 BHV-LC-003 (DIV-H-006, commit 833753dc): Class C — Rust honest
-  broken-service fixture + live `/services/health`; Go fork has no
-  route, no `ServiceStatus`, fail-fast `Manager.Start`.
+- R69 stage-3 current-sample closure + fresh-signal gate COMPLETED
+  (2026-05-04). Classification: **A — Current sample closed / no
+  new signal**. (1) HK-A-BGP-2.0 longer-repeat #2 (4 runs) → 4/4
+  uniform `probe_io_all_connection_reset` + `reality_all_connection_reset`,
+  zero divergence. probe_io class == reality class. R61 + R62 are
+  now 2/3 longer-repeat rounds satisfying closure_report's
+  reclassification rule; **one more longer-repeat round still
+  needed** before HK formally moves off bi-modal/phase-shifting.
+  (2) Default planner from current `phase3_ip_direct.json` selected
+  0 uncovered candidates; `--include-covered --limit 5` only surfaced
+  5 latest_all_ok recovery-watch nodes — committed sample face is
+  saturated. (3) Evidence file `round62_stage3_hk_confirmation_summary.json`
+  added; rollup totals 16→17 rounds, 105→109 runs, all_ok 24→24.
+  Latest lists unchanged from R68 baseline (latest_divergence still
+  empty; latest_stable_same_failure still the 6-node set). No
+  sampler/dataplane patch. BHV unchanged (52/56). go_fork_source
+  untouched. Fresh-signal gate verdict: **next signal-hunting round
+  requires user-supplied fresh REALITY/VLESS nodes or a new config**;
+  old samples cannot manufacture new structural signal.
+- R68 rollup round-ordering audit (c8f58140): fixed `round_sort_key`
+  + argv-independent input ordering; 68 Python tests pass.
+- R67 stage-3 path A R61 recon (ba7aa8d7) classification A still
+  holds under repaired rollup.
+- R66 BHV-SV-005/006/007 (DIV-H-005, b15e814c) Class C; R65
+  BHV-LC-003 (DIV-H-006, 833753dc) Class C.
 - v2 validator inbound field-lowering sweep B-tier deferred.
-- resolved-error-propagation still on case_backlog.md as B-tier.
 
 ## Still-Valid Constraints
 

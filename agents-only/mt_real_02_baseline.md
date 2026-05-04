@@ -6318,3 +6318,58 @@ def round_sort_key(value):
 - R67 的 classification A（no new signal）在重建后仍成立。
 - 所有失败 run 仍是 `probe_io class == reality class`，无 transport-vs-app divergence。
 - 没有新增 sampler/dataplane patch；BHV 账面 52/56 不变；`go_fork_source/*` 和 `.github/workflows/*` 未触碰。
+
+---
+
+## Round 69 (stage-3 current-sample closure + fresh-signal gate)
+
+### 日期
+
+2026-05-04
+
+### 目标
+
+在 R68 修复后的 rollup 基线上：
+1. 给 HK-A-BGP-2.0 添加第二轮 longer-repeat confirmation，让 closure_report 的 `3+ longer-repeat rounds` 重分类规则向前推进；
+2. 用 default planner 检查现有 `phase3_ip_direct.json` 还能否继续生成结构信号候选，建立 fresh sample face 的入口条件。
+
+不寻找 patch 机会。
+
+### HK-A-BGP-2.0 longer-repeat #2 结果
+
+- 命令：`reality_vless_probe_batch.py --outbound 'HK-A-BGP-2.0倍率' --runs 4 --target example.com:80 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000`
+- 4/4 runs 全部产出 `probe_io_all_connection_reset` + `reality_all_connection_reset`
+- divergence run count: 0
+- probe_io class == reality class on every run → 没有 transport-vs-app 偏差信号
+- 这是 HK-A-BGP-2.0 第 2 轮 longer-repeat uniform same-failure（R61 是第 1 轮）。`closure_report.md` 的 "is_phase_shifting=false stably across 3+ longer-repeat rounds" 规则当前 2/3 满足，**仍需要再一轮才能正式重分类**。
+
+### Fresh sample gate 结论
+
+- `reality_vless_probe_plan.py --rollup-json …`（默认）选 0 个 outbound：所有 latest non-all_ok 已在 stable same-failure 桶里覆盖，没有 uncovered candidate。
+- `--include-covered --limit 5` 仅返回 5 个 `latest_all_ok` recovery-watch 节点（HK-A-BGP-0.3、SG-A-BGP-1.0、SG-A-BGP-1.2、ID-A-BGP-1.2、TW-A-Hinet-1.1），全是已知健康节点的复测。
+- 当前 committed `phase3_ip_direct.json` **样本面已饱和**。下一轮 signal hunting 必须由用户提供新 REALITY/VLESS 节点或新 config，否则只是在旧节点上反复刷掉线/恢复噪声。
+
+### 重建后的 rollup
+
+- `total_rounds` 16 → 17
+- `total_executed_runs` 105 → 109
+- `total_all_ok_runs` 24 → 24
+- `latest_divergence_outbounds` 仍为 `[]`
+- `latest_bi_modal_outbounds` 仍为 `[]`
+- `latest_phase_shifting_outbounds` 仍为 `[]`
+- `latest_stable_same_failure_outbounds` 仍为 `["HK-A-BGP-1.0", "HK-A-BGP-2.0", "HK-A-BGP-2.5", "JP-A-BGP-0.3", "UK-A-BGP-0.5", "US-A-BGP-0.5"]`
+- HK-A-BGP-2.0：`latest_round=62`、`latest_health=latest_same_failure`、`is_bi_modal=False`、`is_phase_shifting=False`
+- HK-A-BGP-2.0 dominant_phase_history 末尾 R59-B → R61 → R62 是「divergence → uniform → uniform」的两步 monotonic 静止；R57/R56/R54 仍是历史的 mixed phase pattern，所以纯历史聚合仍然记录 phase-shifting 痕迹
+
+### 判定（R69 分类 A：current sample closed / no new signal）
+
+- 没有 sampler/dataplane signal 出现。
+- HK 重分类还差一轮 longer-repeat。
+- 现有 sample face 已不再制造新候选；下一步只能依赖 fresh sample intake。
+- 没有对 sampler/dataplane/`go_fork_source/*`/`.github/workflows/*` 做任何修改；BHV 账面 52/56 不变。
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py` → 68 PASS
+- `cargo build -p app --features acceptance,clash_api,service_ssmapi --bin app` → PASS
+- batch summary → evidence → rollup 重建均通过；jq empty pass。
