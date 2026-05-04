@@ -1471,5 +1471,143 @@ class RealityProbePlanTests(unittest.TestCase):
         self.assertEqual(plan.classify_item("NEW", None), "uncovered")
 
 
+class RealityRoundSortKeyTests(unittest.TestCase):
+    """R68: round_sort_key must place suffixed rounds between majors."""
+
+    def test_pure_int_orders_by_value(self):
+        keys = [rollup.round_sort_key(v) for v in ("58", "60", "61", "59")]
+        self.assertEqual(sorted(keys), [
+            rollup.round_sort_key("58"),
+            rollup.round_sort_key("59"),
+            rollup.round_sort_key("60"),
+            rollup.round_sort_key("61"),
+        ])
+
+    def test_suffixed_round_sorts_between_majors(self):
+        # Required ordering: 58 < 59 < 59-B < 60 < 61
+        sample = ["60", "59-B", "58", "61", "59"]
+        self.assertEqual(
+            sorted(sample, key=rollup.round_sort_key),
+            ["58", "59", "59-B", "60", "61"],
+        )
+
+    def test_suffixed_round_sorts_strictly_before_next_major(self):
+        # 59-B must NOT trail 60 or 61 (the original bug).
+        sample = ["59-B", "60", "61"]
+        self.assertEqual(
+            sorted(sample, key=rollup.round_sort_key),
+            ["59-B", "60", "61"],
+        )
+
+    def test_unparseable_round_sorts_to_end_deterministically(self):
+        sample = ["61", "weird", "60"]
+        out = sorted(sample, key=rollup.round_sort_key)
+        self.assertEqual(out[:2], ["60", "61"])
+        self.assertEqual(out[-1], "weird")
+
+
+class RealityEvidenceRollupOrderingTests(unittest.TestCase):
+    """R68: rollup must compute latest-state by canonical round order, not argv order."""
+
+    def _write_evidence(self, path, round_name, label_counts, by_outbound):
+        total = sum(label_counts.values())
+        path.write_text(
+            json.dumps(
+                {
+                    "round": round_name,
+                    "date": "2026-05-04",
+                    "description": f"round {round_name}",
+                    "summary": {
+                        "total": total,
+                        "executed_runs": total,
+                        "status_counts": {"completed": total},
+                        "label_counts": label_counts,
+                        "class_counts": {"x": total * 9},
+                    },
+                    "by_outbound": by_outbound,
+                }
+            ),
+            encoding="utf-8",
+        )
+
+    def test_latest_round_picks_higher_major_over_suffixed_lower(self):
+        """Synthetic outbound: 59-B divergence + 61 same-failure.
+        latest_round must be 61, latest_health latest_same_failure,
+        and outbound must NOT show up in latest_divergence_outbounds.
+        Reproduces the R67 HK-A-BGP-2.0 latest_round=='59-B' bug."""
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            r59b = tmp_path / "round59b_summary.json"
+            r61 = tmp_path / "round61_summary.json"
+            self._write_evidence(
+                r59b,
+                "59-B",
+                {"app_pre_post_diverged": 4},
+                {
+                    "HK-A-BGP-2.0": {
+                        "label_counts": {"app_pre_post_diverged": 4},
+                        "class_counts": {"timeout": 36},
+                    }
+                },
+            )
+            self._write_evidence(
+                r61,
+                "61",
+                {"reality_all_connection_reset": 4},
+                {
+                    "HK-A-BGP-2.0": {
+                        "label_counts": {"reality_all_connection_reset": 4},
+                        "class_counts": {"connection_reset": 36},
+                    }
+                },
+            )
+            # Pass paths in adversarial order (R61 first, R59-B last) to
+            # exercise that build_rollup is order-independent.
+            built = rollup.build_rollup([r61, r59b])
+        outbound = built["by_outbound"]["HK-A-BGP-2.0"]
+        self.assertEqual(outbound["latest_round"], "61")
+        self.assertEqual(outbound["latest_health"], "latest_same_failure")
+        self.assertNotIn("HK-A-BGP-2.0", built["latest_divergence_outbounds"])
+        self.assertIn("HK-A-BGP-2.0", built["latest_same_failure_outbounds"])
+
+    def test_same_round_multiple_evidence_files_are_deterministic(self):
+        """Two evidence files share round='61'. latest_round / aggregate must
+        not depend on argv order, and the within-round ordering must come
+        from a stable secondary key (filename), not from the arg list."""
+        def build(arg_order):
+            with tempfile.TemporaryDirectory() as tmp:
+                tmp_path = pathlib.Path(tmp)
+                a = tmp_path / "round61_a_summary.json"
+                b = tmp_path / "round61_b_summary.json"
+                self._write_evidence(
+                    a,
+                    "61",
+                    {"all_ok": 1},
+                    {"NODE-X": {"label_counts": {"all_ok": 1}, "class_counts": {"ok": 9}}},
+                )
+                self._write_evidence(
+                    b,
+                    "61",
+                    {"reality_all_connection_reset": 1},
+                    {
+                        "NODE-X": {
+                            "label_counts": {"reality_all_connection_reset": 1},
+                            "class_counts": {"connection_reset": 9},
+                        }
+                    },
+                )
+                paths = [a, b] if arg_order == "a-first" else [b, a]
+                return rollup.build_rollup(paths)
+
+        out_ab = build("a-first")["by_outbound"]["NODE-X"]
+        out_ba = build("b-first")["by_outbound"]["NODE-X"]
+        # Both invocations must produce identical latest-state.
+        self.assertEqual(out_ab["latest_round"], out_ba["latest_round"])
+        self.assertEqual(out_ab["latest_health"], out_ba["latest_health"])
+        self.assertEqual(out_ab["latest_label_counts"], out_ba["latest_label_counts"])
+        # Aggregate counters are commutative; assert they match too.
+        self.assertEqual(out_ab["label_counts"], out_ba["label_counts"])
+
+
 if __name__ == "__main__":
     unittest.main()

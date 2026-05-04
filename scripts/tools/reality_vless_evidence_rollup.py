@@ -52,12 +52,29 @@ def merge_counts(target: collections.Counter[str], value: Any) -> None:
             target[key] += count
 
 
-def round_sort_key(value: Any) -> tuple[int, int | str]:
+def round_sort_key(value: Any) -> tuple[int, str]:
+    """Sort key for round labels.
+
+    Pure-int rounds sort by integer value; suffixed rounds like ``"59-B"``
+    sort right after the matching pure-int round but strictly before the
+    next major (``"58" < "59" < "59-B" < "60" < "61"``). The suffix
+    string is the secondary tie-break, so ordering stays deterministic
+    across invocations regardless of the ``--evidence`` argv order.
+
+    Tokens with no leading integer are bucketed at the end via
+    ``sys.maxsize`` so unparseable rounds never reorder the rest.
+    """
     text = str(value)
-    try:
-        return (0, int(text))
-    except ValueError:
-        return (1, text)
+    digits: list[str] = []
+    index = 0
+    while index < len(text) and text[index].isdigit():
+        digits.append(text[index])
+        index += 1
+    if not digits:
+        return (sys.maxsize, text)
+    major = int("".join(digits))
+    suffix = text[index:]
+    return (major, suffix)
 
 
 def has_non_all_ok_labels(labels: dict[str, int]) -> bool:
@@ -209,8 +226,19 @@ def build_rollup(paths: list[pathlib.Path]) -> dict[str, Any]:
     statuses: collections.Counter[str] = collections.Counter()
     by_outbound: dict[str, dict[str, Any]] = {}
 
+    # Canonicalize input order so latest-state never depends on argv / glob
+    # order. Primary key: round_sort_key(payload.round); secondary:
+    # path basename. This guarantees that two evidence files with the
+    # same round are always ingested in the same order regardless of
+    # how the caller assembled --evidence.
+    loaded: list[tuple[tuple[int, str], str, pathlib.Path, dict[str, Any]]] = []
     for path in paths:
         payload = load_json(path)
+        round_value = str(payload.get("round", path.stem))
+        loaded.append((round_sort_key(round_value), path.name, path, payload))
+    loaded.sort(key=lambda item: (item[0], item[1]))
+
+    for _key, _name, path, payload in loaded:
         item = round_summary(path, payload)
         rounds.append(item)
         merge_counts(labels, item["label_counts"])

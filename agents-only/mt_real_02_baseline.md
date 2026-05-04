@@ -6268,3 +6268,53 @@ sampler or dataplane. Three independently-planned bounded batches.
 - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py` → 62 tests PASS
 - `cargo build -p app --features acceptance,clash_api,service_ssmapi --bin app` → PASS
 - 三个 batch summary 转 evidence + rollup 重建均通过；`live_rollup.json` 16 rounds, 105 runs, 24 all_ok。
+
+---
+
+## Round 68 (rollup round-ordering audit & rematerialization)
+
+### 日期
+
+2026-05-04
+
+### 根因
+
+`scripts/tools/reality_vless_evidence_rollup.py::round_sort_key` 旧实现：
+
+```python
+def round_sort_key(value):
+    text = str(value)
+    try:
+        return (0, int(text))
+    except ValueError:
+        return (1, text)
+```
+
+任何纯整数 round 走 `(0, int)` 桶，任何含非数字字符的 round 走 `(1, str)` 桶。元组比较先比第一项：所有 `(0, ...)` 永远排在 `(1, ...)` 前面。结果：`"58", "60", "61"` 全部排在 `"59-B"` 之前——**`"59-B"` 反而排到了 `"61"` 后面**。`history` 取末尾作为 latest，于是 R67 之后 `HK-A-BGP-2.0.latest_round` 被记成 `"59-B"`，错误地把它停在 `latest_divergence_outbounds` 桶里。R67 live evidence 本身没问题，但 latest_* 指标全部受这一排序污染。
+
+### 修复
+
+1. 重写 `round_sort_key`：解析前导整数 + 后缀字符串，返回 `(major, suffix)`。`"58" → (58, "")`、`"59" → (59, "")`、`"59-B" → (59, "-B")`、`"60" → (60, "")`，元组比较自然得到 `58 < 59 < 59-B < 60 < 61`。无前导整数的字符串按 `(sys.maxsize, text)` 排末尾。
+2. `build_rollup` 在迭代前用 `(round_sort_key, path.name)` 对输入路径做规范化排序，使同一 round 多个 evidence 文件的内部顺序由文件名决定，不再依赖 `--evidence` argv 顺序。
+
+### 测试
+
+- 新增 `RealityRoundSortKeyTests`（4 用例）：`58 < 59 < 59-B < 60 < 61` 排序；不可解析 token 排末尾。
+- 新增 `RealityEvidenceRollupOrderingTests`（2 用例）：`HK-A-BGP-2.0` synthetic 在 `59-B` divergence + `61` same-failure 后必须 `latest_round=="61"` 且不在 `latest_divergence_outbounds`；同 round 多文件场景对 argv 顺序不敏感。
+- 修复前 4 个用例失败，正好复现 R67 的污染症状。
+- 修复后 6/6 全部通过；总计 `python3 -B -m unittest test_reality_probe_tools test_reality_clienthello_family test_dual_kernel_verification` → **68 PASS**（原 62 + 新 6）。
+
+### 重建后的真实 latest_* 指标
+
+- `total_rounds` = 16，`total_executed_runs` = 105，`total_all_ok_runs` = 24（与 R67 一致）。
+- `HK-A-BGP-2.0.latest_round` = `61`，`latest_health` = `latest_same_failure`（之前错为 `59-B` / `latest_divergence`）。
+- `latest_divergence_outbounds` = `[]`（之前错为 `["HK-A-BGP-2.0"]`）。
+- `latest_stable_same_failure_outbounds` = `["HK-A-BGP-1.0", "HK-A-BGP-2.0", "HK-A-BGP-2.5", "JP-A-BGP-0.3", "UK-A-BGP-0.5", "US-A-BGP-0.5"]`（count 5→6，加入 HK-A-BGP-2.0）。
+- `latest_bi_modal_outbounds` = `[]`，`latest_phase_shifting_outbounds` = `[]`：HK-A-BGP-2.0 的最新 round 是均一 connection_reset，机械指标当然不再标记 bi-modal 或 phase-shifting；这是 R67 单 round 的真实形状。**这并不构成 closure_report 的「3+ longer-repeat rounds 后稳定重分类」**——分析层仍需要 ≥3 个 longer-repeat round 一致才能在判断层把 HK-A-BGP-2.0 从 bi-modal/phase-shifting 名单上正式移除。
+- `recovered_outbounds` = `["JP-A-BGP-1.0", "TW-A-BGP-1.0", "US-A-BGP-0.8"]`（不变）。
+
+### 判定
+
+- R67 的 classification A（no new signal）在重建后仍成立。
+- 所有失败 run 仍是 `probe_io class == reality class`，无 transport-vs-app divergence。
+- 没有新增 sampler/dataplane patch；BHV 账面 52/56 不变；`go_fork_source/*` 和 `.github/workflows/*` 未触碰。

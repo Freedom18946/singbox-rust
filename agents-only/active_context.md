@@ -46,36 +46,32 @@ Planner filters: --latest-health, --latest-run-health,
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  62 tests PASS (R67 2026-05-04)
-- live_rollup.json/md reflects 16 rounds, 105 executed runs, 24
-  all_ok runs (R67 2026-05-04 added 3 R61 stage-3 batches).
+  68 tests PASS (R68 added 6 ordering tests).
+- live_rollup.json/md: 16 rounds, 105 runs, 24 all_ok (R68 rebuilt
+  with deterministic round ordering).
 
 ## Next Steps
 
-- R67 MT-REAL-02 Stage-3 Path A Round 61 sample-face recon COMPLETED
-  (2026-05-04). Classification: **A — No new signal**. Three bounded
-  live batches (15 runs, 3 all_ok): (1) stable same-failure × 4
-  outbounds × 2 runs → JP-A-BGP-1.0 recovered, other 3 still in
-  same node-level dead bucket; (2) phase-shifting × HK-A-BGP-2.0 ×
-  4 runs → uniform probe_io+reality connection_reset, single round
-  does not falsify prior bi-modal per closure_report's 3+-round rule;
-  (3) sanity × 3 all_ok × 1 run → HK-A-BGP-0.3 healthy, HK-A-BGP-1.0
-  & 2.5 decayed to uniform connection_reset. probe_io class == reality
-  class on every failing run → no transport-vs-app signal. Three
-  evidence files in mt_real_02_evidence/round61_stage3_*; rollup
-  rebuilt (16 rounds, 105 runs, 24 all_ok; recovered 2→3; latest
-  stable same-failure 4→5; phase-shifting now empty in latest 3-round
-  window). No sampler/dataplane patch. BHV unchanged (52/56).
-- R66 BHV-SV-005/006/007 (DIV-H-005, commit b15e814c, 2026-05-04):
-  Class C — Rust honest provider routes (3/3 e2e PASS); Go fork has
-  hard-coded stubs, tunnel lookups commented out, method divergence
-  on healthcheck.
-- R65 BHV-LC-003 (DIV-H-006, commit 833753dc, 2026-05-04):
-  Class C — Rust honest broken-service fixture + live
-  `/services/health`; Go fork has no route, no `ServiceStatus`,
-  fail-fast `Manager.Start`.
-- v2 validator inbound field-lowering sweep
-  (vmess/vless/trojan/anytls/shadowtls/naive) remains B-tier deferred.
+- R68 rollup round-ordering audit COMPLETED (2026-05-04). Root cause:
+  `round_sort_key` returned `(0, int)` for pure-int rounds and
+  `(1, str)` for suffixed ones, so `"59-B"` sorted AFTER `"61"` and
+  pinned `HK-A-BGP-2.0.latest_round` to `59-B`. Fix: parse leading
+  int + suffix → `(major, suffix)`, giving `58 < 59 < 59-B < 60 < 61`;
+  also canonicalize `--evidence` input order by `(round_sort_key,
+  path basename)` so latest-state is argv-independent. After rebuild:
+  HK-A-BGP-2.0 → `latest_round=61`, `latest_health=latest_same_failure`,
+  no longer in `latest_divergence_outbounds` (now empty); joins
+  `latest_stable_same_failure_outbounds` (count 5→6). No sampler/
+  dataplane patch. BHV unchanged (52/56).
+- R67 stage-3 path A R61 recon (commit ba7aa8d7) classification A
+  (no new signal) still holds under repaired rollup; only the latest_*
+  attribution moved from divergence to same-failure for HK-A-BGP-2.0.
+- R66 BHV-SV-005/006/007 (DIV-H-005, commit b15e814c): Class C —
+  Rust honest provider routes; Go fork has hard-coded stubs.
+- R65 BHV-LC-003 (DIV-H-006, commit 833753dc): Class C — Rust honest
+  broken-service fixture + live `/services/health`; Go fork has no
+  route, no `ServiceStatus`, fail-fast `Manager.Start`.
+- v2 validator inbound field-lowering sweep B-tier deferred.
 - resolved-error-propagation still on case_backlog.md as B-tier.
 
 ## Still-Valid Constraints
@@ -92,8 +88,7 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Historical Detail
 
-- R33-R60 full record: agents-only/mt_real_02_baseline.md
-- Early ClientHello, Vision, and REALITY history:
+- R33-R60 full record + early ClientHello/Vision/REALITY history:
   agents-only/mt_real_02_baseline.md
 - L01-L25 project history: agents-only/archive/L*/
 - Dual-kernel golden spec:

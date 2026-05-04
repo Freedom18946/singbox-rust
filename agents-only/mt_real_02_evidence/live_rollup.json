@@ -13,57 +13,35 @@
     "US-A-BGP-0.5"
   ],
   "latest_non_all_ok_outbound_count": 6,
-  "latest_divergence_outbounds": [
-    "HK-A-BGP-2.0"
-  ],
-  "latest_divergence_outbound_count": 1,
+  "latest_divergence_outbounds": [],
+  "latest_divergence_outbound_count": 0,
   "latest_stable_divergence_outbounds": [],
   "latest_stable_divergence_outbound_count": 0,
-  "latest_mixed_run_health_outbounds": [
-    "HK-A-BGP-2.0"
-  ],
-  "latest_mixed_run_health_outbound_count": 1,
+  "latest_mixed_run_health_outbounds": [],
+  "latest_mixed_run_health_outbound_count": 0,
   "latest_same_failure_outbounds": [
     "HK-A-BGP-1.0",
+    "HK-A-BGP-2.0",
     "HK-A-BGP-2.5",
     "JP-A-BGP-0.3",
     "UK-A-BGP-0.5",
     "US-A-BGP-0.5"
   ],
-  "latest_same_failure_outbound_count": 5,
+  "latest_same_failure_outbound_count": 6,
   "latest_stable_same_failure_outbounds": [
     "HK-A-BGP-1.0",
+    "HK-A-BGP-2.0",
     "HK-A-BGP-2.5",
     "JP-A-BGP-0.3",
     "UK-A-BGP-0.5",
     "US-A-BGP-0.5"
   ],
-  "latest_stable_same_failure_outbound_count": 5,
-  "latest_divergence_phase_summary": {
-    "app_pre_post_diverged": [
-      "HK-A-BGP-2.0"
-    ],
-    "app_minimal_diverged": [
-      "HK-A-BGP-2.0"
-    ],
-    "minimal_transport_diverged": [
-      "HK-A-BGP-2.0"
-    ],
-    "bridge_io_diverged": [
-      "HK-A-BGP-2.0"
-    ]
-  },
-  "latest_divergence_phase_total_counts": {
-    "app_pre_post_diverged": 4,
-    "app_minimal_diverged": 2,
-    "minimal_transport_diverged": 1,
-    "bridge_io_diverged": 1
-  },
+  "latest_stable_same_failure_outbound_count": 6,
+  "latest_divergence_phase_summary": {},
+  "latest_divergence_phase_total_counts": {},
   "latest_phase_dominant_outbounds": [],
   "latest_phase_no_dominance_outbounds": [],
-  "latest_bi_modal_outbounds": [
-    "HK-A-BGP-2.0"
-  ],
+  "latest_bi_modal_outbounds": [],
   "latest_phase_shifting_outbounds": [],
   "recovered_outbounds": [
     "JP-A-BGP-1.0",
@@ -73,13 +51,11 @@
   "recovered_outbound_count": 3,
   "latest_health_counts": {
     "latest_all_ok": 15,
-    "latest_divergence": 1,
-    "latest_same_failure": 5
+    "latest_same_failure": 6
   },
   "latest_run_health_counts": {
     "run_all_ok": 17,
-    "run_divergence": 6,
-    "run_same_failure": 14
+    "run_same_failure": 12
   },
   "status_counts": {
     "completed": 105
@@ -401,6 +377,36 @@
       }
     },
     {
+      "round": "59-B",
+      "date": "2026-04-30",
+      "path": "agents-only/mt_real_02_evidence/round59b_hk_longer_repeat_summary.json",
+      "description": "HK 12-run longer repeat to determine phase dominance with adequate sample",
+      "total": 12,
+      "executed_runs": 12,
+      "all_ok_runs": 0,
+      "has_divergence": true,
+      "uniform_failure_labels": {
+        "reality_all_timeout": 10
+      },
+      "status_counts": {
+        "completed": 12
+      },
+      "label_counts": {
+        "app_minimal_diverged": 2,
+        "app_pre_post_diverged": 4,
+        "bridge_io_diverged": 1,
+        "minimal_transport_diverged": 1,
+        "probe_io_all_timeout": 11,
+        "reality_all_timeout": 10
+      },
+      "class_counts": {
+        "connection_reset": 3,
+        "ok": 1,
+        "reality_dial_eof": 2,
+        "timeout": 102
+      }
+    },
+    {
       "round": "60",
       "date": "2026-04-30",
       "path": "agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
@@ -429,35 +435,6 @@
         "connection_reset": 72,
         "reality_dial_eof": 36,
         "timeout": 36
-      }
-    },
-    {
-      "round": "61",
-      "date": "2026-05-04",
-      "path": "agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
-      "description": "R67 stage-3 path A: stable same-failure recheck on 4 prior latest_same_failure outbounds (2 runs each)",
-      "total": 8,
-      "executed_runs": 8,
-      "all_ok_runs": 2,
-      "has_divergence": false,
-      "uniform_failure_labels": {
-        "reality_all_connection_reset": 4,
-        "reality_all_reality_dial_eof": 2
-      },
-      "status_counts": {
-        "completed": 8
-      },
-      "label_counts": {
-        "all_ok": 2,
-        "probe_io_all_connection_reset": 4,
-        "probe_io_all_reality_dial_eof": 2,
-        "reality_all_connection_reset": 4,
-        "reality_all_reality_dial_eof": 2
-      },
-      "class_counts": {
-        "connection_reset": 36,
-        "ok": 18,
-        "reality_dial_eof": 18
       }
     },
     {
@@ -509,33 +486,32 @@
       }
     },
     {
-      "round": "59-B",
-      "date": "2026-04-30",
-      "path": "agents-only/mt_real_02_evidence/round59b_hk_longer_repeat_summary.json",
-      "description": "HK 12-run longer repeat to determine phase dominance with adequate sample",
-      "total": 12,
-      "executed_runs": 12,
-      "all_ok_runs": 0,
-      "has_divergence": true,
+      "round": "61",
+      "date": "2026-05-04",
+      "path": "agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
+      "description": "R67 stage-3 path A: stable same-failure recheck on 4 prior latest_same_failure outbounds (2 runs each)",
+      "total": 8,
+      "executed_runs": 8,
+      "all_ok_runs": 2,
+      "has_divergence": false,
       "uniform_failure_labels": {
-        "reality_all_timeout": 10
+        "reality_all_connection_reset": 4,
+        "reality_all_reality_dial_eof": 2
       },
       "status_counts": {
-        "completed": 12
+        "completed": 8
       },
       "label_counts": {
-        "app_minimal_diverged": 2,
-        "app_pre_post_diverged": 4,
-        "bridge_io_diverged": 1,
-        "minimal_transport_diverged": 1,
-        "probe_io_all_timeout": 11,
-        "reality_all_timeout": 10
+        "all_ok": 2,
+        "probe_io_all_connection_reset": 4,
+        "probe_io_all_reality_dial_eof": 2,
+        "reality_all_connection_reset": 4,
+        "reality_all_reality_dial_eof": 2
       },
       "class_counts": {
-        "connection_reset": 3,
-        "ok": 1,
-        "reality_dial_eof": 2,
-        "timeout": 102
+        "connection_reset": 36,
+        "ok": 18,
+        "reality_dial_eof": 18
       }
     }
   ],
@@ -869,8 +845,8 @@
         "54",
         "56",
         "57",
-        "61",
-        "59-B"
+        "59-B",
+        "61"
       ],
       "status_counts": {
         "completed": 25
@@ -1171,83 +1147,6 @@
           ]
         },
         {
-          "round": "61",
-          "path": "agents-only/mt_real_02_evidence/round61_stage3_phase_shifting_summary.json",
-          "status_counts": {
-            "completed": 4
-          },
-          "label_counts": {
-            "probe_io_all_connection_reset": 4,
-            "reality_all_connection_reset": 4
-          },
-          "class_counts": {
-            "connection_reset": 36
-          },
-          "run_health_counts": {
-            "run_same_failure": 4
-          },
-          "divergence_phase_counts": {},
-          "round_run_count": 4,
-          "divergence_run_count": 0,
-          "divergence_run_ratio": 0.0,
-          "is_bi_modal": false,
-          "divergence_phase_dominance": null,
-          "runs": [
-            {
-              "ordinal": 1,
-              "run_index": 1,
-              "status": "completed",
-              "labels": [
-                "probe_io_all_connection_reset",
-                "reality_all_connection_reset"
-              ],
-              "run_health": "run_same_failure",
-              "class_counts": {
-                "connection_reset": 9
-              }
-            },
-            {
-              "ordinal": 1,
-              "run_index": 2,
-              "status": "completed",
-              "labels": [
-                "probe_io_all_connection_reset",
-                "reality_all_connection_reset"
-              ],
-              "run_health": "run_same_failure",
-              "class_counts": {
-                "connection_reset": 9
-              }
-            },
-            {
-              "ordinal": 1,
-              "run_index": 3,
-              "status": "completed",
-              "labels": [
-                "probe_io_all_connection_reset",
-                "reality_all_connection_reset"
-              ],
-              "run_health": "run_same_failure",
-              "class_counts": {
-                "connection_reset": 9
-              }
-            },
-            {
-              "ordinal": 1,
-              "run_index": 4,
-              "status": "completed",
-              "labels": [
-                "probe_io_all_connection_reset",
-                "reality_all_connection_reset"
-              ],
-              "run_health": "run_same_failure",
-              "class_counts": {
-                "connection_reset": 9
-              }
-            }
-          ]
-        },
-        {
           "round": "59-B",
           "path": "agents-only/mt_real_02_evidence/round59b_hk_longer_repeat_summary.json",
           "status_counts": {
@@ -1458,48 +1357,105 @@
               }
             }
           ]
+        },
+        {
+          "round": "61",
+          "path": "agents-only/mt_real_02_evidence/round61_stage3_phase_shifting_summary.json",
+          "status_counts": {
+            "completed": 4
+          },
+          "label_counts": {
+            "probe_io_all_connection_reset": 4,
+            "reality_all_connection_reset": 4
+          },
+          "class_counts": {
+            "connection_reset": 36
+          },
+          "run_health_counts": {
+            "run_same_failure": 4
+          },
+          "divergence_phase_counts": {},
+          "round_run_count": 4,
+          "divergence_run_count": 0,
+          "divergence_run_ratio": 0.0,
+          "is_bi_modal": false,
+          "divergence_phase_dominance": null,
+          "runs": [
+            {
+              "ordinal": 1,
+              "run_index": 1,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_connection_reset",
+                "reality_all_connection_reset"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "connection_reset": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 2,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_connection_reset",
+                "reality_all_connection_reset"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "connection_reset": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 3,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_connection_reset",
+                "reality_all_connection_reset"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "connection_reset": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 4,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_connection_reset",
+                "reality_all_connection_reset"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "connection_reset": 9
+              }
+            }
+          ]
         }
       ],
-      "latest_round": "59-B",
+      "latest_round": "61",
       "latest_status_counts": {
-        "completed": 12
+        "completed": 4
       },
       "latest_label_counts": {
-        "app_minimal_diverged": 2,
-        "app_pre_post_diverged": 4,
-        "bridge_io_diverged": 1,
-        "minimal_transport_diverged": 1,
-        "probe_io_all_timeout": 11,
-        "reality_all_timeout": 10
+        "probe_io_all_connection_reset": 4,
+        "reality_all_connection_reset": 4
       },
       "latest_class_counts": {
-        "connection_reset": 3,
-        "ok": 1,
-        "reality_dial_eof": 2,
-        "timeout": 102
+        "connection_reset": 36
       },
       "latest_run_health_counts": {
-        "run_divergence": 6,
-        "run_same_failure": 6
+        "run_same_failure": 4
       },
-      "latest_divergence_phase_counts": {
-        "app_minimal_diverged": 2,
-        "app_pre_post_diverged": 4,
-        "bridge_io_diverged": 1,
-        "minimal_transport_diverged": 1
-      },
-      "latest_round_run_count": 12,
-      "latest_divergence_run_count": 6,
-      "latest_divergence_run_ratio": 0.5,
-      "latest_divergence_phase_dominance": {
-        "dominant_phase": "app_pre_post_diverged",
-        "dominant_count": 4,
-        "dominant_ratio": 0.6667,
-        "is_dominant": false,
-        "is_no_dominance": false,
-        "is_bi_modal": true
-      },
-      "is_bi_modal": true,
+      "latest_divergence_phase_counts": {},
+      "latest_round_run_count": 4,
+      "latest_divergence_run_count": 0,
+      "latest_divergence_run_ratio": 0.0,
+      "latest_divergence_phase_dominance": null,
+      "is_bi_modal": false,
       "dominant_phase_history": [
         {
           "round": "47",
@@ -1526,21 +1482,21 @@
           "divergence_run_count": 3
         },
         {
-          "round": "61",
-          "dominant_phase": null,
-          "dominant_count": 0,
-          "divergence_run_count": 0
-        },
-        {
           "round": "59-B",
           "dominant_phase": "app_pre_post_diverged",
           "dominant_count": 4,
           "divergence_run_count": 6
+        },
+        {
+          "round": "61",
+          "dominant_phase": null,
+          "dominant_count": 0,
+          "divergence_run_count": 0
         }
       ],
       "is_phase_shifting": false,
       "latest_has_non_all_ok": true,
-      "latest_health": "latest_divergence",
+      "latest_health": "latest_same_failure",
       "historical_has_non_all_ok": true
     },
     "HK-A-BGP-2.5": {
