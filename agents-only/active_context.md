@@ -54,22 +54,17 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- WP LC-003-D-epsilon-retry CLOSED: Sub-WP D 6 files (case yaml +
-  config + orchestrator http body-json-path + 3 prebuild scripts) ran
-  green ONLY after a kernel lifecycle fix landed in the same commit.
-  Audit caught a dual-path lifecycle race: supervisor's
-  populate_bridge_managers fired AFTER run_context_stage(Start), so
-  ServiceManager.start_stage(Start) saw an empty registry; a parallel
-  start_services helper drove svc.start(stage) directly without
-  touching ServiceManager.statuses, so /services/health misreported
-  Failed services as Running. Fix: reorder populate before Start in
-  all 4 init/reload paths and drop start_endpoints/start_services
-  from production drivers (helpers retained for unit tests). New
-  service.rs regression test pins the late-registration contract.
-  LC-003 7/7 assertions PASS; aaa-broken=Failed err-present,
-  zzz-survivor=Running.
-- ζ trace cleanup (3 ssmapi_registry tracing::debug! calls + their
-  imports) deferred per c1a3672a; spawn a follow-up WP when needed.
+- WP LC-003-D-epsilon-retry CLOSED (fcdb9c65): Sub-WP D 6 files plus
+  a kernel lifecycle scope expansion. Audit caught a dual-path race:
+  populate_bridge_managers ran AFTER run_context_stage(Start) so
+  ServiceManager.start_stage(Start) saw an empty registry, while a
+  parallel start_services helper drove svc.start(stage) without
+  writing ServiceManager.statuses, hiding bind failures from
+  /services/health. Fix reorders populate before Start in all 4
+  init/reload paths, drops the redundant helper drivers, and adds a
+  service.rs regression test pinning the late-registration contract.
+  LC-003 7/7 assertions PASS; ζ trace cleanup landed in the same
+  series.
 - BHV-LC-003 / DIV-H-006 in mt_gui_04_capability_inventory.md still
   flagged NOT-FEASIBLE; with LC-003 now verifiable, an audit WP can
   re-classify (out of this WP's scope).

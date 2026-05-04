@@ -1328,11 +1328,6 @@ fn build_shadowsocks_inbound(
         if !tag.trim().is_empty() {
             let srv: Arc<dyn ManagedSSMServer> = adapter.clone();
             register_managed_ssm_server(&tag, Arc::downgrade(&srv));
-            tracing::debug!(
-                target: "ssmapi_registry",
-                tag = %tag,
-                "shadowsocks_inbound_registered_before_return"
-            );
         }
     }
     Some(adapter)
