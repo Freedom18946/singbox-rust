@@ -134,7 +134,7 @@ with the authoritative source for each declaration.
 |-----------|------------------------------|
 | BHV-SV-001..004 | Reclassified as harness-only (SV.1); not kernel behavior |
 | BHV-SV-005..007 | STRUCTURAL: Go provider endpoints return stubs; cannot dual-kernel test (DIV-H-005) |
-| BHV-LC-003 | NOT-FEASIBLE: concurrent service failure isolation; Rust `/services/health` is a static stub (DIV-H-006) |
+| BHV-LC-003 | STRUCTURAL: Rust side honest (real broken-service fixture + live `/services/health` projection — R65 2026-05-04 audit). Go fork has no `/services/health` route, no `ServiceStatus` model, fail-fast `Manager.Start` — promotion blocked (DIV-H-006). |
 | BHV-DP-002 | SOCKS5 UDP: requires UDP ASSOCIATE support; not exercised by GUI API surface |
 | BHV-DP-003 | HTTP CONNECT proxy: tested in interop-lab but not in GUI-shape config |
 | BHV-DP-004 | Mixed inbound: tested in interop-lab (both); GUI config uses SOCKS-only |

@@ -84,7 +84,7 @@ inventory because they test non-GUI kernel behaviors:
 | BHV-SV-005 | Go provider endpoints return stubs | DIV-H-005 | Rust-only e2e via `clash_http_e2e.rs` |
 | BHV-SV-006 | Go provider endpoints return stubs | DIV-H-005 | Rust-only e2e via `clash_http_e2e.rs` |
 | BHV-SV-007 | Go provider endpoints return stubs | DIV-H-005 | Rust-only e2e via `clash_http_e2e.rs` |
-| BHV-LC-003 | Service failure isolation not real | DIV-H-006 | Rust-only diagnostic only |
+| BHV-LC-003 | Rust honest (real broken-service fixture + live `/services/health`); Go fork lacks endpoint + status model + fault isolation (R65 2026-05-04 audit) | DIV-H-006 | Rust-only diagnostic only |
 
 **These 4 cannot be dual-kernel tested regardless of sweep methodology.** They are the same
 4/56 gap documented in the golden spec since its creation. This is a Go-side limitation,

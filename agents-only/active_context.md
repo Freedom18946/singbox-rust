@@ -54,20 +54,24 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- WP LC-003-D-epsilon-retry CLOSED (fcdb9c65): Sub-WP D 6 files plus
-  a kernel lifecycle scope expansion. Audit caught a dual-path race:
-  populate_bridge_managers ran AFTER run_context_stage(Start) so
-  ServiceManager.start_stage(Start) saw an empty registry, while a
-  parallel start_services helper drove svc.start(stage) without
-  writing ServiceManager.statuses, hiding bind failures from
-  /services/health. Fix reorders populate before Start in all 4
-  init/reload paths, drops the redundant helper drivers, and adds a
-  service.rs regression test pinning the late-registration contract.
-  LC-003 7/7 assertions PASS; ζ trace cleanup landed in the same
-  series.
-- BHV-LC-003 / DIV-H-006 in mt_gui_04_capability_inventory.md still
-  flagged NOT-FEASIBLE; with LC-003 now verifiable, an audit WP can
-  re-classify (out of this WP's scope).
+- R65 BHV-LC-003 parity-promotion audit COMPLETED (2026-05-04).
+  Decision: **Class C — Go structural divergence; do not promote**.
+  Rust side audit-honest: `rust_core_broken_service.json` binds
+  `aaa-broken` ssmapi to port 1 (EACCES) + `zzz-survivor` to 39200;
+  `/services/health` is a live `ServiceManager.health_status()`
+  projection; case yaml asserts API reachable + `healthy==false` +
+  Failed/Running per-service. `cargo run -p interop-lab -- case run
+  p1_service_failure_isolation --kernel rust --env-class strict` PASS
+  (snapshot shows `error: "Permission denied (os error 13)"` on
+  broken, Running on survivor, `errors: []`). Go fork blockers
+  (`go_fork_source/sing-box-1.12.14/`): (1) `experimental/clashapi/
+  server.go` mounts no `/services/health` route, (2) `adapter/service/
+  manager.go` has no `ServiceStatus` enum and no status map, (3)
+  `Manager.Start` returns first service error and aborts boot — no
+  fault isolation. DIV-H-006, case_backlog, compat_matrix,
+  mt_gui_04_{capability_inventory,gap_list} updated to drop obsolete
+  Rust-stub claims and reframe as Go fork blocker. BHV account
+  unchanged (52/56). go_fork_source not modified.
 - v2 validator inbound field-lowering sweep
   (vmess/vless/trojan/anytls/shadowtls/naive) remains B-tier deferred.
 - resolved-error-propagation still on case_backlog.md as B-tier.

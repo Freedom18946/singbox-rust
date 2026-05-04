@@ -140,8 +140,8 @@
 | SSMAPI Bearer auth | ServiceIR.auth_token 独立鉴权 | — (单元测试覆盖) | implemented |
 | WS ?token= auth | WebSocket 升级请求 query param 鉴权 | `p1_clash_api_auth_enforcement` | implemented (`p1_clash_api_auth_enforcement` = both) |
 | 非 localhost 绑定警告 | 0.0.0.0 绑定 + 无 secret → InsecureBinding | — (单元测试覆盖) | implemented |
-| 服务故障隔离 | 单服务启动失败不阻塞其他服务 | `p1_service_failure_isolation` | implemented (Rust-only diagnostic; not an honest dual-kernel case today) |
-| 健康 API 端点 | GET /services/health 聚合状态 | `p1_service_failure_isolation` | partial (Rust endpoint currently returns static stub, not runtime-aggregated service health) |
+| 服务故障隔离 | 单服务启动失败不阻塞其他服务 | `p1_service_failure_isolation` | implemented (Rust-only; honest diagnostic per R65 2026-05-04 audit. Go fork has fail-fast `Manager.Start` — DIV-H-006 structural divergence) |
+| 健康 API 端点 | GET /services/health 聚合状态 | `p1_service_failure_isolation` | implemented Rust-only (live `ServiceManager.health_status()` projection; verified via R65 audit). Go fork has no `/services/health` route — DIV-H-006. |
 
 ## TLS 能力覆盖矩阵（L14）
 

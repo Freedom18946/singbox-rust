@@ -104,7 +104,7 @@
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
 | `p1_clash_api_auth_enforcement` | Clash API auth enforcement: 无 token→401, Bearer→200, 错误→401 | `strict` | implemented |
-| `p1_service_failure_isolation` | 单服务故障不阻塞核心启动，Clash API 可达 | `strict` | implemented (Rust-only diagnostic; not promotable with current harness/API model: no real broken-service config and `/services/health` is still static) |
+| `p1_service_failure_isolation` | 单服务故障不阻塞核心启动，Clash API 可达 | `strict` | implemented (Rust-only honest diagnostic per R65 2026-05-04 audit: real broken-service fixture binds `aaa-broken` to port 1 → EACCES, `zzz-survivor` 正常 Running, `/services/health` 返回 live `ServiceManager.health_status()` projection. Promotion blocked by Go fork: no `/services/health` route, no `ServiceStatus` model, fail-fast `Manager.Start`. See DIV-H-006.) |
 
 ### TLS 高级能力（L14）
 

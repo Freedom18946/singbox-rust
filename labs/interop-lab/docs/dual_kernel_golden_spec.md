@@ -239,7 +239,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 | DIV-H-003 | CLOSED | Provider background update loop implemented (L23-T4). ProviderManager now sweeps stale providers on a configurable tick interval. | BHV-CP-018, BHV-SV-005 | — |
 | DIV-H-004 | CLOSED | Provider healthcheck now performs real TCP probe via outbound registry (L23-T5). Falls back to healthy when no registry configured. | BHV-SV-007 | — |
 | DIV-H-005 | STRUCTURAL | Go provider endpoints return empty stubs (empty map / 404 for all provider routes). SV.2 BHVs cannot be dual-kernel tested. | BHV-SV-005, BHV-SV-006, BHV-SV-007 | Rust-only e2e coverage via `clash_http_e2e.rs` |
-| DIV-H-006 | STRUCTURAL | `p1_service_failure_isolation` is not an honest dual-kernel model today: the Rust case config contains no broken service, and Rust `GET /services/health` still returns a static stub instead of runtime service state. BHV-LC-003 must remain uncovered until both the harness and runtime health plumbing are real. | BHV-LC-003 | Keep Rust-only diagnostic coverage; do not promote to `kernel_mode: both` |
+| DIV-H-006 | STRUCTURAL | Go fork has no analog for fault-isolated runtime service health: (1) Go `experimental/clashapi/server.go` exposes no `/services/health` route (only `/configs`, `/proxies`, `/rules`, `/connections`, `/providers/{proxies,rules}`, `/script`, `/profile`, `/cache`, `/dns`); (2) Go `adapter/service/manager.go` holds no per-service status — no `Starting/Running/Failed/Stopped` enum and no status map; (3) Go `Manager.Start` returns the first service error directly (`return E.Cause(...)`), aborting kernel boot rather than isolating the failure. Rust-side fixture (`rust_core_broken_service.json` binds `aaa-broken` ssmapi to port 1 → EACCES, `zzz-survivor` to 39200) and Rust `GET /services/health` (live `ServiceManager.health_status()` projection) are real and audited as of R65 (2026-05-04); the structural blocker is Go fork only. BHV-LC-003 stays Rust-only diagnostic until Go fork grows a status-aware service manager and a `/services/health` endpoint. | BHV-LC-003 | Keep Rust-only diagnostic coverage; do not promote to `kernel_mode: both` |
 
 ### Cosmetic (Format Differences)
 
@@ -361,7 +361,7 @@ These cases should **never** be promoted to `kernel_mode: both`:
 | `p2_protocol_unit_shadowsocks` | Rust cargo test wrapper |
 | `p2_protocol_unit_vmess` | Rust cargo test wrapper |
 | `p1_tls_fragment_wiring` | Rust TLS implementation detail |
-| `p1_service_failure_isolation` | Not promotable with current harness/API model: no honest broken-service dual-kernel setup, and `/services/health` is still a static stub on Rust |
+| `p1_service_failure_isolation` | Rust-only honest diagnostic (R65 2026-05-04 audit): real broken-service fixture and live `/services/health` projection both verified. Promotion blocked by Go fork: no `/services/health` route, no `ServiceStatus` model, fail-fast `Manager.Start`. See DIV-H-006. |
 | `p0_subscription_json` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
 | `p0_subscription_yaml` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
 | `p0_subscription_base64` | Harness-side subscription parsing; not kernel behavior (SV.1 reclassification) |
