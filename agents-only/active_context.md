@@ -36,41 +36,41 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Current Build And Gate
 
-- cargo check --workspace: PASS
+- cargo build -p app --features acceptance,clash_api,service_ssmapi:
+  PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
   68 tests PASS.
-- live_rollup.json/md: 17 rounds, 109 runs, 24 all_ok (R69 added
-  R62 HK-confirmation #2).
+- live_rollup.json/md: 18 rounds, 113 runs, 24 all_ok (R70 added
+  R63 HK final confirmation #3).
 
 ## Next Steps
 
-- R69 stage-3 current-sample closure + fresh-signal gate COMPLETED
-  (2026-05-04). Classification: **A — Current sample closed / no
-  new signal**. (1) HK-A-BGP-2.0 longer-repeat #2 (4 runs) → 4/4
-  uniform `probe_io_all_connection_reset` + `reality_all_connection_reset`,
-  zero divergence. probe_io class == reality class. R61 + R62 are
-  now 2/3 longer-repeat rounds satisfying closure_report's
-  reclassification rule; **one more longer-repeat round still
-  needed** before HK formally moves off bi-modal/phase-shifting.
-  (2) Default planner from current `phase3_ip_direct.json` selected
-  0 uncovered candidates; `--include-covered --limit 5` only surfaced
-  5 latest_all_ok recovery-watch nodes — committed sample face is
-  saturated. (3) Evidence file `round62_stage3_hk_confirmation_summary.json`
-  added; rollup totals 16→17 rounds, 105→109 runs, all_ok 24→24.
-  Latest lists unchanged from R68 baseline (latest_divergence still
-  empty; latest_stable_same_failure still the 6-node set). No
-  sampler/dataplane patch. BHV unchanged (52/56). go_fork_source
-  untouched. Fresh-signal gate verdict: **next signal-hunting round
-  requires user-supplied fresh REALITY/VLESS nodes or a new config**;
-  old samples cannot manufacture new structural signal.
-- R68 rollup round-ordering audit (c8f58140): fixed `round_sort_key`
-  + argv-independent input ordering; 68 Python tests pass.
-- R67 stage-3 path A R61 recon (ba7aa8d7) classification A still
-  holds under repaired rollup.
-- R66 BHV-SV-005/006/007 (DIV-H-005, b15e814c) Class C; R65
-  BHV-LC-003 (DIV-H-006, 833753dc) Class C.
-- v2 validator inbound field-lowering sweep B-tier deferred.
+- R70 HK final confirmation + current-sample-face closure DONE
+  (2026-05-04). Classification: **A — Current sample face
+  formally closed / no new signal**. (1) HK-A-BGP-2.0
+  longer-repeat #3 (4 runs) → 4/4 uniform
+  `probe_io_all_connection_reset` + `reality_all_connection_reset`,
+  zero divergence, probe_io class == reality class.
+  R61+R62+R63 = **3/3 longer-repeat rounds satisfied**;
+  closure_report rule "is_phase_shifting=false stably across 3+
+  longer-repeat rounds" is met. HK-A-BGP-2.0 formally
+  reclassified off analyst-layer bi-modal/phase-shifting
+  suspect list. (2) Default planner: 0 uncovered;
+  `--include-covered --limit 5` only returns 5 latest_all_ok
+  recovery-watch nodes — sample face saturated. (3) Evidence
+  `round63_stage3_hk_final_confirmation_summary.json` added;
+  rollup 17→18 rounds, 109→113 runs, all_ok 24→24. Latest
+  divergence/bi_modal/phase_shifting all `[]`;
+  latest_stable_same_failure still the 6-node set. HK by_outbound:
+  latest_round=63, is_bi_modal=false, is_phase_shifting=false,
+  divergence_run_ratio=0.0. No sampler/dataplane patch. BHV
+  52/56 unchanged. go_fork_source / .github/workflows untouched.
+  Fresh-signal gate: next round needs user-supplied fresh
+  REALITY/VLESS nodes or new config.
+- R69 HK #2 (R62) classification A; R68 rollup ordering audit
+  (c8f58140); R67 R61 recon (ba7aa8d7) classification A;
+  v2 validator inbound field-lowering sweep B-tier deferred.
 
 ## Still-Valid Constraints
 

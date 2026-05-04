@@ -82,3 +82,31 @@ Path A is on demand only.
 - Do not reclassify HK-A-BGP-2.0 as a sampler signal from any single
   future run. Only is_phase_shifting=false stably across 3 or more
   longer-repeat rounds would change that.
+
+## Addendum: HK-A-BGP-2.0 post-closure reclassification (2026-05-04)
+
+The 3-round longer-repeat rule above is now satisfied:
+
+- R61 (2026-05-04, 4 runs): 4/4 uniform
+  `probe_io_all_connection_reset` + `reality_all_connection_reset`,
+  zero divergence.
+- R62 (2026-05-04, 4 runs): 4/4 same uniform same-failure shape,
+  zero divergence.
+- R63 (2026-05-04, 4 runs): 4/4 same uniform same-failure shape,
+  zero divergence; probe_io class == reality class on every run.
+
+In the rebuilt rollup HK-A-BGP-2.0 now reports `latest_round=63`,
+`is_bi_modal=false`, `is_phase_shifting=false`,
+`latest_divergence_run_ratio=0.0`. HK-A-BGP-2.0 is therefore formally
+removed from the analyst-layer bi-modal / phase-shifting suspect
+list under the rule defined above. It remains in the
+`latest_stable_same_failure` bucket with the other five committed
+node-level dead nodes; that does not constitute a sampler or
+dataplane signal.
+
+This reclassification did not patch sampler or dataplane, did not
+modify `go_fork_source/*` or `.github/workflows/*`, and did not
+change the BHV ledger (52/56). Stage-3 path A on the committed
+`phase3_ip_direct.json` sample face is now exhausted — fresh signal
+hunting requires user-supplied fresh REALITY/VLESS nodes or a new
+config.

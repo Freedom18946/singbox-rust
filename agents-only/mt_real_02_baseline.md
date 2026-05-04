@@ -6373,3 +6373,94 @@ def round_sort_key(value):
 - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py` → 68 PASS
 - `cargo build -p app --features acceptance,clash_api,service_ssmapi --bin app` → PASS
 - batch summary → evidence → rollup 重建均通过；jq empty pass。
+
+---
+
+## Round 70 (stage-3 final HK confirmation + current sample face closure)
+
+### 日期
+
+2026-05-04
+
+### 目标
+
+完成 HK-A-BGP-2.0 longer-repeat 序列的第 3 轮 confirmation。
+若 4/4 继续 uniform same-failure 且 probe_io class == reality class，
+按 `closure_report.md` 的「is_phase_shifting=false stably across 3+
+longer-repeat rounds」规则正式把 HK-A-BGP-2.0 从 analyst-layer
+bi-modal / phase-shifting suspect 名单中移除，并关闭当前 committed
+sample face。同时 dry-run planner 验证 fresh sample gate 是否仍未
+打开。本轮严格不修改 sampler/dataplane，不动 `go_fork_source/*`、
+`.github/workflows/*`，不跑 broad live batch。
+
+### HK-A-BGP-2.0 longer-repeat #3 结果
+
+- 命令：`reality_vless_probe_batch.py --outbound 'HK-A-BGP-2.0倍率' --runs 4 --target example.com:80 --timeout 8 --phase-timeout-ms 8000 --probe-io-timeout-ms 8000 --output-dir /tmp/reality-vless-probe-batch-live-r70-hk-final`
+- 4/4 runs 全部产出 `probe_io_all_connection_reset` +
+  `reality_all_connection_reset`
+- divergence run count: 0
+- probe_io class == reality class on every run（每 run 9 个连接 class 全部 connection_reset，6/6 比较 match=true）
+- 这是 HK-A-BGP-2.0 第 3 轮 longer-repeat uniform same-failure：
+  R61 (1st) → R62 (2nd) → R63 (3rd)。`closure_report.md` 的 3/3
+  规则现在正式满足。
+- 重建后 rollup 中 `HK-A-BGP-2.0` 状态：`latest_round=63`、
+  `latest_health=latest_same_failure`、`is_bi_modal=false`、
+  `is_phase_shifting=false`、`latest_divergence_run_ratio=0.0`。
+  dominant_phase_history 末尾 R59-B → R61 → R62 → R63 是
+  `app_pre_post_diverged` → null → null → null 的稳定静止。
+  历史聚合中 R54/R56/R57/R59-B 仍记录早期 mixed phase pattern，
+  但现期 3 轮 longer-repeat 已稳定均一同失败。
+
+### 判定（R70 分类 A：Current sample face formally closed / no new signal）
+
+- 没有新的 sampler/dataplane signal 出现。
+- HK-A-BGP-2.0 不再是当前样本面的 analyst-layer
+  bi-modal / phase-shifting suspect。
+- HK longer-repeat rule **3/3 satisfied** —— closure_report 的
+  reclassification 路径已走完。
+- 失败仍是 probe_io / reality 同 class 的统一连接重置，没有
+  transport-vs-app 偏差信号。
+- 节点掉线/衰减不写为 sampler regression。
+- 不打 sampler/dataplane patch，不写 root-cause WP。
+
+### Fresh sample gate dry-run 结论
+
+- `reality_vless_probe_plan.py --rollup-json
+  agents-only/mt_real_02_evidence/live_rollup.json --output-json
+  /tmp/reality-vless-r70-default.json`（默认）：
+  `selected_count=0`，`uncovered=0`，`prior_non_all_ok=6`，
+  `covered_all_ok=15`。
+- `reality_vless_probe_plan.py … --include-covered --limit 5
+  --output-json /tmp/reality-vless-r70-include-covered.json`：
+  `selected_count=5`，全部 reason=`covered_all_ok`、
+  latest_health=`latest_all_ok`，仅 5 个 recovery-watch 节点
+  (HK-A-BGP-0.3、SG-A-BGP-1.0、SG-A-BGP-1.2、ID-A-BGP-1.2、
+  TW-A-Hinet-1.1)，无 uncovered/fresh candidate。
+- 结论：当前 committed `phase3_ip_direct.json` sample face 已
+  闭环；下一轮 signal hunting 必须由用户提供 fresh REALITY/VLESS
+  节点或新 config，否则旧节点反复刷掉线/恢复噪声不会制造结构信号。
+
+### 重建后的 rollup
+
+- `total_rounds` 17 → 18
+- `total_executed_runs` 109 → 113
+- `total_all_ok_runs` 24 → 24（不变）
+- `latest_divergence_outbounds` = `[]`
+- `latest_bi_modal_outbounds` = `[]`
+- `latest_phase_shifting_outbounds` = `[]`
+- `latest_stable_same_failure_outbounds` =
+  `["HK-A-BGP-1.0", "HK-A-BGP-2.0", "HK-A-BGP-2.5",
+    "JP-A-BGP-0.3", "UK-A-BGP-0.5", "US-A-BGP-0.5"]`
+- `recovered_outbounds` =
+  `["JP-A-BGP-1.0", "TW-A-BGP-1.0", "US-A-BGP-0.8"]`
+
+### 验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py` → 68 PASS
+- `cargo build -p app --features acceptance,clash_api,service_ssmapi --bin app` → PASS
+- `reality_vless_probe_batch.py … --dry-run` → PASS（plan/runs/timeout 一致）
+- `reality_vless_probe_batch.py …`（live）→ 4/4 completed
+- `reality_vless_probe_evidence.py` → round63 evidence written
+- `reality_vless_evidence_rollup.py` → 18 rounds / 113 runs
+- BHV 账面 52/56 不变；`go_fork_source/*`、`.github/workflows/*` 未触碰；
+  sampler/dataplane 无改动。
