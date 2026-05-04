@@ -82,8 +82,8 @@ if ! command -v jq >/dev/null 2>&1; then
 fi
 
 if [[ "${INTEROP_SKIP_APP_BUILD}" != "1" ]]; then
-  echo "prebuild: cargo build -p app --features acceptance,clash_api --bin app"
-  cargo build -p app --features acceptance,clash_api --bin app >/dev/null
+  echo "prebuild: cargo build -p app --features acceptance,clash_api,service_ssmapi --bin app"
+  cargo build -p app --features acceptance,clash_api,service_ssmapi --bin app >/dev/null
 fi
 
 if [[ -f "${TREND_ALLOWLIST_FILE}" ]]; then

@@ -180,7 +180,22 @@ impl Supervisor {
         // Build bridge via adapter bridge to enable routed inbounds/outbounds
         let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone(), context.clone());
 
-        // Start context managers (after bridge is built but before inbounds start)
+        // Register bridge components (endpoints, services, outbounds) into the
+        // context managers BEFORE Start stage, so EndpointManager.run_stage and
+        // ServiceManager.start_stage can drive each component through its
+        // lifecycle and persist failure status on bind errors. If services were
+        // registered after Start stage, the manager would never observe their
+        // Start failures (regression: /services/health misreporting Failed
+        // services as Running, see LC-003 p1_service_failure_isolation).
+        populate_bridge_managers(&context, &bridge).await.map_err(|e| {
+            tracing::error!(target: "sb_core::runtime", error = %e, "startup failed during outbound registration, rolling back");
+            shutdown_context(&context);
+            e
+        })?;
+
+        // Start context managers (after bridge components are registered).
+        // ServiceManager.start_stage(Start) iterates registered services and
+        // writes Failed status on per-service bind errors with fault isolation.
         run_context_stage(&context, ServiceStage::Start)
             .inspect_err(|_| shutdown_context(&context))?;
         tracing::info!(target: "sb_core::runtime", "Context managers started");
@@ -195,11 +210,6 @@ impl Supervisor {
         crate::tls::global::apply_from_ir(ir.certificate.as_ref());
 
         let initial_state = State::new(engine_for_state, bridge, context, ir);
-        populate_bridge_managers(&initial_state.context, &initial_state.bridge).await.map_err(|e| {
-            tracing::error!(target: "sb_core::runtime", error = %e, "startup failed during outbound registration, rolling back");
-            shutdown_context(&initial_state.context);
-            e
-        })?;
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
@@ -222,8 +232,12 @@ impl Supervisor {
             });
         }
 
-        start_endpoints(&endpoints);
-        start_services(&services);
+        // Endpoints and services have already been driven through Initialize
+        // and Start stages by run_context_stage above. PostStart and Started
+        // follow next. The free-standing start_endpoints/start_services
+        // helpers are intentionally NOT invoked here; using them would create
+        // a second lifecycle driver that bypasses ServiceManager.statuses,
+        // recreating the LC-003 misreporting bug.
 
         // PostStart stage for context managers (after all inbounds/endpoints/services started)
         {
@@ -354,6 +368,14 @@ impl Supervisor {
 
         let bridge = crate::adapter::bridge::build_bridge(&ir, (), context.clone());
 
+        // Register bridge components into context managers BEFORE Start stage.
+        // See router-init path for the rationale (LC-003 lifecycle fix).
+        populate_bridge_managers(&context, &bridge).await.map_err(|e| {
+            tracing::error!(target: "sb_core::runtime", error = %e, "startup failed during outbound registration (no-router), rolling back");
+            shutdown_context(&context);
+            e
+        })?;
+
         // Start context managers
         run_context_stage(&context, ServiceStage::Start).map_err(|e| {
             shutdown_context(&context);
@@ -362,11 +384,6 @@ impl Supervisor {
         tracing::info!(target: "sb_core::runtime", "Context managers started (no-router)");
 
         let initial_state = State::new((), bridge, context, ir);
-        populate_bridge_managers(&initial_state.context, &initial_state.bridge).await.map_err(|e| {
-            tracing::error!(target: "sb_core::runtime", error = %e, "startup failed during outbound registration (no-router), rolling back");
-            shutdown_context(&initial_state.context);
-            e
-        })?;
 
         let state = Arc::new(RwLock::new(initial_state));
 
@@ -389,8 +406,8 @@ impl Supervisor {
             });
         }
 
-        start_endpoints(&endpoints);
-        start_services(&services);
+        // Endpoints/services already driven through Initialize+Start by
+        // run_context_stage above; PostStart and Started follow.
 
         #[cfg(feature = "service_ntp")]
         {
@@ -590,7 +607,12 @@ impl Supervisor {
         let new_bridge =
             crate::adapter::bridge::build_bridge(&new_ir, new_engine.clone(), new_context.clone());
 
-        // Start new context managers
+        // Wrap in Arc and register components BEFORE Start stage. See LC-003
+        // lifecycle fix in initial-start path for rationale.
+        let new_bridge_arc = Arc::new(new_bridge);
+        populate_bridge_managers(&new_context, &new_bridge_arc).await?;
+
+        // Start new context managers (drives Start stage on registered services)
         run_context_stage(&new_context, ServiceStage::Start)?;
         tracing::info!(target: "sb_core::runtime", "New context managers started on reload");
 
@@ -604,10 +626,6 @@ impl Supervisor {
         crate::tls::global::apply_from_ir(new_ir.certificate.as_ref());
 
         // Start new inbound listeners
-        let new_bridge_arc = Arc::new(new_bridge);
-        let new_endpoints = new_bridge_arc.endpoints.clone();
-        let new_services = new_bridge_arc.services.clone();
-        populate_bridge_managers(&new_context, &new_bridge_arc).await?;
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
             tokio::task::spawn_blocking(move || {
@@ -616,8 +634,9 @@ impl Supervisor {
                 }
             });
         }
-        start_endpoints(&new_endpoints);
-        start_services(&new_services);
+        // Endpoints/services already driven through Start above; do not invoke
+        // start_endpoints/start_services here (would re-trigger lifecycle and
+        // bypass ServiceManager.statuses).
 
         // PostStart stage for new managers
         run_context_stage(&new_context, ServiceStage::PostStart)?;
@@ -718,15 +737,15 @@ impl Supervisor {
         // Build new bridge (no engine needed)
         let new_bridge = crate::adapter::bridge::build_bridge(&new_ir, (), new_context.clone());
 
+        // Wrap and register BEFORE Start (LC-003 lifecycle fix).
+        let new_bridge_arc = Arc::new(new_bridge);
+        populate_bridge_managers(&new_context, &new_bridge_arc).await?;
+
         // Start new context managers
         run_context_stage(&new_context, ServiceStage::Start)?;
         tracing::info!(target: "sb_core::runtime", "New context managers started on reload (no-router)");
 
         // Start new inbound listeners
-        let new_bridge_arc = Arc::new(new_bridge);
-        let new_endpoints = new_bridge_arc.endpoints.clone();
-        let new_services = new_bridge_arc.services.clone();
-        populate_bridge_managers(&new_context, &new_bridge_arc).await?;
         for inbound in &new_bridge_arc.inbounds {
             let ib = inbound.clone();
             tokio::task::spawn_blocking(move || {
@@ -735,8 +754,7 @@ impl Supervisor {
                 }
             });
         }
-        start_endpoints(&new_endpoints);
-        start_services(&new_services);
+        // Endpoints/services already driven through Start above.
 
         // PostStart stage for new managers (no-router)
         run_context_stage(&new_context, ServiceStage::PostStart)?;

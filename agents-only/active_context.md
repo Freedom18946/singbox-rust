@@ -54,25 +54,28 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- v2 validator fixes (4553af1e + 6e5c1a85 + this commit): inbound
-  type dispatch (fix-1 added shadowsocks/hysteria/hysteria2/tuic
-  arms), shadowsocks field lowering (fix-2 wires method/password
-  from JSON to IR), and inbound tag lowering (fix-3 reads "tag"
-  || "name" so post-migration JSON populates IR.tag). Cluster gap
-  still open: vmess/vless/trojan/anytls/shadowtls/naive inbounds
-  also have hardcoded-None fields - deferred to future
-  v2-validator-completeness sweep WP.
-- WP fix-managed-ssm-server-tag (this commit): root cause = V per
-  audit -- compat::migrate_to_v2 renames inbound tag->name, but
-  lower_inbounds read only "tag" so IR.tag was always None for any
-  config flowing through migrate_to_v2. Fix reads "tag" then "name"
-  fallback. Trace verification confirms register tag now matches
-  configured "ss-in"; ssmapi services now resolve and bind. Unblocks
-  LC-003 Sub-WP D ε retry.
-- resolved-error-propagation filed in case_backlog.md as B-tier known
-  issue (spawn-Ok start() pattern silently swallows bind failures).
-- LC-003 DAG: A/B/C done. Sub-WP D RESUME-r2 6 files in stash@{0},
-  ε retry now unblocked.
+- WP LC-003-D-epsilon-retry CLOSED: Sub-WP D 6 files (case yaml +
+  config + orchestrator http body-json-path + 3 prebuild scripts) ran
+  green ONLY after a kernel lifecycle fix landed in the same commit.
+  Audit caught a dual-path lifecycle race: supervisor's
+  populate_bridge_managers fired AFTER run_context_stage(Start), so
+  ServiceManager.start_stage(Start) saw an empty registry; a parallel
+  start_services helper drove svc.start(stage) directly without
+  touching ServiceManager.statuses, so /services/health misreported
+  Failed services as Running. Fix: reorder populate before Start in
+  all 4 init/reload paths and drop start_endpoints/start_services
+  from production drivers (helpers retained for unit tests). New
+  service.rs regression test pins the late-registration contract.
+  LC-003 7/7 assertions PASS; aaa-broken=Failed err-present,
+  zzz-survivor=Running.
+- ζ trace cleanup (3 ssmapi_registry tracing::debug! calls + their
+  imports) deferred per c1a3672a; spawn a follow-up WP when needed.
+- BHV-LC-003 / DIV-H-006 in mt_gui_04_capability_inventory.md still
+  flagged NOT-FEASIBLE; with LC-003 now verifiable, an audit WP can
+  re-classify (out of this WP's scope).
+- v2 validator inbound field-lowering sweep
+  (vmess/vless/trojan/anytls/shadowtls/naive) remains B-tier deferred.
+- resolved-error-propagation still on case_backlog.md as B-tier.
 
 ## Still-Valid Constraints
 

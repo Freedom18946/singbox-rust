@@ -1,3 +1,6 @@
+# Prerequisite: must run as non-root user. The broken service binds to port 1
+# (privileged) to deterministically trigger EACCES on bind. Running as root
+# would cause the bind to succeed and the test would fail.
 id: p1_service_failure_isolation
 title: broken service does not prevent core kernel startup
 priority: p1
@@ -27,11 +30,34 @@ gui_sequence:
     method: GET
     path: /
     expect_status: 200
+  - kind: http
+    name: services_health
+    method: GET
+    path: /services/health
+    expect_status: 200
 upstream_topology: []
 traffic_plan: []
 assertions:
   - key: errors.count
     op: eq
     expected: 0
+  - key: http.services_health.body.healthy
+    op: eq
+    expected: false
+  - key: http.services_health.body.services.0.tag
+    op: eq
+    expected: "aaa-broken"
+  - key: http.services_health.body.services.0.status
+    op: eq
+    expected: "Failed"
+  - key: http.services_health.body.services.0.error
+    op: exists
+    expected: null
+  - key: http.services_health.body.services.1.tag
+    op: eq
+    expected: "zzz-survivor"
+  - key: http.services_health.body.services.1.status
+    op: eq
+    expected: "Running"
 oracle:
   tolerate_counter_jitter: true

@@ -23,8 +23,8 @@ EXIT_NO_CASES=3
 EXIT_ARTIFACT_INCOMPLETE=4
 
 if [[ "${INTEROP_SKIP_APP_BUILD}" != "1" ]]; then
-  echo "prebuild: cargo build -p app --features acceptance,clash_api --bin app"
-  cargo build -p app --features acceptance,clash_api --bin app >/dev/null
+  echo "prebuild: cargo build -p app --features acceptance,clash_api,service_ssmapi --bin app"
+  cargo build -p app --features acceptance,clash_api,service_ssmapi --bin app >/dev/null
 fi
 
 cleanup() {

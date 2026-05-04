@@ -2156,6 +2156,12 @@ fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<V
                 "body_hash" => Some(json!(r.body_hash)),
                 _ => None,
             }),
+        "http" if parts.len() >= 4 && parts[2] == "body" => snapshot
+            .http_results
+            .iter()
+            .find(|r| r.name == parts[1])
+            .and_then(|r| r.body.as_ref())
+            .and_then(|body| resolve_json_path(body, &parts[3..])),
         "traffic" if parts.len() >= 3 => snapshot
             .traffic_results
             .iter()
@@ -2336,7 +2342,8 @@ pub async fn run_cases(
 mod tests {
     use super::*;
     use crate::snapshot::{
-        KernelKind, NormalizedSnapshot, SubscriptionResult, TrafficResult, WsFrameCapture,
+        HttpResult, KernelKind, NormalizedSnapshot, SubscriptionResult, TrafficResult,
+        WsFrameCapture,
     };
 
     #[test]
@@ -2401,6 +2408,56 @@ mod tests {
         assert_eq!(
             resolve_assertion_value(&snapshot, "connections.downloadTotal"),
             Some(json!(42))
+        );
+    }
+
+    #[test]
+    fn resolve_http_body_json_path() {
+        let now = Utc::now();
+        let mut snapshot =
+            NormalizedSnapshot::new("run".to_string(), "case".to_string(), KernelKind::Rust, now);
+        snapshot.http_results.push(HttpResult {
+            name: "services_health".to_string(),
+            method: "GET".to_string(),
+            path: "/services/health".to_string(),
+            status: 200,
+            body: Some(json!({
+                "healthy": false,
+                "services": [
+                    {"tag": "aaa-broken", "status": "Failed", "error": "permission denied"},
+                    {"tag": "zzz-survivor", "status": "Running", "error": null}
+                ]
+            })),
+            body_hash: None,
+        });
+        snapshot.http_results.push(HttpResult {
+            name: "no_body".to_string(),
+            method: "GET".to_string(),
+            path: "/empty".to_string(),
+            status: 204,
+            body: None,
+            body_hash: None,
+        });
+
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "http.services_health.body.healthy"),
+            Some(json!(false))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "http.services_health.body.services.0.tag"),
+            Some(json!("aaa-broken"))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "http.services_health.body.services.1.status"),
+            Some(json!("Running"))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "http.no_body.body.anything"),
+            None
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "http.missing.body.healthy"),
+            None
         );
     }
 

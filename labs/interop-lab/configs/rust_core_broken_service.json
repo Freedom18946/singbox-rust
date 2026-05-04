@@ -11,6 +11,13 @@
       "type": "mixed",
       "name": "mixed-in",
       "listen": "127.0.0.1:18907"
+    },
+    {
+      "type": "shadowsocks",
+      "tag": "ss-in",
+      "listen": "127.0.0.1:18908",
+      "method": "aes-256-gcm",
+      "password": "test-only-not-secret"
     }
   ],
   "outbounds": [
@@ -21,5 +28,21 @@
   ],
   "route": {
     "default": "direct-out"
-  }
+  },
+  "services": [
+    {
+      "type": "ssmapi",
+      "tag": "zzz-survivor",
+      "listen": "127.0.0.1",
+      "listen_port": 39200,
+      "servers": { "/": "ss-in" }
+    },
+    {
+      "type": "ssmapi",
+      "tag": "aaa-broken",
+      "listen": "127.0.0.1",
+      "listen_port": 1,
+      "servers": { "/": "ss-in" }
+    }
+  ]
 }

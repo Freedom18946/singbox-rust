@@ -573,6 +573,90 @@ mod tests {
         ));
     }
 
+    /// LC-003 regression: supervisor-style sequence drives stages individually
+    /// and registers services AFTER `Initialize` already ran on an empty
+    /// manager. The fix in `runtime::supervisor` moves
+    /// `populate_bridge_managers` before `run_context_stage(Start)` so that
+    /// `ServiceManager.start_stage(Start)` observes the registered services.
+    /// This test pins that contract: even when Initialize runs on an empty
+    /// manager, a subsequent Start stage on a now-populated manager must
+    /// detect bind failures and surface them via `health_status`.
+    #[tokio::test]
+    async fn service_manager_late_registration_after_initialize_persists_failed() {
+        struct OkService;
+        impl Service for OkService {
+            fn service_type(&self) -> &str {
+                "ok"
+            }
+            fn tag(&self) -> &str {
+                "ok-svc"
+            }
+            fn start(
+                &self,
+                _stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+        }
+
+        struct FailOnStartService;
+        impl Service for FailOnStartService {
+            fn service_type(&self) -> &str {
+                "fail"
+            }
+            fn tag(&self) -> &str {
+                "fail-svc"
+            }
+            fn start(
+                &self,
+                stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                if stage == StartStage::Start {
+                    return Err("simulated bind failure".into());
+                }
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+        }
+
+        let mgr = ServiceManager::new();
+        // Mirror supervisor: Initialize runs on empty manager (no services yet).
+        mgr.start_stage(StartStage::Initialize);
+
+        // populate_bridge_managers happens here in the real flow.
+        mgr.add_service("ok-svc".into(), Arc::new(OkService)).await;
+        mgr.add_service("fail-svc".into(), Arc::new(FailOnStartService))
+            .await;
+
+        // Drive remaining stages, exactly like run_context_stage does in
+        // supervisor after the populate step.
+        mgr.start_stage(StartStage::Start);
+        mgr.start_stage(StartStage::PostStart);
+        mgr.start_stage(StartStage::Started);
+
+        let health: std::collections::HashMap<_, _> =
+            mgr.health_status().await.into_iter().collect();
+
+        assert_eq!(
+            health.get("ok-svc"),
+            Some(&ServiceStatus::Running),
+            "successful service must reach Running after late registration"
+        );
+        assert!(
+            matches!(
+                health.get("fail-svc"),
+                Some(ServiceStatus::Failed(message)) if message == "simulated bind failure"
+            ),
+            "failed service must end as Failed, not Running. got: {:?}",
+            health.get("fail-svc")
+        );
+    }
+
     #[tokio::test]
     async fn service_manager_start_stage_fault_isolation() {
         use crate::context::Startable;
