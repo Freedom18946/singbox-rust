@@ -133,7 +133,7 @@ with the authoritative source for each declaration.
 | BHV Range | Reason not in this inventory |
 |-----------|------------------------------|
 | BHV-SV-001..004 | Reclassified as harness-only (SV.1); not kernel behavior |
-| BHV-SV-005..007 | STRUCTURAL: Go provider endpoints return stubs; cannot dual-kernel test (DIV-H-005) |
+| BHV-SV-005..007 | STRUCTURAL: Go provider endpoints have hard-coded stubs with the actual `tunnel.{Proxy,Rule}Providers()` lookup commented out; method also diverges on healthcheck (Go GET vs Rust POST). Rust side audited honest with 3 e2e PASS (R66 2026-05-04). Cannot dual-kernel test (DIV-H-005). |
 | BHV-LC-003 | STRUCTURAL: Rust side honest (real broken-service fixture + live `/services/health` projection — R65 2026-05-04 audit). Go fork has no `/services/health` route, no `ServiceStatus` model, fail-fast `Manager.Start` — promotion blocked (DIV-H-006). |
 | BHV-DP-002 | SOCKS5 UDP: requires UDP ASSOCIATE support; not exercised by GUI API surface |
 | BHV-DP-003 | HTTP CONNECT proxy: tested in interop-lab but not in GUI-shape config |

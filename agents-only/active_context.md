@@ -54,24 +54,23 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- R65 BHV-LC-003 parity-promotion audit COMPLETED (2026-05-04).
-  Decision: **Class C — Go structural divergence; do not promote**.
-  Rust side audit-honest: `rust_core_broken_service.json` binds
-  `aaa-broken` ssmapi to port 1 (EACCES) + `zzz-survivor` to 39200;
-  `/services/health` is a live `ServiceManager.health_status()`
-  projection; case yaml asserts API reachable + `healthy==false` +
-  Failed/Running per-service. `cargo run -p interop-lab -- case run
-  p1_service_failure_isolation --kernel rust --env-class strict` PASS
-  (snapshot shows `error: "Permission denied (os error 13)"` on
-  broken, Running on survivor, `errors: []`). Go fork blockers
-  (`go_fork_source/sing-box-1.12.14/`): (1) `experimental/clashapi/
-  server.go` mounts no `/services/health` route, (2) `adapter/service/
-  manager.go` has no `ServiceStatus` enum and no status map, (3)
-  `Manager.Start` returns first service error and aborts boot — no
-  fault isolation. DIV-H-006, case_backlog, compat_matrix,
-  mt_gui_04_{capability_inventory,gap_list} updated to drop obsolete
-  Rust-stub claims and reframe as Go fork blocker. BHV account
-  unchanged (52/56). go_fork_source not modified.
+- R66 BHV-SV-005/006/007 (DIV-H-005) parity-promotion audit COMPLETED
+  (2026-05-04). Decision: **Class C — Go structural divergence**. Rust
+  honest: provider routes wired to `provider_manager` (handlers.rs:
+  1136-1264); `cargo test -p sb-api --test clash_http_e2e --
+  test_get_proxy_providers_with_data test_get_rule_providers_with_data
+  test_healthcheck_proxy_provider_with_data` → 3/3 PASS. Go fork
+  (`experimental/clashapi/{provider,ruleprovider}.go`): hard-coded
+  stubs (proxy `{providers: {}}` object, rule `{providers: []}` array
+  — shape divergence); `findProviderByName` / `findRuleProviderByName`
+  always 404 with `tunnel.{Proxy,Rule}Providers()` commented out;
+  per-name actions all `render.NoContent` with bodies commented out;
+  Go GET vs Rust POST on healthcheck. DIV-H-005,
+  mt_gui_04_{capability_inventory,gap_list} updated. BHV unchanged
+  (52/56). go_fork_source untouched.
+- R65 BHV-LC-003 (DIV-H-006) audit (commit 833753dc, 2026-05-04):
+  Class C — Rust honest broken-service fixture + live `/services/health`;
+  Go fork has no route, no `ServiceStatus`, fail-fast `Manager.Start`.
 - v2 validator inbound field-lowering sweep
   (vmess/vless/trojan/anytls/shadowtls/naive) remains B-tier deferred.
 - resolved-error-propagation still on case_backlog.md as B-tier.
