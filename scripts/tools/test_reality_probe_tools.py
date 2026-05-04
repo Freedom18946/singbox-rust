@@ -14,6 +14,7 @@ import reality_vless_probe_batch as batch
 import reality_vless_probe_evidence as evidence
 import reality_vless_probe_plan as plan
 import reality_vless_env_from_config as envtool
+import reality_vless_sample_intake as intake
 
 
 class RealityVlessEnvFromConfigTests(unittest.TestCase):
@@ -1607,6 +1608,275 @@ class RealityEvidenceRollupOrderingTests(unittest.TestCase):
         self.assertEqual(out_ab["latest_label_counts"], out_ba["latest_label_counts"])
         # Aggregate counters are commutative; assert they match too.
         self.assertEqual(out_ab["label_counts"], out_ba["label_counts"])
+
+
+def _make_vless_outbound(
+    tag: str,
+    server: str,
+    port: int,
+    uuid: str,
+    public_key: str,
+    short_id: str,
+    server_name: str = "www.example.com",
+) -> dict:
+    """Build a single fully-populated VLESS REALITY outbound dict."""
+    return {
+        "type": "vless",
+        "tag": tag,
+        "server": server,
+        "server_port": port,
+        "uuid": uuid,
+        "flow": "xtls-rprx-vision",
+        "tls": {
+            "enabled": True,
+            "server_name": server_name,
+            "alpn": ["h2", "http/1.1"],
+            "reality": {
+                "enabled": True,
+                "public_key": public_key,
+                "short_id": short_id,
+            },
+            "utls": {"enabled": True, "fingerprint": "chrome"},
+        },
+    }
+
+
+class RealityVlessSampleIntakeTests(unittest.TestCase):
+    """R71 fresh sample intake gate."""
+
+    def _baseline(self):
+        return {
+            "outbounds": [
+                {"type": "direct", "tag": "direct"},
+                _make_vless_outbound(
+                    "HK-A-BGP-2.0倍率",
+                    "203.0.113.7",
+                    10010,
+                    "11111111-1111-1111-1111-111111111111",
+                    "PUBKEY-HK",
+                    "shorthk",
+                ),
+                _make_vless_outbound(
+                    "JP-A-BGP-0.3倍率",
+                    "203.0.113.8",
+                    10020,
+                    "22222222-2222-2222-2222-222222222222",
+                    "PUBKEY-JP",
+                    "shortjp",
+                ),
+            ]
+        }
+
+    def _rollup(self):
+        return {
+            "by_outbound": {
+                "HK-A-BGP-2.0": {"latest_health": "latest_same_failure"},
+                "JP-A-BGP-0.3": {"latest_health": "latest_same_failure"},
+            }
+        }
+
+    def test_fresh_ready_outbound_is_identified(self):
+        candidate = {
+            "outbounds": [
+                _make_vless_outbound(
+                    "FRESH-NEW-1.0倍率",
+                    "198.51.100.10",
+                    11000,
+                    "33333333-3333-3333-3333-333333333333",
+                    "PUBKEY-FRESH",
+                    "shortfresh",
+                ),
+            ]
+        }
+        result = intake.build_intake(candidate, self._baseline(), self._rollup())
+        self.assertEqual(result["summary"]["counts"]["fresh_ready"], 1)
+        self.assertEqual(result["summary"]["counts"]["duplicate"], 0)
+        self.assertEqual(result["summary"]["counts"]["not_ready"], 0)
+        self.assertEqual(result["summary"]["selected_count"], 1)
+        self.assertTrue(result["summary"]["ready_for_r72"])
+        self.assertEqual(result["fresh_ready"][0]["tag"], "FRESH-NEW-1.0倍率")
+        self.assertEqual(result["fresh_ready"][0]["region"], "FRESH")
+
+    def test_baseline_tag_collision_is_duplicate(self):
+        candidate = {
+            "outbounds": [
+                _make_vless_outbound(
+                    "HK-A-BGP-2.0倍率",  # tag exists in baseline
+                    "9.9.9.9",  # different server
+                    9999,
+                    "44444444-4444-4444-4444-444444444444",
+                    "PUBKEY-DIFFERENT",
+                    "shortdifferent",
+                ),
+            ]
+        }
+        result = intake.build_intake(candidate, self._baseline(), self._rollup())
+        self.assertEqual(result["summary"]["counts"]["duplicate"], 1)
+        self.assertEqual(result["summary"]["counts"]["fresh_ready"], 0)
+        self.assertEqual(result["duplicate"][0]["detail"]["duplicate_kind"], "tag")
+
+    def test_fingerprint_collision_with_distinct_tag_is_duplicate(self):
+        candidate = {
+            "outbounds": [
+                _make_vless_outbound(
+                    "TOTALLY-NEW-NAME-3.3倍率",  # tag is fresh
+                    "203.0.113.7",  # but server, port, pubkey, short_id match HK
+                    10010,
+                    "55555555-5555-5555-5555-555555555555",  # uuid differs
+                    "PUBKEY-HK",
+                    "shorthk",
+                ),
+            ]
+        }
+        result = intake.build_intake(candidate, self._baseline(), self._rollup())
+        self.assertEqual(result["summary"]["counts"]["duplicate"], 1)
+        self.assertEqual(result["summary"]["counts"]["fresh_ready"], 0)
+        self.assertEqual(
+            result["duplicate"][0]["detail"]["duplicate_kind"], "fingerprint"
+        )
+        self.assertIn(
+            "HK-A-BGP-2.0倍率",
+            result["duplicate"][0]["detail"]["duplicate_baseline_tags"],
+        )
+
+    def test_missing_reality_field_is_not_ready(self):
+        # Three independent malformed candidates: missing public_key,
+        # missing uuid, missing server_name -> all three must be not_ready.
+        no_pubkey = _make_vless_outbound(
+            "M1-1.0倍率",
+            "198.51.100.20",
+            12000,
+            "66666666-6666-6666-6666-666666666666",
+            "PUB-X",
+            "shortx",
+        )
+        del no_pubkey["tls"]["reality"]["public_key"]
+        no_uuid = _make_vless_outbound(
+            "M2-1.0倍率",
+            "198.51.100.21",
+            12001,
+            "77777777-7777-7777-7777-777777777777",
+            "PUB-Y",
+            "shorty",
+        )
+        del no_uuid["uuid"]
+        # server_name fallback: when server_name is removed but raw server
+        # is still present, env extractor falls back to the server. To
+        # actually drive ready=False for "no server_name", drop the
+        # server itself (which forces missing_server, also a not_ready
+        # bucket result).
+        no_server = _make_vless_outbound(
+            "M3-1.0倍率",
+            "198.51.100.22",
+            12002,
+            "88888888-8888-8888-8888-888888888888",
+            "PUB-Z",
+            "shortz",
+        )
+        del no_server["server"]
+
+        candidate = {"outbounds": [no_pubkey, no_uuid, no_server]}
+        result = intake.build_intake(candidate, self._baseline(), self._rollup())
+        self.assertEqual(result["summary"]["counts"]["not_ready"], 3)
+        self.assertEqual(result["summary"]["counts"]["fresh_ready"], 0)
+        skip_reasons = sorted(item["skip_reason"] for item in result["not_ready"])
+        self.assertEqual(
+            skip_reasons,
+            ["missing_reality_public_key", "missing_server", "missing_uuid"],
+        )
+
+    def test_redacted_output_contains_no_raw_secrets(self):
+        candidate = {
+            "outbounds": [
+                _make_vless_outbound(
+                    "FRESH-R-1.0倍率",
+                    "198.51.100.30",
+                    13000,
+                    "deadbeef-dead-beef-dead-beefdeadbeef",
+                    "RAWPUBKEYAAA",
+                    "rawshortidBBB",
+                ),
+            ]
+        }
+        result = intake.build_intake(candidate, self._baseline(), self._rollup())
+        rendered_json = json.dumps(result)
+        rendered_md = intake.render_redacted_md(result)
+        # The candidate's raw secrets must not appear anywhere in the
+        # serialized output.
+        for secret in (
+            "deadbeef-dead-beef-dead-beefdeadbeef",
+            "RAWPUBKEYAAA",
+            "rawshortidBBB",
+            "198.51.100.30",
+        ):
+            self.assertNotIn(secret, rendered_json)
+            self.assertNotIn(secret, rendered_md)
+        # Hashes are short prefixes (12 chars) and the entry must include them.
+        fp = result["fresh_ready"][0]["fingerprint"]
+        self.assertIsNotNone(fp["server_hash"])
+        self.assertEqual(len(fp["server_hash"]), 12)
+        self.assertIsNotNone(fp["public_key_hash"])
+        self.assertEqual(len(fp["public_key_hash"]), 12)
+        self.assertIsNotNone(fp["short_id_hash"])
+        self.assertEqual(len(fp["short_id_hash"]), 12)
+
+    def test_no_candidate_fresh_when_all_overlap(self):
+        # Candidate is byte-identical to baseline tag/server -> fresh=0.
+        candidate = {
+            "outbounds": [
+                _make_vless_outbound(
+                    "HK-A-BGP-2.0倍率",
+                    "203.0.113.7",
+                    10010,
+                    "11111111-1111-1111-1111-111111111111",
+                    "PUBKEY-HK",
+                    "shorthk",
+                ),
+                _make_vless_outbound(
+                    "JP-A-BGP-0.3倍率",
+                    "203.0.113.8",
+                    10020,
+                    "22222222-2222-2222-2222-222222222222",
+                    "PUBKEY-JP",
+                    "shortjp",
+                ),
+            ]
+        }
+        result = intake.build_intake(candidate, self._baseline(), self._rollup())
+        self.assertEqual(result["summary"]["counts"]["fresh_ready"], 0)
+        self.assertEqual(result["summary"]["selected_count"], 0)
+        self.assertFalse(result["summary"]["ready_for_r72"])
+
+    def test_covered_existing_marks_known_rollup_keys(self):
+        # Candidate is a brand-new server (passes baseline-fingerprint),
+        # but its tag — once stripped of the 倍率 suffix — already exists
+        # as a rollup key. That demotes it from fresh_ready to
+        # covered_existing. To synthesise this we must keep the candidate
+        # tag distinct from baseline (so the duplicate-tag rule does not
+        # fire), yet share the rollup-stripped key. We achieve that by
+        # using a rollup that already contains a stripped key matching a
+        # name not in the baseline, then handing the validator a
+        # candidate with that exact tag plus a fresh fingerprint.
+        baseline = {"outbounds": [{"type": "direct", "tag": "direct"}]}
+        roll = {"by_outbound": {"NEW-COVERED-9.9": {"latest_health": "x"}}}
+        candidate = {
+            "outbounds": [
+                _make_vless_outbound(
+                    "NEW-COVERED-9.9倍率",
+                    "198.51.100.99",
+                    14999,
+                    "99999999-9999-9999-9999-999999999999",
+                    "PUBKEY-NEW",
+                    "shortnew",
+                ),
+            ]
+        }
+        result = intake.build_intake(candidate, baseline, roll)
+        self.assertEqual(result["summary"]["counts"]["covered_existing"], 1)
+        self.assertEqual(result["summary"]["counts"]["fresh_ready"], 0)
+        self.assertEqual(
+            result["covered_existing"][0]["detail"]["rollup_key"], "NEW-COVERED-9.9"
+        )
 
 
 if __name__ == "__main__":

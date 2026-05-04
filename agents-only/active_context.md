@@ -36,38 +36,33 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Current Build And Gate
 
-- cargo build -p app --features acceptance,clash_api,service_ssmapi:
-  PASS
+- cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  68 tests PASS.
-- live_rollup.json/md: 18 rounds, 113 runs, 24 all_ok (R70 added
-  R63 HK final confirmation #3).
+  **75 tests PASS** (R71 +7 intake tests).
+- live_rollup.json/md unchanged: 18 rounds, 113 runs, 24 all_ok.
 
 ## Next Steps
 
+- R71 fresh sample intake gate DONE (2026-05-04). Classification:
+  **A — intake gate ready, waiting for fresh config**. New tool
+  `scripts/tools/reality_vless_sample_intake.py` validates a
+  candidate REALITY/VLESS config against the committed baseline +
+  rollup and emits redacted (SHA-256/12) classifications:
+  `fresh_ready` / `duplicate` / `not_ready` / `covered_existing`.
+  Tag-collision and fingerprint-collision paths both detected;
+  raw UUID / public_key / short_id / server never written. Operator
+  guide at `agents-only/mt_real_02_fresh_sample_intake.md` (A-tier).
+  No fresh config supplied this round → 0 fresh_ready candidates;
+  R72 cannot start until operator drops a candidate config per
+  intake doc step 1. No live probe. No sampler/dataplane patch.
+  No edits to baseline `phase3_ip_direct.json`, `go_fork_source/*`,
+  or `.github/workflows/*`. BHV 52/56 unchanged.
 - R70 HK final confirmation + current-sample-face closure DONE
-  (2026-05-04). Classification: **A — Current sample face
-  formally closed / no new signal**. (1) HK-A-BGP-2.0
-  longer-repeat #3 (4 runs) → 4/4 uniform
-  `probe_io_all_connection_reset` + `reality_all_connection_reset`,
-  zero divergence, probe_io class == reality class.
-  R61+R62+R63 = **3/3 longer-repeat rounds satisfied**;
-  closure_report rule "is_phase_shifting=false stably across 3+
-  longer-repeat rounds" is met. HK-A-BGP-2.0 formally
-  reclassified off analyst-layer bi-modal/phase-shifting
-  suspect list. (2) Default planner: 0 uncovered;
-  `--include-covered --limit 5` only returns 5 latest_all_ok
-  recovery-watch nodes — sample face saturated. (3) Evidence
-  `round63_stage3_hk_final_confirmation_summary.json` added;
-  rollup 17→18 rounds, 109→113 runs, all_ok 24→24. Latest
-  divergence/bi_modal/phase_shifting all `[]`;
-  latest_stable_same_failure still the 6-node set. HK by_outbound:
-  latest_round=63, is_bi_modal=false, is_phase_shifting=false,
-  divergence_run_ratio=0.0. No sampler/dataplane patch. BHV
-  52/56 unchanged. go_fork_source / .github/workflows untouched.
-  Fresh-signal gate: next round needs user-supplied fresh
-  REALITY/VLESS nodes or new config.
+  (ac57c2fe). Classification A. R61+R62+R63 = 3/3 longer-repeat
+  rounds; HK-A-BGP-2.0 formally reclassified off
+  bi-modal/phase-shifting suspect list. closure_report addendum
+  written. Fresh-signal gate verdict carried forward into R71.
 - R69 HK #2 (R62) classification A; R68 rollup ordering audit
   (c8f58140); R67 R61 recon (ba7aa8d7) classification A;
   v2 validator inbound field-lowering sweep B-tier deferred.

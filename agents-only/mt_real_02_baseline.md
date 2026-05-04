@@ -6464,3 +6464,125 @@ sample face。同时 dry-run planner 验证 fresh sample gate 是否仍未
 - `reality_vless_evidence_rollup.py` → 18 rounds / 113 runs
 - BHV 账面 52/56 不变；`go_fork_source/*`、`.github/workflows/*` 未触碰；
   sampler/dataplane 无改动。
+
+---
+
+## Round 71 (fresh sample intake gate)
+
+### 日期
+
+2026-05-04
+
+### 目标
+
+R70 已正式关闭当前 committed `phase3_ip_direct.json` sample face。
+继续在旧节点上跑 sampler 不会再制造结构信号。R71 不跑 live probe、
+不修改 sampler/dataplane，专注建立干净的 fresh sample 入口：
+
+1. 实现 redacted-by-default 的 candidate config 验证器，识别
+   真正 fresh 的 REALITY/VLESS outbound、tag/指纹 duplicate、
+   缺字段 not_ready、以及 rollup 已覆盖的 covered_existing。
+2. 给 R72 live probe 准备「干净输入合同」：除非验证器输出
+   `ready_for_r72=true`，否则 R72 不能启动。
+
+### 工具
+
+`scripts/tools/reality_vless_sample_intake.py`：
+
+- 输入：
+  - `--candidate-config PATH`
+  - `--baseline-config`（默认 `agents-only/mt_real_01_evidence/phase3_ip_direct.json`）
+  - `--rollup-json`（默认 `agents-only/mt_real_02_evidence/live_rollup.json`）
+  - `--output-json PATH`（必填）
+  - `--redacted-md PATH`（可选）
+- 复用 `reality_vless_env_from_config.py` 的 `outbound_summary` /
+  `reality_vless_ready_reason` 解析逻辑，**不重写** REALITY 字段判定。
+- 分类规则（优先级从高到低）：
+  1. `not_ready` —— `reality_vless_ready_reason()` 返回非 None
+     （`missing_uuid` / `missing_reality_public_key` / `missing_server` /
+     `missing_port` / `missing_name` / `non_tcp_transport` / `not_vless`）。
+  2. `duplicate` —— ready 通过但 tag 与 baseline tag 集合冲突
+     (`duplicate_kind=tag`)，或指纹 5-tuple
+     (server_hash, port, server_name, public_key_hash, short_id_hash)
+     与 baseline 中任一 outbound 完全一致 (`duplicate_kind=fingerprint`)；
+     uuid 不参与指纹比较，因 uuid 是账户级的。
+  3. `covered_existing` —— ready + 非 duplicate，但去掉 `倍率` 后缀的 tag
+     已经存在于 `live_rollup.json` 的 `by_outbound` 索引里，等于复刷旧线。
+  4. `fresh_ready` —— 以上都不是，进入 R72 候选池。
+- 顶层 `summary.ready_for_r72 = (counts.fresh_ready > 0)`。R72 必须以此
+  字段为 entry gate。
+- Redaction：所有原文 UUID / public_key / short_id / server 一律替换为
+  `{ "hash": SHA256[:12], "length": N }`，hash 决定性可比对但不可逆。
+  `server_name` 与 `port` 是公开字段，按原文保留。markdown 报告由
+  `render_redacted_md` 渲染，仅写 hash 和 region prefix。
+
+### 测试
+
+`scripts/tools/test_reality_probe_tools.py::RealityVlessSampleIntakeTests`，
+7 个新用例：
+
+1. `test_fresh_ready_outbound_is_identified` —— 候选 1 个全新 tag +
+   全新指纹，应进入 fresh_ready，summary.ready_for_r72=True。
+2. `test_baseline_tag_collision_is_duplicate` —— 候选 tag 与 baseline
+   完全一致但 server/UUID 都不同，应判 duplicate (kind=tag)。
+3. `test_fingerprint_collision_with_distinct_tag_is_duplicate` ——
+   候选 tag 是新名字，但 server/port/server_name/public_key/short_id
+   与 baseline 中某项完全一致，应判 duplicate (kind=fingerprint)，
+   并记录 `duplicate_baseline_tags` 指回原 baseline tag。
+4. `test_missing_reality_field_is_not_ready` —— 同时验证 3 个失败路径
+   (missing_reality_public_key / missing_uuid / missing_server)，全部
+   进入 not_ready 桶并带有正确 skip_reason。
+5. `test_redacted_output_contains_no_raw_secrets` —— 候选含明文
+   UUID/public_key/short_id/server，序列化 JSON 与 MD 中均不可
+   出现这些原值；fingerprint hash 长度严格 12。
+6. `test_no_candidate_fresh_when_all_overlap` —— 候选与 baseline
+   完全相同 → fresh_ready=0、ready_for_r72=False。
+7. `test_covered_existing_marks_known_rollup_keys` —— 候选 tag 不在
+   baseline，但 stripped tag 已在 rollup 索引中，应进入 covered_existing
+   桶并写 `detail.rollup_key`。
+
+### 本轮验证
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py
+  scripts/tools/test_reality_clienthello_family.py
+  scripts/tools/test_dual_kernel_verification.py` →
+  **75 PASS**（原 68 + 新 7）。
+- `cargo check --workspace` → PASS。
+- `python3 scripts/tools/reality_vless_sample_intake.py --help` → 正常打印 CLI。
+
+### Fresh config 状态
+
+本轮**没有**用户提供的 fresh REALITY/VLESS config。`/tmp/mt_real_02_fresh_config.json`
+不存在。因此：
+
+- 没有跑 candidate 验证。
+- 没有跑 `reality_vless_probe_batch.py --dry-run`。
+- 没有 live probe。
+
+新增 operator guide：`agents-only/mt_real_02_fresh_sample_intake.md`
+（A-tier）。文档明确：
+
+- 候选 config 必须放在 `/tmp/...`，不能进 `agents-only/` 下。
+- 必填字段：type=vless / tag / server / server_port / uuid /
+  reality.public_key / server_name / 纯 TCP transport。
+- `short_id` 与 `utls.fingerprint` 不影响 ready，但影响 duplicate 检测。
+- R72 启动门禁：`summary.ready_for_r72=true` + 一次成功的
+  `reality_vless_probe_batch.py --dry-run`。
+- 不允许把 raw secret 写进任何被 git 追踪的文件。
+
+### 判定（R71 分类 A：intake gate ready, waiting for fresh config）
+
+- 工具就绪并通过单测，redaction 完整，duplicate/not_ready/covered_existing
+  三条边界都被测试覆盖。
+- 当前没有可进入 R72 live probe 的 fresh candidates；R72 entry gate
+  正式定义为「intake validator 输出 fresh_ready ≥ 1 且 dry-run 成功」。
+- 没有 sampler/dataplane patch；未编辑 baseline config；BHV 账面 52/56
+  不变；`go_fork_source/*`、`.github/workflows/*` 未触碰。
+
+### 改动文件
+
+- `scripts/tools/reality_vless_sample_intake.py`（新增）
+- `scripts/tools/test_reality_probe_tools.py`（追加 7 用例 + 1 import）
+- `agents-only/mt_real_02_fresh_sample_intake.md`（新增 A-tier 文档）
+- `agents-only/active_context.md`（R71 状态、≤95 行）
+- `agents-only/mt_real_02_baseline.md`（追加本节）
