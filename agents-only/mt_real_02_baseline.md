@@ -6651,3 +6651,58 @@ Redacted summary counts 因输入被拒绝未产生：
 
 - `agents-only/active_context.md`（R72 状态、≤95 行）
 - `agents-only/mt_real_02_baseline.md`（追加本节）
+
+---
+
+## Round 72b (fresh config root normalization + intake re-run)
+
+### 日期
+
+2026-05-06
+
+### 目标
+
+R72 发现 fresh candidate JSON 的 root 是 list，不是 sing-box config
+object。R72b 只做安全 root normalization、重新跑 offline intake gate，
+并按 `ready_for_r72` 决定是否允许 dry-run gate；仍不跑 live probe。
+
+### 门禁
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py`
+  → **75 PASS**。
+- `cargo check --workspace` → PASS。
+
+### Root normalization
+
+- Root type: list。
+- 已生成 `/tmp/mt_real_02_fresh_config_wrapped.json`，结构为
+  `{ "outbounds": <candidate-array> }`。
+- `/tmp` normalized config 未提交。
+
+### Intake validation
+
+对 normalized config 重新执行 `reality_vless_sample_intake.py`，产出
+redacted summary：
+
+- `fresh_ready`: 0
+- `duplicate`: 0
+- `not_ready`: 0
+- `covered_existing`: 0
+- `ready_for_r72`: false
+
+### Dry-run gate
+
+未执行。`ready_for_r72=false`，没有 fresh candidates 可进入 dry-run
+或 R73 live probe。
+
+### 判定（R72b 分类 A：intake valid but no fresh candidates）
+
+- Intake validator 正常完成，但 fresh_ready=0。
+- R73 live probe **不可启动**。
+- 没有 sampler/dataplane patch；未编辑 baseline config；BHV 账面 52/56
+  不变；`go_fork_source/*`、`.github/workflows/*` 未触碰。
+
+### 改动文件
+
+- `agents-only/active_context.md`（R72b 状态、≤95 行）
+- `agents-only/mt_real_02_baseline.md`（追加本节）
