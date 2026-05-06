@@ -6586,3 +6586,68 @@ R70 已正式关闭当前 committed `phase3_ip_direct.json` sample face。
 - `agents-only/mt_real_02_fresh_sample_intake.md`（新增 A-tier 文档）
 - `agents-only/active_context.md`（R71 状态、≤95 行）
 - `agents-only/mt_real_02_baseline.md`（追加本节）
+
+---
+
+## Round 72 (fresh config intake validation + dry-run gate)
+
+### 日期
+
+2026-05-06
+
+### 目标
+
+验证用户放置在 `/tmp/mt_real_02_fresh_config.json` 的 fresh
+REALITY/VLESS candidate 是否可进入下一轮 R73 bounded live probe。
+本轮只允许 offline intake validator 和 dry-run gate；不跑 live probe，
+不修改 sampler/dataplane，不修改 committed baseline config。
+
+### 门禁
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py`
+  → **75 PASS**。
+- `cargo check --workspace` → PASS。
+
+### Intake validation
+
+执行：
+
+```bash
+python3 scripts/tools/reality_vless_sample_intake.py \
+  --candidate-config /tmp/mt_real_02_fresh_config.json \
+  --baseline-config agents-only/mt_real_01_evidence/phase3_ip_direct.json \
+  --rollup-json agents-only/mt_real_02_evidence/live_rollup.json \
+  --output-json /tmp/mt_real_02_fresh_intake.json \
+  --redacted-md /tmp/mt_real_02_fresh_intake.md
+```
+
+结果：validator 在生成 redacted summary 前拒绝输入，原因是 candidate
+config root 不是 sing-box config object。`/tmp/mt_real_02_fresh_intake.json`
+和 `/tmp/mt_real_02_fresh_intake.md` 均未生成。
+
+Redacted summary counts 因输入被拒绝未产生：
+
+- `fresh_ready`: not produced
+- `duplicate`: not produced
+- `not_ready`: not produced
+- `covered_existing`: not produced
+- `ready_for_r72`: not produced
+
+### Dry-run gate
+
+未执行。由于 intake validator 未产生 `summary.ready_for_r72=true`，
+不得运行 `reality_vless_probe_batch.py`，也不得启动 live probe。
+
+### 判定（R72 分类 D：invalid/unsafe input）
+
+- Candidate config malformed for intake: root shape is not a sing-box
+  config object.
+- R73 live probe **不可启动**；需要重新提供符合 intake guide 的 fresh
+  config 后再跑 R72 gate。
+- 没有 sampler/dataplane patch；未编辑 baseline config；BHV 账面 52/56
+  不变；`go_fork_source/*`、`.github/workflows/*` 未触碰。
+
+### 改动文件
+
+- `agents-only/active_context.md`（R72 状态、≤95 行）
+- `agents-only/mt_real_02_baseline.md`（追加本节）

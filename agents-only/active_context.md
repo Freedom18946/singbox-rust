@@ -11,7 +11,8 @@
 ## Strategic State
 
 Phase: MT-REAL-02 stage-2 closed (R45-R60); stage-3 path A active
-on demand. Parity 52/56 BHV (92.9%); ARCH-LIMIT-REALITY label.
+on demand, gated by fresh sample intake. Parity 52/56 BHV (92.9%);
+ARCH-LIMIT-REALITY label.
 
 ## MT-REAL-02 Stage-2 Closure Summary
 
@@ -44,20 +45,18 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
+- R72 fresh config intake validation DONE (2026-05-06).
+  Classification: **D — invalid input**. The supplied `/tmp`
+  candidate was rejected before redacted summary generation because
+  the config root was not a sing-box object. Counts unavailable:
+  `fresh_ready`/`duplicate`/`not_ready`/`covered_existing` were not
+  produced; `ready_for_r72` not produced. No dry-run or live probe;
+  R73 cannot start. Gates passed: 75 Python tests + `cargo check`.
+  No sampler/dataplane patch. No edits to baseline config,
+  `go_fork_source/*`, or `.github/workflows/*`. BHV 52/56 unchanged.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification:
-  **A — intake gate ready, waiting for fresh config**. New tool
-  `scripts/tools/reality_vless_sample_intake.py` validates a
-  candidate REALITY/VLESS config against the committed baseline +
-  rollup and emits redacted (SHA-256/12) classifications:
-  `fresh_ready` / `duplicate` / `not_ready` / `covered_existing`.
-  Tag-collision and fingerprint-collision paths both detected;
-  raw UUID / public_key / short_id / server never written. Operator
-  guide at `agents-only/mt_real_02_fresh_sample_intake.md` (A-tier).
-  No fresh config supplied this round → 0 fresh_ready candidates;
-  R72 cannot start until operator drops a candidate config per
-  intake doc step 1. No live probe. No sampler/dataplane patch.
-  No edits to baseline `phase3_ip_direct.json`, `go_fork_source/*`,
-  or `.github/workflows/*`. BHV 52/56 unchanged.
+  **A — intake gate ready, waiting for fresh config**. Operator guide:
+  `agents-only/mt_real_02_fresh_sample_intake.md` (A-tier).
 - R70 HK final confirmation + current-sample-face closure DONE
   (ac57c2fe). Classification A. R61+R62+R63 = 3/3 longer-repeat
   rounds; HK-A-BGP-2.0 formally reclassified off
