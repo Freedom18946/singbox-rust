@@ -71,7 +71,7 @@ Redacted counts:
 - `unsupported`: 0
 - `ready_for_trojan_sanity`: true
 
-## Dry-Run Gate
+## MT-TROJAN-FRESH-01 Dry-Run Gate
 
 No live probe was run. The repository currently has no bounded Trojan
 realworld sanity dry-run/probe runner equivalent to the REALITY/VLESS
@@ -80,14 +80,45 @@ batch tooling, so the gate stops at **C: tooling gap**.
 Next implementation step: add a Trojan-specific bounded runner that can
 produce a non-live plan/dry-run summary before any live authorization.
 
+## MT-TROJAN-FRESH-02 Dry-Run Runner
+
+`scripts/tools/trojan_probe_plan.py` now builds a bounded, redacted,
+non-network plan from the Trojan intake JSON and candidate config. It
+selects only `trojan_ready` entries, verifies each selected row against
+the candidate config by redacted fingerprint, and writes no raw server,
+password, or TLS server_name values.
+
+Command:
+
+```bash
+python3 scripts/tools/trojan_probe_plan.py \
+  --intake-json /tmp/trojan_fresh_intake.json \
+  --candidate-config /tmp/mt_real_02_fresh_config_wrapped.json \
+  --target example.com:80 \
+  --limit 5 \
+  --runs 1 \
+  --timeout 8 \
+  --output-json /tmp/trojan_probe_plan.json \
+  --redacted-md /tmp/trojan_probe_plan.md
+```
+
+Redacted dry-run summary:
+
+- `selected_count`: 5
+- `total_ready`: 88
+- `duplicate_count`: 2
+- `planned_runs`: 5
+- `dry_run_only`: true
+- `ready_for_live_authorization`: true
+
 ## Verification
 
 - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py`
-  -> 82 PASS.
+  -> 88 PASS.
 - `cargo check --workspace` -> PASS.
 
 ## Classification
 
-**C - Tooling gap.** Trojan intake is redacted and ready, but the next
-bounded Rust-only sanity probe needs dedicated dry-run/probe tooling
-before live authorization.
+**A - Dry-run runner ready, waiting for live authorization.** Trojan
+planning is still a separate Rust-only quality line and does not affect
+BHV 52/56 or dual-kernel parity status.

@@ -6752,6 +6752,7 @@ fresh sample face；不跑 live probe，不修改 sampler/dataplane。
   不变；`go_fork_source/*`、`.github/workflows/*` 未触碰。
 
 MT-TROJAN-FRESH-01 follow-up: REALITY remains blocked, and the Trojan-only config is moved to a separate Rust-only quality line that does not affect BHV 52/56 or dual-kernel parity status.
+MT-TROJAN-FRESH-02 follow-up: REALITY remains blocked; Trojan quality-line dry-run planning is now ready for separate live authorization and still does not affect BHV 52/56 or dual-kernel parity status.
 
 ### 改动文件
 

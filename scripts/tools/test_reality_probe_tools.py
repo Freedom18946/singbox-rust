@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 import argparse
+import contextlib
+import io
 import json
 import pathlib
 import sys
@@ -16,6 +18,7 @@ import reality_vless_probe_plan as plan
 import reality_vless_env_from_config as envtool
 import reality_vless_sample_intake as intake
 import trojan_sample_intake as trojan_intake
+import trojan_probe_plan as trojan_plan
 
 
 class RealityVlessEnvFromConfigTests(unittest.TestCase):
@@ -2024,6 +2027,156 @@ class TrojanSampleIntakeTests(unittest.TestCase):
         self.assertEqual(len(fp["server_hash"]), 12)
         self.assertEqual(len(fp["password_hash"]), 12)
         self.assertEqual(len(fp["server_name_hash"]), 12)
+
+
+class TrojanProbePlanTests(unittest.TestCase):
+    """MT-TROJAN-FRESH-02 bounded dry-run planner."""
+
+    def _candidate(self, count: int = 3) -> dict:
+        return {
+            "outbounds": [
+                _make_trojan_outbound(
+                    f"plan-{index}",
+                    f"plan-{index}.example.invalid",
+                    443 + index,
+                    f"plan-password-{index}",
+                    f"plan-sni-{index}.example.invalid",
+                )
+                for index in range(count)
+            ]
+        }
+
+    def test_selects_bounded_trojan_ready_candidates(self):
+        candidate = self._candidate(3)
+        intake_result = trojan_intake.classify_candidates(candidate)
+        plan_result = trojan_plan.build_plan(
+            intake_result,
+            candidate,
+            "example.com:80",
+            limit=2,
+            runs=1,
+            timeout=8,
+        )
+        self.assertEqual(plan_result["summary"]["selected_count"], 2)
+        self.assertEqual(plan_result["summary"]["total_ready"], 3)
+        self.assertEqual(
+            [item["tag"] for item in plan_result["selected"]],
+            ["plan-0", "plan-1"],
+        )
+
+    def test_runs_contribute_to_planned_runs(self):
+        candidate = self._candidate(2)
+        intake_result = trojan_intake.classify_candidates(candidate)
+        plan_result = trojan_plan.build_plan(
+            intake_result,
+            candidate,
+            "example.com:80",
+            limit=2,
+            runs=3,
+            timeout=8,
+        )
+        self.assertEqual(plan_result["summary"]["selected_count"], 2)
+        self.assertEqual(plan_result["summary"]["planned_runs"], 6)
+        self.assertEqual(plan_result["selected"][0]["runs"], 3)
+
+    def test_duplicate_candidates_are_not_selected(self):
+        candidate = {
+            "outbounds": [
+                _make_trojan_outbound(
+                    "unique",
+                    "dup.example.invalid",
+                    443,
+                    "dup-password",
+                    "dup-sni.example.invalid",
+                ),
+                _make_trojan_outbound(
+                    "duplicate-fp",
+                    "dup.example.invalid",
+                    443,
+                    "dup-password",
+                    "dup-sni.example.invalid",
+                ),
+            ]
+        }
+        intake_result = trojan_intake.classify_candidates(candidate)
+        plan_result = trojan_plan.build_plan(
+            intake_result,
+            candidate,
+            "example.com:80",
+            limit=5,
+            runs=1,
+            timeout=8,
+        )
+        self.assertEqual(plan_result["summary"]["selected_count"], 1)
+        self.assertEqual(plan_result["summary"]["duplicate_count"], 1)
+        self.assertEqual([item["tag"] for item in plan_result["selected"]], ["unique"])
+
+    def test_empty_ready_disables_live_authorization(self):
+        candidate = {
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": "unsupported",
+                    "server": "unsupported.example.invalid",
+                    "server_port": 443,
+                }
+            ]
+        }
+        intake_result = trojan_intake.classify_candidates(candidate)
+        plan_result = trojan_plan.build_plan(
+            intake_result,
+            candidate,
+            "example.com:80",
+            limit=5,
+            runs=1,
+            timeout=8,
+        )
+        self.assertEqual(plan_result["summary"]["selected_count"], 0)
+        self.assertEqual(plan_result["summary"]["planned_runs"], 0)
+        self.assertFalse(plan_result["summary"]["ready_for_live_authorization"])
+
+    def test_redacted_plan_contains_no_raw_node_material(self):
+        candidate = {
+            "outbounds": [
+                _make_trojan_outbound(
+                    "redacted-plan",
+                    "raw-plan-server.example.invalid",
+                    443,
+                    "raw-plan-password",
+                    "raw-plan-sni.example.invalid",
+                )
+            ]
+        }
+        intake_result = trojan_intake.classify_candidates(candidate)
+        plan_result = trojan_plan.build_plan(
+            intake_result,
+            candidate,
+            "example.com:80",
+            limit=5,
+            runs=1,
+            timeout=8,
+        )
+        rendered_json = json.dumps(plan_result)
+        rendered_md = trojan_plan.render_redacted_md(plan_result)
+        for value in (
+            "raw-plan-server.example.invalid",
+            "raw-plan-password",
+            "raw-plan-sni.example.invalid",
+        ):
+            self.assertNotIn(value, rendered_json)
+            self.assertNotIn(value, rendered_md)
+        selected = plan_result["selected"][0]
+        self.assertEqual(len(selected["server_hash"]), 12)
+        self.assertEqual(len(selected["password_hash"]), 12)
+        self.assertEqual(len(selected["server_name_hash"]), 12)
+
+    def test_cli_help_exits_zero(self):
+        stdout = io.StringIO()
+        with contextlib.redirect_stdout(stdout):
+            with self.assertRaises(SystemExit) as cm:
+                trojan_plan.main(["--help"])
+        self.assertEqual(cm.exception.code, 0)
+        self.assertIn("--intake-json", stdout.getvalue())
 
 
 if __name__ == "__main__":
