@@ -45,16 +45,15 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- R72c fresh candidate type triage DONE (2026-05-06).
-  Classification: **D — invalid for MT-REAL-02 REALITY intake**.
-  Wrapped candidate is valid JSON but wrong protocol family: 90
-  outbounds, all `type=trojan`, 0 VLESS/REALITY candidates, 0 UUID
-  fields, 0 `tls.reality` blocks. This is not a validator bug. No
-  dry-run or live probe; R73 REALITY probe cannot start until a
-  `type=vless` + REALITY config is supplied. Gates passed: 75 Python
-  tests + `cargo check`. No sampler/dataplane patch. No edits to
-  baseline config, `go_fork_source/*`, or `.github/workflows/*`.
-  BHV 52/56 unchanged.
+- MT-TROJAN-FRESH-01 intake gate DONE (2026-05-06). Classification:
+  **C — tooling gap**. Trojan-only candidate moved to a separate
+  Rust-only quality line, not REALITY parity. Type counts: 90
+  outbounds, `trojan=90`, TLS enabled/server_name present for all,
+  transport absent for all. Redacted intake counts: `trojan_ready=88`,
+  `duplicate=2`, `not_ready=0`, `unsupported=0`. No live probe;
+  next step is a bounded Trojan dry-run/probe runner before any
+  realworld sanity authorization. Gates passed: 82 Python tests +
+  `cargo check`. BHV 52/56 unchanged.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification:
   **A — intake gate ready, waiting for fresh config**. Operator guide:
   `agents-only/mt_real_02_fresh_sample_intake.md` (A-tier).

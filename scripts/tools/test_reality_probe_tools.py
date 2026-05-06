@@ -15,6 +15,7 @@ import reality_vless_probe_evidence as evidence
 import reality_vless_probe_plan as plan
 import reality_vless_env_from_config as envtool
 import reality_vless_sample_intake as intake
+import trojan_sample_intake as trojan_intake
 
 
 class RealityVlessEnvFromConfigTests(unittest.TestCase):
@@ -1877,6 +1878,152 @@ class RealityVlessSampleIntakeTests(unittest.TestCase):
         self.assertEqual(
             result["covered_existing"][0]["detail"]["rollup_key"], "NEW-COVERED-9.9"
         )
+
+
+def _make_trojan_outbound(
+    tag: str,
+    server: str,
+    port: int,
+    password: str,
+    server_name: str = "tls.example.invalid",
+) -> dict:
+    return {
+        "type": "trojan",
+        "tag": tag,
+        "server": server,
+        "server_port": port,
+        "password": password,
+        "tls": {
+            "enabled": True,
+            "server_name": server_name,
+        },
+    }
+
+
+class TrojanSampleIntakeTests(unittest.TestCase):
+    """MT-TROJAN-FRESH-01 fresh sample intake gate."""
+
+    def test_ready_trojan_candidate_is_identified(self):
+        candidate = {
+            "outbounds": [
+                _make_trojan_outbound(
+                    "trojan-ready",
+                    "ready.example.invalid",
+                    443,
+                    "ready-password",
+                )
+            ]
+        }
+        result = trojan_intake.classify_candidates(candidate)
+        self.assertEqual(result["summary"]["counts"]["trojan_ready"], 1)
+        self.assertEqual(result["summary"]["selected_count"], 1)
+        self.assertTrue(result["summary"]["ready_for_trojan_sanity"])
+        item = result["trojan_ready"][0]
+        self.assertEqual(item["tag"], "trojan-ready")
+        self.assertEqual(item["port"], 443)
+        self.assertTrue(item["ready"])
+
+    def test_missing_password_is_not_ready(self):
+        outbound = _make_trojan_outbound(
+            "missing-password",
+            "nopass.example.invalid",
+            443,
+            "remove-me",
+        )
+        del outbound["password"]
+        result = trojan_intake.classify_candidates({"outbounds": [outbound]})
+        self.assertEqual(result["summary"]["counts"]["not_ready"], 1)
+        self.assertEqual(result["not_ready"][0]["skip_reason"], "missing_password")
+
+    def test_missing_server_is_not_ready(self):
+        outbound = _make_trojan_outbound(
+            "missing-server",
+            "noserver.example.invalid",
+            443,
+            "server-test-password",
+        )
+        del outbound["server"]
+        result = trojan_intake.classify_candidates({"outbounds": [outbound]})
+        self.assertEqual(result["summary"]["counts"]["not_ready"], 1)
+        self.assertEqual(result["not_ready"][0]["skip_reason"], "missing_server")
+
+    def test_duplicate_tag_is_duplicate(self):
+        candidate = {
+            "outbounds": [
+                _make_trojan_outbound("dup-tag", "first.example.invalid", 443, "pw-a"),
+                _make_trojan_outbound("dup-tag", "second.example.invalid", 8443, "pw-b"),
+            ]
+        }
+        result = trojan_intake.classify_candidates(candidate)
+        self.assertEqual(result["summary"]["counts"]["trojan_ready"], 1)
+        self.assertEqual(result["summary"]["counts"]["duplicate"], 1)
+        self.assertEqual(result["duplicate"][0]["detail"]["duplicate_kind"], "tag")
+
+    def test_duplicate_fingerprint_with_distinct_tag_is_duplicate(self):
+        candidate = {
+            "outbounds": [
+                _make_trojan_outbound(
+                    "fp-a",
+                    "same.example.invalid",
+                    443,
+                    "same-password",
+                    "same-sni.example.invalid",
+                ),
+                _make_trojan_outbound(
+                    "fp-b",
+                    "same.example.invalid",
+                    443,
+                    "same-password",
+                    "same-sni.example.invalid",
+                ),
+            ]
+        }
+        result = trojan_intake.classify_candidates(candidate)
+        self.assertEqual(result["summary"]["counts"]["trojan_ready"], 1)
+        self.assertEqual(result["summary"]["counts"]["duplicate"], 1)
+        self.assertEqual(result["duplicate"][0]["detail"]["duplicate_kind"], "fingerprint")
+
+    def test_non_trojan_is_unsupported(self):
+        candidate = {
+            "outbounds": [
+                {
+                    "type": "vless",
+                    "tag": "not-trojan",
+                    "server": "unsupported.example.invalid",
+                    "server_port": 443,
+                }
+            ]
+        }
+        result = trojan_intake.classify_candidates(candidate)
+        self.assertEqual(result["summary"]["counts"]["unsupported"], 1)
+        self.assertEqual(result["unsupported"][0]["skip_reason"], "not_trojan")
+
+    def test_redacted_output_contains_no_raw_node_material(self):
+        candidate = {
+            "outbounds": [
+                _make_trojan_outbound(
+                    "redacted",
+                    "raw-server.example.invalid",
+                    443,
+                    "raw-password-value",
+                    "raw-sni.example.invalid",
+                )
+            ]
+        }
+        result = trojan_intake.classify_candidates(candidate)
+        rendered_json = json.dumps(result)
+        rendered_md = trojan_intake.render_redacted_md(result)
+        for value in (
+            "raw-server.example.invalid",
+            "raw-password-value",
+            "raw-sni.example.invalid",
+        ):
+            self.assertNotIn(value, rendered_json)
+            self.assertNotIn(value, rendered_md)
+        fp = result["trojan_ready"][0]["fingerprint"]
+        self.assertEqual(len(fp["server_hash"]), 12)
+        self.assertEqual(len(fp["password_hash"]), 12)
+        self.assertEqual(len(fp["server_name_hash"]), 12)
 
 
 if __name__ == "__main__":
