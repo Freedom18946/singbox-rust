@@ -45,14 +45,15 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- R72b fresh config root normalization DONE (2026-05-06).
-  Classification: **A — intake valid but no fresh candidates**.
-  Root-list candidate was wrapped into a `/tmp` sing-box object and
-  revalidated. Redacted counts: `fresh_ready=0`, `duplicate=0`,
-  `not_ready=0`, `covered_existing=0`; `ready_for_r72=false`.
-  No dry-run or live probe; R73 cannot start. Gates passed: 75
-  Python tests + `cargo check`. No sampler/dataplane patch. No edits
-  to baseline config, `go_fork_source/*`, or `.github/workflows/*`.
+- R72c fresh candidate type triage DONE (2026-05-06).
+  Classification: **D — invalid for MT-REAL-02 REALITY intake**.
+  Wrapped candidate is valid JSON but wrong protocol family: 90
+  outbounds, all `type=trojan`, 0 VLESS/REALITY candidates, 0 UUID
+  fields, 0 `tls.reality` blocks. This is not a validator bug. No
+  dry-run or live probe; R73 REALITY probe cannot start until a
+  `type=vless` + REALITY config is supplied. Gates passed: 75 Python
+  tests + `cargo check`. No sampler/dataplane patch. No edits to
+  baseline config, `go_fork_source/*`, or `.github/workflows/*`.
   BHV 52/56 unchanged.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification:
   **A — intake gate ready, waiting for fresh config**. Operator guide:

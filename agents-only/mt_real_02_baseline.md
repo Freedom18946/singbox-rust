@@ -6706,3 +6706,52 @@ redacted summary：
 
 - `agents-only/active_context.md`（R72b 状态、≤95 行）
 - `agents-only/mt_real_02_baseline.md`（追加本节）
+
+---
+
+## Round 72c (fresh candidate type triage + operator feedback)
+
+### 日期
+
+2026-05-06
+
+### 目标
+
+R72b normalized config intake 得到 fresh_ready=0。R72c 只做安全字段计数
+和协议族归因，确认该 candidate 是否属于 MT-REAL-02 的 REALITY/VLESS
+fresh sample face；不跑 live probe，不修改 sampler/dataplane。
+
+### 门禁
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py`
+  → **75 PASS**。
+- `cargo check --workspace` → PASS。
+
+### 安全类型摘要
+
+只读取 `/tmp/mt_real_02_fresh_config_wrapped.json` 的字段计数，不输出
+任何节点值：
+
+- `outbounds_len`: 90
+- `type_counts`: `trojan=90`
+- VLESS candidates: 0
+- REALITY candidates: 0
+- UUID fields: 0
+- `tls.reality` blocks: 0
+
+### 判定（R72c 分类 D：invalid for MT-REAL-02 REALITY intake）
+
+- Candidate 是合法 JSON，但协议族错误：本批是 Trojan-only，不是
+  REALITY/VLESS sample face。
+- 这不是 malformed JSON，也不是 validator bug。
+- R73 REALITY live probe **不可启动**。
+- 若继续 MT-REAL-02，需要重新提供 `type=vless` 且带 REALITY TLS
+  字段与 UUID 的 fresh config。
+- 若要利用这批 Trojan 节点，应另开新任务，不混入 REALITY 账。
+- 没有 sampler/dataplane patch；未编辑 baseline config；BHV 账面 52/56
+  不变；`go_fork_source/*`、`.github/workflows/*` 未触碰。
+
+### 改动文件
+
+- `agents-only/active_context.md`（R72c 状态、≤95 行）
+- `agents-only/mt_real_02_baseline.md`（追加本节）
