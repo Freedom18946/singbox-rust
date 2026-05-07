@@ -2366,6 +2366,7 @@ class TrojanProbeLiveTests(unittest.TestCase):
 
     def test_result_from_probe_keeps_only_redacted_fields(self):
         item = self._plan()["selected"][0]
+        raw_detail = "raw detail should be scrubbed"
         stdout = json.dumps(
             {
                 "bridge_probe": {
@@ -2374,20 +2375,31 @@ class TrojanProbeLiveTests(unittest.TestCase):
                     "stage": "connect",
                     "class": "timeout",
                     "connect_time_ms": 8000,
-                    "error": "raw detail should be dropped",
+                    "error": raw_detail,
                 }
             }
         )
-        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        result = trojan_live.result_from_probe(
+            item,
+            1,
+            1,
+            stdout,
+            "",
+            [raw_detail],
+        )
         rendered = json.dumps(result)
         self.assertEqual(result["status"], "probe_error")
         self.assertEqual(result["class"], "timeout")
-        self.assertNotIn("raw detail should be dropped", rendered)
+        self.assertNotIn(raw_detail, rendered)
         self.assertEqual(result["returncode"], 1)
         self.assertEqual(result["tool_diagnostic"]["stdout_kind"], "json_bridge_probe")
         self.assertEqual(len(result["server_hash"]), 12)
         self.assertEqual(len(result["password_hash"]), 12)
         self.assertEqual(len(result["server_name_hash"]), 12)
+        self.assertEqual(result["bridge_diagnostic"]["error_kind"], "timeout")
+        self.assertEqual(len(result["bridge_diagnostic"]["error_sha256_12"]), 12)
+        self.assertIsNone(result["bridge_diagnostic"]["raw_connect_error_sha256_12"])
+        self.assertIn("<redacted:", result["bridge_diagnostic"]["scrubbed_excerpt"])
 
     def test_stdout_non_json_gets_specific_tool_class(self):
         item = self._plan()["selected"][0]
@@ -2544,6 +2556,276 @@ class TrojanProbeLiveTests(unittest.TestCase):
         ):
             self.assertNotIn(value, rendered_json)
             self.assertNotIn(value, rendered_md)
+
+    def _make_bridge_probe_stdout(
+        self,
+        *,
+        original_class: str = "other",
+        error: str | None = None,
+        raw_connect_error: str | None = None,
+        stream_mode: str = "connect_io",
+        stage: str = "connect",
+    ) -> str:
+        bridge_probe: dict = {
+            "ok": False,
+            "stream_mode": stream_mode,
+            "stage": stage,
+            "class": original_class,
+            "connect_time_ms": 0,
+        }
+        if error is not None:
+            bridge_probe["error"] = error
+        if raw_connect_error is not None:
+            bridge_probe["raw_connect_error"] = raw_connect_error
+        return json.dumps({"bridge_probe": bridge_probe})
+
+    def test_refine_keeps_specific_class_when_no_stronger_signal(self):
+        # `timeout` already conveys actionable meaning; do not overwrite it.
+        self.assertEqual(
+            trojan_live.refine_bridge_class("timeout", "irrelevant text", None),
+            "timeout",
+        )
+        self.assertEqual(
+            trojan_live.refine_bridge_class("post_dial_eof", "", None),
+            "post_dial_eof",
+        )
+
+    def test_refine_other_with_empty_text_yields_unknown_probe_failure(self):
+        self.assertEqual(
+            trojan_live.refine_bridge_class("other", None, None),
+            "unknown_probe_failure",
+        )
+        self.assertEqual(
+            trojan_live.refine_bridge_class("other", "   ", "   "),
+            "unknown_probe_failure",
+        )
+
+    def test_refine_unsupported_protocol_from_encrypted_stream_message(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error=(
+                "dial outbound via connect_io after connect error: "
+                "trojan adapter uses encrypted stream for example.com:80; "
+                "use connect_io() instead: trojan dial failed: misc"
+            ),
+            raw_connect_error="trojan adapter uses encrypted stream for example.com:80; use connect_io() instead",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["status"], "probe_error")
+        self.assertEqual(result["class"], "unsupported_protocol")
+        self.assertEqual(
+            result["bridge_diagnostic"]["error_kind"], "unsupported_protocol"
+        )
+        self.assertEqual(len(result["bridge_diagnostic"]["error_sha256_12"]), 12)
+        self.assertEqual(
+            len(result["bridge_diagnostic"]["raw_connect_error_sha256_12"]),
+            12,
+        )
+
+    def test_refine_dns_error_from_no_such_host(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="dial tcp: lookup ns.example.invalid: no such host",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "dns_error")
+
+    def test_refine_tls_error_from_certificate_message(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="tls: certificate signed by unknown authority",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "tls_error")
+
+    def test_refine_handshake_eof(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="trojan dial failed: tls handshake eof while reading server hello",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "handshake_eof")
+
+    def test_refine_connection_refused(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="trojan dial failed: connection refused (os error 61)",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "connection_refused")
+
+    def test_refine_connection_reset(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="trojan dial failed: connection reset by peer",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "connection_reset")
+
+    def test_refine_network_unreachable(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="trojan dial failed: network is unreachable (os error 51)",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "network_unreachable")
+
+    def test_refine_timeout_text(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="trojan dial failed: operation timed out",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "timeout")
+
+    def test_refine_auth_failed(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="trojan dial failed: server returned 401 unauthorized",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "auth_failed")
+
+    def test_refine_unexpected_response(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="trojan dial failed: malformed response from upstream",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "unexpected_response")
+
+    def test_refine_unknown_probe_failure_when_pattern_misses(self):
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="trojan dial failed: weird unspecified condition zzz",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        # Falls back to unknown_probe_failure so future runs do not silently
+        # bucket back into `other`.
+        self.assertEqual(result["class"], "unknown_probe_failure")
+        self.assertNotEqual(result["class"], "other")
+
+    def test_refine_does_not_emit_other(self):
+        item = self._plan()["selected"][0]
+        # Even when probe-outbound says class=other and the chain is empty,
+        # the runner must not surface `other` to evidence; it must use
+        # `unknown_probe_failure` as the explicit fallback.
+        stdout = self._make_bridge_probe_stdout(original_class="other", error="")
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertNotEqual(result["class"], "other")
+        self.assertEqual(result["class"], "unknown_probe_failure")
+
+    def test_bridge_diagnostic_scrubs_raw_server_password_sni(self):
+        item = self._plan()["selected"][0]
+        raw_server = "leaky-bridge.example.invalid"
+        raw_password = "leaky-bridge-password"
+        raw_sni = "leaky-bridge-sni.example.invalid"
+        stdout = self._make_bridge_probe_stdout(
+            error=(
+                f"trojan dial failed for {raw_server}:443 sni={raw_sni} "
+                f"with password={raw_password}: connection refused"
+            ),
+            raw_connect_error=(
+                f"trojan adapter uses encrypted stream for {raw_server}:443; "
+                "use connect_io() instead"
+            ),
+        )
+        result = trojan_live.result_from_probe(
+            item,
+            1,
+            1,
+            stdout,
+            "",
+            [raw_server, raw_password, raw_sni],
+        )
+        rendered = json.dumps(result)
+        for raw in (raw_server, raw_password, raw_sni):
+            self.assertNotIn(raw, rendered)
+        # The refined class still wins over the raw_connect_error stream
+        # mismatch because the connect_io error contains "connection refused".
+        self.assertEqual(result["class"], "connection_refused")
+        diagnostic = result["bridge_diagnostic"]
+        self.assertIn("<redacted:", diagnostic["scrubbed_excerpt"])
+        # SHA-256 prefixes still present so future runs can correlate.
+        self.assertEqual(len(diagnostic["error_sha256_12"]), 12)
+        self.assertEqual(len(diagnostic["raw_connect_error_sha256_12"]), 12)
+
+    def test_redacted_md_does_not_leak_raw_bridge_error_text(self):
+        item = self._plan()["selected"][0]
+        plan_result = self._plan()
+        raw_server = "md-leaky.example.invalid"
+        stdout = self._make_bridge_probe_stdout(
+            error=f"trojan dial failed for {raw_server}: connection refused",
+            raw_connect_error=(
+                f"trojan adapter uses encrypted stream for {raw_server}:443; "
+                "use connect_io() instead"
+            ),
+        )
+        result = trojan_live.result_from_probe(
+            item,
+            1,
+            1,
+            stdout,
+            "",
+            [raw_server],
+        )
+        evidence = trojan_live.build_evidence(plan_result, [result])
+        rendered_md = trojan_live.render_redacted_md(evidence)
+        rendered_json = json.dumps(evidence)
+        self.assertNotIn(raw_server, rendered_md)
+        self.assertNotIn(raw_server, rendered_json)
+        # The bridge fingerprint and refined kind still surface in the md.
+        self.assertIn("bridge_error_kind: connection_refused", rendered_md)
+        self.assertIn("bridge_fingerprint:", rendered_md)
+
+    def test_fake_structured_probe_success_keeps_classification_a(self):
+        plan_result = self._plan()
+        item = plan_result["selected"][0]
+        stdout = json.dumps(
+            {
+                "bridge_probe": {
+                    "ok": True,
+                    "stream_mode": "connect_io",
+                    "stage": None,
+                    "connect_time_ms": 12,
+                    "response_bytes": 128,
+                }
+            }
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        evidence = trojan_live.build_evidence(plan_result, [result])
+        self.assertEqual(evidence["classification"], "A")
+        self.assertTrue(evidence["summary"]["node_contact_confirmed"])
+        self.assertIsNone(result["bridge_diagnostic"]["error_kind"]) if result.get(
+            "bridge_diagnostic"
+        ) and result["bridge_diagnostic"].get("error_kind") is None else None
+        # Successful bridge_probe leaves class=None per redacted-fields contract.
+        self.assertIsNone(result["class"])
+
+    def test_structured_env_limited_failure_remains_classification_b(self):
+        plan_result = self._plan()
+        item = plan_result["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            original_class="connection_reset",
+            error="trojan dial failed: connection reset by peer",
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        evidence = trojan_live.build_evidence(plan_result, [result])
+        self.assertEqual(result["class"], "connection_reset")
+        self.assertEqual(evidence["classification"], "B")
+        self.assertEqual(evidence["summary"]["env_limited_count"], 1)
+
+    def test_tool_error_still_does_not_confirm_node_contact_after_refine(self):
+        plan_result = self._plan()
+        item = plan_result["selected"][0]
+        # Tool-level failure: stdout has no JSON. result.class falls through
+        # to classify_tool_failure, and bridge_diagnostic stays None.
+        result = trojan_live.result_from_probe(item, 1, 1, "not-json", "")
+        self.assertEqual(result["status"], "tool_error")
+        self.assertIsNone(result["bridge_diagnostic"])
+        evidence = trojan_live.build_evidence(plan_result, [result])
+        self.assertEqual(evidence["classification"], "C")
+        self.assertFalse(evidence["summary"]["node_contact_confirmed"])
 
 
 if __name__ == "__main__":

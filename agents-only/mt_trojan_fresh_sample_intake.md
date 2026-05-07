@@ -375,3 +375,85 @@ The bounded signal is five structured connect-stage failures through
 runner evidence, not a Trojan node-quality pass and not a Rust dataplane
 or dual-kernel parity conclusion. Further live work still requires a new
 explicit authorization.
+
+## MT-TROJAN-FRESH-09 Structured Bridge-Probe Class Refinement, No-Live
+
+Date: 2026-05-07.
+
+No live probe was authorized or run. This round only enriched the
+runner so a future authorized live round can produce an explainable
+class instead of the FRESH-08 `other=5` aggregate.
+
+FRESH-08 evidence review (`/tmp/trojan_live_sanity_r08.json`):
+
+- 5/5 results were structured `bridge_probe` at `stage=connect`,
+  `stream_mode=connect_io`, `connect_time_ms=0`, `class=other`.
+- The runner preserved a 180-character scrubbed stderr excerpt that
+  fingerprints the wrapper's `connect()` rejection
+  (`uses encrypted stream`), but the trailing `connect_io` failure that
+  determined `class=other` was truncated and the structured
+  `bridge_probe.error` / `bridge_probe.raw_connect_error` JSON fields
+  were never copied into evidence. Status: structured bridge diagnostic
+  was under-instrumented — no node-quality conclusion, no dataplane
+  conclusion. The expected wrapper behavior (`AdapterIoBridge::connect`
+  refusing the plaintext probe and the runner falling back to
+  `connect_io`) is recoverable, but the actual `connect_io` failure
+  reason is not.
+
+`scripts/tools/trojan_probe_live.py` now records a redacted
+`bridge_diagnostic` for every structured failure:
+
+- `error_kind`: refined class from the connect / connect_io error chain.
+- `error_sha256_12`: SHA-256 prefix of `bridge_probe.error`.
+- `raw_connect_error_sha256_12`: SHA-256 prefix of
+  `bridge_probe.raw_connect_error`.
+- `scrubbed_excerpt`: bounded combined excerpt with all candidate-config
+  server, password, and TLS server_name values replaced by
+  `<redacted:hash>`.
+
+Refined classes available to the runner now (priority highest to lowest
+within `BRIDGE_CLASS_PATTERNS`):
+
+- `dns_error`
+- `network_unreachable`
+- `handshake_eof`
+- `tls_error`
+- `auth_failed`
+- `connection_refused`
+- `connection_reset`
+- `timeout`
+- `unexpected_response`
+- `unsupported_protocol` (lowest — only fires when the chain leaks no
+  stronger signal, since `uses encrypted stream` is the expected
+  first-attempt rejection on encrypted-stream protocols)
+- `unknown_probe_failure` (fallback — never `other`)
+
+Already-specific classes from `probe-outbound`
+(`timeout`, `connection_refused`, `connection_reset`, `permission_denied`,
+`post_dial_eof`, `broken_pipe`, `socks_connect`, `http2_framing`,
+`reality_dial_eof`, `handshake_eof`) are kept as-is.
+
+Verification:
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py
+  scripts/tools/test_reality_clienthello_family.py
+  scripts/tools/test_dual_kernel_verification.py` -> 123 PASS.
+- `cargo check --workspace` -> PASS.
+- `cargo build -p app --features router,adapters --bin probe-outbound`
+  -> PASS.
+- `cargo test -p app --features router,adapters --bin probe-outbound`
+  -> 6 PASS.
+- `git diff --check` -> clean.
+- Secret scan against the 270 raw `/tmp` candidate-config positions
+  (5 unique values across `server`, `password`, TLS `server_name` for
+  90 normalized outbounds) found no leak in the diff, the modified
+  scripts, the agent docs, or any redacted `/tmp/trojan_*` evidence.
+
+Live remains prohibited. A future explicit authorization is still
+required before any new bounded run; the new diagnostic gives that run a
+chance to produce an actionable refined class instead of `other`.
+
+Classification: **A — runner now emits a refined `bridge_diagnostic`
+and never surfaces `other` from a structured `bridge_probe` failure**.
+This is a Rust-only quality line and does not affect BHV 52/56 or
+dual-kernel parity.

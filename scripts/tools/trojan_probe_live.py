@@ -43,6 +43,79 @@ ENV_LIMITED_CLASSES = {
 }
 
 MAX_DIAGNOSTIC_EXCERPT = 180
+MAX_BRIDGE_DIAGNOSTIC_EXCERPT = 220
+
+# Specific classes that already convey actionable meaning. If
+# `classify_probe_error_text` in probe-outbound returns one of these we keep
+# the value rather than re-classifying the bridge error text.
+BRIDGE_KEEP_CLASSES = {
+    "broken_pipe",
+    "connection_refused",
+    "connection_reset",
+    "handshake_eof",
+    "http2_framing",
+    "permission_denied",
+    "post_dial_eof",
+    "reality_dial_eof",
+    "socks_connect",
+    "timeout",
+}
+
+# Ordered keyword -> refined class table. The first matching keyword wins.
+# `error` from `probe-outbound` is the connect / connect_io error CHAIN; the
+# leading `raw_connect_error` is the (expected) encrypted-stream message
+# emitted by `AdapterIoBridge::connect`. Network / handshake / DNS signals
+# from the second-attempt error must out-prioritize that chain prefix so
+# real connect_io failures do not get bucketed as `unsupported_protocol`.
+# `unsupported_protocol` only wins when no stronger signal is present —
+# i.e. the chain leaks no information beyond the wrapper rejection.
+BRIDGE_CLASS_PATTERNS: list[tuple[str, str]] = [
+    ("no such host", "dns_error"),
+    ("name or service not known", "dns_error"),
+    ("name resolution", "dns_error"),
+    ("dns resolution", "dns_error"),
+    ("dns query", "dns_error"),
+    ("nodename nor servname", "dns_error"),
+    ("network is unreachable", "network_unreachable"),
+    ("network unreachable", "network_unreachable"),
+    ("no route to host", "network_unreachable"),
+    ("ehostunreach", "network_unreachable"),
+    ("tls handshake eof", "handshake_eof"),
+    ("handshake eof", "handshake_eof"),
+    ("early eof during", "handshake_eof"),
+    ("certificate", "tls_error"),
+    ("invalid peer", "tls_error"),
+    ("badcertificate", "tls_error"),
+    ("alert", "tls_error"),
+    ("tls handshake", "tls_error"),
+    ("tls connect", "tls_error"),
+    ("ssl", "tls_error"),
+    ("authentication", "auth_failed"),
+    ("auth failed", "auth_failed"),
+    ("auth_failed", "auth_failed"),
+    ("unauthorized", "auth_failed"),
+    ("invalid password", "auth_failed"),
+    ("connection refused", "connection_refused"),
+    ("econnrefused", "connection_refused"),
+    ("connection reset", "connection_reset"),
+    ("econnreset", "connection_reset"),
+    ("broken pipe", "connection_reset"),
+    ("operation timed out", "timeout"),
+    ("timed out", "timeout"),
+    ("timeout", "timeout"),
+    ("unexpected response", "unexpected_response"),
+    ("unexpected http", "unexpected_response"),
+    ("malformed response", "unexpected_response"),
+    ("protocol error", "unexpected_response"),
+    # Wrapper-rejection signals come last. They are the EXPECTED first-attempt
+    # failure for encrypted-stream protocols and only mean "the bridge layer
+    # routed to connect_io" — not a node defect.
+    ("uses encrypted stream", "unsupported_protocol"),
+    ("encrypted stream", "unsupported_protocol"),
+    ("use connect_io", "unsupported_protocol"),
+    ("dial transport not supported", "unsupported_protocol"),
+    ("transport not implemented", "unsupported_protocol"),
+]
 
 
 def positive_int(value: str) -> int:
@@ -201,6 +274,83 @@ def diagnostic_for_process(
     }
 
 
+def refine_bridge_class(
+    original_class: str | None,
+    error_text: str | None,
+    raw_connect_error_text: str | None,
+) -> str:
+    """Narrow a structured bridge_probe failure class.
+
+    Inspects the connect / connect_io error chain captured by
+    `probe-outbound` and returns one of the dedicated bridge classes such as
+    `unsupported_protocol`, `dns_error`, `tls_error`, `auth_failed`,
+    `handshake_eof`, `connection_refused`, `connection_reset`,
+    `network_unreachable`, `timeout`, `unexpected_response` or, when no
+    pattern matches, `unknown_probe_failure`. Keeps an already-specific
+    `original_class` (for example `timeout`) if the text contains no
+    stronger signal.
+    """
+    if original_class and original_class in BRIDGE_KEEP_CLASSES:
+        return original_class
+
+    parts: list[str] = []
+    if isinstance(error_text, str) and error_text:
+        parts.append(error_text)
+    if isinstance(raw_connect_error_text, str) and raw_connect_error_text:
+        parts.append(raw_connect_error_text)
+    combined = " ".join(parts).strip()
+    if not combined:
+        if original_class and original_class != "other":
+            return original_class
+        return "unknown_probe_failure"
+
+    lower = combined.lower()
+    for needle, refined in BRIDGE_CLASS_PATTERNS:
+        if needle in lower:
+            return refined
+
+    if original_class and original_class != "other":
+        return original_class
+    return "unknown_probe_failure"
+
+
+def bridge_diagnostic_for_probe(
+    bridge_probe: dict[str, Any],
+    scrub_values: list[str],
+) -> dict[str, Any]:
+    """Build a redacted bridge diagnostic record for a structured failure.
+
+    `error_kind` is the refined class. `error_sha256_12` and
+    `raw_connect_error_sha256_12` are SHA-256 prefixes of the raw bridge
+    error texts so future runs can be correlated without copying node
+    material. `scrubbed_excerpt` removes any candidate-config server,
+    password, or TLS server_name occurrences before storing a bounded
+    excerpt of the combined error chain.
+    """
+    error_text = bridge_probe.get("error") if isinstance(bridge_probe.get("error"), str) else None
+    raw_connect_error_text = (
+        bridge_probe.get("raw_connect_error")
+        if isinstance(bridge_probe.get("raw_connect_error"), str)
+        else None
+    )
+    original_class = (
+        bridge_probe.get("class") if isinstance(bridge_probe.get("class"), str) else None
+    )
+    parts = [text for text in (error_text, raw_connect_error_text) if text]
+    combined = "\n".join(parts)
+    excerpt = scrub_text(combined, scrub_values) if combined else ""
+    if len(excerpt) > MAX_BRIDGE_DIAGNOSTIC_EXCERPT:
+        excerpt = excerpt[:MAX_BRIDGE_DIAGNOSTIC_EXCERPT] + "..."
+    return {
+        "error_kind": refine_bridge_class(original_class, error_text, raw_connect_error_text),
+        "error_sha256_12": hash_prefix(error_text) if error_text else None,
+        "raw_connect_error_sha256_12": hash_prefix(raw_connect_error_text)
+        if raw_connect_error_text
+        else None,
+        "scrubbed_excerpt": excerpt,
+    }
+
+
 def build_probe_command(
     base_command: list[str],
     candidate_config: pathlib.Path,
@@ -238,15 +388,26 @@ def result_from_probe(
     bridge_probe = parsed.get("bridge_probe") if isinstance(parsed, dict) else None
     if isinstance(bridge_probe, dict):
         ok = bridge_probe.get("ok") is True
-        class_value = bridge_probe.get("class")
+        original_class = bridge_probe.get("class")
+        bridge_diagnostic = bridge_diagnostic_for_probe(bridge_probe, scrub_values)
         status = "ok" if ok else "probe_error"
+        if ok:
+            class_value: str | None = None
+        else:
+            refined = bridge_diagnostic["error_kind"]
+            # Preserve `other` only when no refined class is available; the
+            # refinement helper never returns the literal `other` so this
+            # check is defensive against future bridge classes.
+            class_value = refined or (
+                str(original_class) if original_class else "unknown_probe_failure"
+            )
         return {
             "tag": item.get("tag"),
             "index": item.get("index"),
             "run_index": run_index,
             "status": status,
             "ok": ok,
-            "class": None if ok else str(class_value or "other"),
+            "class": class_value,
             "stage": bridge_probe.get("stage"),
             "stream_mode": bridge_probe.get("stream_mode"),
             "connect_time_ms": bridge_probe.get("connect_time_ms"),
@@ -256,6 +417,7 @@ def result_from_probe(
             "password_hash": item.get("password_hash"),
             "server_name_hash": item.get("server_name_hash"),
             "returncode": returncode,
+            "bridge_diagnostic": bridge_diagnostic,
             "tool_diagnostic": diagnostic_for_process(
                 returncode,
                 stdout,
@@ -287,6 +449,7 @@ def result_from_probe(
         "password_hash": item.get("password_hash"),
         "server_name_hash": item.get("server_name_hash"),
         "returncode": returncode,
+        "bridge_diagnostic": None,
         "tool_diagnostic": diagnostic_for_process(
             returncode,
             stdout,
@@ -392,6 +555,16 @@ def render_redacted_md(evidence: dict[str, Any]) -> str:
         lines.append(f"  - returncode: {item.get('returncode')}")
         lines.append(f"  - stage: {item.get('stage')}")
         lines.append(f"  - stream_mode: {item.get('stream_mode')}")
+        bridge = item.get("bridge_diagnostic") if isinstance(item.get("bridge_diagnostic"), dict) else None
+        if bridge:
+            lines.append(f"  - bridge_error_kind: {bridge.get('error_kind')}")
+            lines.append(
+                "  - bridge_fingerprint: error="
+                f"{bridge.get('error_sha256_12')} raw_connect_error="
+                f"{bridge.get('raw_connect_error_sha256_12')}"
+            )
+            if bridge.get("scrubbed_excerpt"):
+                lines.append(f"  - bridge_excerpt: {bridge.get('scrubbed_excerpt')}")
         diagnostic = item.get("tool_diagnostic") if isinstance(item.get("tool_diagnostic"), dict) else {}
         if diagnostic:
             lines.append(f"  - stdout_kind: {diagnostic.get('stdout_kind')}")
