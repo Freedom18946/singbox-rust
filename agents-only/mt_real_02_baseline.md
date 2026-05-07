@@ -7189,3 +7189,44 @@ fresh01 / fresh09 / fresh15），3 runs/node 满足 R59-B/R60/R61/R62/R63
 - 没有动 `go_fork_source/*` / `.github/workflows/*`
 - 没有改 golden_spec；DEV-REALITY-01 已覆盖整条 REALITY live dataplane
 - BHV 52/56 不变；Rust-only quality / planning，不写成 dual-kernel parity
+
+---
+
+## R76b — Confirmation gate semantics correction (2026-05-08)
+
+### 触发
+
+R76 authorization packet 把 R73 前的 fresh-intake gate 语义误带到了
+R73 后的 confirmation cohort gate：cohort A 文案要求同一 neutral subset
+同时 `fresh_ready=2` 和 `covered_existing=2`。但
+`reality_vless_sample_intake.py` 的分类是互斥降级：ready 候选如果已经
+存在于 rollup，就从 `fresh_ready` 降级为 `covered_existing`。
+
+### 修正
+
+R76b 只修 authorization packet gate 口径，不改变 R76 cohort recommendation。
+
+- fresh-intake gate：R73 前使用，目标是找到未被 baseline/rollup 覆盖的新
+  候选，要求 `fresh_ready>0`。
+- confirmation gate：R73 后使用，目标是确认 selected neutral keys 已在
+  rollup 中；neutralized subset intake 预期
+  `covered_existing=selected_count`, `fresh_ready=0`, `duplicate=0`,
+  `not_ready=0`。
+- A divergence-carrier: `covered_existing=2`, `fresh_ready=0`,
+  `duplicate=0`, `not_ready=0`。
+- B same-failure: `covered_existing=4`, `fresh_ready=0`, `duplicate=0`,
+  `not_ready=0`。
+- C recovery-watch: `covered_existing=3`, `fresh_ready=0`, `duplicate=0`,
+  `not_ready=0`。
+
+文档只允许描述“使用本地 `/tmp` 映射生成 neutralized cohort subset”；
+不提交、不渲染 raw tag/server/uuid/public_key/short_id/path/header/
+server_name/password 映射。
+
+### 范围确认
+
+- 没有 live probe；没有 node contact
+- 没有动 sampler/dataplane
+- 没有动 `go_fork_source/*` / `.github/workflows/*`
+- 默认下一步仍是 cohort A only 10 runs
+- BHV 52/56 不变；authorization packet correction，不写成 parity 变化

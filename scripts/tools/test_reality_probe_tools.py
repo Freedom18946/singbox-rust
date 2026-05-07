@@ -1884,6 +1884,8 @@ class RealityVlessSampleIntakeTests(unittest.TestCase):
         result = intake.build_intake(candidate, baseline, roll)
         self.assertEqual(result["summary"]["counts"]["covered_existing"], 1)
         self.assertEqual(result["summary"]["counts"]["fresh_ready"], 0)
+        self.assertEqual(result["summary"]["counts"]["duplicate"], 0)
+        self.assertEqual(result["summary"]["counts"]["not_ready"], 0)
         self.assertEqual(
             result["covered_existing"][0]["detail"]["rollup_key"], "NEW-COVERED-9.9"
         )
@@ -3641,12 +3643,7 @@ class FreshConfirmationCohortTests(unittest.TestCase):
         # The committed r76 plan must continue to satisfy the contract
         # established here: only neutral keys, and the three cohort
         # totals match the user-spec (10/12/9 → 31).
-        path = pathlib.Path(__file__).resolve().parents[2] / (
-            "agents-only/mt_real_02_evidence/r76_fresh_confirmation_plan.json"
-        )
-        if not path.exists():
-            self.skipTest("r76 plan not yet committed")
-        plan = json.loads(path.read_text(encoding="utf-8"))
+        path, plan = self._committed_r76_plan()
         cohorts = plan["cohorts"]
         self.assertEqual(
             cohorts["A_divergence_carrier"]["outbounds"],
@@ -3685,6 +3682,94 @@ class FreshConfirmationCohortTests(unittest.TestCase):
         self.assertFalse(plan["sampler_dataplane_modified"])
         self.assertFalse(plan["go_fork_source_modified"])
         self.assertFalse(plan["github_workflows_modified"])
+
+    def _committed_r76_plan(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/r76_fresh_confirmation_plan.json"
+        )
+        if not path.exists():
+            self.skipTest("r76 plan not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def _committed_r76_plan_md(self) -> pathlib.Path:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/r76_fresh_confirmation_plan.md"
+        )
+        if not path.exists():
+            self.skipTest("r76 plan markdown not yet committed")
+        return path
+
+    def _gate_counts(self, text: str) -> dict[str, int]:
+        import re
+
+        return {
+            key: int(value)
+            for key, value in re.findall(
+                r"\b(fresh_ready|covered_existing|duplicate|not_ready)=([0-9]+)\b",
+                text,
+            )
+        }
+
+    def test_committed_r76_confirmation_gates_are_not_fresh_intake_gates(self):
+        _, plan = self._committed_r76_plan()
+        for name, cohort in plan["cohorts"].items():
+            gate = cohort["entry_gate"]
+            counts = self._gate_counts(gate)
+            self.assertTrue(
+                gate.startswith("Confirmation gate:"),
+                msg=f"{name} still uses fresh-intake/pre-gate wording",
+            )
+            self.assertFalse(
+                counts.get("fresh_ready", 0) > 0
+                and counts.get("covered_existing", 0) > 0,
+                msg=f"{name} declares both fresh_ready and covered_existing positive",
+            )
+            self.assertEqual(counts.get("fresh_ready"), 0)
+            self.assertEqual(counts.get("duplicate"), 0)
+            self.assertEqual(counts.get("not_ready"), 0)
+
+    def test_committed_r76_cohort_A_confirmation_gate_counts(self):
+        _, plan = self._committed_r76_plan()
+        counts = self._gate_counts(
+            plan["cohorts"]["A_divergence_carrier"]["entry_gate"]
+        )
+        self.assertEqual(counts.get("covered_existing"), 2)
+        self.assertEqual(counts.get("fresh_ready"), 0)
+        self.assertEqual(counts.get("duplicate"), 0)
+        self.assertEqual(counts.get("not_ready"), 0)
+
+    def test_committed_r76_cohort_B_confirmation_gate_counts(self):
+        _, plan = self._committed_r76_plan()
+        counts = self._gate_counts(plan["cohorts"]["B_same_failure"]["entry_gate"])
+        self.assertEqual(counts.get("covered_existing"), 4)
+        self.assertEqual(counts.get("fresh_ready"), 0)
+        self.assertEqual(counts.get("duplicate"), 0)
+        self.assertEqual(counts.get("not_ready"), 0)
+
+    def test_committed_r76_cohort_C_confirmation_gate_counts(self):
+        _, plan = self._committed_r76_plan()
+        counts = self._gate_counts(plan["cohorts"]["C_recovery_watch"]["entry_gate"])
+        self.assertEqual(counts.get("covered_existing"), 3)
+        self.assertEqual(counts.get("fresh_ready"), 0)
+        self.assertEqual(counts.get("duplicate"), 0)
+        self.assertEqual(counts.get("not_ready"), 0)
+
+    def test_committed_r76_plan_json_and_md_have_no_contradictory_gate_counts(self):
+        import re
+
+        json_path, _ = self._committed_r76_plan()
+        md_path = self._committed_r76_plan_md()
+        contradictory_gate = re.compile(
+            r"fresh_ready=[1-9][0-9]*[^.\n]*covered_existing=[1-9][0-9]*"
+            r"|covered_existing=[1-9][0-9]*[^.\n]*fresh_ready=[1-9][0-9]*"
+        )
+        for path in (json_path, md_path):
+            rendered = path.read_text(encoding="utf-8")
+            self.assertNotIn("fresh_ready=2, covered_existing=2", rendered)
+            self.assertIsNone(
+                contradictory_gate.search(rendered),
+                msg=f"contradictory fresh_ready/covered_existing gate in {path}",
+            )
 
 
 if __name__ == "__main__":

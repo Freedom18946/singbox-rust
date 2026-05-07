@@ -43,18 +43,14 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 
 ## Next Steps
 
-- MT-REAL-02 R76 fresh-confirmation plan + authorization packet DONE
-  (2026-05-08). No-live; no-node-contact. R73 outbounds partitioned
-  into 3 cohorts by R75 `run_health_counts`: A divergence-carrier
-  (fresh02/fresh06, 5 runs each = 10), B same-failure
-  (fresh03/04/05/07, 3 runs each = 12), C recovery-watch (3 reps
-  fresh01/fresh09/fresh15, 3 runs each = 9). Combined ceiling 31
-  runs across 2-3 sequenced authorizations. Default recommendation:
-  authorize cohort A only (10 runs) first. New helper
-  `scripts/tools/reality_vless_confirmation_cohorts.py` + 9 tests
-  pin the partition and the redacted plan contract. Plan artefacts
-  `agents-only/mt_real_02_evidence/r76_fresh_confirmation_plan.{json,md}`
-  carry only neutral keys (`fresh\d{2}`). BHV 52/56 unchanged.
+- MT-REAL-02 R76b confirmation gate semantics fix DONE (2026-05-08).
+  No-live; no-node-contact. R76 packet now distinguishes R73-pre
+  fresh-intake gate from post-R73 confirmation gate: A expects
+  covered_existing=2/fresh_ready=0, B 4/0, C 3/0, all with
+  duplicate=0/not_ready=0. Default recommendation unchanged:
+  authorize cohort A only (10 runs) first. R76 cohort partition still
+  A fresh02/fresh06, B fresh03/04/05/07, C fresh01/fresh09/fresh15.
+  Plan artefacts carry only neutral keys; BHV 52/56 unchanged.
 - MT-REAL-02 R75 fresh divergence attribution + run_health
   materialization DONE (2026-05-08). Per-run `run_health` materialized
   into round73 `runs[]` via `round_summary_run_health.materialize_run_health`;
