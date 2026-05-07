@@ -35,43 +35,44 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **126 tests PASS**.
+  **137 tests PASS**.
 - cargo test -p sb-adapters --features adapter-trojan --test
-  trojan_integration: **15 PASS, 2 ignored**.
+  trojan_integration: **17 PASS, 2 ignored**.
 - live_rollup.json/md unchanged: 18 rounds, 113 runs, 24 all_ok.
 
 ## Next Steps
 
+- MT-TROJAN-FRESH-13 Trojan TLS handshake no-live root cause audit
+  DONE (2026-05-07). Classification **A — root cause located; two
+  no-live dataplane / tooling fixes**. FRESH-12 evidence reread:
+  identical TLS error fingerprint across 5 runs / 2 servers / 5 ports
+  (not per-endpoint). Lowering audit found
+  `crates/sb-config/src/validator/v2/outbound.rs:872-877` accepted
+  `tls.skip_cert_verify` and `tls.allow_insecure` but **dropped**
+  sing-box's canonical `tls.insecure`; all 90 candidates set
+  `tls.insecure=true` so every TLS handshake hit `webpki-roots`
+  verification. Fixed by adding `tls.insecure` to the fallback chain.
+  Trojan SNI fallback rewritten to use `parse_server_endpoint`.
+  `trojan_probe_live.py` adds eight TLS subclasses
+  (`tls_cert_unknown_issuer`, `tls_name_mismatch`, `tls_cert_expired`,
+  `tls_invalid_dns_name`, `tls_alert`, `tls_protocol_version`,
+  `tls_handshake_failure`, `tls_error` fallback). New no-live tests:
+  3 sb-config lowering regressions, 5 SNI fallback unit tests, 11
+  Python TLS subclass tests, 2 localhost TLS loopback integration
+  tests proving `skip_cert_verify` toggle works end-to-end. Future
+  authorized live reprobe justified to confirm fix.
 - MT-TROJAN-FRESH-12 post-fix bounded Trojan live reprobe DONE
-  (2026-05-07). Classification **A — post-fix actionable live signal,
-  no `invalid_server_address`**. Same bounded plan; pre-gate 5/5
-  validate-only passed `no_network=true`. Live: `executed_runs=5`,
-  `failed_count=5`, `tool_error_count=0`, `env_limited_count=0`,
-  `class_counts=tls_error=5`, `node_contact_confirmed=true`.
-  `connect_time_ms` 142–1245ms (vs 0–2ms pre-fix), confirming real
-  DNS+TCP. `bridge_diagnostic.scrubbed_excerpt` shows `trojan dial
-  failed: Other error: TLS handshake ...` — failure moved downstream
-  to `perform_standard_tls_handshake`. Detail in
-  `agents-only/mt_trojan_fresh_sample_intake.md`. Next live not
-  needed on same plan/dataplane (deterministic).
+  (2026-05-07). Classification A — `class_counts=tls_error=5`,
+  `connect_time_ms` 142–1245ms confirms real DNS+TCP. FRESH-13
+  identified the lowering bug behind the TLS error.
 - MT-TROJAN-FRESH-11 Trojan hostname server dataplane fix DONE
-  (2026-05-07). Classification A — Rust dataplane blocker fixed.
-  `parse_server_endpoint` in `crates/sb-adapters/src/outbound/
-  trojan.rs` accepts `domain:port` / `IPv4:port` / `[IPv6]:port`. TCP
-  `dial()` defers DNS to the transport layer; `udp_relay_dial` uses
-  `tokio::net::lookup_host` with explicit `Network` error (UDP IPv6
-  / round-robin pre-existing). `trojan_probe_live.py` classifier
-  promotes `invalid_server_address` to top priority.
+  (2026-05-07). `parse_server_endpoint` accepts `domain:port` /
+  `IPv4:port` / `[IPv6]:port`; TCP `dial()` defers DNS to transport;
+  `udp_relay_dial` uses `tokio::net::lookup_host`.
 - MT-TROJAN-FRESH-09 structured bridge-probe class refinement
-  (2026-05-07). Runner emits redacted `bridge_diagnostic`; no
-  literal `other`. Classes (FRESH-11 priority):
-  invalid_server_address, dns_error, network_unreachable,
-  handshake_eof, tls_error, auth_failed, connection_refused,
-  connection_reset, timeout, unexpected_response,
-  unsupported_protocol, unknown_probe_failure.
+  (2026-05-07). Redacted `bridge_diagnostic`; literal `other` gone.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification A.
-- R67-R70 HK closure + rollup audit archived; HK-A-BGP-2.0 off
-  bi-modal/phase-shifting suspect list.
+- R67-R70 HK closure archived; HK-A-BGP-2.0 off bi-modal suspect.
 
 ## Still-Valid Constraints
 

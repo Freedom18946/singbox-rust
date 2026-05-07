@@ -810,3 +810,153 @@ Verification:
 Classification: **A — post-fix live signal; structured bridge_probe,
 no tool_error, no `invalid_server_address`, refined class fully
 post-DNS / post-TCP**. Rust-only quality line, BHV 52/56 unchanged.
+
+## MT-TROJAN-FRESH-13 Trojan TLS Handshake No-Live Root Cause Audit
+
+Date: 2026-05-07.
+
+No live probe was authorized or run. This round audited the FRESH-12
+TLS-handshake failure surface using only redacted evidence and code
+review, and addressed every actionable Rust dataplane / tooling bug
+that surfaced.
+
+FRESH-12 evidence recoverability (re-read from
+`/tmp/trojan_live_sanity_r12.json`):
+
+- 5 results, all `stage=connect`, `stream_mode=connect_io`,
+  `error_kind=tls_error`.
+- Identical bridge fingerprints across all 5 runs:
+  `error_sha256_12=affb82dc34e2`,
+  `raw_connect_error_sha256_12=65828a0ea9d6`. Same TLS error tail
+  shape across two distinct server hashes and five distinct ports →
+  the failure is not per-endpoint.
+- `connect_time_ms` distribution `[142, 255, 595, 684, 1245]` ms — all
+  reflect real DNS+TCP+TLS-start, none are synchronous local failures.
+- The 220-char redacted excerpt clipped at `... TLS handshake ...`, so
+  the precise rustls error tail cannot be recovered from FRESH-12
+  evidence alone. Source-level audit recovered the cause without
+  needing a new live run.
+
+TLS config / lowering audit (counts only, no values):
+
+- 90/90 outbounds: `tls.enabled=true`.
+- 90/90 outbounds: `tls.server_name` present (per-entry SNI).
+- 0/90 outbounds: top-level `tls_sni`.
+- 90/90 outbounds: `tls.insecure=true` (sing-box canonical flag).
+- 0/90 outbounds: `tls.skip_cert_verify` or `tls.allow_insecure` set
+  directly.
+- 0/90 outbounds: top-level or `tls.alpn` set.
+
+Pre-fix lowering at `crates/sb-config/src/validator/v2/outbound.rs:
+872-877` only consulted `tls.skip_cert_verify` and
+`tls.allow_insecure`, dropping `tls.insecure` on the floor. With the
+fallback chain miss, `ir.skip_cert_verify` stayed `None`, and at
+`crates/sb-adapters/src/register.rs:1027` it landed in
+`TrojanConfig.skip_cert_verify=false`. The Trojan adapter then ran
+`perform_standard_tls_handshake` with the `webpki_roots` verifier
+against certs that almost certainly aren't from a public CA → every
+TLS handshake failed with the same fingerprint shape FRESH-12
+captured.
+
+TLS handshake path audit
+(`crates/sb-adapters/src/outbound/trojan.rs:248-308`):
+
+- `skip_cert_verify=true` correctly installs the in-tree `NoVerifier`
+  (verified by a localhost loopback test below).
+- `skip_cert_verify=false` correctly uses `webpki-roots` verification.
+- ALPN is only advertised when `config.alpn` is non-empty; FRESH-07
+  candidates have no ALPN, so ALPN is not contributing.
+- SNI fallback formerly used `config.server.split(':').next()` —
+  fragile for bracketed IPv6 (`[::1]:443` would extract `[`). Not
+  triggered in FRESH-07 because `register.rs:1018` always populates
+  `cfg.sni`, but a latent bug worth fixing alongside FRESH-11's
+  `parse_server_endpoint`.
+
+Dataplane fixes (no-live):
+
+1. `crates/sb-config/src/validator/v2/outbound.rs:872-878` — extend
+   the fallback chain with `tls.get("insecure").as_bool()` so
+   sing-box's canonical `tls.insecure=true` lowers into
+   `ir.skip_cert_verify=Some(true)`.
+2. `crates/sb-adapters/src/outbound/trojan.rs:286-296` — replace the
+   fragile SNI fallback with `parse_server_endpoint`. Hostname /
+   IPv4 / `[IPv6]` all yield a clean SNI string; otherwise fall back
+   to `localhost`.
+
+TLS diagnostic subclasses added
+(`scripts/tools/trojan_probe_live.py:BRIDGE_CLASS_PATTERNS`):
+
+- `tls_cert_unknown_issuer` — `unknownissuer` /
+  `certificate signed by unknown authority` / `self-signed
+  certificate` / `untrusted root`.
+- `tls_name_mismatch` — `notvalidforname` / `name mismatch` /
+  `subjectaltname` / `certificate not valid for name`.
+- `tls_cert_expired` — `expired` cert variants.
+- `tls_invalid_dns_name` — `invalid dns name` / `invalid server name`.
+- `tls_alert` — `received fatal alert` / `alertdescription` /
+  `alert: handshake_failure` / `alert: bad_certificate`.
+- `tls_protocol_version` — `peerincompatibleerror` / `no protocols in
+  common` / `unsupported protocol version`.
+- `tls_handshake_failure` — `inappropriate handshake message` /
+  `invalid clienthello` / `invalid serverhello` / `tls handshake
+  failed` / `handshake failure`.
+- Generic `tls_error` is retained as the last-resort fallback for
+  unrecognized TLS text.
+
+Root cause / remaining blocker:
+
+- **Primary**: missing `tls.insecure` lowering — fixed.
+- **Secondary**: fragile SNI fallback for bracketed IPv6 — fixed.
+- **Confirmation needed via live**: whether the `tls.insecure` fix
+  alone resolves the FRESH-12 `class_counts=tls_error=5`. The
+  evidence chain strongly suggests yes — every candidate sets
+  `tls.insecure=true`, and the post-fix `skip_cert_verify=true` path
+  is verified by the loopback tests below — but ONLY a future
+  authorized live reprobe can confirm it on the real sample.
+
+No-live / no-node-contact confirmation:
+
+- Live remains prohibited. No `probe-outbound --target` dial; no
+  `trojan_probe_live.py` invocation; no node contact.
+- Verification is purely synthetic / loopback: 18 Trojan unit tests
+  (12 parser + 5 SNI fallback + 1 connector creation), 17 Trojan
+  integration tests (15 pre-existing + 2 new TLS loopback), 11 new
+  Python classifier tests for the TLS subclasses, 3 new sb-config
+  lowering regression tests for `tls.insecure` /
+  `tls.skip_cert_verify` / `tls.allow_insecure`.
+- The TLS loopback tests use a `localhost` self-signed cert via
+  `rcgen` and exercise `TrojanConnector::dial` end-to-end:
+  `skip_cert_verify=true` must NOT surface any cert-verify keyword
+  (proves `NoVerifier` is reached), and `skip_cert_verify=false` must
+  fail with a cert-verify keyword (proves the strict path is
+  reachable and not silently bypassed).
+
+Future live authorization: yes, justified to confirm the FRESH-12
+`tls_error=5` shape resolves under the FRESH-13 lowering fix. The
+deterministic local cause is fixed; only a live reprobe can prove
+the remote node behavior on the existing 5-tag bounded plan.
+
+Verification:
+
+- `python3 -B -m unittest test_reality_probe_tools
+  test_reality_clienthello_family test_dual_kernel_verification` ->
+  137 PASS.
+- `cargo test -p sb-adapters --features adapter-trojan --lib
+  outbound::trojan::tests` -> 18 PASS.
+- `cargo test -p sb-adapters --features adapter-trojan --test
+  trojan_integration` -> 17 PASS, 2 ignored (pre-existing).
+- `cargo check --workspace` -> PASS.
+- `cargo build -p app --features router,adapters --bin probe-outbound`
+  -> PASS.
+- `cargo test -p app --features router,adapters --bin probe-outbound`
+  -> 6 PASS.
+- `git diff --check` -> clean.
+- Secret scan against the 270 raw `/tmp` candidate-config positions
+  (5 unique values across 90 outbounds) — no leak in the diff,
+  modified Rust sources, Python tooling, agent docs, or any
+  `/tmp/trojan_*` redacted evidence.
+
+Classification: **A — root cause located; two no-live dataplane /
+tooling fixes plus eight new TLS diagnostic subclasses; ready for a
+future authorized live reprobe**. Rust-only quality line, BHV 52/56
+unchanged.

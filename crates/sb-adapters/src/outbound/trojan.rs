@@ -282,17 +282,18 @@ impl TrojanConnector {
 
         let connector = TlsConnector::from(Arc::new(tls_config));
 
-        // Determine server name for SNI
+        // Determine server name for SNI. Prefer the explicit `config.sni`
+        // when present; otherwise reuse the hostname half of the parsed
+        // endpoint so bracketed IPv6 (`[::1]:443`) and IPv4:port both
+        // produce a usable `ServerName` instead of the fragile
+        // `split(':').next()` shape that strips IPv6 to `[`.
         let server_name = if let Some(ref sni) = config.sni {
             sni.clone()
         } else {
-            // Extract hostname from server address
-            config
-                .server
-                .split(':')
-                .next()
-                .unwrap_or("localhost")
-                .to_string()
+            match parse_server_endpoint(&config.server) {
+                Ok((host, _port)) => host,
+                Err(_) => "localhost".to_string(),
+            }
         };
 
         let domain = rustls_pki_types::ServerName::try_from(server_name.as_str())
@@ -900,5 +901,48 @@ mod tests {
             parse_server_endpoint(&format!("{}:{}", "trojan.example.invalid", 10113)).unwrap();
         assert_eq!(host, "trojan.example.invalid");
         assert_eq!(port, 10113);
+    }
+
+    /// Pure-Rust mirror of the SNI fallback inside
+    /// `perform_standard_tls_handshake`. Kept in sync via the
+    /// `sni_fallback_handles_*` tests below.
+    fn sni_for_test(config_sni: Option<&str>, server: &str) -> String {
+        if let Some(sni) = config_sni {
+            return sni.to_string();
+        }
+        match parse_server_endpoint(server) {
+            Ok((host, _port)) => host,
+            Err(_) => "localhost".to_string(),
+        }
+    }
+
+    #[test]
+    fn sni_fallback_uses_explicit_sni_when_present() {
+        assert_eq!(
+            sni_for_test(Some("explicit.sni.example"), "ignored.example.invalid:443"),
+            "explicit.sni.example"
+        );
+    }
+
+    #[test]
+    fn sni_fallback_handles_domain_without_sni() {
+        assert_eq!(sni_for_test(None, "trojan.example.invalid:443"), "trojan.example.invalid");
+    }
+
+    #[test]
+    fn sni_fallback_handles_ipv4_without_sni() {
+        assert_eq!(sni_for_test(None, "127.0.0.1:443"), "127.0.0.1");
+    }
+
+    #[test]
+    fn sni_fallback_handles_bracketed_ipv6_without_sni() {
+        // Pre-FRESH-13 the fallback used `split(':').next()` which
+        // returned `[`. The new behaviour returns the unbracketed host.
+        assert_eq!(sni_for_test(None, "[2001:db8::1]:443"), "2001:db8::1");
+    }
+
+    #[test]
+    fn sni_fallback_localhost_when_endpoint_invalid() {
+        assert_eq!(sni_for_test(None, "no-port-here"), "localhost");
     }
 }

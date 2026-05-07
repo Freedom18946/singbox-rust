@@ -873,7 +873,8 @@ pub(super) fn lower_outbounds(doc: &Value, ir: &mut ConfigIR) {
                 ob.skip_cert_verify = tls
                     .get("skip_cert_verify")
                     .and_then(|v| v.as_bool())
-                    .or_else(|| tls.get("allow_insecure").and_then(|v| v.as_bool()));
+                    .or_else(|| tls.get("allow_insecure").and_then(|v| v.as_bool()))
+                    .or_else(|| tls.get("insecure").and_then(|v| v.as_bool()));
             }
 
             if ob.tls_ca_paths.is_empty() {
@@ -2096,6 +2097,71 @@ mod tests {
             ob.tls_client_key_path.as_deref(),
             Some("/path/to/client.key")
         );
+    }
+
+    #[test]
+    fn test_parse_outbound_tls_insecure_lowers_to_skip_cert_verify() {
+        // MT-TROJAN-FRESH-13 regression: sing-box's canonical
+        // `tls.insecure` flag was previously dropped on the floor, so
+        // every Trojan outbound that relied on it ended up with
+        // certificate verification ON and silently failed every TLS
+        // handshake against self-signed / private-CA servers. The
+        // lowering must accept all three sing-box / clash / sing-box-fork
+        // spellings: `skip_cert_verify`, `allow_insecure`, and
+        // `insecure`.
+        let cases = [
+            ("skip_cert_verify", true),
+            ("allow_insecure", true),
+            ("insecure", true),
+        ];
+        for (key, value) in cases {
+            let json = json!({
+                "schema_version": 2,
+                "outbounds": [{
+                    "type": "trojan",
+                    "name": "trojan-tls-insecure",
+                    "server": "trojan.example.invalid",
+                    "port": 443,
+                    "password": "redacted",
+                    "tls": {
+                        "enabled": true,
+                        "server_name": "trojan.example.invalid",
+                        key: value,
+                    }
+                }]
+            });
+            let ir = to_ir_v1(&json);
+            assert_eq!(ir.outbounds.len(), 1, "case key={key}");
+            assert_eq!(
+                ir.outbounds[0].skip_cert_verify,
+                Some(true),
+                "tls.{key}=true must lower into ir.skip_cert_verify=Some(true)"
+            );
+        }
+    }
+
+    #[test]
+    fn test_parse_outbound_tls_insecure_false_lowers_through() {
+        // The same fallback chain must respect explicit `false` values,
+        // so an operator who has set `tls.insecure: false` keeps
+        // verification ON.
+        let json = json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "trojan",
+                "name": "trojan-tls-strict",
+                "server": "trojan.example.invalid",
+                "port": 443,
+                "password": "redacted",
+                "tls": {
+                    "enabled": true,
+                    "server_name": "trojan.example.invalid",
+                    "insecure": false,
+                }
+            }]
+        });
+        let ir = to_ir_v1(&json);
+        assert_eq!(ir.outbounds[0].skip_cert_verify, Some(false));
     }
 
     #[test]

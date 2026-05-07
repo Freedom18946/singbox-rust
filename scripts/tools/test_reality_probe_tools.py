@@ -2632,11 +2632,15 @@ class TrojanProbeLiveTests(unittest.TestCase):
 
     def test_refine_tls_error_from_certificate_message(self):
         item = self._plan()["selected"][0]
+        # FRESH-13 promoted "certificate signed by unknown authority" out
+        # of the generic `tls_error` bucket into the dedicated subclass
+        # `tls_cert_unknown_issuer`. The generic `tls_error` fallback is
+        # still verified in `test_refine_generic_tls_error`.
         stdout = self._make_bridge_probe_stdout(
             error="tls: certificate signed by unknown authority",
         )
         result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
-        self.assertEqual(result["class"], "tls_error")
+        self.assertEqual(result["class"], "tls_cert_unknown_issuer")
 
     def test_refine_handshake_eof(self):
         item = self._plan()["selected"][0]
@@ -2765,6 +2769,135 @@ class TrojanProbeLiveTests(unittest.TestCase):
             ),
             "invalid_server_address",
         )
+
+    # ------------------------------------------------------------------
+    # MT-TROJAN-FRESH-13 TLS subclass refinement
+    # ------------------------------------------------------------------
+
+    def test_refine_tls_cert_unknown_issuer_rustls_form(self):
+        # rustls form
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "TLS handshake failed: invalid peer certificate: UnknownIssuer",
+                None,
+            ),
+            "tls_cert_unknown_issuer",
+        )
+
+    def test_refine_tls_cert_unknown_issuer_self_signed(self):
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "TLS handshake failed: self-signed certificate in chain",
+                None,
+            ),
+            "tls_cert_unknown_issuer",
+        )
+
+    def test_refine_tls_name_mismatch_rustls_form(self):
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "TLS handshake failed: invalid peer certificate: NotValidForName",
+                None,
+            ),
+            "tls_name_mismatch",
+        )
+
+    def test_refine_tls_name_mismatch_subject_alt_name(self):
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "TLS handshake failed: certificate not valid for name "
+                "'wrong.example.invalid', subjectAltName mismatch",
+                None,
+            ),
+            "tls_name_mismatch",
+        )
+
+    def test_refine_tls_cert_expired(self):
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "TLS handshake failed: invalid peer certificate: Expired",
+                None,
+            ),
+            "tls_cert_expired",
+        )
+
+    def test_refine_tls_invalid_dns_name(self):
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "TLS handshake failed: invalid DNS name",
+                None,
+            ),
+            "tls_invalid_dns_name",
+        )
+
+    def test_refine_tls_alert_received(self):
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "TLS handshake failed: received fatal alert: HandshakeFailure",
+                None,
+            ),
+            "tls_alert",
+        )
+
+    def test_refine_tls_protocol_version_mismatch(self):
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "TLS handshake failed: PeerIncompatibleError: NoCommonProtocol",
+                None,
+            ),
+            "tls_protocol_version",
+        )
+
+    def test_refine_tls_handshake_failure_phrase(self):
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "TLS handshake failed: handshake failure: invalid serverhello",
+                None,
+            ),
+            # The first-match-wins pattern is `invalid serverhello`, mapping
+            # to `tls_handshake_failure`.
+            "tls_handshake_failure",
+        )
+
+    def test_refine_generic_tls_error_falls_through(self):
+        # A TLS error that does not match any subclass pattern should still
+        # land in the generic `tls_error` bucket — keeping FRESH-09
+        # behaviour for unrecognized TLS text. We avoid the phrases that
+        # the FRESH-13 subclass table now recognises.
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "ssl: some unfamiliar message",
+                None,
+            ),
+            "tls_error",
+        )
+
+    def test_refine_tls_subclass_is_redacted_in_evidence(self):
+        # New subclass must still produce redacted excerpt + fingerprints.
+        item = self._plan()["selected"][0]
+        raw_server = "tls13leak.example.invalid"
+        stdout = self._make_bridge_probe_stdout(
+            error=(
+                f"trojan dial failed for {raw_server}: TLS handshake failed: "
+                "invalid peer certificate: UnknownIssuer"
+            ),
+        )
+        result = trojan_live.result_from_probe(
+            item, 1, 1, stdout, "", [raw_server]
+        )
+        rendered = json.dumps(result)
+        self.assertNotIn(raw_server, rendered)
+        self.assertEqual(result["class"], "tls_cert_unknown_issuer")
 
     def test_bridge_diagnostic_scrubs_raw_server_password_sni(self):
         item = self._plan()["selected"][0]
