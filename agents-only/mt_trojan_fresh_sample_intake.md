@@ -111,6 +111,22 @@ Redacted dry-run summary:
 - `dry_run_only`: true
 - `ready_for_live_authorization`: true
 
+## MT-TROJAN-FRESH-03 Live Authorization Decision
+
+Date: 2026-05-07.
+
+No explicit Trojan live authorization was provided in this round. Per
+gate rules, no live pre-gate and no live probe were run. The existing
+redacted dry-run plan remains ready for a future authorization decision:
+
+- `selected_count`: 5
+- `runs`: 1
+- `target`: `example.com:80`
+- `planned_runs`: 5
+- `ready_for_live_authorization`: true
+
+Classification: **A - ready but waiting for live authorization**.
+
 ## Verification
 
 - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py`
