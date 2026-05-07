@@ -40,20 +40,22 @@ Planner filters: --latest-health, --latest-run-health,
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **98 tests PASS** (Trojan diagnostic enrichment included).
+  **99 tests PASS** (Trojan reprobe root-cause classifier included).
 - live_rollup.json/md unchanged: 18 rounds, 113 runs, 24 all_ok.
 
 ## Next Steps
 
-- MT-TROJAN-FRESH-05 no-live diagnostic enrichment DONE
-  (2026-05-07). Root cause / blocker: FRESH-04 preserved only
-  `tool_error=5` / `class=other`; raw subprocess diagnostics were
-  intentionally discarded, so the exact `probe-outbound` failure cannot
-  be recovered from existing evidence. Runner now records redacted
-  returncode, stdout shape, stdout/stderr fingerprints, and scrubbed
-  bounded excerpts for future fake/no-live/live-authorized diagnostics.
-  No live probe ran in FRESH-05. Separate Rust-only quality line, not
-  REALITY parity. BHV 52/56 unchanged.
+- MT-TROJAN-FRESH-06 enriched bounded live reprobe DONE
+  (2026-05-07). Classification: **C — tooling gap**. Authorized scope
+  reused the existing 5x1 plan only. Reprobe summary:
+  `executed_runs=5`, `tool_error=5`, `class_counts=tool_unknown=5`,
+  `node_contact_confirmed=false`. Enriched diagnostics narrowed root
+  cause to local `probe-outbound` config loading: candidate contains a
+  GUI-only unknown field at `/outbounds/0/__id_in_gui`, so validation
+  fails before any structured `bridge_probe` or confirmed node contact.
+  Future classifier maps this as `config_validation_unknown_field`.
+  Separate Rust-only quality line, not REALITY parity. BHV 52/56
+  unchanged.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification:
   **A — intake gate ready, waiting for fresh config**. Operator guide:
   `agents-only/mt_real_02_fresh_sample_intake.md` (A-tier).

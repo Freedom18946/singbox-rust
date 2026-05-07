@@ -169,6 +169,8 @@ def classify_tool_failure(
         return "tool_compile_error"
     if "no such file" in lower or "not found" in lower:
         return "tool_missing"
+    if "config validation failed" in lower and "unknown field" in lower:
+        return "config_validation_unknown_field"
     kind = stdout_kind(stdout, parsed)
     if kind == "non_json":
         return "stdout_non_json"

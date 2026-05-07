@@ -2308,6 +2308,18 @@ class TrojanProbeLiveTests(unittest.TestCase):
         self.assertEqual(result["status"], "tool_error")
         self.assertEqual(result["class"], "cli_usage_error")
 
+    def test_config_unknown_field_is_specific_tool_class(self):
+        item = self._plan()["selected"][0]
+        result = trojan_live.result_from_probe(
+            item,
+            1,
+            1,
+            "",
+            "Error: load config: /tmp/candidate.json Caused by: config validation failed at /outbounds/0/__id_in_gui: unknown field",
+        )
+        self.assertEqual(result["status"], "tool_error")
+        self.assertEqual(result["class"], "config_validation_unknown_field")
+
     def test_evidence_classification_distinguishes_env_limited_and_ok(self):
         plan_result = self._plan()
         env_result = {

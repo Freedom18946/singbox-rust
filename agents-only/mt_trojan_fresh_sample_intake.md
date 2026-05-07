@@ -200,14 +200,69 @@ values before evidence is written.
 Live remains prohibited until a future task explicitly authorizes a new
 bounded run.
 
+## MT-TROJAN-FRESH-06 Enriched Bounded Live Reprobe
+
+Date: 2026-05-07.
+
+Authorization was explicitly granted only for reusing the existing
+bounded Trojan plan. The pre-gate was rerun without expanding scope:
+
+- `trojan_ready`: 88
+- `duplicate`: 2
+- `not_ready`: 0
+- `unsupported`: 0
+- `selected_count`: 5
+- `runs`: 1
+- `target`: `example.com:80`
+- `timeout`: 8
+- `planned_runs`: 5
+- `ready_for_live_authorization`: true
+
+Redacted reprobe evidence is stored outside git at
+`/tmp/trojan_live_sanity_r06.json` and
+`/tmp/trojan_live_sanity_r06.md`.
+
+Summary:
+
+- `classification`: C
+- `executed_runs`: 5
+- `ok_count`: 0
+- `failed_count`: 5
+- `tool_error_count`: 5
+- `env_limited_count`: 0
+- `status_counts`: `tool_error=5`
+- `class_counts`: `tool_unknown=5`
+- `probe_invocations`: 5
+- `node_contact_confirmed`: false
+
+Enriched diagnostics were identical across the 5 bounded invocations:
+
+- `returncode`: 1
+- `stdout_kind`: `empty`
+- `stderr_present`: true
+- `stdout_sha256_12`: none
+- `stderr_sha256_12`: `6b7e83d248cf`
+
+Root cause / narrow blocker: `probe-outbound` fails during local config
+loading before it can produce `bridge_probe`. The candidate config still
+contains a GUI-only unknown field at `/outbounds/0/__id_in_gui`, and the
+Rust config loader rejects that field. No node contact was structurally
+confirmed, so this remains a tooling/config-normalization gap rather
+than a Trojan node quality or Rust dataplane conclusion.
+
+The live runner now classifies this pattern as
+`config_validation_unknown_field` for future diagnostics. Live remains
+prohibited until a future task explicitly authorizes a bounded rerun
+after the config-normalization gap is addressed.
+
 ## Verification
 
 - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py`
-  -> 98 PASS.
+  -> 99 PASS.
 - `cargo check --workspace` -> PASS.
 
 ## Classification
 
-**C - Tooling gap narrowed to diagnostic under-instrumentation.** Trojan
-planning and intake remain separate Rust-only quality work and do not
-affect BHV 52/56 or dual-kernel parity status.
+**C - Tooling gap narrowed to config normalization for `probe-outbound`.**
+Trojan planning and intake remain separate Rust-only quality work and
+do not affect BHV 52/56 or dual-kernel parity status.
