@@ -6758,3 +6758,112 @@ MT-TROJAN-FRESH-02 follow-up: REALITY remains blocked; Trojan quality-line dry-r
 
 - `agents-only/active_context.md`（R72c 状态、≤95 行）
 - `agents-only/mt_real_02_baseline.md`（追加本节）
+
+---
+
+## R73 — MT-MIXED-FRESH-01 fresh REALITY/VLESS bounded live (2026-05-08)
+
+### 触发
+
+MT-MIXED-FRESH-01 在 2026-05-07 完成 no-live intake，15 个 fresh
+REALITY/VLESS candidates 通过 fresh_ready=15、`ready_for_r73=true`
+门禁；用户在 2026-05-08 显式授权 REALITY/VLESS live（不授权 Hys2
+或 plain-VLESS）。本轮按既有 dry-run plan 执行 15×5=75 bounded
+live runs。
+
+### 门禁
+
+- `python3 -B -m unittest test_reality_probe_tools test_reality_clienthello_family test_dual_kernel_verification`
+  → **142 PASS**（运行时与 R72c 一致）
+- `cargo check --workspace` → PASS
+- secret scan 全清
+
+### Pre-gate identity
+
+- input_sha256_prefix: `f5681baf3ad4760c`
+- candidate_count: 15
+- runs_per_outbound: 5
+- planned_total_runs: 75
+- target: `example.com:80`
+- timeout: 10s; phase-timeout-ms: 10000; probe-io-timeout-ms: 10000
+- intake re-run on neutral subset: fresh_ready=15, duplicate=0,
+  not_ready=0, covered_existing=0, ready_for_r73=true
+
+### Config normalization
+
+候选 config 的 `__id_in_gui` 私有字段被 validator 拒绝；通过既有
+`scripts/tools/trojan_config_normalize.py::normalize_config`
+（递归剥离 `__` 前缀字段）做 intake-time 标准化，写入
+`/tmp/mt_mixed_fresh_subset_reality_clean.json`，**未触碰 sampler /
+dataplane**；与 MT-TROJAN-FRESH-07 走的是同一条标准化路径。
+
+### Live 数据
+
+- executed_runs: 75 / 75
+- status_counts: `{completed: 75}`
+- all_ok_runs: 46
+- non_all_ok_runs: 29
+- has_divergence: true（4 个 phase divergence 样本，全部落在已有
+  taxonomy 内：app_pre_post_diverged ×1, app_minimal_diverged ×2,
+  bridge_io_diverged ×1, minimal_transport_diverged ×1）
+- class_counts: `{ok: 417, other: 172, connection_reset: 47, timeout: 39}`
+
+### Per-outbound 桶
+
+- 5/5 all_ok（9 个）：fresh01, fresh08, fresh09, fresh10, fresh11,
+  fresh12, fresh13, fresh14, fresh15
+- 1/5 all_ok + 4/5 mixed phase divergence（1 个）：fresh06
+- 1/5 divergence + 4/5 timeouts（1 个）：fresh02
+- 5/5 uniform same-failure（4 个）：fresh03, fresh04, fresh05, fresh07
+  - fresh07 与 R61–R63 HK-A-BGP-2.0 同型 connection_reset
+  - fresh03/04/05 同型 probe_io_all_other + reality_all_other
+
+### probe_io vs reality 一致性
+
+| kind | probe_io_all_* | reality_all_* | delta |
+| --- | ---: | ---: | ---: |
+| connection_reset | 5 | 5 | 0 |
+| timeout | 4 | 4 | 0 |
+| other | 19 | 18 | +1 |
+
+±1 的差距来自 fresh02 一个 run 同时被标 probe_io_all_other 与
+app_pre_post_diverged，没有出现 transport-vs-app 跨 phase 的新型
+divergence。
+
+### 归因（按现有规则）
+
+- 分类：**A**（actionable live signal；零新型 structural divergence）
+- 9 个 fresh REALITY/VLESS 节点 5/5 端到端可用 — 这是 MT-REAL-02 自
+  R45-R60 阶段以来第一次同时取得这么多 5/5 all_ok 的 fresh 节点
+- fresh06 的 4/5 phase divergence 是 R73 的关键 sample：第一次出现
+  `app_minimal + bridge_io + minimal_transport` 三相位同时分歧的
+  fresh 节点；归因优先级照常按 golden spec / S4 走，不下结论 sampler
+  regression
+- 同型 same-failure（fresh03/04/05/07）按 closure_report 规则属
+  node-health limited，不写成 sampler regression
+- BHV 仍为 52/56；Rust-only quality 行为不写成 dual-kernel parity
+
+### Rollup deltas
+
+| 字段 | R72c 后 | R73 后 | delta |
+| --- | ---: | ---: | ---: |
+| total_rounds | 18 | 19 | +1 |
+| total_executed_runs | 113 | 188 | +75 |
+| total_all_ok_runs | 24 | 70 | +46 |
+| by_outbound count | 21 | 36 | +15 |
+
+### 改动文件
+
+- `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json`
+- `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json` / `live_rollup.md`
+- `agents-only/mt_mixed_fresh_intake.md`
+- `agents-only/active_context.md`（≤95 行）
+- `agents-only/mt_real_02_baseline.md`（本节）
+
+### 授权范围确认
+
+- Hys2 live: 0 runs（未授权）
+- WS / plain VLESS live: 0 runs（未授权）
+- 不扩大样本；不重选；不临场修改 sampler/dataplane
+- 未触碰 `go_fork_source/*` 与 `.github/workflows/*`

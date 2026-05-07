@@ -1,0 +1,1181 @@
+{
+  "round": "73",
+  "date": "2026-05-08",
+  "description": "R73 MT-MIXED-FRESH-01 fresh REALITY/VLESS bounded live (15 candidates \u00d7 5 runs). Neutral outbound keys fresh01..fresh15 \u2014 original tags / server material redacted in this committed evidence; raw values live only in /tmp.",
+  "source_summary": "/tmp/r73-live/summary.json",
+  "command": "reality_vless_probe_batch.py --plan-json /tmp/r73_plan.json --runs 5 --target example.com:80 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/mt_mixed_fresh_subset_reality_clean.json (neutral-named, GUI fields stripped)",
+    "target": "example.com:80",
+    "runs": 5,
+    "selected_count": 15
+  },
+  "summary": {
+    "total": 75,
+    "executed_runs": 75,
+    "status_counts": {
+      "completed": 75
+    },
+    "label_counts": {
+      "all_ok": 46,
+      "app_minimal_diverged": 2,
+      "app_pre_post_diverged": 1,
+      "bridge_io_diverged": 1,
+      "minimal_transport_diverged": 1,
+      "probe_io_all_connection_reset": 5,
+      "probe_io_all_other": 19,
+      "probe_io_all_timeout": 4,
+      "reality_all_connection_reset": 5,
+      "reality_all_other": 18,
+      "reality_all_timeout": 4
+    },
+    "class_counts": {
+      "connection_reset": 47,
+      "ok": 417,
+      "other": 172,
+      "timeout": 39
+    }
+  },
+  "matrix_health": {
+    "has_divergence": true,
+    "divergence_labels": {
+      "app_minimal_diverged": 2,
+      "app_pre_post_diverged": 1,
+      "bridge_io_diverged": 1,
+      "minimal_transport_diverged": 1
+    },
+    "all_ok_runs": 46,
+    "uniform_failure_labels": {
+      "probe_io_all_connection_reset": 5,
+      "probe_io_all_other": 19,
+      "probe_io_all_timeout": 4,
+      "reality_all_connection_reset": 5,
+      "reality_all_other": 18,
+      "reality_all_timeout": 4
+    }
+  },
+  "by_outbound": {
+    "fresh01": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      }
+    },
+    "fresh02": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "app_minimal_diverged": 1,
+        "app_pre_post_diverged": 1,
+        "probe_io_all_other": 1,
+        "probe_io_all_timeout": 4,
+        "reality_all_timeout": 4
+      },
+      "class_counts": {
+        "connection_reset": 2,
+        "other": 5,
+        "timeout": 38
+      }
+    },
+    "fresh03": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "probe_io_all_other": 5,
+        "reality_all_other": 5
+      },
+      "class_counts": {
+        "other": 45
+      }
+    },
+    "fresh04": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "probe_io_all_other": 5,
+        "reality_all_other": 5
+      },
+      "class_counts": {
+        "other": 45
+      }
+    },
+    "fresh05": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "probe_io_all_other": 5,
+        "reality_all_other": 5
+      },
+      "class_counts": {
+        "other": 45
+      }
+    },
+    "fresh06": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 1,
+        "app_minimal_diverged": 1,
+        "bridge_io_diverged": 1,
+        "minimal_transport_diverged": 1,
+        "probe_io_all_other": 3,
+        "reality_all_other": 3
+      },
+      "class_counts": {
+        "ok": 12,
+        "other": 32,
+        "timeout": 1
+      }
+    },
+    "fresh07": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 5,
+        "reality_all_connection_reset": 5
+      },
+      "class_counts": {
+        "connection_reset": 45
+      }
+    },
+    "fresh08": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      }
+    },
+    "fresh09": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      }
+    },
+    "fresh10": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      }
+    },
+    "fresh11": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      }
+    },
+    "fresh12": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      }
+    },
+    "fresh13": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      }
+    },
+    "fresh14": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      }
+    },
+    "fresh15": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      }
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh01",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh01",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh01",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh01",
+      "ordinal": 1,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh01",
+      "ordinal": 1,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh02",
+      "ordinal": 2,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    {
+      "outbound": "fresh02",
+      "ordinal": 2,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    {
+      "outbound": "fresh02",
+      "ordinal": 2,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    {
+      "outbound": "fresh02",
+      "ordinal": 2,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      }
+    },
+    {
+      "outbound": "fresh02",
+      "ordinal": 2,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "app_minimal_diverged",
+        "app_pre_post_diverged",
+        "probe_io_all_other"
+      ],
+      "class_counts": {
+        "timeout": 2,
+        "connection_reset": 2,
+        "other": 5
+      }
+    },
+    {
+      "outbound": "fresh03",
+      "ordinal": 3,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh03",
+      "ordinal": 3,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh03",
+      "ordinal": 3,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh03",
+      "ordinal": 3,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh03",
+      "ordinal": 3,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 4,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 4,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 4,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 4,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 4,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 5,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 5,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 5,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 5,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 5,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh06",
+      "ordinal": 6,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh06",
+      "ordinal": 6,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh06",
+      "ordinal": 6,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_other",
+        "reality_all_other"
+      ],
+      "class_counts": {
+        "other": 9
+      }
+    },
+    {
+      "outbound": "fresh06",
+      "ordinal": 6,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "app_minimal_diverged",
+        "bridge_io_diverged",
+        "minimal_transport_diverged"
+      ],
+      "class_counts": {
+        "other": 5,
+        "timeout": 1,
+        "ok": 3
+      }
+    },
+    {
+      "outbound": "fresh06",
+      "ordinal": 6,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh07",
+      "ordinal": 7,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "fresh07",
+      "ordinal": 7,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "fresh07",
+      "ordinal": 7,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "fresh07",
+      "ordinal": 7,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "fresh07",
+      "ordinal": 7,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      }
+    },
+    {
+      "outbound": "fresh08",
+      "ordinal": 8,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh08",
+      "ordinal": 8,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh08",
+      "ordinal": 8,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh08",
+      "ordinal": 8,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh08",
+      "ordinal": 8,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh09",
+      "ordinal": 9,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh09",
+      "ordinal": 9,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh09",
+      "ordinal": 9,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh09",
+      "ordinal": 9,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh09",
+      "ordinal": 9,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 10,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 10,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 10,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 10,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 10,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh11",
+      "ordinal": 11,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh11",
+      "ordinal": 11,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh11",
+      "ordinal": 11,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh11",
+      "ordinal": 11,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh11",
+      "ordinal": 11,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh12",
+      "ordinal": 12,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh12",
+      "ordinal": 12,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh12",
+      "ordinal": 12,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh12",
+      "ordinal": 12,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh12",
+      "ordinal": 12,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh13",
+      "ordinal": 13,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh13",
+      "ordinal": 13,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh13",
+      "ordinal": 13,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh13",
+      "ordinal": 13,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh13",
+      "ordinal": 13,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh14",
+      "ordinal": 14,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh14",
+      "ordinal": 14,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh14",
+      "ordinal": 14,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh14",
+      "ordinal": 14,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh14",
+      "ordinal": 14,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh15",
+      "ordinal": 15,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh15",
+      "ordinal": 15,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh15",
+      "ordinal": 15,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh15",
+      "ordinal": 15,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    },
+    {
+      "outbound": "fresh15",
+      "ordinal": 15,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      }
+    }
+  ],
+  "interpretation": [
+    "Out of 15 fresh REALITY/VLESS candidates \u00d7 5 runs = 75 executed runs, 46 reached the all_ok end-to-end label; 9 outbounds (fresh01, fresh08-fresh15) produced 5/5 all_ok with zero divergence and zero same-failure. fresh06 produced 1/5 all_ok with 4/5 mixed phase divergence (app_minimal_diverged, bridge_io_diverged, minimal_transport_diverged) and probe_io/reality_all_other on the rest \u2014 a single genuine R73 divergence sample within the existing MT-REAL-02 phase taxonomy. fresh02 produced 1/5 divergence (app_minimal + app_pre_post) plus 4/5 timeouts \u2014 node-health limited with one structural sample. fresh03/04/05 produced 5/5 uniform probe_io_all_other + reality_all_other \u2014 same-failure stable. fresh07 produced 5/5 uniform probe_io_all_connection_reset + reality_all_connection_reset \u2014 the same symptom HK-A-BGP-2.0 carried in R61-R63. probe_io and reality phase fates are aligned within \u00b11 across the round (5/5 connection_reset both, 4/4 timeout both, 19/18 other where the 1 difference is fresh02 mixed); no new structural divergence class observed beyond the four phase labels already enumerated in MT-REAL-02 golden spec / S4. Classification: A."
+  ]
+}

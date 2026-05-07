@@ -38,31 +38,36 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
   **142 tests PASS**.
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md unchanged: 18 rounds, 113 runs, 24 all_ok.
+- live_rollup.json/md after R73: 19 rounds, 188 runs, 70 all_ok
+  (was 18 / 113 / 24).
 
 ## Next Steps
 
-- MT-MIXED-FRESH-01 mixed fresh config intake + protocol split DONE
-  (2026-05-07). A — no-live; redacted intake only. Candidate has
-  32 outbounds (20 vless + 12 hys2). Three-line split: REALITY/VLESS
-  (15, fresh_ready=15, ready_for_r73=true), VLESS+WS+TLS (5, audit
-  only), Hysteria2 (12, ready=12, no live tool). WS audit: path +
-  Host header plumbed; `max_early_data` and `early_data_header_name`
-  silently dropped (5/5 nodes set 2048, effective loss to 0; header
-  name length matches hardcoded default so no functional loss there).
-  No xhttp/httpupgrade/grpc in batch. Dry-run plan only; no socket
-  opened to any candidate. /tmp configs not committed. Doc:
-  `agents-only/mt_mixed_fresh_intake.md`. Evidence:
-  `agents-only/mt_mixed_fresh_evidence/`. BHV 52/56 unchanged.
+- MT-REAL-02 R73 fresh REALITY/VLESS bounded live DONE (2026-05-08).
+  A — actionable; no new structural divergence. 15 fresh candidates
+  × 5 runs = 75 executed (status=completed). all_ok 46/75. 9 nodes
+  5/5 all_ok end-to-end (fresh01, fresh08–fresh15); fresh06 first
+  three-phase divergence sample (app_minimal + bridge_io +
+  minimal_transport) within existing taxonomy; fresh02 1 divergence
+  sample + 4 timeouts (node-health limited); fresh03/04/05/07 5/5
+  uniform same-failure (fresh07 same connection_reset symptom as
+  HK-A-BGP-2.0 in R61–R63). probe_io vs reality fates aligned ±1;
+  no transport-vs-app new class. Pre-gate normalization stripped
+  `__id_in_gui` via `trojan_config_normalize::normalize_config`.
+  Rollup +1 round, +75 executed_runs, +46 all_ok_runs, +15 outbound
+  keys (neutral fresh01..fresh15). Hys2 / WS / plain-VLESS live: 0
+  runs each (not authorized). BHV 52/56 unchanged. Evidence:
+  `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.{json,md}`,
+  `agents-only/mt_real_02_evidence/live_rollup.{json,md}`, baseline:
+  `agents-only/mt_real_02_baseline.md` R73 section.
+- MT-MIXED-FRESH-01 mixed fresh config intake DONE (2026-05-07). A
+  — no-live; redacted intake only. Triage: 32 outbounds (20 vless +
+  12 hys2). REALITY/VLESS line: 15 fresh_ready, ready_for_r73=true.
+  WS audit: max_early_data + early_data_header_name silently dropped
+  (5/5 = 2048 → 0; header default match). Hys2 readiness 12/12, no
+  live tool. Doc: `agents-only/mt_mixed_fresh_intake.md`.
 - MT-TROJAN-FRESH-15 success-evidence cosmetic + line closure DONE
-  (2026-05-07). MT-TROJAN-FRESH-14 post-TLS-fix bounded Trojan live
-  reprobe DONE (2026-05-07): 5/5 ok, response_bytes 832-836, HTTP
-  200 to example.com:80. MT-TROJAN-FRESH-13 root cause audit DONE
-  (2026-05-07): `validator/v2/outbound.rs:872-877` dropped
-  `tls.insecure`, fixed via fallback chain; Trojan SNI fallback uses
-  `parse_server_endpoint`; 8 TLS subclasses added to runner.
-  MT-TROJAN-FRESH-11/-12 hostname dataplane fix + first post-fix
-  live DONE (2026-05-07). MT-TROJAN-FRESH line CLOSED.
+  (2026-05-07). MT-TROJAN-FRESH line CLOSED.
 - R71 fresh sample intake DONE (2026-05-04) A; R67-R70 HK closure
   archived.
 

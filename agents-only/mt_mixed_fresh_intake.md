@@ -122,3 +122,25 @@ unchanged at 15, no leaked material in any redacted artifact.
 - `agents-only/mt_real_02_evidence/live_rollup.json` is unmodified.
 - No new entry added to `agents-only/mt_real_02_evidence/`.
 - BHV count remains 52/56 (this task did not touch dual-kernel parity).
+
+## R73 outcome (2026-05-08, post-authorization)
+
+Live executed under the dry-run plan above:
+
+- executed_runs: 75 / 75
+- all_ok_runs: 46 / 75
+- 9 fresh outbounds reached 5/5 all_ok end-to-end (fresh01,
+  fresh08–fresh15)
+- fresh06 produced the first three-phase divergence sample
+  (app_minimal + bridge_io + minimal_transport) within the existing
+  MT-REAL-02 phase taxonomy
+- fresh02 produced 1 divergence + 4 timeouts (node-health limited)
+- fresh03/04/05/07 produced 5/5 uniform same-failure
+- probe_io vs reality fates aligned ±1; no transport-vs-app new class
+- Hys2 / WS / plain-VLESS live: 0 runs each (not authorized)
+- BHV 52/56 unchanged
+
+Evidence:
+`agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.{json,md}`
+and the regenerated rollup
+`agents-only/mt_real_02_evidence/live_rollup.{json,md}`.

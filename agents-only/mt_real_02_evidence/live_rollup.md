@@ -1,15 +1,15 @@
 # MT-REAL-02 REALITY Live Evidence Rollup
 
-- rounds: 18
-- executed runs: 113
-- all_ok runs: 24
-- non-all_ok runs: 89
+- rounds: 19
+- executed runs: 188
+- all_ok runs: 70
+- non-all_ok runs: 118
 - has divergence: true
-- latest non-all_ok outbounds: 6
-- latest divergence outbounds: 0
+- latest non-all_ok outbounds: 12
+- latest divergence outbounds: 2
 - latest stable divergence outbounds: 0
-- latest mixed run-health outbounds: 0
-- latest stable same-failure outbounds: 6
+- latest mixed run-health outbounds: 2
+- latest stable same-failure outbounds: 10
 - recovered outbounds: 3
 
 ## Rounds
@@ -34,21 +34,25 @@
 | 61 | 8 | 2 | all_ok=2, probe_io_all_connection_reset=4, probe_io_all_reality_dial_eof=2, reality_all_connection_reset=4, reality_all_reality_dial_eof=2 | connection_reset=36, ok=18, reality_dial_eof=18 | false |
 | 62 | 4 | 0 | probe_io_all_connection_reset=4, reality_all_connection_reset=4 | connection_reset=36 | false |
 | 63 | 4 | 0 | probe_io_all_connection_reset=4, reality_all_connection_reset=4 | connection_reset=36 | false |
+| 73 | 75 | 46 | all_ok=46, app_minimal_diverged=2, app_pre_post_diverged=1, bridge_io_diverged=1, minimal_transport_diverged=1, probe_io_all_connection_reset=5, probe_io_all_other=19, probe_io_all_timeout=4, reality_all_connection_reset=5, reality_all_other=18, reality_all_timeout=4 | connection_reset=47, ok=417, other=172, timeout=39 | true |
 
 ## Aggregates
 
-- labels: {"all_ok": 24, "app_minimal_diverged": 6, "app_pre_post_diverged": 7, "bridge_io_diverged": 2, "minimal_transport_diverged": 4, "probe_io_all_connection_reset": 39, "probe_io_all_post_dial_eof": 3, "probe_io_all_reality_dial_eof": 12, "probe_io_all_timeout": 28, "reality_all_connection_reset": 40, "reality_all_reality_dial_eof": 13, "reality_all_timeout": 25}
-- classes: {"connection_reset": 367, "ok": 247, "post_dial_eof": 6, "reality_dial_eof": 121, "timeout": 276}
-- latest health: {"latest_all_ok": 15, "latest_same_failure": 6}
-- latest run health: {"run_all_ok": 17, "run_same_failure": 12}
+- labels: {"all_ok": 70, "app_minimal_diverged": 8, "app_pre_post_diverged": 8, "bridge_io_diverged": 3, "minimal_transport_diverged": 5, "probe_io_all_connection_reset": 44, "probe_io_all_other": 19, "probe_io_all_post_dial_eof": 3, "probe_io_all_reality_dial_eof": 12, "probe_io_all_timeout": 32, "reality_all_connection_reset": 45, "reality_all_other": 18, "reality_all_reality_dial_eof": 13, "reality_all_timeout": 29}
+- classes: {"connection_reset": 414, "ok": 664, "other": 172, "post_dial_eof": 6, "reality_dial_eof": 121, "timeout": 315}
+- latest health: {"latest_all_ok": 24, "latest_divergence": 2, "latest_same_failure": 10}
+- latest run health: {"run_all_ok": 63, "run_divergence": 2, "run_same_failure": 39}
 
 ## Latest divergence phase composition
 
-_(no latest divergence)_
+- app_pre_post_diverged: 1 (fresh02)
+- app_minimal_diverged: 2 (fresh02, fresh06)
+- minimal_transport_diverged: 1 (fresh06)
+- bridge_io_diverged: 1 (fresh06)
 
 ## Latest phase dominance
 
-- dominant outbounds (>=0.75): (none)
+- dominant outbounds (>=0.75): fresh02, fresh06
 - no-dominance outbounds (<0.50): (none)
 - mid-band outbounds (0.50-0.75): (none)
 
