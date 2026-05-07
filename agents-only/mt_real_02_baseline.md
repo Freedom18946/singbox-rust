@@ -7095,3 +7095,97 @@ R75 把两件事都收口，no-live、no-node-contact、不动 sampler/dataplane
 - `go_fork_source/*` / `.github/workflows/*` 未触碰
 - `golden_spec` 未改：`DEV-REALITY-01` 已覆盖
 - 不写成 dual-kernel parity 变化；BHV 52/56 不变
+
+---
+
+## R76 — Fresh REALITY/VLESS confirmation plan & authorization packet (2026-05-08)
+
+### 触发
+
+R75 把 R73 evidence 物化到 `run_health_counts` 后，下一步问题是
+「下一轮 live 该跑谁、跑多深、按什么顺序授权」。R76 在 no-live 前提下
+完成这个 planning + 授权 packet，不接触节点，不修改 sampler/dataplane。
+
+### Cohort 划分（基于 R75 物化的 run_health_counts）
+
+| Cohort | 节点 | runs/outbound | planned_total_runs |
+| --- | --- | ---: | ---: |
+| **A — divergence carrier** | fresh02, fresh06 | 5 | 10 |
+| **B — same failure** | fresh03, fresh04, fresh05, fresh07 | 3 | 12 |
+| **C — recovery watch (3 reps)** | fresh01, fresh09, fresh15 | 3 | 9 |
+| Combined ceiling | all three | — | 31 |
+
+C cohort 在 9 个 5/5 all_ok 节点中只挑 3 个代表（按 ordinal 跨度
+fresh01 / fresh09 / fresh15），3 runs/node 满足 R59-B/R60/R61/R62/R63
+家族里 longer-repeat 的最低深度；2 runs/node 在闭环规则里太浅。
+其余 6 个（fresh08/10/11/12/13/14）保持在 R73 round-1-only，留给 R77/R78
+后续 cohort C 扩展。
+
+### 工具改动
+
+新增 `scripts/tools/reality_vless_confirmation_cohorts.py`：
+
+- `cohort_for_outbound(entry)` — 单条 by_outbound 入桶规则
+- `derive_cohorts(round_summary)` — 整轮分桶
+- `cohort_plan(...)` — 单 cohort 的 plan shape
+- `total_planned_runs(plan)` — 跨 cohort 求和
+
+入桶规则：
+- `run_divergence > 0` → `divergence_carrier`
+- `run_all_ok==0 ∧ run_same_failure>0 ∧ run_divergence==0` → `same_failure`
+- `run_all_ok>0 ∧ run_same_failure==0 ∧ run_divergence==0` → `recovery_watch`
+- 其余（含 mixed run_all_ok+run_same_failure，全 run_unknown）→ `neutral`，
+  不自动入任何 cohort，由人工 review 决定
+
+测试 `FreshConfirmationCohortTests`（9 用例）pin：
+- fresh02/fresh06 进 divergence_carrier
+- fresh03/04/05/07 进 same_failure
+- fresh01 + fresh08..fresh15 全部进 recovery_watch
+- mixed all_ok+same_failure 落 neutral
+- cohort_plan 计算 planned_total_runs 正确
+- runs_per_outbound ≤ 0 抛 ValueError
+- total_planned_runs 跨 cohort 求和正确
+- committed r76 plan：只有 neutral keys（regex `^fresh\d{2}$`），
+  10/12/9 totals 匹配，所有 live/node-contact/sampler/dataplane/
+  workflows 标志为 False
+
+### 默认授权建议
+
+按照最小授权原则：
+
+1. **先授权 cohort A（10 runs）**，看 R73 的 2 个 divergence
+   carriers 在第二轮是否仍只命中既有 4 个 phase labels。
+2. cohort A 落地后再决定 cohort B 是否值得跑（如果 fresh02 转 timeout
+   主导，B 的优先级降低）。
+3. cohort C 留到最后；recovery 闭环规则要求 3 轮，所以即使 C cohort
+   3/3，离正式 closure 仍差一轮。
+
+任何后续 live 必须用户显式列出 cohort 名称授权；不接受默认放行。
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/r76_fresh_confirmation_plan.json`
+  （cohort 映射 + objective/gate/stop/expected A/B/C/D + dry-run 命令模板）
+- `agents-only/mt_real_02_evidence/r76_fresh_confirmation_plan.md`
+  （上面 JSON 的 redacted 渲染）
+- `scripts/tools/reality_vless_confirmation_cohorts.py`（新建）
+- `scripts/tools/test_reality_probe_tools.py`（+9）
+- `agents-only/active_context.md`（≤95 行）
+- 本文件 R76 节
+
+### 门禁
+
+- `python3 -B -m unittest test_reality_probe_tools test_reality_clienthello_family test_dual_kernel_verification`
+  → **162 PASS**（+9 新用例）
+- `cargo check --workspace` → PASS
+- `git diff --check` → clean
+- secret scan：扫 `/tmp/mt_mixed_fresh_config.json` 实际敏感字段在
+  modified diff/docs/evidence 中是否出现 → 0 leak
+
+### 范围确认
+
+- 没有 live probe；没有 node contact
+- 没有动 sampler/dataplane
+- 没有动 `go_fork_source/*` / `.github/workflows/*`
+- 没有改 golden_spec；DEV-REALITY-01 已覆盖整条 REALITY live dataplane
+- BHV 52/56 不变；Rust-only quality / planning，不写成 dual-kernel parity

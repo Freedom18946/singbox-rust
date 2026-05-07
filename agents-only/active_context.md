@@ -43,31 +43,31 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 
 ## Next Steps
 
+- MT-REAL-02 R76 fresh-confirmation plan + authorization packet DONE
+  (2026-05-08). No-live; no-node-contact. R73 outbounds partitioned
+  into 3 cohorts by R75 `run_health_counts`: A divergence-carrier
+  (fresh02/fresh06, 5 runs each = 10), B same-failure
+  (fresh03/04/05/07, 3 runs each = 12), C recovery-watch (3 reps
+  fresh01/fresh09/fresh15, 3 runs each = 9). Combined ceiling 31
+  runs across 2-3 sequenced authorizations. Default recommendation:
+  authorize cohort A only (10 runs) first. New helper
+  `scripts/tools/reality_vless_confirmation_cohorts.py` + 9 tests
+  pin the partition and the redacted plan contract. Plan artefacts
+  `agents-only/mt_real_02_evidence/r76_fresh_confirmation_plan.{json,md}`
+  carry only neutral keys (`fresh\d{2}`). BHV 52/56 unchanged.
 - MT-REAL-02 R75 fresh divergence attribution + run_health
-  materialization DONE (2026-05-08). No-live; no-node-contact. Per-run
-  `run_health` now materialized into round73 `runs[]` via the new
-  `scripts/tools/round_summary_run_health.py::materialize_run_health`
-  helper; round73 summary + by_outbound recomputed from per-run facts
-  (75 / 46 / 2 / 27 / 5 / 4). fresh02 (app_pre_post + app_minimal) and
-  fresh06 (app_minimal + bridge_io + minimal_transport) phase labels
-  attribute under golden_spec S4 `DEV-REALITY-01` (ARCH-LIMIT) — no
-  new S4 entry needed. live_rollup deterministically regenerates
-  identically to R74. Tests +7 (`RoundSummaryRunHealthMaterialization
-  Tests`). BHV 52/56 unchanged.
+  materialization DONE (2026-05-08). Per-run `run_health` materialized
+  into round73 `runs[]` via `round_summary_run_health.materialize_run_health`;
+  attribution under golden_spec S4 `DEV-REALITY-01` (ARCH-LIMIT) — no
+  new S4 entry. Tests +7.
 - MT-REAL-02 R74 R73 evidence accounting audit DONE (2026-05-08).
   Pure ledger correction: split divergence_run_count from
-  divergence_phase_label_count. R73 corrected facts unchanged.
-  Tests +4 (`RunDivergenceAccountingTests`).
+  divergence_phase_label_count. Tests +4.
 - MT-REAL-02 R73 fresh REALITY/VLESS bounded live DONE (2026-05-08).
-  15×5=75 executed; rollup +1 round, +75 executed_runs, +46 run_all_ok,
-  +15 outbound keys (neutral fresh01..fresh15). Hys2/WS/plain-VLESS
-  live: 0. Classification A — actionable; no new structural divergence.
-- MT-MIXED-FRESH-01 mixed fresh config intake DONE (2026-05-07). A —
-  no-live; redacted intake only. WS audit: max_early_data +
-  early_data_header_name silently dropped (5/5 = 2048 → 0; header
-  default match). Hys2 readiness 12/12, no live tool.
-- MT-TROJAN-FRESH-15 success-evidence cosmetic + line closure DONE
-  (2026-05-07). MT-TROJAN-FRESH line CLOSED.
+  15×5=75 executed. Hys2/WS/plain-VLESS live: 0. A — actionable; no
+  new structural divergence.
+- MT-MIXED-FRESH-01 mixed fresh config intake DONE (2026-05-07).
+- MT-TROJAN-FRESH-15 line CLOSED (2026-05-07).
 - R71 fresh sample intake DONE (2026-05-04) A.
 
 ## Still-Valid Constraints

@@ -12,6 +12,7 @@ import unittest
 sys.path.insert(0, str(pathlib.Path(__file__).resolve().parent))
 
 import reality_probe_compare as compare
+import reality_vless_confirmation_cohorts as cohort_planner
 import reality_vless_evidence_rollup as rollup
 import reality_vless_probe_batch as batch
 import reality_vless_probe_evidence as evidence
@@ -3505,6 +3506,185 @@ class RoundSummaryRunHealthMaterializationTests(unittest.TestCase):
                 "input runs[] entries must remain untouched",
             )
             self.assertEqual(r_before, r_after)
+
+
+class FreshConfirmationCohortTests(unittest.TestCase):
+    """R76 fresh-confirmation cohort planner.
+
+    Pin the partition shape so a future round-summary cannot silently
+    re-mix divergence carriers, same-failure outbounds, and recovery-
+    watch outbounds. Mirrors R73's exact partition: fresh02/fresh06
+    in divergence_carrier, fresh03/04/05/07 in same_failure, and the
+    9 5/5 all_ok outbounds in recovery_watch.
+    """
+
+    @staticmethod
+    def _entry(run_all_ok: int, run_divergence: int, run_same_failure: int) -> dict:
+        return {
+            "run_health_counts": {
+                "run_all_ok": run_all_ok,
+                "run_divergence": run_divergence,
+                "run_same_failure": run_same_failure,
+                "run_unknown": 0,
+            }
+        }
+
+    def _r73_synthetic_summary(self) -> dict:
+        return {
+            "round": "73-synthetic",
+            "by_outbound": {
+                "fresh01": self._entry(5, 0, 0),
+                "fresh02": self._entry(0, 1, 4),
+                "fresh03": self._entry(0, 0, 5),
+                "fresh04": self._entry(0, 0, 5),
+                "fresh05": self._entry(0, 0, 5),
+                "fresh06": self._entry(1, 1, 3),
+                "fresh07": self._entry(0, 0, 5),
+                "fresh08": self._entry(5, 0, 0),
+                "fresh09": self._entry(5, 0, 0),
+                "fresh10": self._entry(5, 0, 0),
+                "fresh11": self._entry(5, 0, 0),
+                "fresh12": self._entry(5, 0, 0),
+                "fresh13": self._entry(5, 0, 0),
+                "fresh14": self._entry(5, 0, 0),
+                "fresh15": self._entry(5, 0, 0),
+            },
+        }
+
+    def test_divergence_carrier_cohort_groups_fresh02_and_fresh06(self):
+        buckets = cohort_planner.derive_cohorts(self._r73_synthetic_summary())
+        self.assertEqual(
+            buckets[cohort_planner.DIVERGENCE_CARRIER],
+            ["fresh02", "fresh06"],
+        )
+
+    def test_same_failure_cohort_groups_fresh03_04_05_07(self):
+        buckets = cohort_planner.derive_cohorts(self._r73_synthetic_summary())
+        self.assertEqual(
+            buckets[cohort_planner.SAME_FAILURE],
+            ["fresh03", "fresh04", "fresh05", "fresh07"],
+        )
+
+    def test_recovery_watch_cohort_groups_all_ok_outbounds(self):
+        buckets = cohort_planner.derive_cohorts(self._r73_synthetic_summary())
+        self.assertEqual(
+            buckets[cohort_planner.RECOVERY_WATCH],
+            [
+                "fresh01",
+                "fresh08",
+                "fresh09",
+                "fresh10",
+                "fresh11",
+                "fresh12",
+                "fresh13",
+                "fresh14",
+                "fresh15",
+            ],
+        )
+
+    def test_no_outbound_lands_in_neutral_for_R73_pattern(self):
+        buckets = cohort_planner.derive_cohorts(self._r73_synthetic_summary())
+        self.assertEqual(buckets[cohort_planner.NEUTRAL], [])
+
+    def test_mixed_all_ok_and_same_failure_lands_in_neutral(self):
+        # An outbound that has both run_all_ok > 0 AND run_same_failure > 0
+        # but no run_divergence is genuinely ambiguous and should not be
+        # auto-assigned to recovery_watch (would dilute the cohort) or to
+        # same_failure (would over-include).
+        summary = {
+            "by_outbound": {
+                "ambig": self._entry(2, 0, 3),
+            }
+        }
+        buckets = cohort_planner.derive_cohorts(summary)
+        self.assertEqual(buckets[cohort_planner.NEUTRAL], ["ambig"])
+        self.assertEqual(buckets[cohort_planner.RECOVERY_WATCH], [])
+        self.assertEqual(buckets[cohort_planner.SAME_FAILURE], [])
+
+    def test_cohort_plan_computes_planned_total_runs(self):
+        plan_entry = cohort_planner.cohort_plan(
+            cohort_name="A",
+            outbounds=["fresh02", "fresh06"],
+            runs_per_outbound=5,
+            objective="x",
+            entry_gate="x",
+            stop_condition="x",
+            expected_classifications={"A": "x", "B": "x", "C": "x", "D": "x"},
+        )
+        self.assertEqual(plan_entry["planned_total_runs"], 10)
+        self.assertEqual(plan_entry["selected_count"], 2)
+        self.assertEqual(plan_entry["runs_per_outbound"], 5)
+
+    def test_cohort_plan_rejects_zero_or_negative_runs(self):
+        with self.assertRaises(ValueError):
+            cohort_planner.cohort_plan(
+                cohort_name="A",
+                outbounds=["fresh02"],
+                runs_per_outbound=0,
+                objective="x",
+                entry_gate="x",
+                stop_condition="x",
+                expected_classifications={},
+            )
+
+    def test_total_planned_runs_sums_across_cohorts(self):
+        rendered = {
+            "cohorts": {
+                "A_divergence_carrier": {"planned_total_runs": 10},
+                "B_same_failure": {"planned_total_runs": 12},
+                "C_recovery_watch": {"planned_total_runs": 9},
+            }
+        }
+        self.assertEqual(cohort_planner.total_planned_runs(rendered), 31)
+
+    def test_committed_r76_plan_is_redacted_neutral_and_carries_expected_totals(self):
+        # The committed r76 plan must continue to satisfy the contract
+        # established here: only neutral keys, and the three cohort
+        # totals match the user-spec (10/12/9 → 31).
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/r76_fresh_confirmation_plan.json"
+        )
+        if not path.exists():
+            self.skipTest("r76 plan not yet committed")
+        plan = json.loads(path.read_text(encoding="utf-8"))
+        cohorts = plan["cohorts"]
+        self.assertEqual(
+            cohorts["A_divergence_carrier"]["outbounds"],
+            ["fresh02", "fresh06"],
+        )
+        self.assertEqual(
+            cohorts["B_same_failure"]["outbounds"],
+            ["fresh03", "fresh04", "fresh05", "fresh07"],
+        )
+        self.assertEqual(
+            cohorts["C_recovery_watch"]["outbounds"],
+            ["fresh01", "fresh09", "fresh15"],
+        )
+        self.assertEqual(cohorts["A_divergence_carrier"]["planned_total_runs"], 10)
+        self.assertEqual(cohorts["B_same_failure"]["planned_total_runs"], 12)
+        self.assertEqual(cohorts["C_recovery_watch"]["planned_total_runs"], 9)
+        self.assertEqual(plan["totals"]["all_cohorts_combined_planned_runs"], 31)
+        self.assertEqual(
+            plan["totals"]["recommended_first_authorization_runs"], 10
+        )
+        rendered = path.read_text(encoding="utf-8")
+        # Neutral-key contract: every outbound name in the plan is
+        # of the form fresh\d{2}. No raw tags / servers / uuids leak.
+        import re
+
+        for match in re.finditer(r"\"outbounds\":\s*\[([^\]]*)\]", rendered):
+            for token in re.findall(r'"([^"]+)"', match.group(1)):
+                self.assertRegex(
+                    token,
+                    r"^fresh\d{2}$",
+                    msg=f"non-neutral outbound key in plan: {token}",
+                )
+        # No live execution flags
+        self.assertFalse(plan["live_executed"])
+        self.assertFalse(plan["node_contact_executed"])
+        self.assertFalse(plan["sampler_dataplane_modified"])
+        self.assertFalse(plan["go_fork_source_modified"])
+        self.assertFalse(plan["github_workflows_modified"])
 
 
 if __name__ == "__main__":
