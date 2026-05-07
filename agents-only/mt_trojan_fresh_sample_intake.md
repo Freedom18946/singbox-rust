@@ -577,3 +577,121 @@ Classification: **A — refined actionable live signal, structured
 bridge_probe, no `tool_error`, no literal `other`, dataplane blocker
 recorded for a future round**. Rust-only quality line, BHV 52/56
 unchanged.
+
+## MT-TROJAN-FRESH-11 Trojan Hostname Server Dataplane Fix, No-Live
+
+Date: 2026-05-07.
+
+No live probe was authorized or run. This round fixes the FRESH-10
+dataplane blocker and tightens the FRESH-09 classifier so the same
+signal would be labeled accurately on a future authorized live run.
+
+Root cause fixed: `crates/sb-adapters/src/outbound/trojan.rs` formerly
+called `config.server.parse::<SocketAddr>()` in both the TCP `dial`
+path and the `udp_relay_dial` path. `SocketAddr::parse` requires an
+IP literal, so any hostname `server` (which `register.rs:1007`
+constructs as `format!("{}:{}", server, port)`) failed synchronously
+with `Invalid server address: invalid socket address syntax` before
+any network IO. This applied to every hostname-format Trojan outbound,
+including all 88 trojan_ready entries in the FRESH-07 sample.
+
+Changed dataplane behavior:
+
+- New `parse_server_endpoint(server)` returns `(host: String, port:
+  u16)` from `domain:port`, `IPv4:port`, or `[IPv6]:port`. It rejects
+  empty hosts, missing / empty / non-numeric / zero ports, unclosed
+  IPv6 brackets, and bare (unbracketed) IPv6 strings. It does NOT
+  require the host to be an IP literal.
+- TCP `dial()` now resolves DNS at the transport layer:
+  - Detour path: `connect_tcp_stream(&server_host, server_port, ...)`
+    (already supports hostnames via `TcpStream::connect((host, port))`).
+  - sb-transport dialer path: `dialer.connect(&server_host,
+    server_port)` (the Dialer trait already takes `&str` host).
+  - Direct fallback: `tokio::net::TcpStream::connect((server_host
+    .as_str(), server_port))` (DNS via the Tokio resolver).
+- A hostname `server` no longer surfaces `Invalid server address` at
+  the local parse stage. Any failure is now a downstream DNS / TCP /
+  TLS / Trojan-handshake error.
+
+UDP relay path decision:
+
+- `udp_relay_dial` still needs a concrete `SocketAddr` to drive
+  `UdpSocket::connect` and to encode the UDP ASSOCIATE record. The
+  fix resolves hostnames via `tokio::net::lookup_host((host, port))`
+  and picks the **first** returned `SocketAddr`. On resolution failure
+  or empty result, returns `AdapterError::Network` with the explicit
+  text `Trojan UDP relay DNS resolution failed for ...` /
+  `Trojan UDP relay DNS resolution returned no addresses for ...` so
+  the failure is observable, not silent.
+- Pre-existing limitations explicitly **NOT** fixed in this round:
+  the UDP path does not round-robin across multiple resolved
+  addresses, and the UDP ASSOCIATE record is hardcoded to ATYP=0x01
+  (IPv4) — an IPv6-only resolved server would still misencode the
+  record. These are recorded here as future blockers; they are not
+  introduced by FRESH-11 and were already present pre-fix.
+
+Classifier update (`scripts/tools/trojan_probe_live.py`):
+
+- New refined class `invalid_server_address` placed at the **top** of
+  `BRIDGE_CLASS_PATTERNS` so any chain that carries either
+  `Invalid server address` or `invalid socket address syntax` wins
+  over the wrapper-rejection prefix `uses encrypted stream`. Old
+  `/tmp` evidence (FRESH-08, FRESH-10 raw streams) re-classified
+  through this table now produces `invalid_server_address=5` instead
+  of `unsupported_protocol=5`.
+
+Remaining blocker:
+
+- UDP IPv6 / round-robin: see "Pre-existing limitations" above. Not
+  blocking FRESH-10's TCP-only sample.
+- Live re-validation against FRESH-07 sample is gated on a future
+  explicit authorization. The deterministic `Invalid server address`
+  failure surface is gone; downstream DNS / TLS errors are expected
+  but not reproducible without live network IO.
+
+No-live / no-node-contact confirmation:
+
+- Live remains prohibited and was not exercised. Only no-live
+  verification ran:
+  - 13 new Trojan unit tests (`parse_server_endpoint_*` plus the
+    pre-existing connector creation test) under
+    `cargo test -p sb-adapters --features adapter-trojan --lib
+    outbound::trojan::tests`.
+  - 15 Trojan integration tests under
+    `cargo test -p sb-adapters --features adapter-trojan --test
+    trojan_integration`, including the new
+    `test_trojan_hostname_server_does_not_fail_at_local_parse`
+    regression. The regression dial uses a `.invalid` hostname per
+    RFC 6761, bounded by a 500ms connect timeout, and asserts the
+    error message contains neither `invalid socket address syntax`
+    nor `Invalid server address`.
+  - `probe-outbound --validate-config-only --json` against
+    `/tmp/mt_trojan_fresh_config_normalized.json` reports
+    `no_network=true`, `selected_found=true`, `bridge_member_found=
+    true`.
+- No probe-outbound `--target` dial. No `trojan_probe_live.py` live
+  invocation. No node contact.
+
+Verification:
+
+- `python3 -B -m unittest test_reality_probe_tools
+  test_reality_clienthello_family test_dual_kernel_verification` ->
+  126 PASS (was 123; +3 for new `invalid_server_address` patterns).
+- `cargo test -p sb-adapters --features adapter-trojan --test
+  trojan_integration` -> 15 PASS, 2 ignored (pre-existing).
+- `cargo check --workspace` -> PASS.
+- `cargo build -p app --features router,adapters --bin probe-outbound`
+  -> PASS.
+- `cargo test -p app --features router,adapters --bin probe-outbound`
+  -> 6 PASS.
+- `git diff --check` -> clean.
+- Secret scan against the 270 raw `/tmp` candidate-config positions
+  (5 unique values across `server`, `password`, TLS `server_name` for
+  90 normalized outbounds) found no leak in the diff, the modified
+  Rust sources, the Python tooling, the agent docs, or any redacted
+  `/tmp/trojan_*` evidence.
+
+Classification: **A — Trojan hostname server dataplane blocker fixed
+with full no-live verification; classifier no longer mislabels the
+historic signal as `unsupported_protocol`**. Rust-only quality line,
+BHV 52/56 unchanged.

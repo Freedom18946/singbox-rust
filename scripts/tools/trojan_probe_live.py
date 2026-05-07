@@ -64,12 +64,22 @@ BRIDGE_KEEP_CLASSES = {
 # Ordered keyword -> refined class table. The first matching keyword wins.
 # `error` from `probe-outbound` is the connect / connect_io error CHAIN; the
 # leading `raw_connect_error` is the (expected) encrypted-stream message
-# emitted by `AdapterIoBridge::connect`. Network / handshake / DNS signals
-# from the second-attempt error must out-prioritize that chain prefix so
+# emitted by `AdapterIoBridge::connect`. Adapter config-validation
+# rejections (`Invalid server address`, `invalid socket address syntax`)
+# come first because the connect_io chain may carry both the wrapper
+# rejection prefix AND the underlying adapter signal — the adapter
+# signal is the actionable one. After that, network / handshake / DNS
+# signals must out-prioritize the wrapper-rejection chain prefix so
 # real connect_io failures do not get bucketed as `unsupported_protocol`.
 # `unsupported_protocol` only wins when no stronger signal is present —
 # i.e. the chain leaks no information beyond the wrapper rejection.
 BRIDGE_CLASS_PATTERNS: list[tuple[str, str]] = [
+    # Adapter-specific config-validation rejection. Must precede every
+    # network / wrapper signal because the connect_io chain can carry both
+    # a `uses encrypted stream` (wrapper) prefix AND the underlying
+    # `Invalid server address` text. The latter is the actionable signal.
+    ("invalid server address", "invalid_server_address"),
+    ("invalid socket address syntax", "invalid_server_address"),
     ("no such host", "dns_error"),
     ("name or service not known", "dns_error"),
     ("name resolution", "dns_error"),

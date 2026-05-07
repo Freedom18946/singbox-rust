@@ -2715,6 +2715,57 @@ class TrojanProbeLiveTests(unittest.TestCase):
         self.assertNotEqual(result["class"], "other")
         self.assertEqual(result["class"], "unknown_probe_failure")
 
+    def test_refine_invalid_server_address_from_socketaddr_parse(self):
+        # FRESH-10/11: connect_io chain that surfaced the dataplane blocker.
+        # The pre-fix Rust adapter emitted this exact suffix; even after the
+        # fix lands, classifier must still recognize the message so historic
+        # /tmp evidence stays interpretable.
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error=(
+                "dial outbound via connect_io after connect error: "
+                "trojan adapter uses encrypted stream for example.com:80; "
+                "use connect_io() instead: trojan dial failed: Other error: "
+                "Invalid server address: invalid socket address syntax"
+            ),
+            raw_connect_error=(
+                "trojan adapter uses encrypted stream for example.com:80; "
+                "use connect_io() instead"
+            ),
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["class"], "invalid_server_address")
+        self.assertEqual(
+            result["bridge_diagnostic"]["error_kind"], "invalid_server_address"
+        )
+
+    def test_refine_invalid_server_address_outranks_unsupported_protocol(self):
+        # When BOTH the wrapper-rejection prefix and the adapter signal are
+        # present in the chain, the adapter signal is the actionable one and
+        # must win. Verifies the priority of the FRESH-11 pattern.
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                "trojan adapter uses encrypted stream for x:1; "
+                "use connect_io() instead: trojan dial failed: Other error: "
+                "Invalid server address: invalid socket address syntax",
+                "trojan adapter uses encrypted stream for x:1; use connect_io() instead",
+            ),
+            "invalid_server_address",
+        )
+
+    def test_refine_invalid_server_address_from_raw_connect_error(self):
+        # If the adapter signal lives only in raw_connect_error (not in
+        # error), the refinement should still pick it up.
+        self.assertEqual(
+            trojan_live.refine_bridge_class(
+                "other",
+                None,
+                "Invalid server address: invalid socket address syntax",
+            ),
+            "invalid_server_address",
+        )
+
     def test_bridge_diagnostic_scrubs_raw_server_password_sni(self):
         item = self._plan()["selected"][0]
         raw_server = "leaky-bridge.example.invalid"

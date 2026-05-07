@@ -69,6 +69,99 @@ mod tls_helper {
 #[cfg(feature = "adapter-trojan")]
 use tls_helper::NoVerifier;
 
+/// Parse a Trojan `server` endpoint string into `(host, port)`.
+///
+/// Accepts:
+/// - `domain:port` (e.g. `trojan.example.com:443`)
+/// - `IPv4:port` (e.g. `127.0.0.1:443`)
+/// - `[IPv6]:port` (e.g. `[::1]:443`)
+///
+/// Rejects empty hosts, missing ports, non-numeric ports, port 0, and bare
+/// (non-bracketed) IPv6 literals — bare IPv6 strings such as `::1:443` are
+/// ambiguous because the port boundary cannot be located deterministically.
+///
+/// Unlike `SocketAddr::parse`, this does **not** require the host to be an
+/// IP literal. DNS resolution happens later, at the transport layer, so a
+/// hostname server is no longer a synchronous local failure.
+fn parse_server_endpoint(server: &str) -> Result<(String, u16)> {
+    let trimmed = server.trim();
+    if trimmed.is_empty() {
+        return Err(AdapterError::Other(
+            "Invalid server address: endpoint is empty".to_string(),
+        ));
+    }
+    if let Some(rest) = trimmed.strip_prefix('[') {
+        let close = rest.find(']').ok_or_else(|| {
+            AdapterError::Other(format!(
+                "Invalid server address: bracketed IPv6 missing ']' in '{}'",
+                trimmed
+            ))
+        })?;
+        let host = &rest[..close];
+        let port_str = rest[close + 1..].strip_prefix(':').ok_or_else(|| {
+            AdapterError::Other(format!(
+                "Invalid server address: missing ':port' after IPv6 in '{}'",
+                trimmed
+            ))
+        })?;
+        if host.is_empty() {
+            return Err(AdapterError::Other(
+                "Invalid server address: empty IPv6 host".to_string(),
+            ));
+        }
+        let port = parse_port(port_str, trimmed)?;
+        return Ok((host.to_string(), port));
+    }
+    let colon_count = trimmed.matches(':').count();
+    if colon_count == 0 {
+        return Err(AdapterError::Other(format!(
+            "Invalid server address: missing ':port' in '{}'",
+            trimmed
+        )));
+    }
+    if colon_count > 1 {
+        return Err(AdapterError::Other(format!(
+            "Invalid server address: bare IPv6 must be bracketed in '{}'",
+            trimmed
+        )));
+    }
+    let (host, port_str) = trimmed.rsplit_once(':').ok_or_else(|| {
+        AdapterError::Other(format!(
+            "Invalid server address: missing ':port' in '{}'",
+            trimmed
+        ))
+    })?;
+    if host.is_empty() {
+        return Err(AdapterError::Other(
+            "Invalid server address: empty host".to_string(),
+        ));
+    }
+    let port = parse_port(port_str, trimmed)?;
+    Ok((host.to_string(), port))
+}
+
+fn parse_port(port_str: &str, original: &str) -> Result<u16> {
+    if port_str.is_empty() {
+        return Err(AdapterError::Other(format!(
+            "Invalid server address: empty port in '{}'",
+            original
+        )));
+    }
+    let port: u16 = port_str.parse().map_err(|_| {
+        AdapterError::Other(format!(
+            "Invalid server address: invalid port '{}' in '{}'",
+            port_str, original
+        ))
+    })?;
+    if port == 0 {
+        return Err(AdapterError::Other(format!(
+            "Invalid server address: port 0 not allowed in '{}'",
+            original
+        )));
+    }
+    Ok(port)
+}
+
 /// Trojan configuration
 #[derive(Debug, Clone, serde::Serialize, serde::Deserialize)]
 pub struct TrojanConfig {
@@ -219,7 +312,7 @@ impl TrojanConnector {
     pub async fn udp_relay_dial(&self, target: Target) -> Result<Box<dyn OutboundDatagram>> {
         use sha2::{Digest, Sha224};
         use tokio::io::AsyncWriteExt;
-        use tokio::net::UdpSocket;
+        use tokio::net::{lookup_host, UdpSocket};
 
         let config = self
             ._config
@@ -241,11 +334,34 @@ impl TrojanConnector {
             ));
         }
 
-        // Parse server address
-        let server_addr: std::net::SocketAddr = config
-            .server
-            .parse()
-            .map_err(|e| AdapterError::Other(format!("Invalid server address: {}", e)))?;
+        // Parse server endpoint and resolve to a SocketAddr.
+        //
+        // UDP relay needs a concrete `SocketAddr` for both the local UDP
+        // socket connect and the outgoing UDP ASSOCIATE record. When
+        // `config.server` carries a hostname we resolve it explicitly via
+        // `tokio::net::lookup_host` and pick the first address. This is a
+        // bounded, single-pick resolution: it does NOT round-robin across
+        // resolved IPs, and an IPv6-only result will fail the IPv4-only
+        // ATYP encoding below — both behaviors are pre-existing UDP relay
+        // limitations and are recorded in
+        // `agents-only/mt_trojan_fresh_sample_intake.md` rather than
+        // fixed silently in this round.
+        let (server_host, server_port) = parse_server_endpoint(&config.server)?;
+        let server_addr: std::net::SocketAddr =
+            match lookup_host((server_host.as_str(), server_port)).await {
+                Ok(mut addrs) => addrs.next().ok_or_else(|| {
+                    AdapterError::Network(format!(
+                        "Trojan UDP relay DNS resolution returned no addresses for '{}:{}'",
+                        server_host, server_port
+                    ))
+                })?,
+                Err(e) => {
+                    return Err(AdapterError::Network(format!(
+                        "Trojan UDP relay DNS resolution failed for '{}:{}': {}",
+                        server_host, server_port, e
+                    )))
+                }
+            };
 
         // Step 1: Establish TCP connection for UDP ASSOCIATE command
         let tcp_stream = crate::outbound::detour::connect_tcp_stream(
@@ -356,11 +472,10 @@ impl OutboundConnector for TrojanConnector {
             // Step 1: Establish base connection via dialer (handles transport layer + multiplex)
             let timeout = std::time::Duration::from_secs(config.connect_timeout_sec.unwrap_or(30));
 
-            // Parse server address for host and port
-            let server_addr: std::net::SocketAddr = config
-                .server
-                .parse()
-                .map_err(|e| AdapterError::Other(format!("Invalid server address: {}", e)))?;
+            // Parse server endpoint into (host, port). DNS resolution is
+            // deferred to the transport layer, so a hostname server no
+            // longer fails synchronously here.
+            let (server_host, server_port) = parse_server_endpoint(&config.server)?;
 
             if config.detour.is_some()
                 && (config.transport_layer.transport_type()
@@ -376,8 +491,8 @@ impl OutboundConnector for TrojanConnector {
             let base_stream = {
                 if config.detour.is_some() {
                     crate::outbound::detour::connect_tcp_stream(
-                        &server_addr.ip().to_string(),
-                        server_addr.port(),
+                        &server_host,
+                        server_port,
                         config.detour.as_deref(),
                         timeout,
                     )
@@ -385,17 +500,17 @@ impl OutboundConnector for TrojanConnector {
                 } else if let Some(ref dialer) = self.dialer {
                     let stream = tokio::time::timeout(
                         timeout,
-                        dialer.connect(&server_addr.ip().to_string(), server_addr.port()),
+                        dialer.connect(&server_host, server_port),
                     )
                     .await
                     .map_err(|_| AdapterError::Timeout(timeout))?
                     .map_err(|e| AdapterError::Other(format!("Transport dial failed: {}", e)))?;
                     crate::traits::from_transport_stream(stream)
                 } else {
-                    // Fallback to direct TCP connection
+                    // Fallback to direct TCP connection (resolves hostname via DNS)
                     let tcp_stream = tokio::time::timeout(
                         timeout,
-                        tokio::net::TcpStream::connect(&config.server),
+                        tokio::net::TcpStream::connect((server_host.as_str(), server_port)),
                     )
                     .await
                     .map_err(|_| AdapterError::Timeout(timeout))?
@@ -407,8 +522,8 @@ impl OutboundConnector for TrojanConnector {
             #[cfg(not(feature = "sb-transport"))]
             let base_stream = {
                 crate::outbound::detour::connect_tcp_stream(
-                    &server_addr.ip().to_string(),
-                    server_addr.port(),
+                    &server_host,
+                    server_port,
                     config.detour.as_deref(),
                     timeout,
                 )
@@ -699,5 +814,91 @@ mod tests {
 
         let connector = TrojanConnector::new(config);
         assert_eq!(connector.name(), "trojan");
+    }
+
+    #[test]
+    fn parse_server_endpoint_accepts_domain() {
+        let (host, port) = parse_server_endpoint("trojan.example.com:443").unwrap();
+        assert_eq!(host, "trojan.example.com");
+        assert_eq!(port, 443);
+    }
+
+    #[test]
+    fn parse_server_endpoint_accepts_ipv4() {
+        let (host, port) = parse_server_endpoint("127.0.0.1:443").unwrap();
+        assert_eq!(host, "127.0.0.1");
+        assert_eq!(port, 443);
+    }
+
+    #[test]
+    fn parse_server_endpoint_accepts_bracketed_ipv6() {
+        let (host, port) = parse_server_endpoint("[::1]:443").unwrap();
+        assert_eq!(host, "::1");
+        assert_eq!(port, 443);
+
+        let (host2, port2) = parse_server_endpoint("[2001:db8::1]:8443").unwrap();
+        assert_eq!(host2, "2001:db8::1");
+        assert_eq!(port2, 8443);
+    }
+
+    #[test]
+    fn parse_server_endpoint_rejects_missing_port() {
+        let err = parse_server_endpoint("trojan.example.com").unwrap_err();
+        assert!(matches!(err, AdapterError::Other(ref m) if m.contains("Invalid server address")));
+        assert!(format!("{err}").to_lowercase().contains("missing"));
+    }
+
+    #[test]
+    fn parse_server_endpoint_rejects_empty_port() {
+        let err = parse_server_endpoint("trojan.example.com:").unwrap_err();
+        assert!(matches!(err, AdapterError::Other(ref m) if m.contains("Invalid server address")));
+    }
+
+    #[test]
+    fn parse_server_endpoint_rejects_non_numeric_port() {
+        let err = parse_server_endpoint("trojan.example.com:abc").unwrap_err();
+        assert!(matches!(err, AdapterError::Other(ref m) if m.contains("Invalid server address")));
+        assert!(format!("{err}").contains("invalid port"));
+    }
+
+    #[test]
+    fn parse_server_endpoint_rejects_port_zero() {
+        let err = parse_server_endpoint("trojan.example.com:0").unwrap_err();
+        assert!(matches!(err, AdapterError::Other(ref m) if m.contains("Invalid server address")));
+    }
+
+    #[test]
+    fn parse_server_endpoint_rejects_empty_host() {
+        let err = parse_server_endpoint(":443").unwrap_err();
+        assert!(matches!(err, AdapterError::Other(ref m) if m.contains("empty host")));
+    }
+
+    #[test]
+    fn parse_server_endpoint_rejects_empty_endpoint() {
+        let err = parse_server_endpoint("").unwrap_err();
+        assert!(matches!(err, AdapterError::Other(ref m) if m.contains("empty")));
+    }
+
+    #[test]
+    fn parse_server_endpoint_rejects_bare_ipv6() {
+        // Bare (unbracketed) IPv6 has multiple ':' and is ambiguous.
+        let err = parse_server_endpoint("::1:443").unwrap_err();
+        assert!(matches!(err, AdapterError::Other(ref m) if m.contains("must be bracketed")));
+    }
+
+    #[test]
+    fn parse_server_endpoint_rejects_unclosed_bracket() {
+        let err = parse_server_endpoint("[::1:443").unwrap_err();
+        assert!(matches!(err, AdapterError::Other(ref m) if m.contains("missing ']'")));
+    }
+
+    #[test]
+    fn parse_server_endpoint_handles_register_built_string() {
+        // Mirrors `register.rs:1007` which builds `cfg.server` via
+        // `format!("{}:{}", server, port)` from a hostname server.
+        let (host, port) =
+            parse_server_endpoint(&format!("{}:{}", "trojan.example.invalid", 10113)).unwrap();
+        assert_eq!(host, "trojan.example.invalid");
+        assert_eq!(port, 10113);
     }
 }

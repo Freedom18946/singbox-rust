@@ -338,3 +338,55 @@ fn test_trojan_config_serialization() {
     assert!(json.contains("trojan.example.com:443"));
     assert!(json.contains("test_password"));
 }
+
+// ============================================================================
+// Hostname server regression (MT-TROJAN-FRESH-11)
+// ============================================================================
+
+#[tokio::test]
+async fn test_trojan_hostname_server_does_not_fail_at_local_parse() {
+    // Regression for MT-TROJAN-FRESH-10/11: a hostname-format `server`
+    // value (`hostname:port`) must NOT fail at the local parse stage with
+    // `Invalid server address: invalid socket address syntax`. The Trojan
+    // adapter previously called `config.server.parse::<SocketAddr>()`
+    // which only accepts IP literals and rejected hostnames synchronously
+    // before any network IO. With the FRESH-11 fix, parsing accepts the
+    // hostname and DNS resolution moves to the transport layer; downstream
+    // DNS / TCP / TLS errors are still expected for a non-routable
+    // domain, but the error must NOT carry the SocketAddr parse phrase.
+    let config = TrojanConfig {
+        server: "regression.fresh11.invalid:443".to_string(),
+        tag: None,
+        password: "fresh11".to_string(),
+        connect_timeout_sec: Some(1),
+        sni: Some("regression.fresh11.invalid".to_string()),
+        alpn: None,
+        skip_cert_verify: true,
+        detour: None,
+        transport_layer: TransportConfig::default(),
+        #[cfg(feature = "tls_reality")]
+        reality: None,
+        multiplex: None,
+    };
+    let connector = TrojanConnector::new(config);
+    let target = Target::tcp("example.com", 80);
+    let opts = DialOpts::new().with_connect_timeout(Duration::from_millis(500));
+    let result = connector.dial(target, opts).await;
+    let err = match result {
+        Ok(_) => panic!(
+            "dial unexpectedly succeeded against a non-routable .invalid hostname"
+        ),
+        Err(e) => e,
+    };
+    let msg = format!("{err}");
+    assert!(
+        !msg.to_ascii_lowercase().contains("invalid socket address syntax"),
+        "hostname server must not produce a SocketAddr parse error; got: {}",
+        msg
+    );
+    assert!(
+        !msg.to_ascii_lowercase().contains("invalid server address"),
+        "hostname server must not produce 'Invalid server address'; got: {}",
+        msg
+    );
+}

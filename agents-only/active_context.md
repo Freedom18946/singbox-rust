@@ -17,9 +17,8 @@ ARCH-LIMIT-REALITY label.
 ## MT-REAL-02 Stage-2 Closure Summary
 
 Five latest non-all_ok candidates falsified as noise. Full record in
-`agents-only/archive/mt_real_02/round_45_60_evidence_framework.md`;
-closure rationale + stage-3 paths in
-`archive/mt_real_02/closure_report.md`.
+`archive/mt_real_02/round_45_60_evidence_framework.md`; closure +
+stage-3 paths in `archive/mt_real_02/closure_report.md`.
 
 ## Evidence Framework Capability
 
@@ -36,41 +35,42 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **123 tests PASS**.
+  **126 tests PASS**.
+- cargo test -p sb-adapters --features adapter-trojan --test
+  trojan_integration: **15 PASS, 2 ignored**.
 - live_rollup.json/md unchanged: 18 rounds, 113 runs, 24 all_ok.
 
 ## Next Steps
 
-- MT-TROJAN-FRESH-10 refined bounded Trojan live reprobe DONE
-  (2026-05-07). Classification **A — refined actionable live signal,
-  no `tool_error`, no literal `other`**. Pre-gate: 5/5 validate-only
-  passed, `no_network=true`. Live: same bounded plan,
-  `executed_runs=5`, `failed_count=5`, `tool_error_count=0`,
-  `class_counts=unsupported_protocol=5`, `node_contact_confirmed=true`.
-  `bridge_diagnostic` exposes connect_io text `trojan dial failed:
-  Other error: Invalid server address: invalid socket address syntax`
-  — Rust dataplane blocker at `crates/sb-adapters/src/outbound/
-  trojan.rs:363` calling `config.server.parse::<SocketAddr>()` on the
-  `hostname:port` string from `register.rs:1007`. Recorded only;
-  dataplane not modified per task scope. The label
-  `unsupported_protocol` is the FRESH-09 refinement falling through
-  to lowest-priority wrapper-rejection signal — table lacks an
-  `Invalid server address` pattern. Next live not needed on same
-  plan/dataplane (deterministic). Detail in
-  `agents-only/mt_trojan_fresh_sample_intake.md`.
-- MT-TROJAN-FRESH-09 structured bridge-probe class refinement DONE
-  (2026-05-07). Classification A — runner emits redacted
-  `bridge_diagnostic`; literal `other` is no longer surfaced. Refined
-  classes: dns_error, network_unreachable, handshake_eof, tls_error,
+- MT-TROJAN-FRESH-11 Trojan hostname server dataplane fix DONE
+  (2026-05-07). Classification **A — Rust dataplane blocker fixed
+  with full no-live verification**. New `parse_server_endpoint` in
+  `crates/sb-adapters/src/outbound/trojan.rs` accepts `domain:port`,
+  `IPv4:port`, `[IPv6]:port`; rejects empty host / missing / invalid
+  / zero port / unclosed bracket / bare IPv6. TCP `dial()` passes
+  `(host, port)` to detour, sb-transport dialer, and direct
+  `TcpStream::connect`, deferring DNS to the transport layer.
+  `udp_relay_dial` resolves via async `tokio::net::lookup_host` with
+  explicit `Network` error on failure (UDP IPv6 / round-robin remains
+  a recorded pre-existing limitation). `trojan_probe_live.py`
+  classifier promotes `invalid_server_address` to top priority,
+  outranking the wrapper-rejection prefix. No live; verified by 13
+  new Rust unit tests, 1 hostname regression integration test, and
+  `--validate-config-only`.
+- MT-TROJAN-FRESH-09 structured bridge-probe class refinement
+  (2026-05-07). Runner emits redacted `bridge_diagnostic`; no literal
+  `other`. Classes (FRESH-11 priority): invalid_server_address,
+  dns_error, network_unreachable, handshake_eof, tls_error,
   auth_failed, connection_refused, connection_reset, timeout,
   unexpected_response, unsupported_protocol, unknown_probe_failure.
-- MT-TROJAN-FRESH-08 normalized bounded live sanity DONE
-  (2026-05-07). Classification A — first structured `bridge_probe`
-  live signal (`other=5`); FRESH-09 enriched diagnostics; FRESH-10
-  identified the `Invalid server address` dataplane blocker.
-- R71 fresh sample intake gate DONE (2026-05-04). Classification A —
-  intake gate ready. Operator guide:
-  `agents-only/mt_real_02_fresh_sample_intake.md` (A-tier).
+- MT-TROJAN-FRESH-08/10 normalized bounded live runs (2026-05-07,
+  archived). FRESH-08 produced `class_counts=other=5`; FRESH-10 same
+  bounded plan re-run with refined diagnostics surfaced
+  `Invalid server address: invalid socket address syntax` (root cause
+  fixed by FRESH-11). `class_counts=unsupported_protocol=5` under
+  FRESH-09 priority; will reclassify as `invalid_server_address` once
+  re-run.
+- R71 fresh sample intake gate DONE (2026-05-04). Classification A.
 - R67-R70 HK closure + rollup audit archived; HK-A-BGP-2.0 off
   bi-modal/phase-shifting suspect list.
 
@@ -88,8 +88,8 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 
 ## Historical Detail
 
-- R33-R60 + early ClientHello/Vision/REALITY history:
+- R33-R60 + early ClientHello/Vision/REALITY:
   agents-only/mt_real_02_baseline.md
-- L01-L25 project history: agents-only/archive/L*/
+- L01-L25: agents-only/archive/L*/
 - Dual-kernel golden spec:
   labs/interop-lab/docs/dual_kernel_golden_spec.md
