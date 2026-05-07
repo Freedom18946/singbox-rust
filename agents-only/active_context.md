@@ -40,20 +40,20 @@ Planner filters: --latest-health, --latest-run-health,
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **94 tests PASS** (Trojan intake/dry-run/live helpers included).
+  **98 tests PASS** (Trojan diagnostic enrichment included).
 - live_rollup.json/md unchanged: 18 rounds, 113 runs, 24 all_ok.
 
 ## Next Steps
 
-- MT-TROJAN-FRESH-04 bounded live sanity DONE (2026-05-07).
-  Classification: **C — tooling gap discovered**. User authorized
-  only the existing Trojan bounded plan. Pre-gate reconfirmed
-  `trojan_ready=88`, `duplicate=2`, selected_count=5, runs=1,
-  target=`example.com:80`, timeout=8. Live runner invoked 5 probes;
-  all returned `tool_error` / class `other`, so node contact was not
-  structurally confirmed and no code/network conclusion is drawn.
-  Separate Rust-only quality line, not REALITY parity. BHV 52/56
-  unchanged.
+- MT-TROJAN-FRESH-05 no-live diagnostic enrichment DONE
+  (2026-05-07). Root cause / blocker: FRESH-04 preserved only
+  `tool_error=5` / `class=other`; raw subprocess diagnostics were
+  intentionally discarded, so the exact `probe-outbound` failure cannot
+  be recovered from existing evidence. Runner now records redacted
+  returncode, stdout shape, stdout/stderr fingerprints, and scrubbed
+  bounded excerpts for future fake/no-live/live-authorized diagnostics.
+  No live probe ran in FRESH-05. Separate Rust-only quality line, not
+  REALITY parity. BHV 52/56 unchanged.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification:
   **A — intake gate ready, waiting for fresh config**. Operator guide:
   `agents-only/mt_real_02_fresh_sample_intake.md` (A-tier).

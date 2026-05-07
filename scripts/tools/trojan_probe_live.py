@@ -12,8 +12,10 @@ from __future__ import annotations
 
 import argparse
 import collections
+import hashlib
 import json
 import pathlib
+import re
 import subprocess
 import sys
 from typing import Any
@@ -40,6 +42,8 @@ ENV_LIMITED_CLASSES = {
     "timeout",
 }
 
+MAX_DIAGNOSTIC_EXCERPT = 180
+
 
 def positive_int(value: str) -> int:
     try:
@@ -56,6 +60,44 @@ def load_json_object(path: pathlib.Path) -> dict[str, Any]:
     if not isinstance(value, dict):
         raise SystemExit(f"JSON root must be an object: {path}")
     return value
+
+
+def hash_prefix(value: str, length: int = 12) -> str:
+    return hashlib.sha256(value.encode("utf-8", errors="replace")).hexdigest()[:length]
+
+
+def collect_scrub_values(candidate_config: dict[str, Any]) -> list[str]:
+    """Collect raw node material that must never appear in evidence."""
+    outbounds = candidate_config.get("outbounds")
+    values: list[str] = []
+    if not isinstance(outbounds, list):
+        return values
+    for outbound in outbounds:
+        if not isinstance(outbound, dict):
+            continue
+        for key in ("server", "password", "tls_sni"):
+            value = outbound.get(key)
+            if isinstance(value, str) and value:
+                values.append(value)
+        tls = outbound.get("tls")
+        if isinstance(tls, dict):
+            server_name = tls.get("server_name")
+            if isinstance(server_name, str) and server_name:
+                values.append(server_name)
+    return sorted(set(values), key=len, reverse=True)
+
+
+def scrub_text(text: str, scrub_values: list[str]) -> str:
+    scrubbed = text
+    for value in scrub_values:
+        scrubbed = scrubbed.replace(value, f"<redacted:{hash_prefix(value)}>")
+    # Collapse long filesystem-local temp names and keep diagnostics bounded.
+    scrubbed = re.sub(r"/tmp/[^\s'\"]+", "/tmp/<redacted-path>", scrubbed)
+    scrubbed = scrubbed.splitlines()
+    collapsed = " ".join(part.strip() for part in scrubbed if part.strip())
+    if len(collapsed) > MAX_DIAGNOSTIC_EXCERPT:
+        return collapsed[:MAX_DIAGNOSTIC_EXCERPT] + "..."
+    return collapsed
 
 
 def validate_plan_bounds(
@@ -95,21 +137,66 @@ def extract_probe_json(stdout: str) -> dict[str, Any] | None:
     return value if isinstance(value, dict) else None
 
 
-def classify_process_failure(returncode: int, stderr: str) -> str:
-    lower = stderr.lower()
+def stdout_kind(stdout: str, parsed: dict[str, Any] | None) -> str:
+    if not stdout.strip():
+        return "empty"
+    if parsed is None:
+        return "non_json"
+    if not isinstance(parsed.get("bridge_probe"), dict):
+        return "json_missing_bridge_probe"
+    return "json_bridge_probe"
+
+
+def classify_tool_failure(
+    returncode: int,
+    stdout: str,
+    stderr: str,
+    parsed: dict[str, Any] | None,
+) -> str:
+    combined = f"{stdout}\n{stderr}"
+    lower = combined.lower()
     if returncode == 124 or "timeout" in lower or "timed out" in lower:
         return "timeout"
+    if "usage:" in lower or "error:" in lower and "required" in lower:
+        return "cli_usage_error"
     if "permission denied" in lower or "operation not permitted" in lower:
         return "permission_denied"
     if "connection refused" in lower:
         return "connection_refused"
     if "connection reset" in lower:
         return "connection_reset"
+    if "could not compile" in lower or "compile_error" in lower:
+        return "tool_compile_error"
     if "no such file" in lower or "not found" in lower:
         return "tool_missing"
-    if "compile_error" in lower or "could not compile" in lower:
-        return "tool_compile_error"
-    return "other"
+    kind = stdout_kind(stdout, parsed)
+    if kind == "non_json":
+        return "stdout_non_json"
+    if kind == "json_missing_bridge_probe":
+        return "stdout_missing_bridge_probe"
+    return "tool_unknown"
+
+
+def diagnostic_for_process(
+    returncode: int,
+    stdout: str,
+    stderr: str,
+    parsed: dict[str, Any] | None,
+    scrub_values: list[str],
+) -> dict[str, Any]:
+    kind = stdout_kind(stdout, parsed)
+    # When bridge_probe JSON exists, structured fields already capture the
+    # safe result. Keep only fingerprints for stdout so nested probe details
+    # are not copied into evidence excerpts.
+    combined = stderr if kind == "json_bridge_probe" else f"{stdout}\n{stderr}"
+    return {
+        "returncode": returncode,
+        "stdout_kind": kind,
+        "stderr_present": bool(stderr.strip()),
+        "stdout_sha256_12": hash_prefix(stdout) if stdout else None,
+        "stderr_sha256_12": hash_prefix(stderr) if stderr else None,
+        "scrubbed_excerpt": scrub_text(combined, scrub_values),
+    }
 
 
 def build_probe_command(
@@ -142,7 +229,9 @@ def result_from_probe(
     returncode: int,
     stdout: str,
     stderr: str,
+    scrub_values: list[str] | None = None,
 ) -> dict[str, Any]:
+    scrub_values = scrub_values or []
     parsed = extract_probe_json(stdout)
     bridge_probe = parsed.get("bridge_probe") if isinstance(parsed, dict) else None
     if isinstance(bridge_probe, dict):
@@ -164,10 +253,22 @@ def result_from_probe(
             "server_hash": item.get("server_hash"),
             "password_hash": item.get("password_hash"),
             "server_name_hash": item.get("server_name_hash"),
+            "returncode": returncode,
+            "tool_diagnostic": diagnostic_for_process(
+                returncode,
+                stdout,
+                stderr,
+                parsed,
+                scrub_values,
+            ),
         }
 
-    class_value = classify_process_failure(returncode, stderr)
-    status = "tool_error" if class_value.startswith("tool_") or class_value == "other" else "probe_error"
+    class_value = classify_tool_failure(returncode, stdout, stderr, parsed)
+    status = (
+        "probe_error"
+        if class_value in ENV_LIMITED_CLASSES
+        else "tool_error"
+    )
     return {
         "tag": item.get("tag"),
         "index": item.get("index"),
@@ -183,6 +284,14 @@ def result_from_probe(
         "server_hash": item.get("server_hash"),
         "password_hash": item.get("password_hash"),
         "server_name_hash": item.get("server_name_hash"),
+        "returncode": returncode,
+        "tool_diagnostic": diagnostic_for_process(
+            returncode,
+            stdout,
+            stderr,
+            parsed,
+            scrub_values,
+        ),
     }
 
 
@@ -278,8 +387,16 @@ def render_redacted_md(evidence: dict[str, Any]) -> str:
         lines.append(f"  - run_index: {item.get('run_index')}")
         lines.append(f"  - status: {item.get('status')}")
         lines.append(f"  - class: {item.get('class')}")
+        lines.append(f"  - returncode: {item.get('returncode')}")
         lines.append(f"  - stage: {item.get('stage')}")
         lines.append(f"  - stream_mode: {item.get('stream_mode')}")
+        diagnostic = item.get("tool_diagnostic") if isinstance(item.get("tool_diagnostic"), dict) else {}
+        if diagnostic:
+            lines.append(f"  - stdout_kind: {diagnostic.get('stdout_kind')}")
+            lines.append(f"  - stderr_present: {diagnostic.get('stderr_present')}")
+            lines.append(f"  - diagnostic_fingerprint: stdout={diagnostic.get('stdout_sha256_12')} stderr={diagnostic.get('stderr_sha256_12')}")
+            if diagnostic.get("scrubbed_excerpt"):
+                lines.append(f"  - diagnostic_excerpt: {diagnostic.get('scrubbed_excerpt')}")
         lines.append(
             "  - fingerprint: server="
             f"{item.get('server_hash')} password={item.get('password_hash')}"
@@ -294,6 +411,7 @@ def run_live(
     probe_command: list[str],
 ) -> dict[str, Any]:
     summary = plan["summary"]
+    scrub_values = collect_scrub_values(load_json_object(candidate_config))
     results: list[dict[str, Any]] = []
     for item in plan["selected"]:
         for run_index in range(1, int(summary["runs"]) + 1):
@@ -320,6 +438,7 @@ def run_live(
                         proc.returncode,
                         proc.stdout,
                         proc.stderr,
+                        scrub_values,
                     )
                 )
             except subprocess.TimeoutExpired as exc:
@@ -330,6 +449,7 @@ def run_live(
                         124,
                         exc.stdout if isinstance(exc.stdout, str) else "",
                         exc.stderr if isinstance(exc.stderr, str) else "timeout",
+                        scrub_values,
                     )
                 )
     return build_evidence(plan, results)

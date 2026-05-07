@@ -163,14 +163,51 @@ was authorized and invoked, but all runs failed before producing a
 structured bridge_probe result. No Trojan node usability or code
 conclusion is drawn from this round.
 
+## MT-TROJAN-FRESH-05 No-Live Diagnostic Enrichment
+
+Date: 2026-05-07.
+
+No live probe was authorized or run in this round. The FRESH-04 evidence
+was reviewed using only redacted data:
+
+- `status_counts`: `tool_error=5`
+- `class_counts`: `other=5`
+- `node_contact_confirmed`: false
+
+Root cause / narrow blocker: FRESH-04 preserved the redacted aggregate
+result but discarded subprocess returncode/stdout/stderr diagnostics.
+Because of that, the exact `probe-outbound` failure point cannot be
+recovered from the existing evidence. The current blocker is runner
+diagnostic under-instrumentation, not a Trojan node quality conclusion
+and not a Rust dataplane conclusion.
+
+`scripts/tools/trojan_probe_live.py` now enriches future evidence with:
+
+- `returncode`
+- `tool_diagnostic.stdout_kind`: `empty`, `non_json`,
+  `json_missing_bridge_probe`, or `json_bridge_probe`
+- `tool_diagnostic.stderr_present`
+- `tool_diagnostic.stdout_sha256_12`
+- `tool_diagnostic.stderr_sha256_12`
+- `tool_diagnostic.scrubbed_excerpt`
+
+Tool-layer classes now distinguish stdout non-JSON, JSON missing
+`bridge_probe`, CLI usage errors, cargo/build errors, missing tools,
+timeouts, and unknown tool failures. Excerpts are bounded and scrubbed
+against the actual candidate config's server/password/TLS server_name
+values before evidence is written.
+
+Live remains prohibited until a future task explicitly authorizes a new
+bounded run.
+
 ## Verification
 
 - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py`
-  -> 94 PASS.
+  -> 98 PASS.
 - `cargo check --workspace` -> PASS.
 
 ## Classification
 
-**C - Tooling gap discovered at bounded live sanity.** Trojan planning
-and intake remain separate Rust-only quality work and do not affect BHV
-52/56 or dual-kernel parity status.
+**C - Tooling gap narrowed to diagnostic under-instrumentation.** Trojan
+planning and intake remain separate Rust-only quality work and do not
+affect BHV 52/56 or dual-kernel parity status.

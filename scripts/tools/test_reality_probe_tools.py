@@ -2242,9 +2242,71 @@ class TrojanProbeLiveTests(unittest.TestCase):
         self.assertEqual(result["status"], "probe_error")
         self.assertEqual(result["class"], "timeout")
         self.assertNotIn("raw detail should be dropped", rendered)
+        self.assertEqual(result["returncode"], 1)
+        self.assertEqual(result["tool_diagnostic"]["stdout_kind"], "json_bridge_probe")
         self.assertEqual(len(result["server_hash"]), 12)
         self.assertEqual(len(result["password_hash"]), 12)
         self.assertEqual(len(result["server_name_hash"]), 12)
+
+    def test_stdout_non_json_gets_specific_tool_class(self):
+        item = self._plan()["selected"][0]
+        result = trojan_live.result_from_probe(
+            item,
+            1,
+            2,
+            "not-json",
+            "",
+        )
+        self.assertEqual(result["status"], "tool_error")
+        self.assertEqual(result["class"], "stdout_non_json")
+        self.assertEqual(result["tool_diagnostic"]["stdout_kind"], "non_json")
+
+    def test_json_without_bridge_probe_gets_specific_tool_class(self):
+        item = self._plan()["selected"][0]
+        result = trojan_live.result_from_probe(
+            item,
+            1,
+            1,
+            json.dumps({"tool": "probe-outbound", "bridge_probe": None}),
+            "",
+        )
+        self.assertEqual(result["status"], "tool_error")
+        self.assertEqual(result["class"], "stdout_missing_bridge_probe")
+        self.assertEqual(
+            result["tool_diagnostic"]["stdout_kind"],
+            "json_missing_bridge_probe",
+        )
+
+    def test_stderr_raw_material_is_scrubbed_from_diagnostic(self):
+        item = self._plan()["selected"][0]
+        raw_server = "leaky-server.example.invalid"
+        raw_password = "leaky-password"
+        raw_sni = "leaky-sni.example.invalid"
+        result = trojan_live.result_from_probe(
+            item,
+            1,
+            2,
+            "",
+            f"failed {raw_server} {raw_password} {raw_sni}",
+            [raw_server, raw_password, raw_sni],
+        )
+        diagnostic = result["tool_diagnostic"]
+        rendered = json.dumps(result)
+        for value in (raw_server, raw_password, raw_sni):
+            self.assertNotIn(value, rendered)
+        self.assertIn("<redacted:", diagnostic["scrubbed_excerpt"])
+
+    def test_cli_usage_error_is_not_other(self):
+        item = self._plan()["selected"][0]
+        result = trojan_live.result_from_probe(
+            item,
+            1,
+            2,
+            "",
+            "error: the following required arguments were not provided: --config\nUsage: probe-outbound --config <CONFIG>",
+        )
+        self.assertEqual(result["status"], "tool_error")
+        self.assertEqual(result["class"], "cli_usage_error")
 
     def test_evidence_classification_distinguishes_env_limited_and_ok(self):
         plan_result = self._plan()
@@ -2295,7 +2357,7 @@ class TrojanProbeLiveTests(unittest.TestCase):
             "run_index": 1,
             "status": "tool_error",
             "ok": False,
-            "class": "other",
+            "class": "tool_unknown",
             "stage": None,
             "stream_mode": None,
             "connect_time_ms": None,
