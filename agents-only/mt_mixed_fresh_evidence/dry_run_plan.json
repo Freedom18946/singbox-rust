@@ -1,0 +1,19 @@
+{
+  "plan_kind": "dry-run / no-live",
+  "authorization_state": "NOT AUTHORIZED \u2014 this task does not grant live probe",
+  "candidate_protocol": "vless+reality (TCP)",
+  "candidate_count": 15,
+  "planned_target": "example.com:80 HTTP/1.1 GET / (per existing R71 plan template)",
+  "planned_runs_per_outbound": 5,
+  "planned_total_runs": 75,
+  "gates_to_pass_before_live": [
+    "separate explicit user authorization for live probe",
+    "pre-gate 5/5 no_network sanity on plan identity",
+    "BHV remains 52/56",
+    "fresh sample intake fresh_ready > 0 (currently 15)",
+    "no leaked material in any redacted artifact"
+  ],
+  "ready_for_r73": true,
+  "no_live_executed": true,
+  "no_node_contact_executed": true
+}

@@ -1,0 +1,484 @@
+{
+  "summary": {
+    "total_vless_outbounds": 15,
+    "counts": {
+      "fresh_ready": 15,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 0
+    },
+    "selected_count": 15,
+    "ready_for_r72": true,
+    "ready_for_r73": true
+  },
+  "fresh_ready": [
+    {
+      "tag": {
+        "hash": "bdefb53ef06f",
+        "length": 16
+      },
+      "region": {
+        "hash": "bdefb53ef06f",
+        "length": 16
+      },
+      "type": "vless",
+      "port": 35248,
+      "server_name": {
+        "hash": "3473df1a4c21",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "0c3acdd5bc6d",
+        "port": 35248,
+        "server_name": {
+          "hash": "3473df1a4c21",
+          "length": 16
+        },
+        "public_key_hash": "b01ee1695556",
+        "short_id_hash": "2a1c4ed19a5e",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "a5d119beb215",
+        "length": 16
+      },
+      "region": {
+        "hash": "a5d119beb215",
+        "length": 16
+      },
+      "type": "vless",
+      "port": 38725,
+      "server_name": {
+        "hash": "3473df1a4c21",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "81796f2f7c7f",
+        "port": 38725,
+        "server_name": {
+          "hash": "3473df1a4c21",
+          "length": 16
+        },
+        "public_key_hash": "6999e15e6eb2",
+        "short_id_hash": "77d54627f5bd",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "d3e1dd693440",
+        "length": 16
+      },
+      "region": {
+        "hash": "d3e1dd693440",
+        "length": 16
+      },
+      "type": "vless",
+      "port": 27758,
+      "server_name": {
+        "hash": "3473df1a4c21",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "22834364de96",
+        "port": 27758,
+        "server_name": {
+          "hash": "3473df1a4c21",
+          "length": 16
+        },
+        "public_key_hash": "43a994b4d47c",
+        "short_id_hash": "5477e5ea9ae5",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "ea7e25f3ef60",
+        "length": 16
+      },
+      "region": {
+        "hash": "ea7e25f3ef60",
+        "length": 16
+      },
+      "type": "vless",
+      "port": 443,
+      "server_name": {
+        "hash": "3473df1a4c21",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "bd4f7a727d79",
+        "port": 443,
+        "server_name": {
+          "hash": "3473df1a4c21",
+          "length": 16
+        },
+        "public_key_hash": "10fd9199f739",
+        "short_id_hash": "bb3ba7db3b3e",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "f7efb04513c8",
+        "length": 17
+      },
+      "region": {
+        "hash": "f7efb04513c8",
+        "length": 17
+      },
+      "type": "vless",
+      "port": 48574,
+      "server_name": {
+        "hash": "3aa879015555",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "0b3009e23c42",
+        "port": 48574,
+        "server_name": {
+          "hash": "3aa879015555",
+          "length": 16
+        },
+        "public_key_hash": "addf2a17204f",
+        "short_id_hash": "478af88ee778",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "e87cba83157b",
+        "length": 17
+      },
+      "region": {
+        "hash": "e87cba83157b",
+        "length": 17
+      },
+      "type": "vless",
+      "port": 39645,
+      "server_name": {
+        "hash": "9555cf88a89b",
+        "length": 24
+      },
+      "fingerprint": {
+        "server_hash": "79cfd614269b",
+        "port": 39645,
+        "server_name": {
+          "hash": "9555cf88a89b",
+          "length": 24
+        },
+        "public_key_hash": "93694c0c6708",
+        "short_id_hash": "f49eaca3d56d",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "87b220f59f6d",
+        "length": 17
+      },
+      "region": {
+        "hash": "87b220f59f6d",
+        "length": 17
+      },
+      "type": "vless",
+      "port": 23587,
+      "server_name": {
+        "hash": "9555cf88a89b",
+        "length": 24
+      },
+      "fingerprint": {
+        "server_hash": "e6a7ba1fd179",
+        "port": 23587,
+        "server_name": {
+          "hash": "9555cf88a89b",
+          "length": 24
+        },
+        "public_key_hash": "6b8bbf22e8da",
+        "short_id_hash": "23d5b85a4e33",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "7b5af0ca627a",
+        "length": 17
+      },
+      "region": {
+        "hash": "7b5af0ca627a",
+        "length": 17
+      },
+      "type": "vless",
+      "port": 443,
+      "server_name": {
+        "hash": "3aa879015555",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "ad365bd65903",
+        "port": 443,
+        "server_name": {
+          "hash": "3aa879015555",
+          "length": 16
+        },
+        "public_key_hash": "11533955084b",
+        "short_id_hash": "38408aba2b3e",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "df06a79fb80e",
+        "length": 17
+      },
+      "region": {
+        "hash": "df06a79fb80e",
+        "length": 17
+      },
+      "type": "vless",
+      "port": 443,
+      "server_name": {
+        "hash": "3aa879015555",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "d273d3fbc234",
+        "port": 443,
+        "server_name": {
+          "hash": "3aa879015555",
+          "length": 16
+        },
+        "public_key_hash": "b456a0f1d055",
+        "short_id_hash": "24d91472febb",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "5cb6e7bd36ba",
+        "length": 16
+      },
+      "region": {
+        "hash": "5cb6e7bd36ba",
+        "length": 16
+      },
+      "type": "vless",
+      "port": 36574,
+      "server_name": {
+        "hash": "b54fbd0b8d9c",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "6e427e10fff6",
+        "port": 36574,
+        "server_name": {
+          "hash": "b54fbd0b8d9c",
+          "length": 16
+        },
+        "public_key_hash": "e6d24575664b",
+        "short_id_hash": "2ae84c6ebae8",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "6e46b475d725",
+        "length": 16
+      },
+      "region": {
+        "hash": "6e46b475d725",
+        "length": 16
+      },
+      "type": "vless",
+      "port": 25485,
+      "server_name": {
+        "hash": "b54fbd0b8d9c",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "2e4d00139aa3",
+        "port": 25485,
+        "server_name": {
+          "hash": "b54fbd0b8d9c",
+          "length": 16
+        },
+        "public_key_hash": "3f6dd2d37ff6",
+        "short_id_hash": "c45a53a5153c",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "350c21393b2e",
+        "length": 16
+      },
+      "region": {
+        "hash": "350c21393b2e",
+        "length": 16
+      },
+      "type": "vless",
+      "port": 35457,
+      "server_name": {
+        "hash": "b54fbd0b8d9c",
+        "length": 16
+      },
+      "fingerprint": {
+        "server_hash": "419d7cee6604",
+        "port": 35457,
+        "server_name": {
+          "hash": "b54fbd0b8d9c",
+          "length": 16
+        },
+        "public_key_hash": "01b6502951bd",
+        "short_id_hash": "be212cd574dd",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "7752fd338a73",
+        "length": 12
+      },
+      "region": {
+        "hash": "7752fd338a73",
+        "length": 12
+      },
+      "type": "vless",
+      "port": 443,
+      "server_name": {
+        "hash": "815c17e1c3a2",
+        "length": 29
+      },
+      "fingerprint": {
+        "server_hash": "3486412c252e",
+        "port": 443,
+        "server_name": {
+          "hash": "815c17e1c3a2",
+          "length": 29
+        },
+        "public_key_hash": "51323f608078",
+        "short_id_hash": "b7e1721ee62f",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "502455f6a641",
+        "length": 16
+      },
+      "region": {
+        "hash": "502455f6a641",
+        "length": 16
+      },
+      "type": "vless",
+      "port": 34578,
+      "server_name": {
+        "hash": "815c17e1c3a2",
+        "length": 29
+      },
+      "fingerprint": {
+        "server_hash": "b880511c108d",
+        "port": 34578,
+        "server_name": {
+          "hash": "815c17e1c3a2",
+          "length": 29
+        },
+        "public_key_hash": "9de790e7e941",
+        "short_id_hash": "f8533438a9bb",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    },
+    {
+      "tag": {
+        "hash": "192b0602f7cf",
+        "length": 16
+      },
+      "region": {
+        "hash": "192b0602f7cf",
+        "length": 16
+      },
+      "type": "vless",
+      "port": 443,
+      "server_name": {
+        "hash": "815c17e1c3a2",
+        "length": 29
+      },
+      "fingerprint": {
+        "server_hash": "3c25557d2957",
+        "port": 443,
+        "server_name": {
+          "hash": "815c17e1c3a2",
+          "length": 29
+        },
+        "public_key_hash": "40a58a6e2629",
+        "short_id_hash": "27e5f2fd03bb",
+        "uuid_hash": "3c9896150534"
+      },
+      "ready": true,
+      "skip_reason": null,
+      "classification": "fresh_ready",
+      "detail": {}
+    }
+  ],
+  "duplicate": [],
+  "not_ready": [],
+  "covered_existing": []
+}

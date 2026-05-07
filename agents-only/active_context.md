@@ -42,37 +42,29 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 
 ## Next Steps
 
+- MT-MIXED-FRESH-01 mixed fresh config intake + protocol split DONE
+  (2026-05-07). A — no-live; redacted intake only. Candidate has
+  32 outbounds (20 vless + 12 hys2). Three-line split: REALITY/VLESS
+  (15, fresh_ready=15, ready_for_r73=true), VLESS+WS+TLS (5, audit
+  only), Hysteria2 (12, ready=12, no live tool). WS audit: path +
+  Host header plumbed; `max_early_data` and `early_data_header_name`
+  silently dropped (5/5 nodes set 2048, effective loss to 0; header
+  name length matches hardcoded default so no functional loss there).
+  No xhttp/httpupgrade/grpc in batch. Dry-run plan only; no socket
+  opened to any candidate. /tmp configs not committed. Doc:
+  `agents-only/mt_mixed_fresh_intake.md`. Evidence:
+  `agents-only/mt_mixed_fresh_evidence/`. BHV 52/56 unchanged.
 - MT-TROJAN-FRESH-15 success-evidence cosmetic + line closure DONE
-  (2026-05-07). Classification **A — no-live; cosmetic fix + closure**.
-  `trojan_probe_live.py` now sets `bridge_diagnostic=None` and emits
-  no `error_kind` when `bridge_probe.ok=true`; redacted MD on success
-  no longer renders `bridge_error_kind`/`bridge_fingerprint`/
-  `bridge_excerpt`. Failure-path refined diagnostics
-  (FRESH-09/-11/-13) preserved. +5 Python tests pin success hygiene
-  + secret scrub + failure regression. MT-TROJAN-FRESH line CLOSED:
-  same bounded plan reaches 5/5 ok end-to-end through FRESH-13 fix;
-  no further live needed against this plan/dataplane. New live only
-  under separate authorization for distinct work (UDP relay, ALPN,
-  non-CONNECT targets, new sample).
-- MT-TROJAN-FRESH-14 post-TLS-fix bounded Trojan live reprobe DONE
-  (2026-05-07). A — TLS failure cleared; full end-to-end Trojan
-  tunnel success. Pre-gate 5/5 no_network, plan identity confirmed.
-  Live: executed_runs=5, ok_count=5, status_counts={ok:5},
-  class_counts={}, node_contact_confirmed=true. Per-run
-  connect_time_ms 159/241/264/523/567ms, response_bytes 832-836,
-  HTTP/1.1 200 OK x5 to example.com:80. FRESH-12 `tls_error=5`
-  cleared by FRESH-13 lowering fix.
-- MT-TROJAN-FRESH-13 root cause audit DONE (2026-05-07). Lowering
-  bug at `validator/v2/outbound.rs:872-877` dropped sing-box
-  canonical `tls.insecure`; fixed via fallback chain. Trojan SNI
-  fallback uses `parse_server_endpoint`. Eight TLS subclasses
-  added to runner. FRESH-14 confirms fix.
-- MT-TROJAN-FRESH-11/-12 hostname dataplane fix + first post-fix
-  live DONE (2026-05-07). `parse_server_endpoint` + DNS deferred
-  to transport; FRESH-12 surfaced TLS-handshake failure; FRESH-13
-  traced root cause; FRESH-14 confirmed; FRESH-15 closed line.
+  (2026-05-07). MT-TROJAN-FRESH-14 post-TLS-fix bounded Trojan live
+  reprobe DONE (2026-05-07): 5/5 ok, response_bytes 832-836, HTTP
+  200 to example.com:80. MT-TROJAN-FRESH-13 root cause audit DONE
+  (2026-05-07): `validator/v2/outbound.rs:872-877` dropped
+  `tls.insecure`, fixed via fallback chain; Trojan SNI fallback uses
+  `parse_server_endpoint`; 8 TLS subclasses added to runner.
+  MT-TROJAN-FRESH-11/-12 hostname dataplane fix + first post-fix
+  live DONE (2026-05-07). MT-TROJAN-FRESH line CLOSED.
 - R71 fresh sample intake DONE (2026-05-04) A; R67-R70 HK closure
-  archived; HK-A-BGP-2.0 off bi-modal suspect.
+  archived.
 
 ## Still-Valid Constraints
 

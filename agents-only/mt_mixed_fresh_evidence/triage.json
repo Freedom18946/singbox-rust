@@ -1,0 +1,39 @@
+{
+  "input_sha256_prefix": "f5681baf3ad4760c",
+  "total_outbounds": 32,
+  "type_counts": {
+    "vless": 20,
+    "hysteria2": 12
+  },
+  "vless_reality_count": 15,
+  "vless_non_reality_count": 5,
+  "hysteria2_count": 12,
+  "transport_counts": {
+    "absent": 27,
+    "ws": 5
+  },
+  "websocket_transport_count": 5,
+  "xhttp_transport_count": 0,
+  "httpupgrade_transport_count": 0,
+  "grpc_transport_count": 0,
+  "h2_transport_count": 0,
+  "quic_transport_count": 0,
+  "missing_required_fields": {
+    "vless_uuid": 0,
+    "vless_server": 0,
+    "vless_server_port": 0,
+    "vless_reality_public_key": 0,
+    "vless_reality_short_id": 0,
+    "vless_tls_server_name": 0,
+    "hys2_password": 0,
+    "hys2_server": 0,
+    "hys2_server_port": 0,
+    "hys2_tls_server_name": 0
+  },
+  "protocol_split": {
+    "reality_vless": 15,
+    "ws_vless": 5,
+    "hysteria2": 12,
+    "other": 0
+  }
+}

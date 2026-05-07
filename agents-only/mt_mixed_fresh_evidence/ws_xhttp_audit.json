@@ -1,0 +1,128 @@
+{
+  "protocol_line": "websocket+xhttp transport audit (no live, no node contact)",
+  "total_ws_outbounds": 5,
+  "all_have_path": true,
+  "all_have_host_header": true,
+  "count_max_early_data_field_present": 5,
+  "count_max_early_data_nonzero": 5,
+  "count_early_data_header_name_present": 5,
+  "count_extra_headers_beyond_host": 0,
+  "compatibility_findings": [
+    {
+      "field": "transport.ws.path",
+      "support": "supported",
+      "evidence": "crates/sb-config/src/validator/v2/outbound.rs:135-140 extracts to OutboundIR.ws_path"
+    },
+    {
+      "field": "transport.ws.headers.host",
+      "support": "supported",
+      "evidence": "crates/sb-config/src/validator/v2/outbound.rs:142-152 extracts to OutboundIR.ws_host"
+    },
+    {
+      "field": "transport.ws.max_early_data",
+      "support": "silently_dropped",
+      "evidence": "parse_transport_object never reads max_early_data; OutboundIR has no ws_max_early_data field; transport_config.rs:223 hardcodes max_early_data: 0",
+      "normalization_recommendation": "When a future task is authorized to extend ws plumbing: (1) read transport.ws.max_early_data in crates/sb-config/src/validator/v2/outbound.rs::parse_transport_object; (2) add OutboundIR.ws_max_early_data: Option<usize>; (3) add OutboundIR.ws_early_data_header_name: Option<String>; (4) plumb both via WebSocketTransportConfig in crates/sb-adapters/src/register.rs::build_transport_config; (5) replace hardcoded values in crates/sb-adapters/src/transport_config.rs:222-224."
+    },
+    {
+      "field": "transport.ws.early_data_header_name",
+      "support": "silently_dropped",
+      "evidence": "same chain as max_early_data",
+      "normalization_recommendation": "see transport.ws.max_early_data above"
+    },
+    {
+      "field": "transport.xhttp.*",
+      "support": "unsupported_in_validator",
+      "evidence": "parse_transport_object handles ws/h2/grpc/httpupgrade only; xhttp not present",
+      "normalization_recommendation": "Not relevant for this candidate (0 xhttp). If future configs use xhttp, validator + IR both need new fields; do NOT add them under this no-live task."
+    },
+    {
+      "field": "transport.httpupgrade.*",
+      "support": "supported",
+      "evidence": "parse_transport_object http_upgrade/httpupgrade arm; OutboundIR.http_upgrade_path + http_upgrade_headers"
+    }
+  ],
+  "no_live_confirmation": true,
+  "no_dataplane_change_confirmation": true,
+  "items": [
+    {
+      "tag_hash": "13127fc70f9c",
+      "tag_length": 16,
+      "transport_type": "ws",
+      "has_path": true,
+      "has_host_header": true,
+      "extra_header_count": 0,
+      "has_max_early_data": true,
+      "max_early_data_is_zero": false,
+      "has_early_data_header_name": true,
+      "tls_present": true,
+      "tls_insecure": false
+    },
+    {
+      "tag_hash": "4270054e5ccc",
+      "tag_length": 16,
+      "transport_type": "ws",
+      "has_path": true,
+      "has_host_header": true,
+      "extra_header_count": 0,
+      "has_max_early_data": true,
+      "max_early_data_is_zero": false,
+      "has_early_data_header_name": true,
+      "tls_present": true,
+      "tls_insecure": false
+    },
+    {
+      "tag_hash": "f58d884cc13e",
+      "tag_length": 16,
+      "transport_type": "ws",
+      "has_path": true,
+      "has_host_header": true,
+      "extra_header_count": 0,
+      "has_max_early_data": true,
+      "max_early_data_is_zero": false,
+      "has_early_data_header_name": true,
+      "tls_present": true,
+      "tls_insecure": false
+    },
+    {
+      "tag_hash": "e90d1bff0b7b",
+      "tag_length": 12,
+      "transport_type": "ws",
+      "has_path": true,
+      "has_host_header": true,
+      "extra_header_count": 0,
+      "has_max_early_data": true,
+      "max_early_data_is_zero": false,
+      "has_early_data_header_name": true,
+      "tls_present": true,
+      "tls_insecure": false
+    },
+    {
+      "tag_hash": "cd03ace3a438",
+      "tag_length": 12,
+      "transport_type": "ws",
+      "has_path": true,
+      "has_host_header": true,
+      "extra_header_count": 0,
+      "has_max_early_data": true,
+      "max_early_data_is_zero": false,
+      "has_early_data_header_name": true,
+      "tls_present": true,
+      "tls_insecure": false
+    }
+  ],
+  "ws_field_value_distributions": {
+    "max_early_data_value_distribution": {
+      "2048": 5
+    },
+    "max_early_data_default_in_dataplane": 0,
+    "max_early_data_silent_loss_count": 5,
+    "early_data_header_name_distinct_value_count": 1,
+    "early_data_header_name_length_distribution": {
+      "22": 1
+    },
+    "early_data_header_name_default_in_dataplane": "Sec-WebSocket-Protocol (length 22)",
+    "early_data_header_name_silent_loss_count": 0,
+    "note": "The 5 ws nodes uniformly request max_early_data=2048 with a 22-char early_data_header_name. The validator/IR/dialer chain silently substitutes max_early_data=0 (early data disabled), a real behavior loss. The header name length 22 matches the hardcoded default value, so even though it is silently dropped the effective behavior is unchanged."
+  }
+}
