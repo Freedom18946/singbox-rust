@@ -18,6 +18,7 @@ import reality_vless_probe_evidence as evidence
 import reality_vless_probe_plan as plan
 import reality_vless_env_from_config as envtool
 import reality_vless_sample_intake as intake
+import round_summary_run_health as round_health
 import trojan_config_normalize as trojan_normalize
 import trojan_sample_intake as trojan_intake
 import trojan_probe_live as trojan_live
@@ -3239,6 +3240,271 @@ class RunDivergenceAccountingTests(unittest.TestCase):
             "divergence_run_count must remain distinct from "
             "divergence_phase_label_count whenever any run carries >=2 phase labels",
         )
+
+
+class RoundSummaryRunHealthMaterializationTests(unittest.TestCase):
+    """R75 R73-evidence rematerialization: pin
+    `scripts/tools/round_summary_run_health.py::materialize_run_health`
+    against the exact R73 fact pattern so any future round-emitter
+    cannot silently re-introduce the divergence_run_count vs
+    divergence_phase_label_count conflation R74 corrected.
+
+    The synthetic fixture below mirrors R73 by construction:
+      - 9 outbounds × 5 runs all_ok                               → 45 run_all_ok
+      - fresh02: 4 timeout same-failure + 1 multi-phase divergence → 4 sf + 1 div + 0 ok
+      - fresh06: 3 other same-failure + 1 multi-phase divergence + 1 all_ok → 3 sf + 1 div + 1 ok
+      - fresh03/04/05/07: 5/5 uniform other or connection_reset    → 20 sf
+    Totals must equal: run_all_ok=46, run_divergence=2, run_same_failure=27,
+    divergence_phase_label_count=5, distinct_divergence_phase_label_count=4.
+    """
+
+    @staticmethod
+    def _r73_synthetic_runs() -> list[dict]:
+        runs = []
+        # 9 healthy outbounds × 5 all_ok runs
+        for ord_, name in enumerate(
+            ["fresh01"] + [f"fresh{i:02d}" for i in range(8, 16)],
+            start=1,
+        ):
+            for run_index in range(1, 6):
+                runs.append(
+                    {
+                        "outbound": name,
+                        "ordinal": ord_,
+                        "run_index": run_index,
+                        "status": "completed",
+                        "labels": ["all_ok"],
+                        "class_counts": {"ok": 9},
+                    }
+                )
+        # fresh02: 4 timeout + 1 multi-phase divergence
+        for run_index in range(1, 5):
+            runs.append(
+                {
+                    "outbound": "fresh02",
+                    "ordinal": 2,
+                    "run_index": run_index,
+                    "status": "completed",
+                    "labels": ["probe_io_all_timeout", "reality_all_timeout"],
+                    "class_counts": {"timeout": 9},
+                }
+            )
+        runs.append(
+            {
+                "outbound": "fresh02",
+                "ordinal": 2,
+                "run_index": 5,
+                "status": "completed",
+                "labels": [
+                    "app_minimal_diverged",
+                    "app_pre_post_diverged",
+                    "probe_io_all_other",
+                ],
+                "class_counts": {"other": 5, "connection_reset": 2},
+            }
+        )
+        # fresh03/04/05: 5 other same-failure each
+        for ord_, name in [(3, "fresh03"), (4, "fresh04"), (5, "fresh05")]:
+            for run_index in range(1, 6):
+                runs.append(
+                    {
+                        "outbound": name,
+                        "ordinal": ord_,
+                        "run_index": run_index,
+                        "status": "completed",
+                        "labels": ["probe_io_all_other", "reality_all_other"],
+                        "class_counts": {"other": 9},
+                    }
+                )
+        # fresh06: 3 other same-failure + 1 three-phase divergence + 1 all_ok
+        for run_index in range(1, 4):
+            runs.append(
+                {
+                    "outbound": "fresh06",
+                    "ordinal": 6,
+                    "run_index": run_index,
+                    "status": "completed",
+                    "labels": ["probe_io_all_other", "reality_all_other"],
+                    "class_counts": {"other": 9},
+                }
+            )
+        runs.append(
+            {
+                "outbound": "fresh06",
+                "ordinal": 6,
+                "run_index": 4,
+                "status": "completed",
+                "labels": [
+                    "app_minimal_diverged",
+                    "bridge_io_diverged",
+                    "minimal_transport_diverged",
+                ],
+                "class_counts": {"other": 5, "timeout": 1},
+            }
+        )
+        runs.append(
+            {
+                "outbound": "fresh06",
+                "ordinal": 6,
+                "run_index": 5,
+                "status": "completed",
+                "labels": ["all_ok"],
+                "class_counts": {"ok": 9},
+            }
+        )
+        # fresh07: 5 connection_reset same-failure
+        for run_index in range(1, 6):
+            runs.append(
+                {
+                    "outbound": "fresh07",
+                    "ordinal": 7,
+                    "run_index": run_index,
+                    "status": "completed",
+                    "labels": [
+                        "probe_io_all_connection_reset",
+                        "reality_all_connection_reset",
+                    ],
+                    "class_counts": {"connection_reset": 9},
+                }
+            )
+        return runs
+
+    def _r73_synthetic_payload(self) -> dict:
+        runs = self._r73_synthetic_runs()
+        by_outbound: dict[str, dict] = {}
+        for run in runs:
+            entry = by_outbound.setdefault(
+                run["outbound"],
+                {"status_counts": {}, "label_counts": {}, "class_counts": {}},
+            )
+            entry["status_counts"][run["status"]] = (
+                entry["status_counts"].get(run["status"], 0) + 1
+            )
+            for label in run["labels"]:
+                entry["label_counts"][label] = (
+                    entry["label_counts"].get(label, 0) + 1
+                )
+            for cls, n in run["class_counts"].items():
+                entry["class_counts"][cls] = entry["class_counts"].get(cls, 0) + n
+        return {
+            "round": "73-synthetic",
+            "summary": {"total": 75, "executed_runs": 75, "status_counts": {"completed": 75}},
+            "runs": runs,
+            "by_outbound": by_outbound,
+        }
+
+    def test_multi_phase_label_run_classifies_as_single_run_divergence(self):
+        # fresh02 run 5: 2 phase labels + 1 failure label → still ONE divergence run
+        labels = [
+            "app_minimal_diverged",
+            "app_pre_post_diverged",
+            "probe_io_all_other",
+        ]
+        self.assertEqual(round_health.classify_run(labels), "run_divergence")
+
+    def test_three_phase_label_run_classifies_as_single_run_divergence(self):
+        # fresh06 run 4: 3 phase labels → still ONE divergence run
+        labels = [
+            "app_minimal_diverged",
+            "bridge_io_diverged",
+            "minimal_transport_diverged",
+        ]
+        self.assertEqual(round_health.classify_run(labels), "run_divergence")
+
+    def test_same_failure_run_is_not_divergence(self):
+        self.assertEqual(
+            round_health.classify_run(
+                ["probe_io_all_other", "reality_all_other"]
+            ),
+            "run_same_failure",
+        )
+        self.assertEqual(
+            round_health.classify_run(
+                ["probe_io_all_timeout", "reality_all_timeout"]
+            ),
+            "run_same_failure",
+        )
+
+    def test_all_ok_run_does_not_emit_phase_or_bridge_diagnostics(self):
+        materialized = round_health.materialize_run_health(self._r73_synthetic_payload())
+        all_ok_runs = [r for r in materialized["runs"] if r["run_health"] == "run_all_ok"]
+        for run in all_ok_runs:
+            self.assertEqual(run["labels"], ["all_ok"])
+            for label in run["labels"]:
+                self.assertNotIn("diverged", label)
+                self.assertNotIn("bridge_io", label)
+
+    def test_synthesize_round_totals_distinguishes_run_count_from_label_count(self):
+        runs = self._r73_synthetic_runs()
+        totals = round_health.synthesize_round_totals(runs)
+        self.assertEqual(totals["run_all_ok"], 46)
+        self.assertEqual(totals["run_divergence"], 2)
+        self.assertEqual(totals["run_same_failure"], 27)
+        self.assertEqual(totals["divergence_run_count"], 2)
+        self.assertEqual(totals["divergence_phase_label_count"], 5)
+        self.assertEqual(totals["distinct_divergence_phase_label_count"], 4)
+        self.assertEqual(
+            totals["divergence_phase_label_breakdown"],
+            {
+                "app_minimal_diverged": 2,
+                "app_pre_post_diverged": 1,
+                "bridge_io_diverged": 1,
+                "minimal_transport_diverged": 1,
+            },
+        )
+
+    def test_materialize_attaches_run_health_per_run_and_recomputes_summary(self):
+        payload = self._r73_synthetic_payload()
+        materialized = round_health.materialize_run_health(payload)
+        # Per-run run_health populated
+        self.assertEqual(len(materialized["runs"]), 75)
+        for run in materialized["runs"]:
+            self.assertIn("run_health", run)
+            self.assertIn(
+                run["run_health"],
+                {"run_all_ok", "run_divergence", "run_same_failure", "run_unknown"},
+            )
+        # Summary totals match the per-run facts (46/2/27/5/4)
+        sm = materialized["summary"]
+        self.assertEqual(sm["divergence_run_count"], 2)
+        self.assertEqual(sm["divergence_phase_label_count"], 5)
+        self.assertEqual(sm["distinct_divergence_phase_label_count"], 4)
+        self.assertEqual(sm["same_failure_run_count"], 27)
+        # by_outbound entries get fresh run_health_counts
+        self.assertEqual(
+            materialized["by_outbound"]["fresh02"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 1,
+                "run_same_failure": 4,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(
+            materialized["by_outbound"]["fresh06"]["run_health_counts"],
+            {
+                "run_all_ok": 1,
+                "run_divergence": 1,
+                "run_same_failure": 3,
+                "run_unknown": 0,
+            },
+        )
+        # Per-outbound phase-label breakdown sums to the per-outbound divergence_phase_label_count
+        for name, entry in materialized["by_outbound"].items():
+            breakdown_total = sum(entry["divergence_phase_label_breakdown"].values())
+            self.assertEqual(breakdown_total, entry["divergence_phase_label_count"])
+
+    def test_materialize_does_not_mutate_input(self):
+        payload = self._r73_synthetic_payload()
+        before_runs = [dict(r) for r in payload["runs"]]
+        round_health.materialize_run_health(payload)
+        for r_before, r_after in zip(before_runs, payload["runs"]):
+            self.assertNotIn(
+                "run_health",
+                r_after,
+                "input runs[] entries must remain untouched",
+            )
+            self.assertEqual(r_before, r_after)
 
 
 if __name__ == "__main__":

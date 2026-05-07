@@ -79,7 +79,8 @@
       "run_health_counts": {
         "run_all_ok": 5,
         "run_divergence": 0,
-        "run_same_failure": 0
+        "run_same_failure": 0,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -103,7 +104,8 @@
       "run_health_counts": {
         "run_all_ok": 0,
         "run_divergence": 1,
-        "run_same_failure": 4
+        "run_same_failure": 4,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 2,
       "divergence_phase_label_breakdown": {
@@ -125,7 +127,8 @@
       "run_health_counts": {
         "run_all_ok": 0,
         "run_divergence": 0,
-        "run_same_failure": 5
+        "run_same_failure": 5,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -144,7 +147,8 @@
       "run_health_counts": {
         "run_all_ok": 0,
         "run_divergence": 0,
-        "run_same_failure": 5
+        "run_same_failure": 5,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -163,7 +167,8 @@
       "run_health_counts": {
         "run_all_ok": 0,
         "run_divergence": 0,
-        "run_same_failure": 5
+        "run_same_failure": 5,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -188,7 +193,8 @@
       "run_health_counts": {
         "run_all_ok": 1,
         "run_divergence": 1,
-        "run_same_failure": 3
+        "run_same_failure": 3,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 3,
       "divergence_phase_label_breakdown": {
@@ -211,7 +217,8 @@
       "run_health_counts": {
         "run_all_ok": 0,
         "run_divergence": 0,
-        "run_same_failure": 5
+        "run_same_failure": 5,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -229,7 +236,8 @@
       "run_health_counts": {
         "run_all_ok": 5,
         "run_divergence": 0,
-        "run_same_failure": 0
+        "run_same_failure": 0,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -247,7 +255,8 @@
       "run_health_counts": {
         "run_all_ok": 5,
         "run_divergence": 0,
-        "run_same_failure": 0
+        "run_same_failure": 0,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -265,7 +274,8 @@
       "run_health_counts": {
         "run_all_ok": 5,
         "run_divergence": 0,
-        "run_same_failure": 0
+        "run_same_failure": 0,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -283,7 +293,8 @@
       "run_health_counts": {
         "run_all_ok": 5,
         "run_divergence": 0,
-        "run_same_failure": 0
+        "run_same_failure": 0,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -301,7 +312,8 @@
       "run_health_counts": {
         "run_all_ok": 5,
         "run_divergence": 0,
-        "run_same_failure": 0
+        "run_same_failure": 0,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -319,7 +331,8 @@
       "run_health_counts": {
         "run_all_ok": 5,
         "run_divergence": 0,
-        "run_same_failure": 0
+        "run_same_failure": 0,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -337,7 +350,8 @@
       "run_health_counts": {
         "run_all_ok": 5,
         "run_divergence": 0,
-        "run_same_failure": 0
+        "run_same_failure": 0,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -355,7 +369,8 @@
       "run_health_counts": {
         "run_all_ok": 5,
         "run_divergence": 0,
-        "run_same_failure": 0
+        "run_same_failure": 0,
+        "run_unknown": 0
       },
       "divergence_phase_label_count": 0,
       "divergence_phase_label_breakdown": {}
@@ -372,7 +387,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh01",
@@ -384,7 +400,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh01",
@@ -396,7 +413,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh01",
@@ -408,7 +426,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh01",
@@ -420,7 +439,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh02",
@@ -433,7 +453,8 @@
       ],
       "class_counts": {
         "timeout": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh02",
@@ -446,7 +467,8 @@
       ],
       "class_counts": {
         "timeout": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh02",
@@ -459,7 +481,8 @@
       ],
       "class_counts": {
         "timeout": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh02",
@@ -472,7 +495,8 @@
       ],
       "class_counts": {
         "timeout": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh02",
@@ -488,7 +512,8 @@
         "timeout": 2,
         "connection_reset": 2,
         "other": 5
-      }
+      },
+      "run_health": "run_divergence"
     },
     {
       "outbound": "fresh03",
@@ -501,7 +526,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh03",
@@ -514,7 +540,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh03",
@@ -527,7 +554,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh03",
@@ -540,7 +568,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh03",
@@ -553,7 +582,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh04",
@@ -566,7 +596,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh04",
@@ -579,7 +610,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh04",
@@ -592,7 +624,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh04",
@@ -605,7 +638,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh04",
@@ -618,7 +652,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh05",
@@ -631,7 +666,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh05",
@@ -644,7 +680,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh05",
@@ -657,7 +694,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh05",
@@ -670,7 +708,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh05",
@@ -683,7 +722,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh06",
@@ -696,7 +736,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh06",
@@ -709,7 +750,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh06",
@@ -722,7 +764,8 @@
       ],
       "class_counts": {
         "other": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh06",
@@ -738,7 +781,8 @@
         "other": 5,
         "timeout": 1,
         "ok": 3
-      }
+      },
+      "run_health": "run_divergence"
     },
     {
       "outbound": "fresh06",
@@ -750,7 +794,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh07",
@@ -763,7 +808,8 @@
       ],
       "class_counts": {
         "connection_reset": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh07",
@@ -776,7 +822,8 @@
       ],
       "class_counts": {
         "connection_reset": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh07",
@@ -789,7 +836,8 @@
       ],
       "class_counts": {
         "connection_reset": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh07",
@@ -802,7 +850,8 @@
       ],
       "class_counts": {
         "connection_reset": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh07",
@@ -815,7 +864,8 @@
       ],
       "class_counts": {
         "connection_reset": 9
-      }
+      },
+      "run_health": "run_same_failure"
     },
     {
       "outbound": "fresh08",
@@ -827,7 +877,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh08",
@@ -839,7 +890,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh08",
@@ -851,7 +903,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh08",
@@ -863,7 +916,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh08",
@@ -875,7 +929,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh09",
@@ -887,7 +942,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh09",
@@ -899,7 +955,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh09",
@@ -911,7 +968,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh09",
@@ -923,7 +981,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh09",
@@ -935,7 +994,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh10",
@@ -947,7 +1007,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh10",
@@ -959,7 +1020,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh10",
@@ -971,7 +1033,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh10",
@@ -983,7 +1046,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh10",
@@ -995,7 +1059,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh11",
@@ -1007,7 +1072,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh11",
@@ -1019,7 +1085,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh11",
@@ -1031,7 +1098,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh11",
@@ -1043,7 +1111,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh11",
@@ -1055,7 +1124,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh12",
@@ -1067,7 +1137,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh12",
@@ -1079,7 +1150,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh12",
@@ -1091,7 +1163,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh12",
@@ -1103,7 +1176,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh12",
@@ -1115,7 +1189,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh13",
@@ -1127,7 +1202,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh13",
@@ -1139,7 +1215,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh13",
@@ -1151,7 +1228,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh13",
@@ -1163,7 +1241,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh13",
@@ -1175,7 +1254,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh14",
@@ -1187,7 +1267,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh14",
@@ -1199,7 +1280,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh14",
@@ -1211,7 +1293,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh14",
@@ -1223,7 +1306,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh14",
@@ -1235,7 +1319,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh15",
@@ -1247,7 +1332,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh15",
@@ -1259,7 +1345,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh15",
@@ -1271,7 +1358,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh15",
@@ -1283,7 +1371,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     },
     {
       "outbound": "fresh15",
@@ -1295,7 +1384,8 @@
       ],
       "class_counts": {
         "ok": 9
-      }
+      },
+      "run_health": "run_all_ok"
     }
   ],
   "interpretation": [

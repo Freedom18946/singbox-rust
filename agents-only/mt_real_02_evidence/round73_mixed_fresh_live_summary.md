@@ -2,7 +2,7 @@
 
 Authorization: explicit user authorization for REALITY/VLESS only. No Hysteria2 or WS/plain VLESS live. Outbound names redacted to neutral keys fresh01..fresh15; original tags / server material live only in /tmp.
 
-R74 (2026-05-08) re-materialized this MD to expose `divergence_run_count` and `divergence_phase_label_count` as separate columns. The per-outbound `divergence_runs` column in the prior revision had silently held the per-occurrence phase-label count; both numbers are now distinct.
+R74 (2026-05-08) split divergence_run_count from divergence_phase_label_count. R75 (2026-05-08) materialized per-run `run_health` directly into `runs[]` so future readers no longer have to rederive it from labels; emitter is `scripts/tools/round_summary_run_health.py` (`materialize_run_health`).
 
 ## Plan identity
 
@@ -46,7 +46,7 @@ divergence_run_count counts runs (a run is a divergence run iff it carries any o
 | timeout | 4 | 4 | +0 |
 | other | 19 | 18 | +1 |
 
-Delta is always within ±1; the single difference (other) is fresh02 whose 1 divergence run carries probe_io_all_other AND app_pre_post_diverged + app_minimal_diverged (no reality_all_other on that same run). No new structural divergence beyond the four phase labels enumerated in MT-REAL-02 golden spec / S4.
+Delta is always within ±1; the single difference (other) is fresh02 whose 1 divergence run carries probe_io_all_other AND app_pre_post_diverged + app_minimal_diverged (no reality_all_other on that same run). No new structural divergence beyond the four MT-REAL-02 phase labels enumerated in `scripts/tools/reality_vless_evidence_rollup.py` lines 24-29.
 
 ## Per-outbound buckets (run-level)
 
@@ -70,7 +70,7 @@ Delta is always within ±1; the single difference (other) is fresh02 whose 1 div
 
 Totals: runs=75, run_all_ok=46, run_divergence=2, run_same_failure=27, divergence_phase_labels=5.
 
-## fresh02 / fresh06 per-run facts
+## fresh02 / fresh06 per-run facts (run_health materialized)
 
 ### fresh02 (5 runs)
 
@@ -98,18 +98,28 @@ fresh06: 3 same-failure runs (probe_io_all_other + reality_all_other) + 1 diverg
 
 ## Classification
 
-- **A — actionable; no new structural divergence** (run-level: run_divergence=2, both within the existing four phase labels)
+- **A — actionable; no new structural divergence** (run-level: run_divergence=2, both within the existing four phase labels; the labels themselves are MT-REAL-02 internal evidence-pipeline categories defined at `reality_vless_evidence_rollup.DIVERGENCE_PHASE_LABEL_ORDER` and emitted by `reality_probe_compare.build_report` lines 74-141)
   - 9 fresh outbounds reached 5/5 run_all_ok end-to-end (fresh01, fresh08, fresh09, fresh10, fresh11, fresh12, fresh13, fresh14, fresh15)
   - fresh06: 1 divergence run (3 phase labels: app_minimal_diverged + bridge_io_diverged + minimal_transport_diverged) + 3 same-failure runs (probe_io_all_other + reality_all_other) + 1 all_ok run — first MT-REAL-02 single-run all-three-phase carrier; still inside existing taxonomy
   - fresh02: 1 divergence run (2 phase labels: app_pre_post_diverged + app_minimal_diverged; same run also tagged probe_io_all_other) + 4 same-failure runs (timeout) — node-health limited
   - fresh03/04/05/07: 5/5 run_same_failure each (uniform other or connection_reset) with zero divergence runs — node-health limited, NOT a sampler regression (per "Still-Valid Constraints" in active_context)
   - probe_io and reality run-level fates are aligned within ±1, so no transport-vs-app divergence beyond the four already-enumerated phase labels
 
+## R75 attribution audit
+
+S2/S3/S4 mapping (golden_spec):
+
+- The four MT-REAL-02 phase labels (`app_pre_post_diverged`, `app_minimal_diverged`, `minimal_transport_diverged`, `bridge_io_diverged`) are NOT registered in golden_spec S2 (diff dimensions) or S3 (BHV registry); they are MT-REAL-02 internal evidence-pipeline categories defined at `scripts/tools/reality_vless_evidence_rollup.py:24-29` and emitted by `scripts/tools/reality_probe_compare.py:74-141`.
+- Containing S4 entry: **`DEV-REALITY-01` (ARCH-LIMIT)**. The Rust REALITY live-dataplane line is accepted as architecturally limited (Rust `rustls` lacks a `uTLS`-equivalent browser TLS mimic) until Rust gains a `uTLS`-equivalent library.
+- fresh02 phase labels (app_pre_post + app_minimal) → covered by `DEV-REALITY-01`. **No new S4 entry needed.**
+- fresh06 phase labels (app_minimal + bridge_io + minimal_transport) → covered by `DEV-REALITY-01`. **No new S4 entry needed.**
+- R73 fresh data is supporting evidence under `DEV-REALITY-01`, not a new dual-kernel divergence. BHV 52/56 unchanged.
+
 ## Authorization scope confirmation
 
 - REALITY/VLESS live: 75 executed runs (15 candidates × 5)
 - Hysteria2 live: 0 (not authorized; no socket opened to any hys2 candidate)
 - WS/plain VLESS live: 0 (not authorized; no socket opened to any plain-VLESS candidate)
-- Sampler/dataplane: untouched in this round and untouched by R74 audit
+- Sampler/dataplane: untouched in this round; untouched by R74 audit; untouched by R75 materialization
 - go_fork_source/* and .github/workflows/*: untouched
 - BHV: 52/56 unchanged (this round did not touch dual-kernel parity)

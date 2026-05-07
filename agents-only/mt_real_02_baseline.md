@@ -6967,3 +6967,131 @@ R73 totals：
 - `live_rollup.json` 字段值没有变化（rollup 工具本身正确）
 - `go_fork_source/*` 与 `.github/workflows/*` 未触碰
 - Rust-only quality / 文档纠偏 ≠ dual-kernel parity 变化
+
+---
+
+## R75 — Fresh divergence attribution & run-health materialization (2026-05-08)
+
+### 触发
+
+R74 把 R73 evidence 的 `divergence_run_count` 与
+`divergence_phase_label_count` 拆开后，仍留两个口径风险：
+
+1. round-summary JSON 的 `runs[]` 里没有
+   `run_health` 字段，下游必须从 `labels` 反推；R74
+   纠偏的口径一直只活在 summary/by_outbound 层。
+2. fresh02/fresh06 的 phase divergence 没有显式归因到 golden_spec
+   S2/S3/S4，留下「Rust-only live evidence 是不是某个新 BHV 级别
+   divergence」的歧义。
+
+R75 把两件事都收口，no-live、no-node-contact、不动 sampler/dataplane。
+
+### Per-run run_health 物化
+
+新增 `scripts/tools/round_summary_run_health.py`：
+
+- `classify_run(labels)` — 单 run 用既有
+  `dual_kernel_verification.classify_run_health` 配
+  `reality_vless_evidence_rollup.DIVERGENCE_PHASE_LABELS` 分桶
+- `synthesize_round_totals(runs)` — 从 per-run 事实算
+  `run_all_ok / run_divergence / run_same_failure / run_unknown`、
+  `divergence_run_count`、`divergence_phase_label_count`、
+  `distinct_divergence_phase_label_count`、
+  `divergence_phase_label_breakdown`、`same_failure_run_count`
+- `per_outbound_run_health_counts(runs)` /
+  `per_outbound_phase_label_breakdown(runs)` — 同一套规则按 outbound
+  分组
+- `materialize_run_health(payload)` — 不就地修改输入；返回深拷贝，
+  把 `run_health` 灌到每个 `runs[]` 条目，并按 per-run 事实重算
+  `summary` 与 `by_outbound`
+
+应用到 `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json`：
+
+- 75 个 `runs[]` 条目都带上 `run_health`
+- summary `divergence_run_count=2`、
+  `divergence_phase_label_count=5`、
+  `distinct_divergence_phase_label_count=4`、
+  `divergence_phase_label_breakdown={
+    app_pre_post_diverged:1, app_minimal_diverged:2,
+    bridge_io_diverged:1, minimal_transport_diverged:1
+  }`、`same_failure_run_count=27`
+- by_outbound 每条 `run_health_counts` + `divergence_phase_label_count`
+  + `divergence_phase_label_breakdown` 全部由 per-run 事实重算
+
+### Cross-check
+
+- R73 round JSON: total=75, executed=75, run_all_ok=46,
+  run_divergence=2, run_same_failure=27,
+  divergence_phase_label_count=5, distinct=4
+- live_rollup.json（rollup 工具确定性再生成 → 与 R74 提交完全一致）：
+  - `latest_divergence_outbounds=["fresh02","fresh06"]`
+  - `latest_divergence_phase_total_counts={app_pre_post_diverged:1,
+    app_minimal_diverged:2, minimal_transport_diverged:1,
+    bridge_io_diverged:1}`
+  - `latest_run_health_counts.run_divergence=2`
+- per-outbound：fresh02 `{run_all_ok:0, run_divergence:1,
+  run_same_failure:4}` + 2 phase labels；fresh06
+  `{run_all_ok:1, run_divergence:1, run_same_failure:3}` + 3 phase
+  labels
+
+### 归因审计（fresh02 / fresh06）
+
+| outbound | divergence run 携带的 phase labels | golden_spec 归因 |
+| --- | --- | --- |
+| fresh02 | app_pre_post_diverged + app_minimal_diverged | DEV-REALITY-01 (ARCH-LIMIT) — no new S4 entry |
+| fresh06 | app_minimal_diverged + bridge_io_diverged + minimal_transport_diverged | DEV-REALITY-01 (ARCH-LIMIT) — no new S4 entry |
+
+证据：
+
+- 这四个 phase 标签 (`app_pre_post_diverged`,
+  `app_minimal_diverged`, `minimal_transport_diverged`,
+  `bridge_io_diverged`) **不在** golden_spec S2 / S3 任何登记里；
+  它们由
+  `scripts/tools/reality_probe_compare.py:74-141` 在 6 个 phase
+  比较 (`app_pre_post_*`, `minimal_direct_vs_transport_reality`,
+  `app_post_vs_minimal_*`, `app_bridge_vs_minimal_probe_io`)
+  mismatch 时合成，并由
+  `scripts/tools/reality_vless_evidence_rollup.py:24-29`
+  集中登记成 `DIVERGENCE_PHASE_LABEL_ORDER`
+- 它们的 S4 容器是 **DEV-REALITY-01 (ARCH-LIMIT)**，即 Rust REALITY
+  live dataplane 因为缺 `uTLS`-equivalent 暂时算 ARCH-LIMIT；R73 fresh
+  数据是这条 ARCH-LIMIT 的 supporting evidence，**不是新 BHV-level
+  divergence**
+- 不需要在 golden_spec S4 新增条目；`DEV-REALITY-01` 已经覆盖整条
+  REALITY live dataplane line
+
+### Tests
+
+- `python3 -B -m unittest test_reality_probe_tools test_reality_clienthello_family test_dual_kernel_verification`
+  → **153 PASS**（+7 新用例）
+- 新增 `RoundSummaryRunHealthMaterializationTests`（7 用例），固定：
+  - 一个 run 携带 2 / 3 个 phase label 仍是单个 `run_divergence`
+  - same-failure run 不会被误算成 `run_divergence`
+  - all_ok run 永远不带 phase / bridge_io 标签
+  - 75-run R73 合成 fixture 必得到
+    run_all_ok=46, run_divergence=2, run_same_failure=27,
+    divergence_phase_label_count=5, distinct=4
+  - `materialize_run_health` 不会 mutate 输入
+- `cargo check --workspace` → PASS
+- `git diff --check` → clean
+- secret scan 全清
+
+### 改动文件
+
+- `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json`
+  （per-run `run_health` 物化；summary 按 per-run 事实重算）
+- `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.md`
+  （加 R75 attribution audit；per-run 表用物化字段）
+- `agents-only/mt_real_02_evidence/live_rollup.json` /
+  `live_rollup.md` —— 工具确定性再生成，与 R74 提交无差
+- `scripts/tools/round_summary_run_health.py`（新建）
+- `scripts/tools/test_reality_probe_tools.py`（+7）
+- `agents-only/active_context.md`（≤95 行）
+- 本文件 R75 节
+
+### 范围确认
+
+- 没有 live probe；没有 node contact；没有动 sampler/dataplane
+- `go_fork_source/*` / `.github/workflows/*` 未触碰
+- `golden_spec` 未改：`DEV-REALITY-01` 已覆盖
+- 不写成 dual-kernel parity 变化；BHV 52/56 不变
