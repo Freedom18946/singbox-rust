@@ -457,3 +457,123 @@ Classification: **A — runner now emits a refined `bridge_diagnostic`
 and never surfaces `other` from a structured `bridge_probe` failure**.
 This is a Rust-only quality line and does not affect BHV 52/56 or
 dual-kernel parity.
+
+## MT-TROJAN-FRESH-10 Refined Bounded Trojan Live Reprobe
+
+Date: 2026-05-07.
+
+Authorization was explicitly limited to one bounded reprobe of the
+existing FRESH-07 normalized config and the FRESH-09 refined runner.
+No REALITY live probe, sampler/dataplane change, sample expansion, or
+parity promotion was performed.
+
+Pre-gate (validate-only on each of the 5 selected tags) using
+`./target/debug/probe-outbound --validate-config-only --json`:
+
+- `preflight_invocations`: 5
+- `passed_count`: 5
+- `failed_count`: 0
+- `no_network`: true (every invocation)
+- `outbound_type`: `trojan` (every invocation)
+- `selected_found` and `bridge_member_found`: true (every invocation)
+- `node_contact_confirmed`: false
+
+Bounded live reprobe:
+- plan: `/tmp/trojan_probe_plan.json` (re-verified identical to a
+  fresh rebuild from the normalized intake — same 5 server/password/
+  port fingerprints, no sample re-selection)
+- candidate config: `/tmp/mt_trojan_fresh_config_normalized.json`
+- target: `example.com:80`
+- timeout: 8
+- `selected_count`: 5; `runs`: 1; `planned_runs`: 5
+
+Redacted live evidence is stored outside git at
+`/tmp/trojan_live_sanity_r10.json` and `/tmp/trojan_live_sanity_r10.md`.
+
+Live summary:
+
+- `classification`: A
+- `executed_runs`: 5
+- `ok_count`: 0
+- `failed_count`: 5
+- `env_limited_count`: 0
+- `tool_error_count`: 0
+- `status_counts`: `probe_error=5`
+- `class_counts`: `unsupported_protocol=5` (no literal `other`)
+- `node_contact_confirmed`: true
+
+Refined bridge diagnostic (identical fingerprint across all 5 runs;
+deterministic):
+
+- `error_kind`: `unsupported_protocol`
+- `error_sha256_12`: `1198e52870f3`
+- `raw_connect_error_sha256_12`: `65828a0ea9d6`
+- `scrubbed_excerpt` (single representative; all 5 share the same
+  fingerprint): `dial outbound via connect_io after connect error:
+  trojan adapter uses encrypted stream for example.com:80; use
+  connect_io() instead: trojan dial failed: Other error: Invalid
+  server...`
+
+Narrowest live signal / blocker: the `connect_io` chain reveals an
+internal Trojan adapter rejection — the full unscrubbed connect_io
+error is `trojan dial failed: Other error: Invalid server address:
+invalid socket address syntax`. Source: `crates/sb-adapters/src/
+outbound/trojan.rs:363` calls `config.server.parse::<SocketAddr>()`,
+but `config.server` is built at `crates/sb-adapters/src/register.rs:
+1007` as `format!("{}:{}", server, port)` — a `hostname:port` string,
+which `SocketAddr::parse` rejects because it requires `IP:port`. This
+fails synchronously, before any network IO, for every Trojan outbound
+whose `server` is a hostname rather than an IP literal. It applies
+equally to all 5 selected entries (and structurally to all 88
+trojan_ready candidates in the sample).
+
+Why the class label is `unsupported_protocol`: the FRESH-09 refinement
+table has no pattern for `Invalid server address`, so the classifier
+falls through to the lowest-priority wrapper-rejection signal (`uses
+encrypted stream` from `raw_connect_error`). The label is technically
+coarse — the actionable detail is in `bridge_diagnostic.scrubbed_excerpt`
+rather than the class name. This is a tooling-refinement opportunity
+(adding an `invalid_server_address` / `dataplane_config_error` pattern),
+not a regression: FRESH-08 returned `class=other=5` with no recoverable
+detail; FRESH-10 returns the same connect_io text fully redactable and
+operator-readable.
+
+Blockers (recorded only; per task scope, not fixed this round):
+
+1. Rust dataplane: `TrojanConnector::dial`
+   (`crates/sb-adapters/src/outbound/trojan.rs:363`) cannot accept
+   hostname-format `config.server`. Either resolve hostname before
+   `SocketAddr::parse`, or store host and port separately in
+   `TrojanConfig` so the adapter does not need to re-split a
+   self-built `host:port` string.
+2. Tooling (FRESH-09 refinement table): add patterns for
+   `invalid server address`, `Other error: Invalid` so that future
+   runs surface a class name closer to the underlying signal instead
+   of falling back to `unsupported_protocol`.
+
+Next live authorization: not needed against the same plan / dataplane
+combination — the failure is deterministic and another run would
+reproduce identical fingerprints. A future bounded live run is only
+useful after either blocker (1) or a sample with IP-literal `server`
+values is in place. Live remains otherwise prohibited.
+
+Verification:
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py
+  scripts/tools/test_reality_clienthello_family.py
+  scripts/tools/test_dual_kernel_verification.py` -> 123 PASS.
+- `cargo check --workspace` -> PASS.
+- `cargo build -p app --features router,adapters --bin probe-outbound`
+  -> PASS.
+- `cargo test -p app --features router,adapters --bin probe-outbound`
+  -> 6 PASS.
+- `git diff --check` -> clean.
+- Secret scan against the 270 raw `/tmp` candidate-config positions
+  (5 unique values across `server`, `password`, TLS `server_name` for
+  90 normalized outbounds) — no leak in the diff, modified docs, or
+  any `/tmp/trojan_*` redacted evidence.
+
+Classification: **A — refined actionable live signal, structured
+bridge_probe, no `tool_error`, no literal `other`, dataplane blocker
+recorded for a future round**. Rust-only quality line, BHV 52/56
+unchanged.
