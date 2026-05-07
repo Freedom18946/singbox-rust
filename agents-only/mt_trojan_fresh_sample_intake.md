@@ -266,3 +266,63 @@ after the config-normalization gap is addressed.
 **C - Tooling gap narrowed to config normalization for `probe-outbound`.**
 Trojan planning and intake remain separate Rust-only quality work and
 do not affect BHV 52/56 or dual-kernel parity status.
+
+## MT-TROJAN-FRESH-07 Config Normalization + No-Dial Preflight
+
+Date: 2026-05-07.
+
+No live probe was authorized or run. This round addressed only the
+FRESH-06 local config-validation blocker before any node contact.
+
+Normalization wrote a probe-only config outside git at
+`/tmp/mt_trojan_fresh_config_normalized.json` and redacted summaries at
+`/tmp/mt_trojan_fresh_config_normalized_summary.json` and
+`/tmp/mt_trojan_fresh_config_normalized_summary.md`.
+
+Normalized config summary:
+
+- `outbounds_count`: 90
+- `ready_for_no_dial_preflight`: true
+- removed GUI/private fields: `__id_in_gui=90`
+
+The Trojan intake and plan dry-run were rerun against the normalized
+shape without changing the selected sample:
+
+- `trojan_ready`: 88
+- `duplicate`: 2
+- `not_ready`: 0
+- `unsupported`: 0
+- `selected_count`: 5
+- `total_ready`: 88
+- `planned_runs`: 5
+- `target`: `example.com:80`
+- `timeout`: 8
+- `ready_for_live_authorization`: true
+
+`probe-outbound` now has a validate-only preflight mode that emits
+`no_network=true` and exits after config load, IR conversion, selected
+outbound lookup, bridge assembly, and bridge member lookup. It exits
+before direct probes, bridge probes, `connector.connect`, or
+`connect_io`.
+
+No-dial preflight evidence is stored outside git at
+`/tmp/trojan_no_dial_preflight_r07.json` and
+`/tmp/trojan_no_dial_preflight_r07.md`.
+
+No-dial preflight summary:
+
+- `classification`: A
+- `selected_count`: 5
+- `preflight_invocations`: 5
+- `passed_count`: 5
+- `failed_count`: 0
+- `runs`: 1
+- `planned_runs`: 5
+- `no_network`: true
+- `node_contact_confirmed`: false
+- `ready_for_future_live_authorization`: true
+
+Classification: **A - normalized config passes no-dial preflight and is
+ready for future bounded Trojan live authorization**. This remains a
+separate Rust-only quality line and does not affect BHV 52/56 or
+dual-kernel parity status.

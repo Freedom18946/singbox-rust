@@ -4,6 +4,7 @@ import contextlib
 import io
 import json
 import pathlib
+import subprocess
 import sys
 import tempfile
 import unittest
@@ -17,6 +18,7 @@ import reality_vless_probe_evidence as evidence
 import reality_vless_probe_plan as plan
 import reality_vless_env_from_config as envtool
 import reality_vless_sample_intake as intake
+import trojan_config_normalize as trojan_normalize
 import trojan_sample_intake as trojan_intake
 import trojan_probe_live as trojan_live
 import trojan_probe_plan as trojan_plan
@@ -2028,6 +2030,145 @@ class TrojanSampleIntakeTests(unittest.TestCase):
         self.assertEqual(len(fp["server_hash"]), 12)
         self.assertEqual(len(fp["password_hash"]), 12)
         self.assertEqual(len(fp["server_name_hash"]), 12)
+
+
+class TrojanConfigNormalizeTests(unittest.TestCase):
+    """MT-TROJAN-FRESH-07 no-dial config normalization gate."""
+
+    def test_removes_id_in_gui_and_preserves_trojan_fields(self):
+        outbound = _make_trojan_outbound(
+            "normalize-one",
+            "normalize-one.example.invalid",
+            443,
+            "normalize-password",
+            "normalize-sni.example.invalid",
+        )
+        outbound["__id_in_gui"] = "gui-only-id"
+        normalized, summary = trojan_normalize.normalize_config({"outbounds": [outbound]})
+
+        clean = normalized["outbounds"][0]
+        self.assertNotIn("__id_in_gui", clean)
+        self.assertEqual(clean["type"], "trojan")
+        self.assertEqual(clean["server"], "normalize-one.example.invalid")
+        self.assertEqual(clean["server_port"], 443)
+        self.assertEqual(clean["password"], "normalize-password")
+        self.assertEqual(clean["tls"]["server_name"], "normalize-sni.example.invalid")
+        self.assertEqual(summary["removed_field_counts"], {"__id_in_gui": 1})
+        self.assertTrue(summary["ready_for_no_dial_preflight"])
+
+    def test_removes_multiple_private_fields_recursively(self):
+        outbound = _make_trojan_outbound(
+            "normalize-many",
+            "normalize-many.example.invalid",
+            8443,
+            "normalize-many-password",
+            "normalize-many-sni.example.invalid",
+        )
+        outbound["__id_in_gui"] = "gui-id"
+        outbound["__profile"] = "gui-profile"
+        outbound["tls"]["__note"] = "gui-note"
+        outbound["transport"] = {"type": "ws", "__gui_path_hint": "hint"}
+
+        normalized, summary = trojan_normalize.normalize_config({"outbounds": [outbound]})
+        rendered = json.dumps(normalized)
+
+        for private_key in ("__id_in_gui", "__profile", "__note", "__gui_path_hint"):
+            self.assertNotIn(private_key, rendered)
+        self.assertEqual(
+            summary["removed_field_counts"],
+            {"__gui_path_hint": 1, "__id_in_gui": 1, "__note": 1, "__profile": 1},
+        )
+        self.assertEqual(summary["removed_total"], 4)
+
+    def test_redacted_summary_contains_no_raw_node_material(self):
+        outbound = _make_trojan_outbound(
+            "normalize-redacted",
+            "raw-normalize-server.example.invalid",
+            443,
+            "raw-normalize-password",
+            "raw-normalize-sni.example.invalid",
+        )
+        outbound["__id_in_gui"] = "gui-id"
+        _, summary = trojan_normalize.normalize_config({"outbounds": [outbound]})
+        rendered_json = json.dumps(summary)
+        rendered_md = trojan_normalize.render_redacted_md(summary)
+
+        for value in (
+            "raw-normalize-server.example.invalid",
+            "raw-normalize-password",
+            "raw-normalize-sni.example.invalid",
+        ):
+            self.assertNotIn(value, rendered_json)
+            self.assertNotIn(value, rendered_md)
+        self.assertIn("__id_in_gui", rendered_md)
+
+    def test_validate_only_branch_precedes_probe_and_network_paths(self):
+        repo = pathlib.Path(__file__).resolve().parents[2]
+        source = (repo / "app/src/bin/probe-outbound.rs").read_text(encoding="utf-8")
+        validate_pos = source.index("if args.validate_config_only")
+        self.assertLess(validate_pos, source.index('maybe_probe_vless_direct("pre_bridge"'))
+        self.assertLess(validate_pos, source.index("connector.connect(&host, port)"))
+        self.assertLess(validate_pos, source.index("connector.connect_io(&host, port)"))
+
+    def test_normalized_synthetic_fixture_passes_no_dial_preflight(self):
+        repo = pathlib.Path(__file__).resolve().parents[2]
+        outbound = _make_trojan_outbound(
+            "synthetic-preflight",
+            "127.0.0.1",
+            443,
+            "synthetic-password",
+            "synthetic-sni.example.invalid",
+        )
+        outbound["__id_in_gui"] = "gui-id"
+        normalized, _ = trojan_normalize.normalize_config({"outbounds": [outbound]})
+
+        with tempfile.TemporaryDirectory() as tmp:
+            config_path = pathlib.Path(tmp) / "normalized.json"
+            config_path.write_text(json.dumps(normalized), encoding="utf-8")
+            proc = subprocess.run(
+                [
+                    "cargo",
+                    "run",
+                    "--quiet",
+                    "-p",
+                    "app",
+                    "--features",
+                    "router,adapters",
+                    "--bin",
+                    "probe-outbound",
+                    "--",
+                    "--config",
+                    str(config_path),
+                    "--outbound",
+                    "synthetic-preflight",
+                    "--target",
+                    "example.com:80",
+                    "--timeout",
+                    "8",
+                    "--json",
+                    "--validate-config-only",
+                ],
+                cwd=repo,
+                text=True,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                timeout=240,
+            )
+
+        self.assertEqual(proc.returncode, 0, proc.stderr)
+        result = json.loads(proc.stdout)
+        self.assertEqual(result["mode"], "validate_config_only")
+        self.assertTrue(result["no_network"])
+        self.assertTrue(result["selected_found"])
+        self.assertTrue(result["bridge_member_found"])
+        self.assertEqual(result["outbound_type"], "trojan")
+        combined = proc.stdout + proc.stderr
+        for value in (
+            "127.0.0.1",
+            "synthetic-password",
+            "synthetic-sni.example.invalid",
+        ):
+            self.assertNotIn(value, combined)
 
 
 class TrojanProbePlanTests(unittest.TestCase):

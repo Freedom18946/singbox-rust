@@ -45,15 +45,14 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- MT-TROJAN-FRESH-06 enriched bounded live reprobe DONE
-  (2026-05-07). Classification: **C — tooling gap**. Authorized scope
-  reused the existing 5x1 plan only. Reprobe summary:
-  `executed_runs=5`, `tool_error=5`, `class_counts=tool_unknown=5`,
-  `node_contact_confirmed=false`. Enriched diagnostics narrowed root
-  cause to local `probe-outbound` config loading: candidate contains a
-  GUI-only unknown field at `/outbounds/0/__id_in_gui`, so validation
-  fails before any structured `bridge_probe` or confirmed node contact.
-  Future classifier maps this as `config_validation_unknown_field`.
+- MT-TROJAN-FRESH-07 no-dial preflight gate DONE (2026-05-07).
+  Classification: **A — normalized config passes no-dial preflight**.
+  The FRESH-06 blocker was a GUI/private field rejected during local
+  config load; normalization removed `__id_in_gui` from all 90 outbounds
+  and wrote only `/tmp` probe config. Existing 5x1 plan was preserved:
+  `selected_count=5`, `passed_count=5`, `failed_count=0`,
+  `no_network=true`, `node_contact_confirmed=false`,
+  `ready_for_future_live_authorization=true`. No live probe was run.
   Separate Rust-only quality line, not REALITY parity. BHV 52/56
   unchanged.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification:

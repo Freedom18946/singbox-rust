@@ -31,6 +31,9 @@ struct Args {
     /// Print derived transport chain for the outbound
     #[arg(long, default_value_t = false)]
     print_transport: bool,
+    /// Validate config, IR conversion, and selected outbound assembly without dialing
+    #[arg(long, default_value_t = false)]
+    validate_config_only: bool,
     /// Emit structured probe diagnostics as JSON on stdout
     #[arg(long, default_value_t = false)]
     json: bool,
@@ -47,6 +50,22 @@ struct ProbeJsonOutput {
     pre_bridge: Option<VlessDirectPhaseReport>,
     post_bridge: Option<VlessDirectPhaseReport>,
     bridge_probe: Option<BridgeProbeReport>,
+}
+
+#[derive(Debug, Serialize)]
+struct ValidateOnlyJsonOutput {
+    tool: &'static str,
+    mode: &'static str,
+    outbound: String,
+    outbound_type: Option<String>,
+    target: String,
+    timeout_secs: u64,
+    no_network: bool,
+    config_loaded: bool,
+    ir_loaded: bool,
+    selected_found: bool,
+    bridge_assembled: bool,
+    bridge_member_found: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -185,12 +204,6 @@ async fn main() -> Result<()> {
         bridge_probe: None,
     };
 
-    #[cfg(any(feature = "adapters", feature = "adapter-vless"))]
-    if let Some(outbound) = selected_outbound {
-        probe_output.pre_bridge =
-            maybe_probe_vless_direct("pre_bridge", outbound, &host, port, args.timeout).await;
-    }
-
     // Register adapters before bridge assembly.
     register_adapters_once();
 
@@ -223,9 +236,38 @@ async fn main() -> Result<()> {
         }
     }
 
+    let bridge_member_found = bridge.get_member(&args.outbound).is_some();
+    if args.validate_config_only {
+        let validate_output = ValidateOnlyJsonOutput {
+            tool: "probe-outbound",
+            mode: "validate_config_only",
+            outbound: args.outbound.clone(),
+            outbound_type: selected_outbound.map(|outbound| outbound.ty.ty_str().to_string()),
+            target: args.target.clone(),
+            timeout_secs: args.timeout,
+            no_network: true,
+            config_loaded: true,
+            ir_loaded: true,
+            selected_found: selected_outbound.is_some(),
+            bridge_assembled: true,
+            bridge_member_found,
+        };
+        print_validate_only_output(args.json, &validate_output);
+        if bridge_member_found {
+            return Ok(());
+        }
+        anyhow::bail!("outbound not found: {}", args.outbound);
+    }
+
     let connector = bridge
         .get_member(&args.outbound)
         .ok_or_else(|| anyhow::anyhow!("outbound not found: {}", args.outbound))?;
+
+    #[cfg(any(feature = "adapters", feature = "adapter-vless"))]
+    if let Some(outbound) = selected_outbound {
+        probe_output.pre_bridge =
+            maybe_probe_vless_direct("pre_bridge", outbound, &host, port, args.timeout).await;
+    }
 
     #[cfg(any(feature = "adapters", feature = "adapter-vless"))]
     if let Some(outbound) = selected_outbound {
@@ -592,6 +634,24 @@ fn maybe_print_probe_json(enabled: bool, output: &ProbeJsonOutput) {
     }
 }
 
+fn print_validate_only_output(json_mode: bool, output: &ValidateOnlyJsonOutput) {
+    if json_mode {
+        println!(
+            "{}",
+            serde_json::to_string_pretty(output).unwrap_or_else(|_| "{}".to_string())
+        );
+    } else {
+        println!(
+            "OK mode=validate_config_only outbound={} type={} no_network={} selected_found={} bridge_member_found={}",
+            output.outbound,
+            output.outbound_type.as_deref().unwrap_or("unknown"),
+            output.no_network,
+            output.selected_found,
+            output.bridge_member_found
+        );
+    }
+}
+
 #[inline]
 fn register_adapters_once() {
     #[cfg(feature = "sb-adapters")]
@@ -905,5 +965,28 @@ mod tests {
             "reality_dial_eof"
         );
         assert_eq!(json["bridge_probe"]["class"], "post_dial_eof");
+    }
+
+    #[test]
+    fn validate_only_json_output_marks_no_network() {
+        let output = ValidateOnlyJsonOutput {
+            tool: "probe-outbound",
+            mode: "validate_config_only",
+            outbound: "trojan-node".to_string(),
+            outbound_type: Some("trojan".to_string()),
+            target: "example.com:80".to_string(),
+            timeout_secs: 8,
+            no_network: true,
+            config_loaded: true,
+            ir_loaded: true,
+            selected_found: true,
+            bridge_assembled: true,
+            bridge_member_found: true,
+        };
+        let json = serde_json::to_value(&output).unwrap();
+        assert_eq!(json["mode"], "validate_config_only");
+        assert_eq!(json["no_network"], true);
+        assert_eq!(json["bridge_member_found"], true);
+        assert!(json.get("config").is_none());
     }
 }
