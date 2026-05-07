@@ -45,15 +45,18 @@ Planner filters: --latest-health, --latest-run-health,
 
 ## Next Steps
 
-- MT-TROJAN-FRESH-07 no-dial preflight gate DONE (2026-05-07).
-  Classification: **A — normalized config passes no-dial preflight**.
-  The FRESH-06 blocker was a GUI/private field rejected during local
-  config load; normalization removed `__id_in_gui` from all 90 outbounds
-  and wrote only `/tmp` probe config. Existing 5x1 plan was preserved:
-  `selected_count=5`, `passed_count=5`, `failed_count=0`,
-  `no_network=true`, `node_contact_confirmed=false`,
-  `ready_for_future_live_authorization=true`. No live probe was run.
-  Separate Rust-only quality line, not REALITY parity. BHV 52/56
+- MT-TROJAN-FRESH-08 normalized bounded live sanity DONE
+  (2026-05-07). Classification: **A — structured bridge_probe live
+  signal produced**. FRESH-07 pre-gate was rerun first:
+  `__id_in_gui=90` removed, validate-only `passed_count=5`,
+  `no_network=true`, `node_contact_confirmed=false`. Authorized live
+  then reused only the existing 5x1 plan: `executed_runs=5`,
+  `ok_count=0`, `failed_count=5`, `tool_error_count=0`,
+  `env_limited_count=0`, `status_counts=probe_error=5`,
+  `class_counts=other=5`, `node_contact_confirmed=true`. All failures
+  were structured `bridge_probe` at connect/connect_io, so the prior
+  config-load tooling gap is cleared; this is not a node-quality pass
+  or parity promotion. Separate Rust-only quality line, BHV 52/56
   unchanged.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification:
   **A — intake gate ready, waiting for fresh config**. Operator guide:

@@ -326,3 +326,52 @@ Classification: **A - normalized config passes no-dial preflight and is
 ready for future bounded Trojan live authorization**. This remains a
 separate Rust-only quality line and does not affect BHV 52/56 or
 dual-kernel parity status.
+
+## MT-TROJAN-FRESH-08 Normalized Bounded Live Sanity
+
+Date: 2026-05-07.
+
+Authorization was explicitly limited to the FRESH-07 normalized config
+and the existing bounded 5x1 Trojan plan. No REALITY live probe,
+sampler/dataplane change, sample expansion, or parity promotion was
+performed.
+
+The FRESH-07 pre-gate was rerun before live:
+
+- normalized config: `/tmp/mt_trojan_fresh_config_normalized.json`
+- removed GUI/private fields: `__id_in_gui=90`
+- `ready_for_no_dial_preflight`: true
+- validate-only `selected_count`: 5
+- validate-only `passed_count`: 5
+- validate-only `failed_count`: 0
+- validate-only `no_network`: true
+- validate-only `node_contact_confirmed`: false
+
+Redacted live evidence is stored outside git at
+`/tmp/trojan_live_sanity_r08.json` and
+`/tmp/trojan_live_sanity_r08.md`.
+
+Live summary:
+
+- `classification`: A
+- `selected_count`: 5
+- `runs`: 1
+- `target`: `example.com:80`
+- `timeout`: 8
+- `planned_runs`: 5
+- `executed_runs`: 5
+- `ok_count`: 0
+- `failed_count`: 5
+- `env_limited_count`: 0
+- `tool_error_count`: 0
+- `status_counts`: `probe_error=5`
+- `class_counts`: `other=5`
+- `node_contact_confirmed`: true
+
+Conclusion: the FRESH-06 local config-load blocker is cleared by
+normalization, and the runner now reaches structured `bridge_probe`.
+The bounded signal is five structured connect-stage failures through
+`connect_io`, all currently classified as `other`. This is useful live
+runner evidence, not a Trojan node-quality pass and not a Rust dataplane
+or dual-kernel parity conclusion. Further live work still requires a new
+explicit authorization.
