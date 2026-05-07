@@ -18,6 +18,7 @@ import reality_vless_probe_plan as plan
 import reality_vless_env_from_config as envtool
 import reality_vless_sample_intake as intake
 import trojan_sample_intake as trojan_intake
+import trojan_probe_live as trojan_live
 import trojan_probe_plan as trojan_plan
 
 
@@ -2177,6 +2178,157 @@ class TrojanProbePlanTests(unittest.TestCase):
                 trojan_plan.main(["--help"])
         self.assertEqual(cm.exception.code, 0)
         self.assertIn("--intake-json", stdout.getvalue())
+
+
+class TrojanProbeLiveTests(unittest.TestCase):
+    """MT-TROJAN-FRESH-04 bounded live evidence helpers."""
+
+    def _plan(self) -> dict:
+        candidate = {
+            "outbounds": [
+                _make_trojan_outbound(
+                    "live-plan",
+                    "live-plan.example.invalid",
+                    443,
+                    "live-plan-password",
+                    "live-plan-sni.example.invalid",
+                )
+            ]
+        }
+        intake_result = trojan_intake.classify_candidates(candidate)
+        return trojan_plan.build_plan(
+            intake_result,
+            candidate,
+            "example.com:80",
+            limit=1,
+            runs=1,
+            timeout=8,
+        )
+
+    def test_validate_plan_bounds_rejects_expansion(self):
+        plan_result = self._plan()
+        trojan_live.validate_plan_bounds(
+            plan_result,
+            expected_selected=1,
+            expected_runs=1,
+            expected_target="example.com:80",
+            expected_timeout=8,
+        )
+        with self.assertRaises(SystemExit):
+            trojan_live.validate_plan_bounds(
+                plan_result,
+                expected_selected=2,
+                expected_runs=1,
+                expected_target="example.com:80",
+                expected_timeout=8,
+            )
+
+    def test_result_from_probe_keeps_only_redacted_fields(self):
+        item = self._plan()["selected"][0]
+        stdout = json.dumps(
+            {
+                "bridge_probe": {
+                    "ok": False,
+                    "stream_mode": "connect_io",
+                    "stage": "connect",
+                    "class": "timeout",
+                    "connect_time_ms": 8000,
+                    "error": "raw detail should be dropped",
+                }
+            }
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        rendered = json.dumps(result)
+        self.assertEqual(result["status"], "probe_error")
+        self.assertEqual(result["class"], "timeout")
+        self.assertNotIn("raw detail should be dropped", rendered)
+        self.assertEqual(len(result["server_hash"]), 12)
+        self.assertEqual(len(result["password_hash"]), 12)
+        self.assertEqual(len(result["server_name_hash"]), 12)
+
+    def test_evidence_classification_distinguishes_env_limited_and_ok(self):
+        plan_result = self._plan()
+        env_result = {
+            **plan_result["selected"][0],
+            "run_index": 1,
+            "status": "probe_error",
+            "ok": False,
+            "class": "timeout",
+            "stage": "connect",
+            "stream_mode": "connect_io",
+            "connect_time_ms": 8000,
+            "response_bytes": None,
+        }
+        env_evidence = trojan_live.build_evidence(plan_result, [env_result])
+        self.assertEqual(env_evidence["classification"], "B")
+        ok_result = {**env_result, "status": "ok", "ok": True, "class": None}
+        ok_evidence = trojan_live.build_evidence(plan_result, [ok_result])
+        self.assertEqual(ok_evidence["classification"], "A")
+
+    def test_run_live_with_fake_probe_command(self):
+        plan_result = self._plan()
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            candidate_path = tmp_path / "candidate.json"
+            candidate_path.write_text(json.dumps({"outbounds": []}), encoding="utf-8")
+            fake = tmp_path / "fake_probe.py"
+            fake.write_text(
+                "import json\n"
+                "print(json.dumps({'bridge_probe': {'ok': True, 'stream_mode': 'connect_io', 'connect_time_ms': 12, 'response_bytes': 128}}))\n",
+                encoding="utf-8",
+            )
+            evidence = trojan_live.run_live(
+                plan_result,
+                candidate_path,
+                [sys.executable, str(fake)],
+            )
+        self.assertEqual(evidence["summary"]["executed_runs"], 1)
+        self.assertEqual(evidence["summary"]["probe_invocations"], 1)
+        self.assertTrue(evidence["summary"]["node_contact_confirmed"])
+        self.assertEqual(evidence["summary"]["ok_count"], 1)
+        self.assertEqual(evidence["classification"], "A")
+
+    def test_tool_error_does_not_confirm_node_contact(self):
+        plan_result = self._plan()
+        result = {
+            **plan_result["selected"][0],
+            "run_index": 1,
+            "status": "tool_error",
+            "ok": False,
+            "class": "other",
+            "stage": None,
+            "stream_mode": None,
+            "connect_time_ms": None,
+            "response_bytes": None,
+        }
+        evidence = trojan_live.build_evidence(plan_result, [result])
+        self.assertEqual(evidence["classification"], "C")
+        self.assertEqual(evidence["summary"]["probe_invocations"], 1)
+        self.assertFalse(evidence["summary"]["node_contact_confirmed"])
+
+    def test_rendered_live_evidence_contains_no_raw_node_material(self):
+        plan_result = self._plan()
+        result = {
+            **plan_result["selected"][0],
+            "run_index": 1,
+            "status": "probe_error",
+            "ok": False,
+            "class": "timeout",
+            "stage": "connect",
+            "stream_mode": "connect_io",
+            "connect_time_ms": 8000,
+            "response_bytes": None,
+        }
+        evidence = trojan_live.build_evidence(plan_result, [result])
+        rendered_json = json.dumps(evidence)
+        rendered_md = trojan_live.render_redacted_md(evidence)
+        for value in (
+            "live-plan.example.invalid",
+            "live-plan-password",
+            "live-plan-sni.example.invalid",
+        ):
+            self.assertNotIn(value, rendered_json)
+            self.assertNotIn(value, rendered_md)
 
 
 if __name__ == "__main__":

@@ -40,18 +40,20 @@ Planner filters: --latest-health, --latest-run-health,
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **88 tests PASS** (Trojan intake + dry-run planner included).
+  **94 tests PASS** (Trojan intake/dry-run/live helpers included).
 - live_rollup.json/md unchanged: 18 rounds, 113 runs, 24 all_ok.
 
 ## Next Steps
 
-- MT-TROJAN-FRESH-03 live authorization decision DONE (2026-05-07).
-  Classification: **A — ready but waiting for live authorization**.
-  No explicit Trojan live authorization was given, so no live pre-gate
-  and no probe ran. Existing redacted plan remains selected_count=5,
-  runs=1, target=`example.com:80`, `planned_runs=5`,
-  `ready_for_live_authorization=true`. Separate Rust-only quality
-  line, not REALITY parity. BHV 52/56 unchanged.
+- MT-TROJAN-FRESH-04 bounded live sanity DONE (2026-05-07).
+  Classification: **C — tooling gap discovered**. User authorized
+  only the existing Trojan bounded plan. Pre-gate reconfirmed
+  `trojan_ready=88`, `duplicate=2`, selected_count=5, runs=1,
+  target=`example.com:80`, timeout=8. Live runner invoked 5 probes;
+  all returned `tool_error` / class `other`, so node contact was not
+  structurally confirmed and no code/network conclusion is drawn.
+  Separate Rust-only quality line, not REALITY parity. BHV 52/56
+  unchanged.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification:
   **A — intake gate ready, waiting for fresh config**. Operator guide:
   `agents-only/mt_real_02_fresh_sample_intake.md` (A-tier).

@@ -127,14 +127,50 @@ redacted dry-run plan remains ready for a future authorization decision:
 
 Classification: **A - ready but waiting for live authorization**.
 
+## MT-TROJAN-FRESH-04 Bounded Live Sanity
+
+Date: 2026-05-07.
+
+Authorization was explicitly granted only for the existing bounded
+Trojan plan. The pre-gate was rerun without expanding scope:
+
+- `trojan_ready`: 88
+- `duplicate`: 2
+- `not_ready`: 0
+- `unsupported`: 0
+- `selected_count`: 5
+- `runs`: 1
+- `target`: `example.com:80`
+- `timeout`: 8
+- `planned_runs`: 5
+
+Live evidence is redacted and stored outside git at
+`/tmp/trojan_live_sanity.json` and `/tmp/trojan_live_sanity.md`.
+Summary:
+
+- `executed_runs`: 5
+- `ok_count`: 0
+- `failed_count`: 5
+- `env_limited_count`: 0
+- `tool_error_count`: 5
+- `status_counts`: `tool_error=5`
+- `class_counts`: `other=5`
+- `probe_invocations`: 5
+- `node_contact_confirmed`: false
+
+Classification: **C - tooling gap discovered**. The bounded live runner
+was authorized and invoked, but all runs failed before producing a
+structured bridge_probe result. No Trojan node usability or code
+conclusion is drawn from this round.
+
 ## Verification
 
 - `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py scripts/tools/test_reality_clienthello_family.py scripts/tools/test_dual_kernel_verification.py`
-  -> 88 PASS.
+  -> 94 PASS.
 - `cargo check --workspace` -> PASS.
 
 ## Classification
 
-**A - Dry-run runner ready, waiting for live authorization.** Trojan
-planning is still a separate Rust-only quality line and does not affect
-BHV 52/56 or dual-kernel parity status.
+**C - Tooling gap discovered at bounded live sanity.** Trojan planning
+and intake remain separate Rust-only quality work and do not affect BHV
+52/56 or dual-kernel parity status.
