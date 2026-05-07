@@ -42,34 +42,33 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 
 ## Next Steps
 
+- MT-TROJAN-FRESH-12 post-fix bounded Trojan live reprobe DONE
+  (2026-05-07). Classification **A — post-fix actionable live signal,
+  no `invalid_server_address`**. Same bounded plan; pre-gate 5/5
+  validate-only passed `no_network=true`. Live: `executed_runs=5`,
+  `failed_count=5`, `tool_error_count=0`, `env_limited_count=0`,
+  `class_counts=tls_error=5`, `node_contact_confirmed=true`.
+  `connect_time_ms` 142–1245ms (vs 0–2ms pre-fix), confirming real
+  DNS+TCP. `bridge_diagnostic.scrubbed_excerpt` shows `trojan dial
+  failed: Other error: TLS handshake ...` — failure moved downstream
+  to `perform_standard_tls_handshake`. Detail in
+  `agents-only/mt_trojan_fresh_sample_intake.md`. Next live not
+  needed on same plan/dataplane (deterministic).
 - MT-TROJAN-FRESH-11 Trojan hostname server dataplane fix DONE
-  (2026-05-07). Classification **A — Rust dataplane blocker fixed
-  with full no-live verification**. New `parse_server_endpoint` in
-  `crates/sb-adapters/src/outbound/trojan.rs` accepts `domain:port`,
-  `IPv4:port`, `[IPv6]:port`; rejects empty host / missing / invalid
-  / zero port / unclosed bracket / bare IPv6. TCP `dial()` passes
-  `(host, port)` to detour, sb-transport dialer, and direct
-  `TcpStream::connect`, deferring DNS to the transport layer.
-  `udp_relay_dial` resolves via async `tokio::net::lookup_host` with
-  explicit `Network` error on failure (UDP IPv6 / round-robin remains
-  a recorded pre-existing limitation). `trojan_probe_live.py`
-  classifier promotes `invalid_server_address` to top priority,
-  outranking the wrapper-rejection prefix. No live; verified by 13
-  new Rust unit tests, 1 hostname regression integration test, and
-  `--validate-config-only`.
+  (2026-05-07). Classification A — Rust dataplane blocker fixed.
+  `parse_server_endpoint` in `crates/sb-adapters/src/outbound/
+  trojan.rs` accepts `domain:port` / `IPv4:port` / `[IPv6]:port`. TCP
+  `dial()` defers DNS to the transport layer; `udp_relay_dial` uses
+  `tokio::net::lookup_host` with explicit `Network` error (UDP IPv6
+  / round-robin pre-existing). `trojan_probe_live.py` classifier
+  promotes `invalid_server_address` to top priority.
 - MT-TROJAN-FRESH-09 structured bridge-probe class refinement
-  (2026-05-07). Runner emits redacted `bridge_diagnostic`; no literal
-  `other`. Classes (FRESH-11 priority): invalid_server_address,
-  dns_error, network_unreachable, handshake_eof, tls_error,
-  auth_failed, connection_refused, connection_reset, timeout,
-  unexpected_response, unsupported_protocol, unknown_probe_failure.
-- MT-TROJAN-FRESH-08/10 normalized bounded live runs (2026-05-07,
-  archived). FRESH-08 produced `class_counts=other=5`; FRESH-10 same
-  bounded plan re-run with refined diagnostics surfaced
-  `Invalid server address: invalid socket address syntax` (root cause
-  fixed by FRESH-11). `class_counts=unsupported_protocol=5` under
-  FRESH-09 priority; will reclassify as `invalid_server_address` once
-  re-run.
+  (2026-05-07). Runner emits redacted `bridge_diagnostic`; no
+  literal `other`. Classes (FRESH-11 priority):
+  invalid_server_address, dns_error, network_unreachable,
+  handshake_eof, tls_error, auth_failed, connection_refused,
+  connection_reset, timeout, unexpected_response,
+  unsupported_protocol, unknown_probe_failure.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification A.
 - R67-R70 HK closure + rollup audit archived; HK-A-BGP-2.0 off
   bi-modal/phase-shifting suspect list.

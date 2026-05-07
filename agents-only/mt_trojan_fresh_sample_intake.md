@@ -695,3 +695,118 @@ Classification: **A — Trojan hostname server dataplane blocker fixed
 with full no-live verification; classifier no longer mislabels the
 historic signal as `unsupported_protocol`**. Rust-only quality line,
 BHV 52/56 unchanged.
+
+## MT-TROJAN-FRESH-12 Post-Fix Bounded Trojan Live Reprobe
+
+Date: 2026-05-07.
+
+Authorization was explicitly limited to one bounded reprobe of the
+existing FRESH-07 normalized config and the existing bounded plan,
+under the FRESH-11 fixed Rust dataplane. No REALITY live, no
+sampler/dataplane modification, no sample expansion, no live
+authorization expansion.
+
+Pre-gate (`./target/debug/probe-outbound --validate-config-only
+--json` per selected tag):
+
+- normalizer rerun: `outbounds_count=90`, `__id_in_gui=90` removed,
+  `ready_for_no_dial_preflight=true`
+- intake rerun: `trojan_ready=88`, `duplicate=2`, `not_ready=0`,
+  `unsupported=0`
+- plan re-verified identical to existing
+  `/tmp/trojan_probe_plan.json` — same 5 server/password/port
+  fingerprints, no sample re-selection
+- preflight: `preflight_invocations=5`, `passed_count=5`,
+  `failed_count=0`, `no_network=true`, `outbound_type=trojan` x5,
+  `selected_found=true` x5, `bridge_member_found=true` x5,
+  `node_contact_confirmed=false`
+
+Bounded live reprobe:
+
+- plan: `/tmp/trojan_probe_plan.json`
+- candidate config: `/tmp/mt_trojan_fresh_config_normalized.json`
+- target: `example.com:80`, timeout: 8, runs: 1, planned_runs: 5
+- redacted evidence: `/tmp/trojan_live_sanity_r12.json`,
+  `/tmp/trojan_live_sanity_r12.md`
+
+Live summary:
+
+- `classification`: A
+- `executed_runs`: 5
+- `ok_count`: 0
+- `failed_count`: 5
+- `env_limited_count`: 0
+- `tool_error_count`: 0
+- `status_counts`: `probe_error=5`
+- `class_counts`: `tls_error=5` (no `invalid_server_address`, no
+  `unsupported_protocol`, no literal `other`)
+- `node_contact_confirmed`: true
+
+Refined bridge diagnostic — same fingerprint across all 5 runs
+(deterministic):
+
+- `error_kind`: `tls_error`
+- `error_sha256_12`: `affb82dc34e2`
+- `raw_connect_error_sha256_12`: `65828a0ea9d6`
+- `scrubbed_excerpt` (representative): `dial outbound via connect_io
+  after connect error: trojan adapter uses encrypted stream for
+  example.com:80; use connect_io() instead: trojan dial failed:
+  Other error: TLS handshake ...`
+
+Connect-time evidence — `connect_time_ms` per run: 684, 595, 1245,
+255, 142. Pre-fix FRESH-10 connect_time_ms was 0–2ms (synchronous
+local parse failure). Post-fix values reflect actual DNS resolution
++ TCP connect + TLS handshake start, confirming the runner is now
+exercising real network IO before the failure.
+
+Post-fix live signal / blocker:
+
+- `Invalid server address` blocker is **gone**: zero occurrences in
+  the new evidence (verified via `class_counts` and the redacted
+  excerpts).
+- New failure mode: TLS handshake to the Trojan server in
+  `perform_standard_tls_handshake`. This is downstream of DNS+TCP
+  and consistent across all 5 selected entries. Whether the
+  underlying cause is server-side TLS (cert / SNI mismatch / not
+  listening with TLS) or a Rust dataplane TLS configuration issue is
+  out of scope for this round and recorded only.
+- The `bridge_diagnostic.error_sha256_12` is identical across the 5
+  runs, suggesting the error message tail is the same shape — likely
+  a single TLS-handshake failure pattern shared by all 5 endpoints.
+
+Next live authorization: **not needed** against the same plan /
+dataplane combination. Reproducing on the same fingerprints is
+deterministic. Future bounded live runs make sense only after one
+of:
+
+- A future task investigates the TLS handshake failure root cause
+  (cert path / SNI / ALPN / skip_cert_verify behavior, all Rust
+  dataplane work and not in scope for this round).
+- A different sample with a TLS-known-good Trojan server is supplied.
+
+No live / no node contact beyond the bounded 5-invocation reprobe.
+
+Verification:
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py
+  scripts/tools/test_reality_clienthello_family.py
+  scripts/tools/test_dual_kernel_verification.py` -> 126 PASS.
+- `cargo test -p sb-adapters --features adapter-trojan --lib
+  outbound::trojan::tests` -> 13 PASS.
+- `cargo test -p sb-adapters --features adapter-trojan --test
+  trojan_integration` -> 15 PASS, 2 ignored (pre-existing).
+- `cargo check --workspace` -> PASS.
+- `cargo build -p app --features router,adapters --bin probe-outbound`
+  -> PASS.
+- `cargo test -p app --features router,adapters --bin probe-outbound`
+  -> 6 PASS.
+- `git diff --check` -> clean.
+- Secret scan against the 270 raw `/tmp` candidate-config positions
+  (5 unique values across `server`, `password`, TLS `server_name` for
+  90 normalized outbounds) — no leak in the diff, modified docs, or
+  any `/tmp/trojan_*` redacted evidence (including the new r12
+  artifacts).
+
+Classification: **A — post-fix live signal; structured bridge_probe,
+no tool_error, no `invalid_server_address`, refined class fully
+post-DNS / post-TCP**. Rust-only quality line, BHV 52/56 unchanged.
