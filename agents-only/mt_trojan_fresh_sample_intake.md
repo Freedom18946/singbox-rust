@@ -960,3 +960,135 @@ Classification: **A — root cause located; two no-live dataplane /
 tooling fixes plus eight new TLS diagnostic subclasses; ready for a
 future authorized live reprobe**. Rust-only quality line, BHV 52/56
 unchanged.
+
+## MT-TROJAN-FRESH-14 Post-TLS-Fix Bounded Trojan Live Reprobe
+
+Date: 2026-05-07.
+
+Authorization was explicitly limited to one bounded reprobe of the
+existing FRESH-07 normalized config, the existing bounded plan, and
+the FRESH-13 lowering / SNI / classifier fixes. No REALITY live, no
+sampler/dataplane modification, no sample expansion, no live
+authorization expansion.
+
+Pre-gate (`./target/debug/probe-outbound --validate-config-only
+--json` per selected tag):
+
+- normalizer rerun: `outbounds_count=90`, `__id_in_gui=90` removed,
+  `ready_for_no_dial_preflight=true`; SHA-256 of normalized JSON
+  identical to existing `/tmp/mt_trojan_fresh_config_normalized.json`.
+- intake rerun: `trojan_ready=88`, `duplicate=2`, `not_ready=0`,
+  `unsupported=0`.
+- plan re-verified identical to existing
+  `/tmp/trojan_probe_plan.json` — same 5 server/password/server_name/
+  port fingerprints, no sample re-selection, summary equality holds.
+- preflight: `preflight_invocations=5`, `passed_count=5`,
+  `failed_count=0`, `no_network=true` x5, `outbound_type=trojan` x5,
+  `selected_found=true` x5, `bridge_member_found=true` x5,
+  `node_contact_confirmed=false`.
+- TLS lowering counts on normalized config: `tls.enabled=true` x90,
+  `tls.server_name` present x90, `tls.insecure=true` x90,
+  `tls.skip_cert_verify=true` x0, `tls.allow_insecure=true` x0 →
+  every selected outbound goes through the FRESH-13 fallback chain
+  into `ir.skip_cert_verify=true` and reaches `NoVerifier`.
+
+Bounded live reprobe:
+
+- plan: `/tmp/trojan_probe_plan.json`
+- candidate config: `/tmp/mt_trojan_fresh_config_normalized.json`
+- target: `example.com:80`, timeout: 8, runs: 1, planned_runs: 5
+- redacted evidence: `/tmp/trojan_live_sanity_r14.json`,
+  `/tmp/trojan_live_sanity_r14.md`
+
+Live summary:
+
+- `classification`: A
+- `executed_runs`: 5
+- `ok_count`: 5
+- `failed_count`: 0
+- `env_limited_count`: 0
+- `tool_error_count`: 0
+- `status_counts`: `ok=5`
+- `class_counts`: `{}` (no `tls_error`, no `tls_*` subclass, no
+  `invalid_server_address`, no `unsupported_protocol`, no literal
+  `other`)
+- `node_contact_confirmed`: true
+
+Per-run signal (sorted by run index):
+
+- run 0: `connect_time_ms=523`, `response_bytes=832`,
+  `first_line=HTTP/1.1 200 OK`, `stream_mode=connect_io`, `rc=0`.
+- run 1: `connect_time_ms=567`, `response_bytes=836`,
+  `first_line=HTTP/1.1 200 OK`, `stream_mode=connect_io`, `rc=0`.
+- run 2: `connect_time_ms=241`, `response_bytes=835`,
+  `first_line=HTTP/1.1 200 OK`, `stream_mode=connect_io`, `rc=0`.
+- run 3: `connect_time_ms=264`, `response_bytes=833`,
+  `first_line=HTTP/1.1 200 OK`, `stream_mode=connect_io`, `rc=0`.
+- run 4: `connect_time_ms=159`, `response_bytes=832`,
+  `first_line=HTTP/1.1 200 OK`, `stream_mode=connect_io`, `rc=0`.
+
+Post-TLS-fix live signal / blocker:
+
+- The FRESH-12 `class_counts=tls_error=5` fingerprint
+  (`error_sha256_12=affb82dc34e2`) is **fully cleared**. Zero TLS
+  failures across 5 runs / 2 distinct server hashes / 5 distinct
+  ports. The FRESH-13 root cause analysis (missing `tls.insecure`
+  lowering) is confirmed empirically — flipping the lowering chain
+  alone moved every selected entry from synchronous TLS-handshake
+  failure to full end-to-end Trojan tunnel success on the same
+  server-side state, the same plan, the same dataplane.
+- The probe goes all the way through DNS resolution, TCP connect,
+  TLS handshake (skip_cert_verify path), Trojan auth, target
+  CONNECT to `example.com:80`, HTTP request, and HTTP response
+  read (~832-836 bytes including the `HTTP/1.1 200 OK` first line).
+- No remaining TLS failure to subclass under FRESH-13's
+  `tls_cert_unknown_issuer` / `tls_name_mismatch` / etc.
+
+Tooling cosmetic (recorded only, not fixed this round):
+
+- `bridge_diagnostic.error_kind` is emitted as `unsupported_protocol`
+  on every successful run, even though `bridge_probe.error=None`
+  (`error_sha256_12=None`). The classifier always assigns a label
+  when the connect / connect_io chain carries the expected wrapper
+  rejection text `uses encrypted stream` (which is the runner's
+  signal that it correctly fell back to `connect_io`). This is a
+  classifier should-be-skipped-on-success cosmetic, not a regression
+  and not a node-quality conclusion. The success signal is in
+  `status=ok`, `ok=true`, `class=None`, `connect_time_ms`,
+  `response_bytes`, and the stdout `OK ...` excerpt.
+
+Next live authorization: **not needed** against the same plan /
+dataplane combination — the reprobe is now deterministically
+successful and reproducing it would just consume node bandwidth.
+Future bounded live runs only make sense for new investigations
+(e.g., UDP relay path, non-CONNECT targets, ALPN variants), each
+under a separate explicit authorization. Live remains otherwise
+prohibited.
+
+Verification:
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py
+  scripts/tools/test_reality_clienthello_family.py
+  scripts/tools/test_dual_kernel_verification.py` -> 137 PASS.
+- `cargo test -p sb-adapters --features adapter-trojan --lib
+  outbound::trojan::tests` -> 18 PASS.
+- `cargo test -p sb-adapters --features adapter-trojan --test
+  trojan_integration` -> 17 PASS, 2 ignored (pre-existing).
+- `cargo test -p sb-config tls_insecure` -> 2 PASS (FRESH-13
+  lowering regressions).
+- `cargo check --workspace` -> PASS.
+- `cargo build -p app --features router,adapters --bin probe-outbound`
+  -> PASS.
+- `cargo test -p app --features router,adapters --bin probe-outbound`
+  -> 6 PASS.
+- `git diff --check` -> clean.
+- Secret scan against the 5 unique raw `/tmp` candidate-config
+  values (270 positions across `server`, `password`, TLS
+  `server_name` for 90 normalized outbounds) — no leak in the
+  diff, modified docs, or any `/tmp/trojan_*` redacted evidence
+  (including the new r14 artifacts).
+
+Classification: **A — post-TLS-fix live signal: structured
+bridge_probe, no `tool_error`, no TLS subclass, no literal
+`other`, full end-to-end Trojan success on all 5 selected
+entries**. Rust-only quality line, BHV 52/56 unchanged.

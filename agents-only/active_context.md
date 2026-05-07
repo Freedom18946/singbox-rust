@@ -42,35 +42,35 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 
 ## Next Steps
 
-- MT-TROJAN-FRESH-13 Trojan TLS handshake no-live root cause audit
-  DONE (2026-05-07). Classification **A — root cause located; two
-  no-live dataplane / tooling fixes**. FRESH-12 evidence reread:
-  identical TLS error fingerprint across 5 runs / 2 servers / 5 ports
-  (not per-endpoint). Lowering audit found
-  `crates/sb-config/src/validator/v2/outbound.rs:872-877` accepted
-  `tls.skip_cert_verify` and `tls.allow_insecure` but **dropped**
-  sing-box's canonical `tls.insecure`; all 90 candidates set
-  `tls.insecure=true` so every TLS handshake hit `webpki-roots`
-  verification. Fixed by adding `tls.insecure` to the fallback chain.
-  Trojan SNI fallback rewritten to use `parse_server_endpoint`.
-  `trojan_probe_live.py` adds eight TLS subclasses
-  (`tls_cert_unknown_issuer`, `tls_name_mismatch`, `tls_cert_expired`,
-  `tls_invalid_dns_name`, `tls_alert`, `tls_protocol_version`,
-  `tls_handshake_failure`, `tls_error` fallback). New no-live tests:
-  3 sb-config lowering regressions, 5 SNI fallback unit tests, 11
-  Python TLS subclass tests, 2 localhost TLS loopback integration
-  tests proving `skip_cert_verify` toggle works end-to-end. Future
-  authorized live reprobe justified to confirm fix.
-- MT-TROJAN-FRESH-12 post-fix bounded Trojan live reprobe DONE
-  (2026-05-07). Classification A — `class_counts=tls_error=5`,
-  `connect_time_ms` 142–1245ms confirms real DNS+TCP. FRESH-13
-  identified the lowering bug behind the TLS error.
+- MT-TROJAN-FRESH-14 post-TLS-fix bounded Trojan live reprobe DONE
+  (2026-05-07). Classification **A — TLS failure cleared; full
+  end-to-end Trojan tunnel success**. Same FRESH-07 normalized
+  config + same `/tmp/trojan_probe_plan.json` (5 fingerprints
+  identical to rebuild). Pre-gate: 5 validate-only invocations,
+  passed_count=5, no_network=true, node_contact_confirmed=false;
+  90/90 outbounds carry `tls.insecure=true` (FRESH-13 fallback
+  chain → `ir.skip_cert_verify=true`). Live: executed_runs=5,
+  ok_count=5, failed_count=0, tool_error_count=0,
+  status_counts={ok:5}, class_counts={}, node_contact_confirmed=
+  true. Per-run `connect_time_ms` 159/241/264/523/567ms,
+  response_bytes 832-836, first_line=`HTTP/1.1 200 OK` —
+  real Trojan-tunnel HTTP traffic to example.com:80. FRESH-12
+  `tls_error=5` fully cleared by FRESH-13 lowering fix; no
+  residual TLS subclass anywhere. Tooling cosmetic: classifier
+  emits `bridge_diagnostic.error_kind=unsupported_protocol` on
+  successful runs (`error_sha256_12=None`) — benign artifact of
+  always-emit; recorded for a future tooling round.
+- MT-TROJAN-FRESH-13 root cause audit DONE (2026-05-07). Lowering
+  bug at `validator/v2/outbound.rs:872-877` dropped sing-box
+  canonical `tls.insecure`; fixed via fallback chain. Trojan SNI
+  fallback uses `parse_server_endpoint`. Eight TLS subclasses
+  added to runner. FRESH-14 confirms fix.
+- MT-TROJAN-FRESH-12 post-fix live DONE (2026-05-07). A —
+  `class_counts=tls_error=5`, connect_time 142-1245ms confirmed
+  real DNS+TCP; FRESH-13 traced root cause; FRESH-14 confirmed
+  resolution.
 - MT-TROJAN-FRESH-11 Trojan hostname server dataplane fix DONE
-  (2026-05-07). `parse_server_endpoint` accepts `domain:port` /
-  `IPv4:port` / `[IPv6]:port`; TCP `dial()` defers DNS to transport;
-  `udp_relay_dial` uses `tokio::net::lookup_host`.
-- MT-TROJAN-FRESH-09 structured bridge-probe class refinement
-  (2026-05-07). Redacted `bridge_diagnostic`; literal `other` gone.
+  (2026-05-07). `parse_server_endpoint`; DNS deferred to transport.
 - R71 fresh sample intake gate DONE (2026-05-04). Classification A.
 - R67-R70 HK closure archived; HK-A-BGP-2.0 off bi-modal suspect.
 
