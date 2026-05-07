@@ -22,6 +22,7 @@ import trojan_config_normalize as trojan_normalize
 import trojan_sample_intake as trojan_intake
 import trojan_probe_live as trojan_live
 import trojan_probe_plan as trojan_plan
+from dual_kernel_verification import classify_run_health
 
 
 class RealityVlessEnvFromConfigTests(unittest.TestCase):
@@ -3162,6 +3163,82 @@ class TrojanProbeLiveTests(unittest.TestCase):
         evidence = trojan_live.build_evidence(plan_result, [result])
         self.assertEqual(evidence["classification"], "C")
         self.assertFalse(evidence["summary"]["node_contact_confirmed"])
+
+
+class RunDivergenceAccountingTests(unittest.TestCase):
+    """R74 R73-evidence audit: pin the divergence-run vs phase-label
+    distinction so future evidence ledgers cannot silently re-conflate
+    them.
+
+    A run is a *divergence run* iff it carries any of the four phase
+    labels (app_pre_post_diverged, app_minimal_diverged,
+    minimal_transport_diverged, bridge_io_diverged). The same run can
+    carry multiple phase labels — that still counts as ONE divergence
+    run, while the per-occurrence phase-label tally goes up by N.
+    """
+
+    PHASE = frozenset(
+        [
+            "app_pre_post_diverged",
+            "app_minimal_diverged",
+            "minimal_transport_diverged",
+            "bridge_io_diverged",
+        ]
+    )
+
+    def test_single_run_with_two_phase_labels_classifies_as_one_divergence_run(self):
+        # Mirrors fresh02 R73 run 5: two phase labels + one failure label.
+        labels = [
+            "app_minimal_diverged",
+            "app_pre_post_diverged",
+            "probe_io_all_other",
+        ]
+        self.assertEqual(
+            classify_run_health(labels, self.PHASE),
+            "run_divergence",
+            "a run with multiple phase labels is still one divergence run",
+        )
+
+    def test_single_run_with_three_phase_labels_classifies_as_one_divergence_run(self):
+        # Mirrors fresh06 R73 run 4.
+        labels = [
+            "app_minimal_diverged",
+            "bridge_io_diverged",
+            "minimal_transport_diverged",
+        ]
+        self.assertEqual(classify_run_health(labels, self.PHASE), "run_divergence")
+
+    def test_run_with_no_phase_labels_is_never_divergence(self):
+        # Mirrors fresh02 R73 runs 1-4 (timeout same-failure).
+        self.assertEqual(
+            classify_run_health(
+                ["probe_io_all_timeout", "reality_all_timeout"], self.PHASE
+            ),
+            "run_same_failure",
+        )
+
+    def test_round_level_run_count_vs_phase_label_count_distinct(self):
+        # A 5-run outbound: 4 timeout (same-failure) + 1 multi-phase divergence.
+        runs = [
+            ["probe_io_all_timeout", "reality_all_timeout"],
+            ["probe_io_all_timeout", "reality_all_timeout"],
+            ["probe_io_all_timeout", "reality_all_timeout"],
+            ["probe_io_all_timeout", "reality_all_timeout"],
+            ["app_minimal_diverged", "app_pre_post_diverged", "probe_io_all_other"],
+        ]
+        run_health = [classify_run_health(r, self.PHASE) for r in runs]
+        divergence_run_count = sum(1 for h in run_health if h == "run_divergence")
+        phase_label_count = sum(1 for r in runs for label in r if label in self.PHASE)
+        # The bug we are pinning: someone summing phase labels would get 2,
+        # treat it as "2 divergence runs", and conflate the two columns.
+        self.assertEqual(divergence_run_count, 1)
+        self.assertEqual(phase_label_count, 2)
+        self.assertNotEqual(
+            divergence_run_count,
+            phase_label_count,
+            "divergence_run_count must remain distinct from "
+            "divergence_phase_label_count whenever any run carries >=2 phase labels",
+        )
 
 
 if __name__ == "__main__":

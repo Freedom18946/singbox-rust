@@ -43,23 +43,27 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 
 ## Next Steps
 
-- MT-REAL-02 R73 fresh REALITY/VLESS bounded live DONE (2026-05-08).
-  A — actionable; no new structural divergence. 15 fresh candidates
-  × 5 runs = 75 executed (status=completed). all_ok 46/75. 9 nodes
-  5/5 all_ok end-to-end (fresh01, fresh08–fresh15); fresh06 first
-  three-phase divergence sample (app_minimal + bridge_io +
-  minimal_transport) within existing taxonomy; fresh02 1 divergence
-  sample + 4 timeouts (node-health limited); fresh03/04/05/07 5/5
-  uniform same-failure (fresh07 same connection_reset symptom as
-  HK-A-BGP-2.0 in R61–R63). probe_io vs reality fates aligned ±1;
-  no transport-vs-app new class. Pre-gate normalization stripped
-  `__id_in_gui` via `trojan_config_normalize::normalize_config`.
-  Rollup +1 round, +75 executed_runs, +46 all_ok_runs, +15 outbound
-  keys (neutral fresh01..fresh15). Hys2 / WS / plain-VLESS live: 0
-  runs each (not authorized). BHV 52/56 unchanged. Evidence:
-  `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.{json,md}`,
-  `agents-only/mt_real_02_evidence/live_rollup.{json,md}`, baseline:
-  `agents-only/mt_real_02_baseline.md` R73 section.
+- MT-REAL-02 R74 R73 evidence accounting audit DONE (2026-05-08).
+  No-live; pure ledger correction. Earlier R73 docs/MD conflated
+  divergence_run_count with divergence_phase_label_count: per-outbound
+  table column `divergence_runs` actually held per-occurrence phase
+  labels (fresh02=2, fresh06=3); fresh06 was described as "4/5 mixed
+  phase divergence" but is 1 divergence run + 3 same-failure +
+  1 all_ok. R73 corrected facts: run_all_ok=46, run_divergence=2
+  (fresh02 + fresh06), run_same_failure=27, divergence_phase_label_count
+  =5 (occurrences), distinct=4. The rollup tool itself
+  (`classify_run_health`) was correct from R73 ingestion;
+  `live_rollup.json.latest_run_health_counts.run_divergence=2` and
+  `latest_divergence_outbounds=[fresh02, fresh06]` already matched.
+  Test pin added (`RunDivergenceAccountingTests`, +4). BHV 52/56
+  unchanged. Doc: round73 JSON+MD restated, baseline R73 section
+  rewritten + R74 section appended, intake doc R73 outcome restated.
+- MT-REAL-02 R73 fresh REALITY/VLESS bounded live DONE (2026-05-08,
+  see R74 above for corrected ledger). 15×5=75 executed; pre-gate
+  stripped `__id_in_gui` via `trojan_config_normalize::normalize_config`.
+  Rollup +1 round, +75 executed_runs, +46 run_all_ok, +15 outbound
+  keys (neutral fresh01..fresh15). Hys2/WS/plain-VLESS live: 0.
+  Classification A — actionable; no new structural divergence.
 - MT-MIXED-FRESH-01 mixed fresh config intake DONE (2026-05-07). A
   — no-live; redacted intake only. Triage: 32 outbounds (20 vless +
   12 hys2). REALITY/VLESS line: 15 fresh_ready, ready_for_r73=true.
@@ -68,8 +72,7 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
   live tool. Doc: `agents-only/mt_mixed_fresh_intake.md`.
 - MT-TROJAN-FRESH-15 success-evidence cosmetic + line closure DONE
   (2026-05-07). MT-TROJAN-FRESH line CLOSED.
-- R71 fresh sample intake DONE (2026-05-04) A; R67-R70 HK closure
-  archived.
+- R71 fresh sample intake DONE (2026-05-04) A.
 
 ## Still-Valid Constraints
 

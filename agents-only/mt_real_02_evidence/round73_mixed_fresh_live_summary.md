@@ -2,6 +2,8 @@
 
 Authorization: explicit user authorization for REALITY/VLESS only. No Hysteria2 or WS/plain VLESS live. Outbound names redacted to neutral keys fresh01..fresh15; original tags / server material live only in /tmp.
 
+R74 (2026-05-08) re-materialized this MD to expose `divergence_run_count` and `divergence_phase_label_count` as separate columns. The per-outbound `divergence_runs` column in the prior revision had silently held the per-occurrence phase-label count; both numbers are now distinct.
+
 ## Plan identity
 
 - target: example.com:80
@@ -10,14 +12,19 @@ Authorization: explicit user authorization for REALITY/VLESS only. No Hysteria2 
 - planned_total_runs: 75
 - executed_runs: 75
 
-## Live counts
+## Run-level accounting
 
-- status_counts: {"completed": 75}
-- all_ok_runs: 46
-- non_all_ok_runs: 29
+- run_all_ok: 46
+- run_divergence: 2
+- run_same_failure: 27
+- divergence_phase_label_count (occurrences): 5
+- distinct_divergence_phase_label_count: 4
+- divergence_phase_label_breakdown: {"app_minimal_diverged": 2, "app_pre_post_diverged": 1, "bridge_io_diverged": 1, "minimal_transport_diverged": 1}
 - has_divergence: True
 
-## Label counts
+divergence_run_count counts runs (a run is a divergence run iff it carries any of the four phase labels app_pre_post_diverged, app_minimal_diverged, minimal_transport_diverged, bridge_io_diverged); divergence_phase_label_count counts phase-label occurrences across those divergence runs (a single run can carry multiple phase labels). label_counts above is per-occurrence, matching divergence_phase_label_breakdown.
+
+## Label counts (per-occurrence)
 
 - all_ok: 46
 - app_minimal_diverged: 2
@@ -39,42 +46,70 @@ Authorization: explicit user authorization for REALITY/VLESS only. No Hysteria2 
 | timeout | 4 | 4 | +0 |
 | other | 19 | 18 | +1 |
 
-Delta is always within ±1; the single difference (other) is fresh02 mixing one probe_io_all_other with one app_pre_post_diverged on the same run. No new structural divergence beyond the four phase labels enumerated in MT-REAL-02 golden spec / S4.
+Delta is always within ±1; the single difference (other) is fresh02 whose 1 divergence run carries probe_io_all_other AND app_pre_post_diverged + app_minimal_diverged (no reality_all_other on that same run). No new structural divergence beyond the four phase labels enumerated in MT-REAL-02 golden spec / S4.
 
-## Per-outbound buckets
+## Per-outbound buckets (run-level)
 
-| outbound | runs | all_ok | divergence_runs | uniform_failure |
-| --- | ---: | ---: | ---: | --- |
-| fresh01 | 5 | 5 | 0 | - |
-| fresh02 | 5 | 0 | 2 | probe_io_all_other, probe_io_all_timeout, reality_all_timeout |
-| fresh03 | 5 | 0 | 0 | probe_io_all_other, reality_all_other |
-| fresh04 | 5 | 0 | 0 | probe_io_all_other, reality_all_other |
-| fresh05 | 5 | 0 | 0 | probe_io_all_other, reality_all_other |
-| fresh06 | 5 | 1 | 3 | probe_io_all_other, reality_all_other |
-| fresh07 | 5 | 0 | 0 | probe_io_all_connection_reset, reality_all_connection_reset |
-| fresh08 | 5 | 5 | 0 | - |
-| fresh09 | 5 | 5 | 0 | - |
-| fresh10 | 5 | 5 | 0 | - |
-| fresh11 | 5 | 5 | 0 | - |
-| fresh12 | 5 | 5 | 0 | - |
-| fresh13 | 5 | 5 | 0 | - |
-| fresh14 | 5 | 5 | 0 | - |
-| fresh15 | 5 | 5 | 0 | - |
+| outbound | runs | run_all_ok | run_divergence | run_same_failure | divergence_phase_labels (occurrences) | uniform_failure |
+| --- | ---: | ---: | ---: | ---: | ---: | --- |
+| fresh01 | 5 | 5 | 0 | 0 | 0 | - |
+| fresh02 | 5 | 0 | 1 | 4 | 2 | probe_io_all_other, probe_io_all_timeout, reality_all_timeout |
+| fresh03 | 5 | 0 | 0 | 5 | 0 | probe_io_all_other, reality_all_other |
+| fresh04 | 5 | 0 | 0 | 5 | 0 | probe_io_all_other, reality_all_other |
+| fresh05 | 5 | 0 | 0 | 5 | 0 | probe_io_all_other, reality_all_other |
+| fresh06 | 5 | 1 | 1 | 3 | 3 | probe_io_all_other, reality_all_other |
+| fresh07 | 5 | 0 | 0 | 5 | 0 | probe_io_all_connection_reset, reality_all_connection_reset |
+| fresh08 | 5 | 5 | 0 | 0 | 0 | - |
+| fresh09 | 5 | 5 | 0 | 0 | 0 | - |
+| fresh10 | 5 | 5 | 0 | 0 | 0 | - |
+| fresh11 | 5 | 5 | 0 | 0 | 0 | - |
+| fresh12 | 5 | 5 | 0 | 0 | 0 | - |
+| fresh13 | 5 | 5 | 0 | 0 | 0 | - |
+| fresh14 | 5 | 5 | 0 | 0 | 0 | - |
+| fresh15 | 5 | 5 | 0 | 0 | 0 | - |
+
+Totals: runs=75, run_all_ok=46, run_divergence=2, run_same_failure=27, divergence_phase_labels=5.
+
+## fresh02 / fresh06 per-run facts
+
+### fresh02 (5 runs)
+
+| run | run_health | labels |
+| ---: | --- | --- |
+| 1 | run_same_failure | probe_io_all_timeout, reality_all_timeout |
+| 2 | run_same_failure | probe_io_all_timeout, reality_all_timeout |
+| 3 | run_same_failure | probe_io_all_timeout, reality_all_timeout |
+| 4 | run_same_failure | probe_io_all_timeout, reality_all_timeout |
+| 5 | run_divergence | app_minimal_diverged, app_pre_post_diverged, probe_io_all_other |
+
+fresh02: 4 same-failure runs (probe_io_all_timeout + reality_all_timeout) + 1 divergence run carrying app_minimal_diverged + app_pre_post_diverged + probe_io_all_other in the same run. Phase labels in divergence runs: 2.
+
+### fresh06 (5 runs)
+
+| run | run_health | labels |
+| ---: | --- | --- |
+| 1 | run_same_failure | probe_io_all_other, reality_all_other |
+| 2 | run_same_failure | probe_io_all_other, reality_all_other |
+| 3 | run_same_failure | probe_io_all_other, reality_all_other |
+| 4 | run_divergence | app_minimal_diverged, bridge_io_diverged, minimal_transport_diverged |
+| 5 | run_all_ok | all_ok |
+
+fresh06: 3 same-failure runs (probe_io_all_other + reality_all_other) + 1 divergence run carrying app_minimal_diverged + bridge_io_diverged + minimal_transport_diverged in the same run + 1 all_ok run. Phase labels in divergence runs: 3 — first MT-REAL-02 sample where one run carries all three of those phase labels at once.
 
 ## Classification
 
-- **A (actionable, no new divergence)**
-  - 9 fresh outbounds reached 5/5 all_ok end-to-end (fresh01, fresh08, fresh09, fresh10, fresh11, fresh12, fresh13, fresh14, fresh15)
-  - 1 fresh outbound (fresh06) produced 1/5 all_ok plus mixed phase divergence within existing taxonomy (app_minimal_diverged, bridge_io_diverged, minimal_transport_diverged) → first non-trivial all-three-phase divergence sample
-  - 1 fresh outbound (fresh02) produced 1 divergence sample (app_pre_post + app_minimal) plus 4 timeouts — node-health-limited; the 1 sample fits MT-REAL-02 golden spec phase taxonomy, no new class
-  - 4 fresh outbounds (fresh03/04/05/07) produced 5/5 same-failure (uniform connection_reset / other) with zero divergence — node-health limited, NOT a sampler regression (per "Still-Valid Constraints" in active_context)
-  - probe_io and reality phase fates are aligned within ±1, so no transport-vs-app divergence beyond the four already-enumerated phase labels
+- **A — actionable; no new structural divergence** (run-level: run_divergence=2, both within the existing four phase labels)
+  - 9 fresh outbounds reached 5/5 run_all_ok end-to-end (fresh01, fresh08, fresh09, fresh10, fresh11, fresh12, fresh13, fresh14, fresh15)
+  - fresh06: 1 divergence run (3 phase labels: app_minimal_diverged + bridge_io_diverged + minimal_transport_diverged) + 3 same-failure runs (probe_io_all_other + reality_all_other) + 1 all_ok run — first MT-REAL-02 single-run all-three-phase carrier; still inside existing taxonomy
+  - fresh02: 1 divergence run (2 phase labels: app_pre_post_diverged + app_minimal_diverged; same run also tagged probe_io_all_other) + 4 same-failure runs (timeout) — node-health limited
+  - fresh03/04/05/07: 5/5 run_same_failure each (uniform other or connection_reset) with zero divergence runs — node-health limited, NOT a sampler regression (per "Still-Valid Constraints" in active_context)
+  - probe_io and reality run-level fates are aligned within ±1, so no transport-vs-app divergence beyond the four already-enumerated phase labels
 
 ## Authorization scope confirmation
 
 - REALITY/VLESS live: 75 executed runs (15 candidates × 5)
 - Hysteria2 live: 0 (not authorized; no socket opened to any hys2 candidate)
 - WS/plain VLESS live: 0 (not authorized; no socket opened to any plain-VLESS candidate)
-- Sampler/dataplane: untouched in this round
+- Sampler/dataplane: untouched in this round and untouched by R74 audit
 - go_fork_source/* and .github/workflows/*: untouched
 - BHV: 52/56 unchanged (this round did not touch dual-kernel parity)

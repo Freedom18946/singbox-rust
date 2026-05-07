@@ -6801,22 +6801,30 @@ dataplane**；与 MT-TROJAN-FRESH-07 走的是同一条标准化路径。
 
 - executed_runs: 75 / 75
 - status_counts: `{completed: 75}`
-- all_ok_runs: 46
-- non_all_ok_runs: 29
-- has_divergence: true（4 个 phase divergence 样本，全部落在已有
-  taxonomy 内：app_pre_post_diverged ×1, app_minimal_diverged ×2,
-  bridge_io_diverged ×1, minimal_transport_diverged ×1）
+- run-level：run_all_ok=46, run_divergence=2, run_same_failure=27
+- divergence_phase_label_count（occurrences）=5；
+  distinct_divergence_phase_label_count=4（app_pre_post_diverged ×1,
+  app_minimal_diverged ×2, bridge_io_diverged ×1,
+  minimal_transport_diverged ×1）
+- has_divergence: true（来自 2 个 divergence run，分别携带 2 / 3 个
+  phase label）
 - class_counts: `{ok: 417, other: 172, connection_reset: 47, timeout: 39}`
 
-### Per-outbound 桶
+### Per-outbound 桶（run-level）
 
-- 5/5 all_ok（9 个）：fresh01, fresh08, fresh09, fresh10, fresh11,
-  fresh12, fresh13, fresh14, fresh15
-- 1/5 all_ok + 4/5 mixed phase divergence（1 个）：fresh06
-- 1/5 divergence + 4/5 timeouts（1 个）：fresh02
-- 5/5 uniform same-failure（4 个）：fresh03, fresh04, fresh05, fresh07
-  - fresh07 与 R61–R63 HK-A-BGP-2.0 同型 connection_reset
-  - fresh03/04/05 同型 probe_io_all_other + reality_all_other
+- 5/5 run_all_ok（9 个）：fresh01, fresh08, fresh09, fresh10,
+  fresh11, fresh12, fresh13, fresh14, fresh15
+- fresh06：1 run_all_ok + 1 run_divergence（同 1 个 run 携带 3 个
+  phase labels：app_minimal + bridge_io + minimal_transport）+ 3
+  run_same_failure（probe_io_all_other + reality_all_other）。
+  MT-REAL-02 历史上首次出现单个 run 同时携带这 3 个 phase 的样本
+- fresh02：1 run_divergence（同 1 个 run 携带 2 个 phase labels：
+  app_pre_post + app_minimal，并同时被标 probe_io_all_other）+ 4
+  run_same_failure（timeout）— node-health limited
+- fresh03/04/05/07：5/5 run_same_failure（uniform other 或
+  connection_reset）；fresh07 与 R61–R63 HK-A-BGP-2.0 同型
+  connection_reset；fresh03/04/05 同型 probe_io_all_other +
+  reality_all_other
 
 ### probe_io vs reality 一致性
 
@@ -6835,12 +6843,15 @@ divergence。
 - 分类：**A**（actionable live signal；零新型 structural divergence）
 - 9 个 fresh REALITY/VLESS 节点 5/5 端到端可用 — 这是 MT-REAL-02 自
   R45-R60 阶段以来第一次同时取得这么多 5/5 all_ok 的 fresh 节点
-- fresh06 的 4/5 phase divergence 是 R73 的关键 sample：第一次出现
-  `app_minimal + bridge_io + minimal_transport` 三相位同时分歧的
-  fresh 节点；归因优先级照常按 golden spec / S4 走，不下结论 sampler
-  regression
+- fresh06 的 1 个 divergence run（携带 `app_minimal + bridge_io +
+  minimal_transport` 3 个 phase label）是 R73 的关键 sample：第一次
+  出现单 run 同时携带这三相位分歧的 fresh 节点；归因优先级照常按
+  golden spec / S4 走，不下结论 sampler regression
 - 同型 same-failure（fresh03/04/05/07）按 closure_report 规则属
   node-health limited，不写成 sampler regression
+- run-level vs phase-label-level 区分：R73 共有 2 个 divergence
+  run（fresh02、fresh06 各 1）但 5 个 phase-label occurrences；不要
+  把 phase-label 计数当 divergence run 数。R74 已专门做账本纠偏。
 - BHV 仍为 52/56；Rust-only quality 行为不写成 dual-kernel parity
 
 ### Rollup deltas
@@ -6867,3 +6878,92 @@ divergence。
 - WS / plain VLESS live: 0 runs（未授权）
 - 不扩大样本；不重选；不临场修改 sampler/dataplane
 - 未触碰 `go_fork_source/*` 与 `.github/workflows/*`
+
+---
+
+## R74 — R73 evidence accounting audit & rematerialization (2026-05-08)
+
+### 触发
+
+R73 的几份 evidence/文案在「divergence run 数」与「divergence phase
+label 出现次数」两个口径之间有混用：
+
+- `round73_mixed_fresh_live_summary.md` 的 per-outbound 列
+  `divergence_runs` 实际持有 phase-label per-occurrence 计数
+  （fresh02=2、fresh06=3），不是 divergence-run 计数
+- 「fresh06 4/5 mixed phase divergence」的措辞把 1 个 divergence
+  run + 3 个 same-failure run 合并成「4/5 phase divergence」
+- 「divergence runs: 5」实际指 5 个 phase-label occurrences，不是
+  5 个 divergence run
+
+### 性质判定
+
+工具层正确：
+`scripts/tools/dual_kernel_verification/health.py::classify_run_health`
+对“一个 run 同时携带多个 phase label”仍返回单值
+`run_divergence`，所以 `live_rollup.json.latest_run_health_counts`
+的 `run_divergence=2` 是正确的，
+`latest_divergence_outbounds=["fresh02","fresh06"]` 也正确。
+账本错只在我们手写的 round73 派生文案里。
+
+### 修正后的 R73 事实（per-run）
+
+| outbound | 5 runs 的 run_health 序列 | divergence run 携带的 phase labels |
+| --- | --- | --- |
+| fresh02 | 4× run_same_failure（timeout）+ 1× run_divergence | app_minimal_diverged + app_pre_post_diverged（同 run 含 probe_io_all_other） |
+| fresh06 | 3× run_same_failure（other）+ 1× run_divergence + 1× run_all_ok | app_minimal_diverged + bridge_io_diverged + minimal_transport_diverged |
+
+R73 totals：
+- run_all_ok = 46
+- run_divergence = 2（fresh02、fresh06 各 1）
+- run_same_failure = 27（fresh02 4 + fresh03 5 + fresh04 5 +
+  fresh05 5 + fresh06 3 + fresh07 5）
+- divergence_phase_label_count = 5（fresh02 贡献 2 + fresh06 贡献 3）
+- distinct_divergence_phase_label_count = 4（app_pre_post,
+  app_minimal, bridge_io, minimal_transport）
+
+`live_rollup.json` 的 `latest_run_health_counts` 是跨所有 outbound
+最近一轮的累计（含历史轮），所以 `run_same_failure=39`，比 R73 自身
+的 27 大；这不是冲突，是聚合口径差异。
+
+### 改动
+
+- `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json`
+  - 在 summary 中新增 `divergence_run_count`、`divergence_phase_label_count`、
+    `distinct_divergence_phase_label_count`、`divergence_phase_label_breakdown`、
+    `same_failure_run_count`、`accounting_note`
+  - 每个 by_outbound 条目新增 `run_health_counts`、
+    `divergence_phase_label_count`、`divergence_phase_label_breakdown`
+  - `interpretation` 重写，去掉「4/5 mixed phase divergence」
+    「1/5 divergence sample」等口径混用
+- `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.md`
+  - 把 per-outbound 表拆成 `run_all_ok / run_divergence /
+    run_same_failure / divergence_phase_labels (occurrences)` 4 列
+  - 新增 fresh02 / fresh06 per-run facts 表
+  - 把 classification block 改成 run-level 主语
+- `agents-only/mt_mixed_fresh_intake.md`、`agents-only/active_context.md`、
+  本文件 R73 节 — 同步纠偏
+
+### 工具改动
+
+- 没改 sampler / dataplane / runner
+- 在 `scripts/tools/test_reality_probe_tools.py` 新增
+  `RunDivergenceAccountingTests`（4 用例）：
+  pin `classify_run_health` 在「一个 run 携带 2 / 3 个 phase label」
+  时仍只返回 `run_divergence`、且 phase-label per-occurrence 计数
+  与 run-level 计数不会被互相替换
+
+### 门禁
+
+- `python3 -B -m unittest test_reality_probe_tools test_reality_clienthello_family test_dual_kernel_verification`
+  → **146 PASS**（+4 新用例）
+- `cargo check --workspace` → PASS
+- secret scan 全清
+- BHV 52/56 不变
+
+### 范围确认
+
+- 没有 live probe；没有 node contact
+- `live_rollup.json` 字段值没有变化（rollup 工具本身正确）
+- `go_fork_source/*` 与 `.github/workflows/*` 未触碰
+- Rust-only quality / 文档纠偏 ≠ dual-kernel parity 变化
