@@ -1092,3 +1092,137 @@ Classification: **A — post-TLS-fix live signal: structured
 bridge_probe, no `tool_error`, no TLS subclass, no literal
 `other`, full end-to-end Trojan success on all 5 selected
 entries**. Rust-only quality line, BHV 52/56 unchanged.
+
+## MT-TROJAN-FRESH-15 Success Evidence Hygiene + Line Closure
+
+Date: 2026-05-07.
+
+No live probe was authorized or run. This round addresses only the
+FRESH-14 success-evidence cosmetic and formally closes the
+MT-TROJAN-FRESH line for the bounded plan reused since FRESH-04.
+
+Cosmetic fix (`scripts/tools/trojan_probe_live.py`):
+
+- `result_from_probe` now short-circuits on `bridge_probe.ok=true`:
+  `class=None`, `bridge_diagnostic=None`. The wrapper-rejection text
+  in `raw_connect_error` (`uses encrypted stream ... use connect_io()
+  instead`) is the EXPECTED runner breadcrumb that the bridge layer
+  routed via `connect_io`. Running `BRIDGE_CLASS_PATTERNS` against
+  that breadcrumb on a successful run mislabeled
+  `bridge_diagnostic.error_kind=unsupported_protocol` even though
+  there was no actual error (`bridge_probe.error=None`). This was
+  cosmetic only — `class_counts` already excluded it (`item.get
+  ("class")` was `None`) — but the per-result diagnostic block
+  surfaced it in redacted MD/JSON.
+- `render_redacted_md` continues to skip the bridge block when
+  `bridge_diagnostic` is `None`; success runs now omit
+  `bridge_error_kind`, `bridge_fingerprint`, and `bridge_excerpt`
+  entirely. The success record retains `status: ok`, `class: None`,
+  `stream_mode`, plus the tool diagnostic excerpt with the
+  redacted `OK ... HTTP/1.1 200 OK` breadcrumb.
+- The failure path is unchanged: `bridge_diagnostic_for_probe` still
+  runs when `ok=false`, refined classes
+  (`unsupported_protocol`, `dns_error`, `tls_error`,
+  `tls_cert_unknown_issuer`, `invalid_server_address`, etc.) still
+  apply, and the `connect_io` raw_connect_error breadcrumb still
+  contributes to refinement.
+
+Tests added under `TrojanProbeLiveTests`:
+
+- `test_fake_structured_probe_success_keeps_classification_a`:
+  fixed (was a noop ternary). Now asserts
+  `result["bridge_diagnostic"] is None` on success.
+- `test_fresh15_success_with_wrapper_rejection_hint_has_no_diagnostic`:
+  injects the FRESH-14 wrapper-rejection text into a successful
+  `bridge_probe`, asserts `class=None`, `bridge_diagnostic=None`,
+  and that `connect_time_ms`/`response_bytes` survive.
+- `test_fresh15_success_class_counts_stay_empty`: end-to-end summary
+  on a single successful run yields `class_counts={}`,
+  `status_counts={ok:1}`, `classification=A`.
+- `test_fresh15_success_redacted_md_omits_bridge_diagnostic`: the
+  rendered MD must NOT contain `bridge_error_kind`,
+  `bridge_fingerprint`, `bridge_excerpt`, or the `unsupported_protocol`
+  cosmetic; success record still shows `status: ok`, `class: None`,
+  `stream_mode: connect_io`.
+- `test_fresh15_failure_path_still_emits_refined_diagnostic`:
+  regression guard — a failure with TLS-unknown-issuer text still
+  produces `class=tls_cert_unknown_issuer` and a non-null
+  `bridge_diagnostic` with a 12-char `error_sha256_12`.
+- `test_fresh15_success_does_not_leak_raw_secrets_in_evidence`:
+  even when a future runtime leaks a server name into the
+  `raw_connect_error` of a successful probe, the success
+  short-circuit keeps the standard scrub contract — neither MD nor
+  JSON contain the raw value, and `bridge_diagnostic` stays None.
+
+FRESH-14 evidence rederivation (no live, redacted only):
+
+- source: `/tmp/trojan_live_sanity_r14.json`
+  (sha256[:12]=`04f119f59e89`)
+- plan: selected_count=5, runs=1, target=`example.com:80`,
+  timeout=8, planned_runs=5
+- live outcome: executed_runs=5, ok_count=5, failed_count=0,
+  tool_error_count=0, env_limited_count=0,
+  status_counts={ok:5}, class_counts={},
+  node_contact_confirmed=true
+- per-run connect_time_ms (sorted): [159, 241, 264, 523, 567]
+- per-run response_bytes (sorted): [832, 832, 833, 835, 836]
+- unique server hashes (sha256[:12]): 2
+  (`232448171a6a`, `27439776c9b0`)
+- unique ports across selected: 5
+
+MT-TROJAN-FRESH line closure status:
+
+- The R72c Trojan sample intake → normalize → no-dial preflight →
+  refined classifier → hostname dataplane fix → TLS lowering
+  fix → bounded live reprobe arc reaches a 5/5 successful Trojan
+  tunnel against the same bounded plan. **No further live is
+  needed against this plan/dataplane combination.**
+- The bounded 5x1 plan, the FRESH-07 normalized config, and the
+  selected 5 fingerprints are stable. They remain available for a
+  future authorized re-validation if a regression is suspected,
+  but routine maintenance does not require running them.
+- A new bounded live authorization is required for any of the
+  following distinct quality lines (each its own task):
+  - UDP relay path (`udp_relay_dial`) — pre-existing limitation
+    around IPv6 ATYP encoding noted in FRESH-11; not reproduced
+    by FRESH-14's TCP-only target.
+  - ALPN advertising — FRESH-07 sample has empty ALPN; behavior
+    under ALPN-required Trojan servers is untested.
+  - Non-CONNECT targets (UDP, mux, h2/grpc transports).
+  - A new sample with a TLS-trusted Trojan server to exercise
+    `skip_cert_verify=false` end-to-end.
+
+No-live / no-node-contact confirmation:
+
+- Live remains prohibited and was not exercised in FRESH-15. No
+  `probe-outbound --target` dial. No `trojan_probe_live.py` live
+  invocation. No node contact. The cosmetic was verified with the
+  existing 5 unit tests above plus the larger TrojanProbeLive test
+  class.
+
+Verification:
+
+- `python3 -B -m unittest scripts/tools/test_reality_probe_tools.py
+  scripts/tools/test_reality_clienthello_family.py
+  scripts/tools/test_dual_kernel_verification.py` -> **142 PASS**
+  (was 137; +5 FRESH-15 success-hygiene tests).
+- `cargo test -p sb-adapters --features adapter-trojan --lib
+  outbound::trojan::tests` -> **18 PASS**.
+- `cargo test -p sb-adapters --features adapter-trojan --test
+  trojan_integration` -> **17 PASS, 2 ignored** (pre-existing).
+- `cargo test -p sb-config tls_insecure` -> **2 PASS**.
+- `cargo check --workspace` -> PASS.
+- `cargo build -p app --features router,adapters --bin probe-outbound`
+  -> PASS.
+- `cargo test -p app --features router,adapters --bin probe-outbound`
+  -> 6 PASS.
+- `git diff --check` -> clean.
+- Secret scan against the 5 unique raw `/tmp` candidate-config
+  values (270 positions across `server`, `password`, TLS
+  `server_name` for 90 normalized outbounds) — no leak in the
+  diff, modified Python tooling, modified test source, or any
+  `/tmp/trojan_*` redacted evidence.
+
+Classification: **A — no-live; success-evidence cosmetic fixed,
+failure-path refinement preserved, MT-TROJAN-FRESH line closed
+on the bounded plan**. Rust-only quality line, BHV 52/56 unchanged.

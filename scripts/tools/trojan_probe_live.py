@@ -434,11 +434,17 @@ def result_from_probe(
     if isinstance(bridge_probe, dict):
         ok = bridge_probe.get("ok") is True
         original_class = bridge_probe.get("class")
-        bridge_diagnostic = bridge_diagnostic_for_probe(bridge_probe, scrub_values)
         status = "ok" if ok else "probe_error"
         if ok:
+            # FRESH-15: success runs do not carry a bridge error to refine.
+            # The wrapper-rejection text in `raw_connect_error` is the
+            # expected hint that the runner fell back to `connect_io`, not
+            # an error — emitting a refined `error_kind` here misleads
+            # operators reading success evidence.
             class_value: str | None = None
+            bridge_diagnostic: dict[str, Any] | None = None
         else:
+            bridge_diagnostic = bridge_diagnostic_for_probe(bridge_probe, scrub_values)
             refined = bridge_diagnostic["error_kind"]
             # Preserve `other` only when no refined class is available; the
             # refinement helper never returns the literal `other` so this

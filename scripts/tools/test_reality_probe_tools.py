@@ -2980,11 +2980,163 @@ class TrojanProbeLiveTests(unittest.TestCase):
         evidence = trojan_live.build_evidence(plan_result, [result])
         self.assertEqual(evidence["classification"], "A")
         self.assertTrue(evidence["summary"]["node_contact_confirmed"])
-        self.assertIsNone(result["bridge_diagnostic"]["error_kind"]) if result.get(
-            "bridge_diagnostic"
-        ) and result["bridge_diagnostic"].get("error_kind") is None else None
+        # FRESH-15: success runs must not carry a bridge_diagnostic at all.
+        self.assertIsNone(result["bridge_diagnostic"])
         # Successful bridge_probe leaves class=None per redacted-fields contract.
         self.assertIsNone(result["class"])
+
+    # MT-TROJAN-FRESH-15 success-path evidence hygiene
+    # The FRESH-14 reprobe surfaced a cosmetic bug: success runs still
+    # rendered `bridge_diagnostic.error_kind=unsupported_protocol` because
+    # the classifier ran on the wrapper-rejection text in
+    # `raw_connect_error`, which is the EXPECTED hint that the runner fell
+    # back to `connect_io`. These tests pin the success-path hygiene so a
+    # future change cannot reintroduce a misleading diagnostic on a
+    # successful Trojan tunnel.
+
+    def test_fresh15_success_with_wrapper_rejection_hint_has_no_diagnostic(self):
+        item = self._plan()["selected"][0]
+        stdout = json.dumps(
+            {
+                "bridge_probe": {
+                    "ok": True,
+                    "stream_mode": "connect_io",
+                    "stage": None,
+                    "connect_time_ms": 523,
+                    "response_bytes": 832,
+                    # The runner records the wrapper rejection text as a
+                    # successful-fallback breadcrumb; FRESH-15 must not
+                    # let the classifier turn that into an error_kind.
+                    "raw_connect_error": (
+                        "trojan adapter uses encrypted stream for "
+                        "example.com:80; use connect_io() instead"
+                    ),
+                }
+            }
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["status"], "ok")
+        self.assertTrue(result["ok"])
+        self.assertIsNone(result["class"])
+        self.assertIsNone(result["bridge_diagnostic"])
+        self.assertEqual(result["connect_time_ms"], 523)
+        self.assertEqual(result["response_bytes"], 832)
+
+    def test_fresh15_success_class_counts_stay_empty(self):
+        plan_result = self._plan()
+        item = plan_result["selected"][0]
+        stdout = json.dumps(
+            {
+                "bridge_probe": {
+                    "ok": True,
+                    "stream_mode": "connect_io",
+                    "stage": None,
+                    "connect_time_ms": 159,
+                    "response_bytes": 832,
+                    "raw_connect_error": (
+                        "trojan adapter uses encrypted stream for "
+                        "example.com:80; use connect_io() instead"
+                    ),
+                }
+            }
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        evidence = trojan_live.build_evidence(plan_result, [result])
+        summary = evidence["summary"]
+        self.assertEqual(summary["class_counts"], {})
+        self.assertEqual(summary["status_counts"], {"ok": 1})
+        self.assertEqual(summary["ok_count"], 1)
+        self.assertEqual(summary["failed_count"], 0)
+        self.assertEqual(evidence["classification"], "A")
+
+    def test_fresh15_success_redacted_md_omits_bridge_diagnostic(self):
+        plan_result = self._plan()
+        item = plan_result["selected"][0]
+        stdout = json.dumps(
+            {
+                "bridge_probe": {
+                    "ok": True,
+                    "stream_mode": "connect_io",
+                    "stage": None,
+                    "connect_time_ms": 264,
+                    "response_bytes": 833,
+                    "raw_connect_error": (
+                        "trojan adapter uses encrypted stream for "
+                        "example.com:80; use connect_io() instead"
+                    ),
+                }
+            }
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        evidence = trojan_live.build_evidence(plan_result, [result])
+        rendered_md = trojan_live.render_redacted_md(evidence)
+        # Success runs must not surface bridge diagnostics.
+        self.assertNotIn("bridge_error_kind", rendered_md)
+        self.assertNotIn("bridge_fingerprint", rendered_md)
+        self.assertNotIn("bridge_excerpt", rendered_md)
+        self.assertNotIn("unsupported_protocol", rendered_md)
+        # Success record still shows status / class / stream_mode.
+        self.assertIn("status: ok", rendered_md)
+        self.assertIn("class: None", rendered_md)
+        self.assertIn("stream_mode: connect_io", rendered_md)
+
+    def test_fresh15_failure_path_still_emits_refined_diagnostic(self):
+        # Regression guard: the FRESH-15 hygiene fix only short-circuits the
+        # success path; failure paths must keep the FRESH-09/-11/-13
+        # refined diagnostics so a future failure still produces an
+        # actionable refined `error_kind`.
+        item = self._plan()["selected"][0]
+        stdout = self._make_bridge_probe_stdout(
+            error="trojan dial failed: TLS handshake failed: invalid peer certificate: UnknownIssuer",
+            raw_connect_error=(
+                "trojan adapter uses encrypted stream for example.com:80; "
+                "use connect_io() instead"
+            ),
+        )
+        result = trojan_live.result_from_probe(item, 1, 1, stdout, "")
+        self.assertEqual(result["status"], "probe_error")
+        self.assertEqual(result["class"], "tls_cert_unknown_issuer")
+        self.assertIsNotNone(result["bridge_diagnostic"])
+        self.assertEqual(
+            result["bridge_diagnostic"]["error_kind"], "tls_cert_unknown_issuer"
+        )
+        self.assertEqual(len(result["bridge_diagnostic"]["error_sha256_12"]), 12)
+
+    def test_fresh15_success_does_not_leak_raw_secrets_in_evidence(self):
+        # The FRESH-14 success raw_connect_error happens to carry only the
+        # public target; but if a future runtime leaks a server name into
+        # the error/raw_connect_error of a successful probe, the success
+        # short-circuit must still scrub it via the standard evidence
+        # contract (no raw values in JSON or MD).
+        plan_result = self._plan()
+        item = plan_result["selected"][0]
+        raw_server = "fresh15-success-leak.example.invalid"
+        stdout = json.dumps(
+            {
+                "bridge_probe": {
+                    "ok": True,
+                    "stream_mode": "connect_io",
+                    "stage": None,
+                    "connect_time_ms": 264,
+                    "response_bytes": 833,
+                    "raw_connect_error": (
+                        f"trojan adapter uses encrypted stream for "
+                        f"{raw_server}:443; use connect_io() instead"
+                    ),
+                }
+            }
+        )
+        result = trojan_live.result_from_probe(
+            item, 1, 1, stdout, "", [raw_server]
+        )
+        evidence = trojan_live.build_evidence(plan_result, [result])
+        rendered_md = trojan_live.render_redacted_md(evidence)
+        rendered_json = json.dumps(evidence)
+        self.assertNotIn(raw_server, rendered_md)
+        self.assertNotIn(raw_server, rendered_json)
+        # Tool-diagnostic excerpt may carry a redacted breadcrumb of the
+        # combined stderr; success-path bridge_diagnostic stays None.
+        self.assertIsNone(result["bridge_diagnostic"])
 
     def test_structured_env_limited_failure_remains_classification_b(self):
         plan_result = self._plan()
