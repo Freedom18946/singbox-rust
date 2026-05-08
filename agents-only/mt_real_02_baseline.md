@@ -7230,3 +7230,83 @@ server_name/password 映射。
 - 没有动 `go_fork_source/*` / `.github/workflows/*`
 - 默认下一步仍是 cohort A only 10 runs
 - BHV 52/56 不变；authorization packet correction，不写成 parity 变化
+
+---
+
+## R77 — Cohort A divergence-carrier bounded live confirmation (2026-05-08)
+
+### 授权范围
+
+用户显式授权 **ONLY cohort A** live probe：
+
+- outbounds: fresh02, fresh06
+- runs_per_outbound: 5
+- planned_total_runs: 10
+- target: `example.com:80`
+- scope: REALITY/VLESS only
+
+禁止 cohort B/C、Hysteria2、WS/plain-VLESS，禁止超过 10 runs 自动扩展。
+
+### Pre-gate
+
+- HEAD at gate: `214eb67a`；`main` 与 `origin/main` 同步
+- 使用本地 `/tmp` 映射生成 cohort-only neutralized subset，仅含
+  fresh02/fresh06；raw material 未写入 git
+- confirmation intake:
+  `covered_existing=2`, `fresh_ready=0`, `duplicate=0`, `not_ready=0`
+- dry-run plan:
+  `selected_count=2`, `runs_per_outbound=5`, `planned_total_runs=10`,
+  `target=example.com:80`
+- golden_spec S1 仍为 52/56 BHV (92.9%)
+
+### Live 结果
+
+- executed_runs: 10 / 10
+- status_counts: `{completed: 10}`
+- run-level: `run_all_ok=10`, `run_divergence=0`,
+  `run_same_failure=0`, `run_unknown=0`
+- label_counts: `{all_ok: 10}`
+- class_counts: `{ok: 90}`
+- divergence_phase_label_count=0；unexpected phase labels=0
+
+Per-outbound R73 → R77:
+
+| outbound | R73 | R77 | 结论 |
+| --- | --- | --- | --- |
+| fresh02 | 1 run_divergence + 4 run_same_failure; phase labels app_minimal + app_pre_post | 5 run_all_ok | divergence 未重复；timeout same-failure 消失 |
+| fresh06 | 1 run_all_ok + 1 run_divergence + 3 run_same_failure; phase labels app_minimal + bridge_io + minimal_transport | 5 run_all_ok | divergence 未重复；same-failure 消失 |
+
+### 分类
+
+**A — actionable; no new structural divergence.** R73 两个
+divergence-carrier 在 R77 全部转为 5/5 `run_all_ok`；phase divergence
+没有重复，但也没有出现 taxonomy 外的新 phase label。该结果属于
+“resolved inside existing taxonomy”，不新增 S4，不写成 dual-kernel parity。
+
+### Rollup delta
+
+- total_rounds: 19 → 20
+- total_executed_runs: 188 → 198
+- total_all_ok_runs: 70 → 80
+- latest_divergence_outbound_count: 2 → 0
+- recovered_outbound_count: 3 → 5
+- fresh02/fresh06 latest_health: `latest_all_ok`
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round77_cohort_a_divergence_confirmation_summary.json`
+- `agents-only/mt_real_02_evidence/round77_cohort_a_divergence_confirmation_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R77 committed-evidence contract）
+- `agents-only/active_context.md`（≤95 行）
+- 本文件 R77 节
+
+### 范围确认
+
+- cohort B/C: 0 runs
+- Hysteria2 live: 0 runs
+- WS/plain-VLESS live: 0 runs
+- 没有动 sampler/dataplane
+- 没有动 `go_fork_source/*` / `.github/workflows/*`
+- BHV 52/56 不变；Rust/live supporting evidence，不写成 parity completion

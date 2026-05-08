@@ -3771,6 +3771,98 @@ class FreshConfirmationCohortTests(unittest.TestCase):
                 msg=f"contradictory fresh_ready/covered_existing gate in {path}",
             )
 
+    def _committed_r77_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round77_cohort_a_divergence_confirmation_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r77 cohort A evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r77_cohort_a_evidence_contract(self):
+        _, evidence = self._committed_r77_evidence()
+        self.assertEqual(evidence["round"], "77")
+        self.assertEqual(
+            evidence["kind"], "cohort-a-divergence-confirmation-live-summary"
+        )
+        scope = evidence["live_scope"]
+        self.assertEqual(scope["cohort"], "A_divergence_carrier")
+        self.assertEqual(scope["outbounds"], ["fresh02", "fresh06"])
+        self.assertEqual(scope["runs_per_outbound"], 5)
+        self.assertEqual(scope["planned_total_runs"], 10)
+        self.assertTrue(scope["reality_vless_only"])
+        self.assertFalse(scope["cohort_b_executed"])
+        self.assertFalse(scope["cohort_c_executed"])
+        self.assertFalse(scope["hysteria2_executed"])
+        self.assertFalse(scope["ws_plain_vless_executed"])
+        self.assertFalse(scope["auto_extended"])
+
+        self.assertEqual(
+            evidence["pre_gate"]["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 2,
+            },
+        )
+        self.assertTrue(evidence["pre_gate"]["intake_gate_passed"])
+        self.assertTrue(evidence["pre_gate"]["dry_run_gate_passed"])
+        self.assertEqual(evidence["pre_gate"]["bhv"], "52/56 unchanged")
+
+        summary = evidence["summary"]
+        self.assertEqual(summary["executed_runs"], 10)
+        self.assertEqual(
+            summary["run_health_counts"],
+            {
+                "run_all_ok": 10,
+                "run_divergence": 0,
+                "run_same_failure": 0,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(summary["divergence_phase_label_count"], 0)
+        self.assertFalse(evidence["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(evidence["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertEqual(evidence["classification"]["final"], "A")
+        self.assertTrue(evidence["bhv_52_56_unchanged"])
+
+    def test_committed_r77_fresh02_fresh06_resolved_from_r73_divergence(self):
+        _, evidence = self._committed_r77_evidence()
+        comparison = evidence["r73_r77_comparison"]
+        expected_r73 = {
+            "fresh02": {
+                "run_all_ok": 0,
+                "run_divergence": 1,
+                "run_same_failure": 4,
+                "run_unknown": 0,
+            },
+            "fresh06": {
+                "run_all_ok": 1,
+                "run_divergence": 1,
+                "run_same_failure": 3,
+                "run_unknown": 0,
+            },
+        }
+        for name, r73_counts in expected_r73.items():
+            self.assertEqual(
+                comparison[name]["r73"]["run_health_counts"], r73_counts
+            )
+            self.assertEqual(
+                comparison[name]["r77"]["run_health_counts"],
+                {
+                    "run_all_ok": 5,
+                    "run_divergence": 0,
+                    "run_same_failure": 0,
+                    "run_unknown": 0,
+                },
+            )
+            self.assertEqual(
+                comparison[name]["r77"]["divergence_phase_label_breakdown"],
+                {},
+            )
+
 
 if __name__ == "__main__":
     unittest.main()

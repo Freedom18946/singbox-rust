@@ -35,22 +35,23 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **142 tests PASS**.
+  **169 tests PASS**.
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R73: 19 rounds, 188 runs, 70 all_ok
-  (was 18 / 113 / 24).
+- live_rollup.json/md after R77: 20 rounds, 198 runs, 80 all_ok.
 
 ## Next Steps
 
-- MT-REAL-02 R76b confirmation gate semantics fix DONE (2026-05-08).
-  No-live; no-node-contact. R76 packet now distinguishes R73-pre
-  fresh-intake gate from post-R73 confirmation gate: A expects
-  covered_existing=2/fresh_ready=0, B 4/0, C 3/0, all with
-  duplicate=0/not_ready=0. Default recommendation unchanged:
-  authorize cohort A only (10 runs) first. R76 cohort partition still
-  A fresh02/fresh06, B fresh03/04/05/07, C fresh01/fresh09/fresh15.
-  Plan artefacts carry only neutral keys; BHV 52/56 unchanged.
+- MT-REAL-02 R77 cohort A divergence-carrier confirmation DONE
+  (2026-05-08). Authorized live only: fresh02/fresh06 x5 = 10 runs,
+  target example.com:80. Pre-gate passed covered_existing=2,
+  fresh_ready=0, duplicate=0, not_ready=0; dry-run selected=2,
+  planned=10. Result: 10/10 run_all_ok, run_divergence=0,
+  run_same_failure=0; R73 phase divergence resolved inside existing
+  taxonomy, no new structural divergence. Rollup now 20 rounds,
+  198 runs, 80 all_ok; latest_divergence_outbounds=0; fresh02/fresh06
+  recovered to latest_all_ok. Cohort B/C, Hys2, WS/plain-VLESS: 0.
+  BHV 52/56 unchanged.
 - MT-REAL-02 R75 fresh divergence attribution + run_health
   materialization DONE (2026-05-08). Per-run `run_health` materialized
   into round73 `runs[]` via `round_summary_run_health.materialize_run_health`;
