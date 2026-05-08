@@ -7310,3 +7310,93 @@ divergence-carrier 在 R77 全部转为 5/5 `run_all_ok`；phase divergence
 - 没有动 sampler/dataplane
 - 没有动 `go_fork_source/*` / `.github/workflows/*`
 - BHV 52/56 不变；Rust/live supporting evidence，不写成 parity completion
+
+---
+
+## R78 — Cohort B same-failure bounded live confirmation (2026-05-08)
+
+### 授权范围
+
+用户显式授权 **ONLY cohort B** live probe：
+
+- outbounds: fresh03, fresh04, fresh05, fresh07
+- runs_per_outbound: 3
+- planned_total_runs: 12
+- target: `example.com:80`
+- scope: REALITY/VLESS only
+
+禁止 cohort A/C、Hysteria2、WS/plain-VLESS，禁止超过 12 runs 自动扩展。
+
+### Pre-gate
+
+- HEAD at gate: `65cabe41`；`main` 与 `origin/main` 同步
+- 使用本地 `/tmp` 映射生成 cohort-only neutralized subset，仅含
+  fresh03/fresh04/fresh05/fresh07；raw material 未写入 git
+- confirmation intake:
+  `covered_existing=4`, `fresh_ready=0`, `duplicate=0`, `not_ready=0`
+- dry-run plan:
+  `selected_count=4`, `runs_per_outbound=3`, `planned_total_runs=12`,
+  `target=example.com:80`
+- golden_spec S1 仍为 52/56 BHV (92.9%)
+
+### Live 结果
+
+- executed_runs: 12 / 12
+- status_counts: `{completed: 12}`
+- run-level: `run_all_ok=8`, `run_divergence=1`,
+  `run_same_failure=3`, `run_unknown=0`
+- label_counts: `{all_ok:8, app_pre_post_diverged:1,
+  probe_io_all_timeout:3, reality_all_timeout:3}`
+- class_counts: `{ok:80, timeout:27, connection_reset:1}`
+- divergence_phase_label_count=1；unexpected phase labels=0
+
+Per-outbound R73 → R78:
+
+| outbound | R73 | R78 | 结论 |
+| --- | --- | --- | --- |
+| fresh03 | 5/5 same-failure, other | 3/3 all_ok | resolved_to_all_ok |
+| fresh04 | 5/5 same-failure, other | 3/3 same-failure, timeout | node/env-health limited; same-failure persists but class shifted |
+| fresh05 | 5/5 same-failure, other | 2 all_ok + 1 run_divergence (`app_pre_post_diverged`) | known-taxonomy divergence; surface for cohort A-style re-evaluation |
+| fresh07 | 5/5 same-failure, connection_reset | 3/3 all_ok | HK-like connection_reset same-type did not persist |
+
+fresh07 R73 同 HK-A-BGP-2.0 R61-R63 的 connection_reset same-failure；
+R78 为 3/3 all_ok，所以不再保持 HK 同型 connection_reset。
+
+### 分类
+
+**A — actionable; no new structural divergence; mixed cohort B outcome.**
+fresh05 从 R73 same-failure 翻到 1 个已知 taxonomy 内
+`app_pre_post_diverged` run + 2 个 all_ok run；按 R76 packet 规则不扩展
+cohort B，应单独列入后续 cohort A-style re-evaluation。fresh04 仍按
+node/env-health limited 处理；不能写成 sampler/dataplane regression。
+
+### Rollup delta
+
+- total_rounds: 20 → 21
+- total_executed_runs: 198 → 210
+- total_all_ok_runs: 80 → 88
+- latest_divergence_outbound_count: 0 → 1 (`fresh05`)
+- latest_same_failure_outbound_count: 10 → 7
+- recovered_outbound_count: 5 → 7
+- fresh03/fresh07 latest_health: `latest_all_ok`
+- fresh04 latest_health: `latest_same_failure`
+- fresh05 latest_health: `latest_divergence`
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json`
+- `agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R78 committed-evidence contract）
+- `agents-only/active_context.md`（≤95 行）
+- 本文件 R78 节
+
+### 范围确认
+
+- cohort A/C: 0 runs
+- Hysteria2 live: 0 runs
+- WS/plain-VLESS live: 0 runs
+- 没有动 sampler/dataplane
+- 没有动 `go_fork_source/*` / `.github/workflows/*`
+- BHV 52/56 不变；Rust/live supporting evidence，不写成 parity completion

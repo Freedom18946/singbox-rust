@@ -35,23 +35,23 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **169 tests PASS**.
+  **171 tests PASS**.
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R77: 20 rounds, 198 runs, 80 all_ok.
+- live_rollup.json/md after R78: 21 rounds, 210 runs, 88 all_ok.
 
 ## Next Steps
 
-- MT-REAL-02 R77 cohort A divergence-carrier confirmation DONE
-  (2026-05-08). Authorized live only: fresh02/fresh06 x5 = 10 runs,
-  target example.com:80. Pre-gate passed covered_existing=2,
-  fresh_ready=0, duplicate=0, not_ready=0; dry-run selected=2,
-  planned=10. Result: 10/10 run_all_ok, run_divergence=0,
-  run_same_failure=0; R73 phase divergence resolved inside existing
-  taxonomy, no new structural divergence. Rollup now 20 rounds,
-  198 runs, 80 all_ok; latest_divergence_outbounds=0; fresh02/fresh06
-  recovered to latest_all_ok. Cohort B/C, Hys2, WS/plain-VLESS: 0.
-  BHV 52/56 unchanged.
+- MT-REAL-02 R78 cohort B same-failure confirmation DONE
+  (2026-05-08). Authorized live only: fresh03/04/05/07 x3 = 12 runs.
+  Pre-gate passed covered_existing=4, fresh_ready=0, duplicate=0,
+  not_ready=0; dry-run selected=4, planned=12. Result: run_all_ok=8,
+  run_divergence=1, run_same_failure=3. Mixed outcome: fresh03 and
+  fresh07 resolved all_ok; fresh04 stayed node/env-health same-failure
+  but shifted other -> timeout; fresh05 flipped to known-taxonomy
+  app_pre_post_diverged + 2 all_ok and should be surfaced separately
+  for cohort A-style re-evaluation. No new structural divergence.
+  Cohort A/C, Hys2, WS/plain-VLESS: 0. BHV 52/56 unchanged.
 - MT-REAL-02 R75 fresh divergence attribution + run_health
   materialization DONE (2026-05-08). Per-run `run_health` materialized
   into round73 `runs[]` via `round_summary_run_health.materialize_run_health`;

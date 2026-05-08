@@ -3863,6 +3863,135 @@ class FreshConfirmationCohortTests(unittest.TestCase):
                 {},
             )
 
+    def _committed_r78_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round78_cohort_b_same_failure_confirmation_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r78 cohort B evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r78_cohort_b_evidence_contract(self):
+        _, evidence = self._committed_r78_evidence()
+        self.assertEqual(evidence["round"], "78")
+        self.assertEqual(
+            evidence["kind"], "cohort-b-same-failure-confirmation-live-summary"
+        )
+        scope = evidence["live_scope"]
+        self.assertEqual(scope["cohort"], "B_same_failure")
+        self.assertEqual(
+            scope["outbounds"], ["fresh03", "fresh04", "fresh05", "fresh07"]
+        )
+        self.assertEqual(scope["runs_per_outbound"], 3)
+        self.assertEqual(scope["planned_total_runs"], 12)
+        self.assertTrue(scope["reality_vless_only"])
+        self.assertFalse(scope["cohort_a_executed"])
+        self.assertFalse(scope["cohort_c_executed"])
+        self.assertFalse(scope["hysteria2_executed"])
+        self.assertFalse(scope["ws_plain_vless_executed"])
+        self.assertFalse(scope["auto_extended"])
+
+        self.assertEqual(
+            evidence["pre_gate"]["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 4,
+            },
+        )
+        self.assertTrue(evidence["pre_gate"]["intake_gate_passed"])
+        self.assertTrue(evidence["pre_gate"]["dry_run_gate_passed"])
+        self.assertEqual(evidence["pre_gate"]["bhv"], "52/56 unchanged")
+
+        summary = evidence["summary"]
+        self.assertEqual(summary["executed_runs"], 12)
+        self.assertEqual(
+            summary["run_health_counts"],
+            {
+                "run_all_ok": 8,
+                "run_divergence": 1,
+                "run_same_failure": 3,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(
+            summary["divergence_phase_label_breakdown"],
+            {"app_pre_post_diverged": 1},
+        )
+        self.assertFalse(evidence["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(evidence["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertEqual(evidence["classification"]["final"], "A")
+        self.assertTrue(evidence["bhv_52_56_unchanged"])
+
+    def test_committed_r78_per_outbound_transitions(self):
+        _, evidence = self._committed_r78_evidence()
+        comparison = evidence["r73_r78_comparison"]
+        expected = {
+            "fresh03": (
+                "other",
+                {
+                    "run_all_ok": 3,
+                    "run_divergence": 0,
+                    "run_same_failure": 0,
+                    "run_unknown": 0,
+                },
+                "resolved_to_all_ok",
+            ),
+            "fresh04": (
+                "other",
+                {
+                    "run_all_ok": 0,
+                    "run_divergence": 0,
+                    "run_same_failure": 3,
+                    "run_unknown": 0,
+                },
+                "same_failure_persists",
+            ),
+            "fresh05": (
+                "other",
+                {
+                    "run_all_ok": 2,
+                    "run_divergence": 1,
+                    "run_same_failure": 0,
+                    "run_unknown": 0,
+                },
+                "flipped_to_known_taxonomy_divergence; surface separately for cohort A-style re-evaluation",
+            ),
+            "fresh07": (
+                "connection_reset",
+                {
+                    "run_all_ok": 3,
+                    "run_divergence": 0,
+                    "run_same_failure": 0,
+                    "run_unknown": 0,
+                },
+                "resolved_to_all_ok",
+            ),
+        }
+        for name, (r73_failure_class, r78_counts, assessment) in expected.items():
+            self.assertEqual(
+                comparison[name]["r73"]["run_health_counts"],
+                {
+                    "run_all_ok": 0,
+                    "run_divergence": 0,
+                    "run_same_failure": 5,
+                    "run_unknown": 0,
+                },
+            )
+            self.assertEqual(
+                comparison[name]["r73"]["same_failure_class"], r73_failure_class
+            )
+            self.assertEqual(comparison[name]["r78"]["run_health_counts"], r78_counts)
+            self.assertEqual(comparison[name]["assessment"], assessment)
+        self.assertTrue(
+            evidence["fresh07_hk_connection_reset_same_type"]["r73_same_type"]
+        )
+        self.assertFalse(
+            evidence["fresh07_hk_connection_reset_same_type"]["r78_same_type"]
+        )
+
 
 if __name__ == "__main__":
     unittest.main()

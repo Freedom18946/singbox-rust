@@ -1,0 +1,537 @@
+{
+  "round": "78",
+  "date": "2026-05-08",
+  "description": "R78 cohort B same-failure bounded live confirmation (fresh03/fresh04/fresh05/fresh07 only)",
+  "source_summary": "/tmp/r78-cohort-b-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r78_cohort_b_subset_clean.json --plan-json /tmp/r78_cohort_b_plan.json --runs 3 --target example.com:80 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r78_cohort_b_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 3,
+    "selected_count": 4
+  },
+  "summary": {
+    "total": 12,
+    "executed_runs": 12,
+    "status_counts": {
+      "completed": 12
+    },
+    "label_counts": {
+      "all_ok": 8,
+      "app_pre_post_diverged": 1,
+      "probe_io_all_timeout": 3,
+      "reality_all_timeout": 3
+    },
+    "class_counts": {
+      "connection_reset": 1,
+      "ok": 80,
+      "timeout": 27
+    },
+    "divergence_run_count": 1,
+    "divergence_phase_label_count": 1,
+    "distinct_divergence_phase_label_count": 1,
+    "divergence_phase_label_breakdown": {
+      "app_pre_post_diverged": 1
+    },
+    "same_failure_run_count": 3,
+    "accounting_note": "divergence_run_count counts runs (a run is a divergence run iff it carries any of the four phase labels app_pre_post_diverged, app_minimal_diverged, minimal_transport_diverged, bridge_io_diverged); divergence_phase_label_count counts phase-label occurrences across those divergence runs (a single run can carry multiple phase labels). label_counts above is per-occurrence, matching divergence_phase_label_breakdown.",
+    "run_all_ok": 8,
+    "run_divergence": 1,
+    "run_same_failure": 3,
+    "run_unknown": 0,
+    "run_health_counts": {
+      "run_all_ok": 8,
+      "run_divergence": 1,
+      "run_same_failure": 3,
+      "run_unknown": 0
+    }
+  },
+  "matrix_health": {
+    "has_divergence": true,
+    "divergence_labels": {
+      "app_pre_post_diverged": 1
+    },
+    "all_ok_runs": 8,
+    "uniform_failure_labels": {
+      "reality_all_timeout": 3
+    }
+  },
+  "by_outbound": {
+    "fresh03": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      },
+      "run_health_counts": {
+        "run_all_ok": 3,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0
+    },
+    "fresh04": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "class_counts": {
+        "timeout": 27
+      },
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 3,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0
+    },
+    "fresh05": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 2,
+        "app_pre_post_diverged": 1
+      },
+      "class_counts": {
+        "connection_reset": 1,
+        "ok": 26
+      },
+      "run_health_counts": {
+        "run_all_ok": 2,
+        "run_divergence": 1,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {
+        "app_pre_post_diverged": 1
+      },
+      "divergence_phase_label_count": 1
+    },
+    "fresh07": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      },
+      "run_health_counts": {
+        "run_all_ok": 3,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh03",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh03",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh03",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 2,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 2,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 2,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 3,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "app_pre_post_diverged"
+      ],
+      "class_counts": {
+        "connection_reset": 1,
+        "ok": 8
+      },
+      "run_health": "run_divergence"
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 3,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 3,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh07",
+      "ordinal": 4,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh07",
+      "ordinal": 4,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh07",
+      "ordinal": 4,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    }
+  ],
+  "interpretation": [
+    "Cohort B only: fresh03/fresh04/fresh05/fresh07, 3 runs each, 12 total; no cohort A/C, no Hysteria2, no WS/plain-VLESS.",
+    "R78 is mixed: fresh03 and fresh07 resolved to all_ok, fresh04 persisted as same-failure with timeout labels, and fresh05 produced one known-taxonomy divergence (app_pre_post_diverged) plus two all_ok runs.",
+    "Classification: A -- actionable; no new structural divergence. Do not extend cohort B; surface fresh05 separately for future cohort A-style re-evaluation. This remains Rust/live supporting evidence; BHV 52/56 unchanged."
+  ],
+  "kind": "cohort-b-same-failure-confirmation-live-summary",
+  "live_executed": true,
+  "live_scope": {
+    "cohort": "B_same_failure",
+    "outbounds": [
+      "fresh03",
+      "fresh04",
+      "fresh05",
+      "fresh07"
+    ],
+    "runs_per_outbound": 3,
+    "planned_total_runs": 12,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "cohort_a_executed": false,
+    "cohort_c_executed": false,
+    "hysteria2_executed": false,
+    "ws_plain_vless_executed": false,
+    "auto_extended": false
+  },
+  "pre_gate": {
+    "head_at_gate": "65cabe41",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 4
+    },
+    "expected_intake_counts": {
+      "covered_existing": 4,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 4,
+      "runs_per_outbound": 3,
+      "planned_total_runs": 12,
+      "target": "example.com:80",
+      "dry_run": true,
+      "selected": [
+        "fresh03",
+        "fresh04",
+        "fresh05",
+        "fresh07"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "bhv": "52/56 unchanged"
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false
+  },
+  "r73_r78_comparison": {
+    "fresh03": {
+      "outbound": "fresh03",
+      "r73": {
+        "run_health_counts": {
+          "run_all_ok": 0,
+          "run_divergence": 0,
+          "run_same_failure": 5,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "probe_io_all_other": 5,
+          "reality_all_other": 5
+        },
+        "same_failure_class": "other",
+        "divergence_phase_label_breakdown": {}
+      },
+      "r78": {
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "same_failure_class": null,
+        "divergence_phase_label_breakdown": {}
+      },
+      "delta": {
+        "run_all_ok": 3,
+        "run_divergence": 0,
+        "run_same_failure": -5
+      },
+      "assessment": "resolved_to_all_ok"
+    },
+    "fresh04": {
+      "outbound": "fresh04",
+      "r73": {
+        "run_health_counts": {
+          "run_all_ok": 0,
+          "run_divergence": 0,
+          "run_same_failure": 5,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "probe_io_all_other": 5,
+          "reality_all_other": 5
+        },
+        "same_failure_class": "other",
+        "divergence_phase_label_breakdown": {}
+      },
+      "r78": {
+        "run_health_counts": {
+          "run_all_ok": 0,
+          "run_divergence": 0,
+          "run_same_failure": 3,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "probe_io_all_timeout": 3,
+          "reality_all_timeout": 3
+        },
+        "same_failure_class": "timeout",
+        "divergence_phase_label_breakdown": {}
+      },
+      "delta": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": -2
+      },
+      "assessment": "same_failure_persists"
+    },
+    "fresh05": {
+      "outbound": "fresh05",
+      "r73": {
+        "run_health_counts": {
+          "run_all_ok": 0,
+          "run_divergence": 0,
+          "run_same_failure": 5,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "probe_io_all_other": 5,
+          "reality_all_other": 5
+        },
+        "same_failure_class": "other",
+        "divergence_phase_label_breakdown": {}
+      },
+      "r78": {
+        "run_health_counts": {
+          "run_all_ok": 2,
+          "run_divergence": 1,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 2,
+          "app_pre_post_diverged": 1
+        },
+        "same_failure_class": null,
+        "divergence_phase_label_breakdown": {
+          "app_pre_post_diverged": 1
+        }
+      },
+      "delta": {
+        "run_all_ok": 2,
+        "run_divergence": 1,
+        "run_same_failure": -5
+      },
+      "assessment": "flipped_to_known_taxonomy_divergence; surface separately for cohort A-style re-evaluation"
+    },
+    "fresh07": {
+      "outbound": "fresh07",
+      "r73": {
+        "run_health_counts": {
+          "run_all_ok": 0,
+          "run_divergence": 0,
+          "run_same_failure": 5,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "probe_io_all_connection_reset": 5,
+          "reality_all_connection_reset": 5
+        },
+        "same_failure_class": "connection_reset",
+        "divergence_phase_label_breakdown": {}
+      },
+      "r78": {
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "same_failure_class": null,
+        "divergence_phase_label_breakdown": {}
+      },
+      "delta": {
+        "run_all_ok": 3,
+        "run_divergence": 0,
+        "run_same_failure": -5
+      },
+      "assessment": "resolved_to_all_ok"
+    }
+  },
+  "fresh07_hk_connection_reset_same_type": {
+    "r73_same_type": true,
+    "r78_same_type": false,
+    "assessment": "R73 matched HK-A-BGP-2.0 R61-R63 connection_reset same-failure; R78 resolved to 3/3 all_ok, so the connection_reset same-type did not persist."
+  },
+  "classification": {
+    "final": "A",
+    "label": "actionable; no new structural divergence; mixed cohort B outcome",
+    "rationale": "fresh05 flipped from R73 same-failure to one known-taxonomy app_pre_post_diverged run plus two all_ok runs; fresh03/fresh07 resolved to all_ok; fresh04 remained node/env-health-limited same-failure with timeout labels. No taxonomy-outside phase label appeared; do not extend cohort B.",
+    "next_handling": "Surface fresh05 separately for future cohort A-style re-evaluation; treat fresh04 as node/env-health-limited; do not call this sampler/dataplane regression."
+  },
+  "bhv_52_56_unchanged": true,
+  "redaction_notes": [
+    "Evidence uses only neutral outbound keys fresh03/fresh04/fresh05/fresh07.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed."
+  ]
+}
