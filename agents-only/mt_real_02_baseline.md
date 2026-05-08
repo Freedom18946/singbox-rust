@@ -8104,3 +8104,118 @@ R78+R82 的 timeout-class chain（被 R83 断掉）**不能**与 R84
 - BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
   R84 evidence 不出现 "closure achieved" / "closure NOT achieved"
   任何措辞（closure_status.evaluated=false）
+
+## R85 — cohort C recovery-watch round 2 of 3
+
+### 起因
+
+R84 后 fresh04 的 high-variance saga 已经足够说明继续追
+fresh04 的边际信息价值偏低。R85 回到 R76 plan 原路径：
+cohort C recovery-watch 三个代表（fresh01 / fresh09 / fresh15）
+做 round 2 of 3。
+
+### 范围
+
+- live REALITY/VLESS、fresh01/fresh09/fresh15 ×3 = 9 runs、
+  target example.com:80
+- HEAD at gate: 2e0433ca；main 与 origin/main 同步 ✓
+- 不动 sampler/dataplane / `go_fork_source/*` /
+  `.github/workflows/*` / golden_spec
+- BHV 52/56 不变
+- 不允许 auto-extend > 3 runs/rep；不允许本轮 retry
+  "修补" 失败 run；不允许临场 rotate 失败 rep
+
+### Subset 清洗 + Pre-gate
+
+- R81 gate 双分支都过：任意深度移除 `__` 字段，
+  outbound-level 字段落在 REALITY/VLESS allow-list 内
+- intake_counts: `covered_existing=3, fresh_ready=0,
+  duplicate=0, not_ready=0` ✓
+- dry-run: `selected_count=3, runs_per_outbound=3,
+  planned_total_runs=9, target=example.com:80,
+  subset_schema_gate_passed=true, subset_schema_gate.violations=[]` ✓
+- BHV: 52/56 不变
+
+### 实测分类: B.partial_per_rep
+
+- 9/9 status=`completed`，9/9 `matrix_status=0`
+- run_health_counts:
+  `{run_all_ok=6, run_divergence=0, run_same_failure=3, run_unknown=0}`
+- label_counts:
+  `{all_ok=6, probe_io_all_timeout=3, reality_all_timeout=3}`
+- class_counts: `{ok=54, timeout=27}`
+- divergence_phase_label_count=**0**
+- unexpected_phase_labels=[]；没有 NEW phase label
+
+### Cohort C recovery status
+
+| rep | R73 | R85 | recovery_consecutive_rounds | latest_state |
+| --- | --- | --- | ---: | --- |
+| fresh01 | 5/5 all_ok | 3/3 all_ok | 2 | all_ok |
+| fresh09 | 5/5 all_ok | 3/3 timeout same_failure | 0 | same_failure |
+| fresh15 | 5/5 all_ok | 3/3 all_ok | 2 | all_ok |
+
+R85 **不是** recovery closure。cohort C recovery closure 仍要求
+完整 3 轮 consecutive all_ok；fresh01/fresh15 只是 round 2
+banked。fresh09 在 R85 被 timeout same_failure 打断，recovery
+连续 all_ok 计数 reset 为 0。
+
+### R73 -> R85 transition
+
+| rep | round | state | labels | sf_class |
+| --- | --- | --- | --- | --- |
+| fresh01 | R73 | all_ok | all_ok×5 | n/a |
+| fresh01 | R85 | all_ok | all_ok×3 | n/a |
+| fresh09 | R73 | all_ok | all_ok×5 | n/a |
+| fresh09 | R85 | same_failure | probe_io_all_timeout×3, reality_all_timeout×3 | timeout |
+| fresh15 | R73 | all_ok | all_ok×5 | n/a |
+| fresh15 | R85 | all_ok | all_ok×3 | n/a |
+
+### Rollup delta
+
+- total_rounds: 26 → **27**
+- total_executed_runs: 229 → **238**
+- total_all_ok_runs: 93 → **99**
+- latest_same_failure_outbound_count: 7 → **8**（fresh09
+  进入 latest_same_failure）
+- latest_stable_same_failure_outbound_count: 7 → **8**
+- latest_non_all_ok_outbound_count: 7 → **8**
+- fresh01 latest_round: 73 → **85**；latest_health 仍
+  `latest_all_ok`
+- fresh09 latest_round: 73 → **85**；latest_health:
+  `latest_all_ok` → **`latest_same_failure`**
+- fresh15 latest_round: 73 → **85**；latest_health 仍
+  `latest_all_ok`
+
+### 后续叙事
+
+- R85 落 `B.partial_per_rep`，不是 cohort C closure
+- fresh01/fresh15 可在未来授权 round 3 closure attempt
+  里继续；fresh09 需要先做 rotation/retry 策略选择
+- 推荐下一步不是简单 R86 all-three closure，而是对 fresh09
+  做 rotation 决策：从 R73 round-1-only recovery pool
+  替换，或单独重测 fresh09 判断 timeout 是否偶发
+- 不在 R85 内执行 rotation，不追加 run
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.json`
+- `agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`（27 rounds 重新生成）
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R85
+  committed-evidence contract，4 tests）
+- `agents-only/active_context.md`（≤95 行）
+- 本文件 R85 节
+
+### 范围确认
+
+- live runs in R85: 9（fresh01/fresh09/fresh15 only）
+- node contact in R85: 3 reps
+- fresh04 / fresh02/03/05/06/07/08/10/11/12/13/14 /
+  Hys2 / WS / plain-VLESS live: 0
+- sampler / dataplane changes: 0
+- `go_fork_source/*` / `.github/workflows/*` 改动: 0
+- BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
+  R85 evidence 不带 `closure_achieved` 字段，不写 recovery
+  closure achieved

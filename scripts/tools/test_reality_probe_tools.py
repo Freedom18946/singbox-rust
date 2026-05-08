@@ -5108,5 +5108,159 @@ class R84Fresh04CohortAStyleReEvaluationTests(unittest.TestCase):
         self.assertIn("broken closure chain", assessment)
 
 
+class R85CohortCRecoveryRound2Tests(unittest.TestCase):
+    """R85 cohort C recovery-watch round 2 contract.
+
+    Pins: scope (fresh01/fresh09/fresh15 only x3), pre-gate
+    (R81 subset_schema_gate passed with empty violations), classification
+    B.partial_per_rep with sub_branch, recovery status shape, per-rep
+    R73 -> R85 transitions, and no closure_achieved key.
+    """
+
+    def _committed_r85_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round85_cohort_c_round2_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r85 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r85_scope_and_pre_gate(self):
+        _, ev = self._committed_r85_evidence()
+        self.assertEqual(ev["round"], "85")
+        self.assertEqual(
+            ev["kind"],
+            "cohort-c-recovery-watch-round2-live-summary",
+        )
+        scope = ev["live_scope"]
+        self.assertEqual(scope["outbounds"], ["fresh01", "fresh09", "fresh15"])
+        self.assertEqual(scope["runs_per_outbound"], 3)
+        self.assertEqual(scope["planned_total_runs"], 9)
+        self.assertEqual(scope["target"], "example.com:80")
+        self.assertTrue(scope["reality_vless_only"])
+        for forbidden in (
+            "fresh04_executed",
+            "fresh02_03_05_06_07_executed",
+            "fresh08_10_11_12_13_14_executed",
+            "other_fresh_nodes_executed",
+            "hysteria2_executed",
+            "ws_plain_vless_executed",
+            "auto_extended",
+            "rotated_failed_rep",
+            "retried_failed_run",
+        ):
+            self.assertFalse(scope[forbidden], msg=f"{forbidden} must be false")
+
+        pre = ev["pre_gate"]
+        self.assertEqual(pre["head_at_gate"], "2e0433ca")
+        self.assertTrue(pre["main_synced_with_origin_main_at_gate"])
+        self.assertTrue(pre["intake_gate_passed"])
+        self.assertTrue(pre["dry_run_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate_passed"])
+        self.assertEqual(pre["subset_schema_gate"]["violations"], [])
+        self.assertTrue(pre["subset_schema_gate"]["ok"])
+        self.assertEqual(pre["bhv"], "52/56 unchanged")
+        self.assertEqual(
+            pre["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 3,
+            },
+        )
+        self.assertEqual(pre["dry_run"]["selected_count"], 3)
+        self.assertEqual(pre["dry_run"]["runs_per_outbound"], 3)
+        self.assertEqual(pre["dry_run"]["planned_total_runs"], 9)
+        self.assertEqual(
+            pre["dry_run"]["selected"],
+            ["fresh01", "fresh09", "fresh15"],
+        )
+
+    def test_committed_r85_classification_is_partial_and_not_closure(self):
+        _, ev = self._committed_r85_evidence()
+        classification = ev["classification"]
+        self.assertEqual(classification["final"], "B.partial_per_rep")
+        self.assertEqual(classification["primary_branch"], "B")
+        self.assertEqual(classification["sub_branch"], "B.partial_per_rep")
+        self.assertNotIn("closure_achieved", classification)
+        self.assertEqual(
+            ev["summary"]["run_health_counts"],
+            {
+                "run_all_ok": 6,
+                "run_divergence": 0,
+                "run_same_failure": 3,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(
+            ev["summary"]["label_counts"],
+            {
+                "all_ok": 6,
+                "probe_io_all_timeout": 3,
+                "reality_all_timeout": 3,
+            },
+        )
+        self.assertEqual(ev["summary"]["same_failure_run_count"], 3)
+        self.assertFalse(ev["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(ev["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertEqual(ev["taxonomy"]["observed_phase_labels_in_taxonomy"], [])
+        self.assertTrue(ev["bhv_52_56_unchanged_at_round_time"])
+        self.assertFalse(ev["sampler_dataplane_modified"])
+        self.assertFalse(ev["go_fork_source_modified"])
+        self.assertFalse(ev["github_workflows_modified"])
+
+    def test_committed_r85_cohort_c_recovery_status(self):
+        _, ev = self._committed_r85_evidence()
+        status = ev["cohort_c_recovery_status"]
+        self.assertEqual(status["cohort_c_round"], 2)
+        self.assertEqual(status["consecutive_rounds_required"], 3)
+        self.assertFalse(status["all_reps_clean_at_r85"])
+        self.assertTrue(status["rotation_recommended"])
+        self.assertNotIn("closure_achieved", status)
+        per_rep = status["per_rep"]
+        self.assertEqual(set(per_rep), {"fresh01", "fresh09", "fresh15"})
+        self.assertEqual(per_rep["fresh01"]["recovery_consecutive_rounds"], 2)
+        self.assertTrue(per_rep["fresh01"]["round_2_banked"])
+        self.assertEqual(per_rep["fresh01"]["latest_state"], "all_ok")
+        self.assertEqual(per_rep["fresh09"]["recovery_consecutive_rounds"], 0)
+        self.assertFalse(per_rep["fresh09"]["round_2_banked"])
+        self.assertEqual(per_rep["fresh09"]["latest_state"], "same_failure")
+        self.assertEqual(per_rep["fresh09"]["same_failure_class"], "timeout")
+        self.assertEqual(per_rep["fresh15"]["recovery_consecutive_rounds"], 2)
+        self.assertTrue(per_rep["fresh15"]["round_2_banked"])
+
+    def test_committed_r85_per_rep_transitions_and_scope_keys(self):
+        _, ev = self._committed_r85_evidence()
+        self.assertEqual(
+            set(ev["by_outbound"]),
+            {"fresh01", "fresh09", "fresh15"},
+        )
+        self.assertEqual(
+            {run["outbound"] for run in ev["runs"]},
+            {"fresh01", "fresh09", "fresh15"},
+        )
+        transitions = ev["cohort_c_per_rep_transition"]
+        for name in ("fresh01", "fresh09", "fresh15"):
+            rows = transitions[name]
+            self.assertEqual([row["round"] for row in rows], ["73", "85"])
+            self.assertEqual(rows[0]["state"], "all_ok")
+            self.assertEqual(rows[0]["recovery_consecutive_rounds_after_round"], 1)
+        fresh09_r85 = transitions["fresh09"][1]
+        self.assertEqual(fresh09_r85["state"], "same_failure")
+        self.assertEqual(fresh09_r85["same_failure_class"], "timeout")
+        self.assertEqual(
+            fresh09_r85["label_counts"],
+            {"probe_io_all_timeout": 3, "reality_all_timeout": 3},
+        )
+        self.assertEqual(fresh09_r85["recovery_consecutive_rounds_after_round"], 0)
+        for name in ("fresh01", "fresh15"):
+            row = transitions[name][1]
+            self.assertEqual(row["state"], "all_ok")
+            self.assertEqual(row["label_counts"], {"all_ok": 3})
+            self.assertEqual(row["recovery_consecutive_rounds_after_round"], 2)
+
+
 if __name__ == "__main__":
     unittest.main()

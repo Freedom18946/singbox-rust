@@ -1,15 +1,15 @@
 # MT-REAL-02 REALITY Live Evidence Rollup
 
-- rounds: 26
-- executed runs: 229
-- all_ok runs: 93
-- non-all_ok runs: 136
+- rounds: 27
+- executed runs: 238
+- all_ok runs: 99
+- non-all_ok runs: 139
 - has divergence: true
-- latest non-all_ok outbounds: 7
+- latest non-all_ok outbounds: 8
 - latest divergence outbounds: 0
 - latest stable divergence outbounds: 0
 - latest mixed run-health outbounds: 0
-- latest stable same-failure outbounds: 7
+- latest stable same-failure outbounds: 8
 - recovered outbounds: 8
 
 ## Rounds
@@ -42,13 +42,14 @@
 | 82 | 3 | 0 | probe_io_all_timeout=3, reality_all_timeout=3 | timeout=27 | false |
 | 83 | 3 | 0 | app_minimal_diverged=1, probe_io_all_timeout=3, reality_all_timeout=3 | connection_reset=1, timeout=26 | true |
 | 84 | 5 | 0 | probe_io_all_timeout=5, reality_all_timeout=5 | timeout=45 | false |
+| 85 | 9 | 6 | all_ok=6, probe_io_all_timeout=3, reality_all_timeout=3 | ok=54, timeout=27 | false |
 
 ## Aggregates
 
-- labels: {"all_ok": 93, "app_minimal_diverged": 9, "app_pre_post_diverged": 9, "bridge_io_diverged": 3, "minimal_transport_diverged": 5, "probe_io_all_connection_reset": 44, "probe_io_all_other": 19, "probe_io_all_post_dial_eof": 3, "probe_io_all_reality_dial_eof": 12, "probe_io_all_timeout": 46, "reality_all_connection_reset": 45, "reality_all_other": 18, "reality_all_reality_dial_eof": 13, "reality_all_timeout": 43}
-- classes: {"connection_reset": 416, "ok": 879, "other": 172, "post_dial_eof": 6, "reality_dial_eof": 121, "timeout": 440}
-- latest health: {"latest_all_ok": 29, "latest_same_failure": 7}
-- latest run health: {"run_all_ok": 83, "run_same_failure": 17}
+- labels: {"all_ok": 99, "app_minimal_diverged": 9, "app_pre_post_diverged": 9, "bridge_io_diverged": 3, "minimal_transport_diverged": 5, "probe_io_all_connection_reset": 44, "probe_io_all_other": 19, "probe_io_all_post_dial_eof": 3, "probe_io_all_reality_dial_eof": 12, "probe_io_all_timeout": 49, "reality_all_connection_reset": 45, "reality_all_other": 18, "reality_all_reality_dial_eof": 13, "reality_all_timeout": 46}
+- classes: {"connection_reset": 416, "ok": 933, "other": 172, "post_dial_eof": 6, "reality_dial_eof": 121, "timeout": 467}
+- latest health: {"latest_all_ok": 28, "latest_same_failure": 8}
+- latest run health: {"run_all_ok": 74, "run_same_failure": 20}
 
 ## Latest divergence phase composition
 

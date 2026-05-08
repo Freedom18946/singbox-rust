@@ -35,34 +35,32 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **201 tests PASS** (R84 added 4 committed-evidence contract).
+  **205 tests PASS** (R85 added 4 committed-evidence contract).
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R84: **26 rounds, 229 runs, 93 all_ok**.
+- live_rollup.json/md after R85: **27 rounds, 238 runs, 99 all_ok**.
 
 ## Next Steps
 
-- MT-REAL-02 R84 fresh04 cohort-A-style re-evaluation DONE
-  (2026-05-08). Authorized fresh04 only ×5. Pre-gate passed.
-  Live: 5/5 same_failure (uniform timeout).
-  **A.same_failure_only**. R83 app_minimal_diverged did NOT
-  reproduce in 5 runs; cohort-A-style stable phase divergence
-  carrier hypothesis FALSIFIED. closure_status.evaluated=
-  **false** (R84 not a closure attempt; broken chain at R83
-  NOT patched). Future fresh04 closure attempt = R84 as round
-  1 + two more authorized rounds. latest_health:
-  latest_divergence -> latest_same_failure. class_history=
-  [other, timeout, null, timeout, null, timeout]. Rollup:
-  latest_divergence_outbounds []; latest_same_failure 6->7.
-  BHV 52/56 unchanged.
-- MT-REAL-02 R83 fresh04 cohort-B closure attempt DONE
-  (2026-05-08). Mixed (1 div + 2 same-failure); closure NOT
-  achieved; chain broken.
-- MT-REAL-02 R82 fresh04 same-failure live recheck DONE
-  (2026-05-08). 3/3 same_failure(timeout); A.1; was timeout-
-  class round 2 of 3.
-- MT-REAL-02 R81 subset-schema pre-gate hardening DONE
-  (2026-05-08). No-live tooling; closes R80 gap.
+- MT-REAL-02 R85 cohort C recovery-watch round 2 DONE
+  (2026-05-08). Authorized fresh01/fresh09/fresh15 ×3.
+  Pre-gate passed. Live: 9/9 completed, matrix_status=0.
+  **B.partial_per_rep**: fresh01=3/3 all_ok, consecutive=2;
+  fresh09=3/3 same_failure(timeout), consecutive reset=0;
+  fresh15=3/3 all_ok, consecutive=2. No phase labels. R85
+  is not recovery closure; next decision is fresh09 rotation
+  or explicit fresh09 recheck. BHV 52/56 unchanged.
+- MT-REAL-02 R84 fresh04 cohort-A-style re-evaluation DONE.
+  5/5 same_failure(timeout); **A.same_failure_only**. R83
+  app_minimal_diverged did not reproduce; closure_status.
+  evaluated=false; future fresh04 closure would need a fresh
+  R84+two-round sequence.
+- MT-REAL-02 R83 fresh04 cohort-B closure attempt DONE.
+  Mixed (1 div + 2 same-failure); closure NOT achieved.
+- MT-REAL-02 R82 fresh04 same-failure live recheck DONE.
+  3/3 same_failure(timeout); A.1; timeout round 2 of 3.
+- MT-REAL-02 R81 subset-schema pre-gate hardening DONE.
+  No-live tooling; closes R80 gap.
 - MT-REAL-02 R80 fresh04 recheck DONE; matrix_error.
 - MT-REAL-02 R79 fresh05 divergence-carrier recheck DONE.
 - MT-REAL-02 R74/R75 evidence accounting DONE (tests +11).
