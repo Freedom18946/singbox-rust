@@ -1,8 +1,8 @@
 {
-  "total_rounds": 24,
-  "total_executed_runs": 221,
+  "total_rounds": 25,
+  "total_executed_runs": 224,
   "total_all_ok_runs": 93,
-  "total_non_all_ok_runs": 128,
+  "total_non_all_ok_runs": 131,
   "has_any_divergence": true,
   "latest_non_all_ok_outbounds": [
     "HK-A-BGP-1.0",
@@ -14,35 +14,45 @@
     "fresh04"
   ],
   "latest_non_all_ok_outbound_count": 7,
-  "latest_divergence_outbounds": [],
-  "latest_divergence_outbound_count": 0,
+  "latest_divergence_outbounds": [
+    "fresh04"
+  ],
+  "latest_divergence_outbound_count": 1,
   "latest_stable_divergence_outbounds": [],
   "latest_stable_divergence_outbound_count": 0,
-  "latest_mixed_run_health_outbounds": [],
-  "latest_mixed_run_health_outbound_count": 0,
+  "latest_mixed_run_health_outbounds": [
+    "fresh04"
+  ],
+  "latest_mixed_run_health_outbound_count": 1,
   "latest_same_failure_outbounds": [
     "HK-A-BGP-1.0",
     "HK-A-BGP-2.0",
     "HK-A-BGP-2.5",
     "JP-A-BGP-0.3",
     "UK-A-BGP-0.5",
-    "US-A-BGP-0.5",
-    "fresh04"
+    "US-A-BGP-0.5"
   ],
-  "latest_same_failure_outbound_count": 7,
+  "latest_same_failure_outbound_count": 6,
   "latest_stable_same_failure_outbounds": [
     "HK-A-BGP-1.0",
     "HK-A-BGP-2.0",
     "HK-A-BGP-2.5",
     "JP-A-BGP-0.3",
     "UK-A-BGP-0.5",
-    "US-A-BGP-0.5",
+    "US-A-BGP-0.5"
+  ],
+  "latest_stable_same_failure_outbound_count": 6,
+  "latest_divergence_phase_summary": {
+    "app_minimal_diverged": [
+      "fresh04"
+    ]
+  },
+  "latest_divergence_phase_total_counts": {
+    "app_minimal_diverged": 1
+  },
+  "latest_phase_dominant_outbounds": [
     "fresh04"
   ],
-  "latest_stable_same_failure_outbound_count": 7,
-  "latest_divergence_phase_summary": {},
-  "latest_divergence_phase_total_counts": {},
-  "latest_phase_dominant_outbounds": [],
   "latest_phase_no_dominance_outbounds": [],
   "latest_bi_modal_outbounds": [],
   "latest_phase_shifting_outbounds": [],
@@ -59,19 +69,21 @@
   "recovered_outbound_count": 8,
   "latest_health_counts": {
     "latest_all_ok": 29,
-    "latest_same_failure": 7
+    "latest_divergence": 1,
+    "latest_same_failure": 6
   },
   "latest_run_health_counts": {
     "run_all_ok": 83,
-    "run_same_failure": 15
+    "run_divergence": 1,
+    "run_same_failure": 14
   },
   "status_counts": {
-    "completed": 218,
+    "completed": 221,
     "matrix_error": 3
   },
   "label_counts": {
     "all_ok": 93,
-    "app_minimal_diverged": 8,
+    "app_minimal_diverged": 9,
     "app_pre_post_diverged": 9,
     "bridge_io_diverged": 3,
     "minimal_transport_diverged": 5,
@@ -79,19 +91,19 @@
     "probe_io_all_other": 19,
     "probe_io_all_post_dial_eof": 3,
     "probe_io_all_reality_dial_eof": 12,
-    "probe_io_all_timeout": 38,
+    "probe_io_all_timeout": 41,
     "reality_all_connection_reset": 45,
     "reality_all_other": 18,
     "reality_all_reality_dial_eof": 13,
-    "reality_all_timeout": 35
+    "reality_all_timeout": 38
   },
   "class_counts": {
-    "connection_reset": 415,
+    "connection_reset": 416,
     "ok": 879,
     "other": 172,
     "post_dial_eof": 6,
     "reality_dial_eof": 121,
-    "timeout": 369
+    "timeout": 395
   },
   "rounds": [
     {
@@ -717,6 +729,32 @@
       },
       "class_counts": {
         "timeout": 27
+      }
+    },
+    {
+      "round": "83",
+      "date": "2026-05-08",
+      "path": "agents-only/mt_real_02_evidence/round83_fresh04_recheck_summary.json",
+      "description": "R83 fresh04 timeout-class round 3 of 3 longer-repeat (cohort-B single-outbound closure attempt). Outcome: classification B; closure NOT achieved.",
+      "total": 3,
+      "executed_runs": 3,
+      "all_ok_runs": 0,
+      "has_divergence": true,
+      "uniform_failure_labels": {
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "app_minimal_diverged": 1,
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "class_counts": {
+        "connection_reset": 1,
+        "timeout": 26
       }
     }
   ],
@@ -5443,27 +5481,33 @@
         "73",
         "78",
         "80",
-        "82"
+        "82",
+        "83"
       ],
       "status_counts": {
-        "completed": 11,
+        "completed": 14,
         "matrix_error": 3
       },
       "label_counts": {
+        "app_minimal_diverged": 1,
         "probe_io_all_other": 5,
-        "probe_io_all_timeout": 6,
+        "probe_io_all_timeout": 9,
         "reality_all_other": 5,
-        "reality_all_timeout": 6
+        "reality_all_timeout": 9
       },
       "class_counts": {
+        "connection_reset": 1,
         "other": 45,
-        "timeout": 54
+        "timeout": 80
       },
       "run_health_counts": {
-        "run_same_failure": 11,
+        "run_divergence": 1,
+        "run_same_failure": 13,
         "run_unknown": 3
       },
-      "divergence_phase_counts": {},
+      "divergence_phase_counts": {
+        "app_minimal_diverged": 1
+      },
       "history": [
         {
           "round": "73",
@@ -5726,27 +5770,117 @@
               }
             }
           ]
+        },
+        {
+          "round": "83",
+          "path": "agents-only/mt_real_02_evidence/round83_fresh04_recheck_summary.json",
+          "status_counts": {
+            "completed": 3
+          },
+          "label_counts": {
+            "app_minimal_diverged": 1,
+            "probe_io_all_timeout": 3,
+            "reality_all_timeout": 3
+          },
+          "class_counts": {
+            "connection_reset": 1,
+            "timeout": 26
+          },
+          "run_health_counts": {
+            "run_divergence": 1,
+            "run_same_failure": 2
+          },
+          "divergence_phase_counts": {
+            "app_minimal_diverged": 1
+          },
+          "round_run_count": 3,
+          "divergence_run_count": 1,
+          "divergence_run_ratio": 0.3333,
+          "is_bi_modal": false,
+          "divergence_phase_dominance": {
+            "dominant_phase": "app_minimal_diverged",
+            "dominant_count": 1,
+            "dominant_ratio": 1.0,
+            "is_dominant": true,
+            "is_no_dominance": false,
+            "is_bi_modal": false
+          },
+          "runs": [
+            {
+              "ordinal": 1,
+              "run_index": 1,
+              "status": "completed",
+              "labels": [
+                "app_minimal_diverged",
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_divergence",
+              "class_counts": {
+                "connection_reset": 1,
+                "timeout": 8
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 2,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "timeout": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 3,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "timeout": 9
+              }
+            }
+          ]
         }
       ],
-      "latest_round": "82",
+      "latest_round": "83",
       "latest_status_counts": {
         "completed": 3
       },
       "latest_label_counts": {
+        "app_minimal_diverged": 1,
         "probe_io_all_timeout": 3,
         "reality_all_timeout": 3
       },
       "latest_class_counts": {
-        "timeout": 27
+        "connection_reset": 1,
+        "timeout": 26
       },
       "latest_run_health_counts": {
-        "run_same_failure": 3
+        "run_divergence": 1,
+        "run_same_failure": 2
       },
-      "latest_divergence_phase_counts": {},
+      "latest_divergence_phase_counts": {
+        "app_minimal_diverged": 1
+      },
       "latest_round_run_count": 3,
-      "latest_divergence_run_count": 0,
-      "latest_divergence_run_ratio": 0.0,
-      "latest_divergence_phase_dominance": null,
+      "latest_divergence_run_count": 1,
+      "latest_divergence_run_ratio": 0.3333,
+      "latest_divergence_phase_dominance": {
+        "dominant_phase": "app_minimal_diverged",
+        "dominant_count": 1,
+        "dominant_ratio": 1.0,
+        "is_dominant": true,
+        "is_no_dominance": false,
+        "is_bi_modal": false
+      },
       "is_bi_modal": false,
       "dominant_phase_history": [
         {
@@ -5772,11 +5906,17 @@
           "dominant_phase": null,
           "dominant_count": 0,
           "divergence_run_count": 0
+        },
+        {
+          "round": "83",
+          "dominant_phase": "app_minimal_diverged",
+          "dominant_count": 1,
+          "divergence_run_count": 1
         }
       ],
       "is_phase_shifting": false,
       "latest_has_non_all_ok": true,
-      "latest_health": "latest_same_failure",
+      "latest_health": "latest_divergence",
       "historical_has_non_all_ok": true
     },
     "fresh05": {

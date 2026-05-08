@@ -1,0 +1,388 @@
+{
+  "round": "83",
+  "date": "2026-05-08",
+  "description": "R83 fresh04 timeout-class round 3 of 3 longer-repeat (cohort-B single-outbound closure attempt). Outcome: classification B; closure NOT achieved.",
+  "source_summary": "/tmp/r83-fresh04-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r83_fresh04_subset_clean.json --outbound fresh04 --target example.com:80 --runs 3 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r83_fresh04_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 3,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 3,
+    "executed_runs": 3,
+    "status_counts": {
+      "completed": 3
+    },
+    "label_counts": {
+      "app_minimal_diverged": 1,
+      "probe_io_all_timeout": 3,
+      "reality_all_timeout": 3
+    },
+    "class_counts": {
+      "connection_reset": 1,
+      "timeout": 26
+    },
+    "divergence_run_count": 1,
+    "divergence_phase_label_count": 1,
+    "distinct_divergence_phase_label_count": 1,
+    "divergence_phase_label_breakdown": {
+      "app_minimal_diverged": 1
+    },
+    "same_failure_run_count": 2,
+    "accounting_note": "divergence_run_count counts runs (a run is a divergence run iff it carries any of the four phase labels app_pre_post_diverged, app_minimal_diverged, minimal_transport_diverged, bridge_io_diverged); divergence_phase_label_count counts phase-label occurrences across those divergence runs (a single run can carry multiple phase labels). label_counts above is per-occurrence, matching divergence_phase_label_breakdown.",
+    "run_health_counts": {
+      "run_all_ok": 0,
+      "run_divergence": 1,
+      "run_same_failure": 2,
+      "run_unknown": 0
+    },
+    "run_all_ok": 0,
+    "run_divergence": 1,
+    "run_same_failure": 2,
+    "run_unknown": 0
+  },
+  "matrix_health": {
+    "has_divergence": true,
+    "divergence_labels": {
+      "app_minimal_diverged": 1
+    },
+    "all_ok_runs": 0,
+    "uniform_failure_labels": {
+      "probe_io_all_timeout": 3,
+      "reality_all_timeout": 3
+    }
+  },
+  "by_outbound": {
+    "fresh04": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "app_minimal_diverged": 1,
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "class_counts": {
+        "connection_reset": 1,
+        "timeout": 26
+      },
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 1,
+        "run_same_failure": 2,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {
+        "app_minimal_diverged": 1
+      },
+      "divergence_phase_label_count": 1
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh04",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "app_minimal_diverged",
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 8,
+        "connection_reset": 1
+      },
+      "run_health": "run_divergence"
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    }
+  ],
+  "phase_probe_supporting_evidence": {
+    "note": "Phase probe ran in all 3 attempts. The matrix-level result is authoritative; phase data is supporting only.",
+    "per_run": [
+      {
+        "run_index": 1,
+        "direct_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "transport_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_dial": {
+          "ok": false,
+          "class": "connection_reset"
+        },
+        "vless_probe_io": {
+          "ok": false,
+          "class": "timeout"
+        }
+      },
+      {
+        "run_index": 2,
+        "direct_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "transport_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_dial": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_probe_io": {
+          "ok": false,
+          "class": "timeout"
+        }
+      },
+      {
+        "run_index": 3,
+        "direct_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "transport_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_dial": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_probe_io": {
+          "ok": false,
+          "class": "timeout"
+        }
+      }
+    ]
+  },
+  "interpretation": [
+    "Fresh04 only: 3 matrix runs total; no fresh05, no cohort C, no other fresh nodes, no Hysteria2, no WS/plain-VLESS.",
+    "All 3 matrix runs returned status=completed. Run 1 carried the known-taxonomy divergence label app_minimal_diverged (minimal.vless_dial=connection_reset while every other class is timeout); runs 2 and 3 produced the uniform-failure pair probe_io_all_timeout + reality_all_timeout.",
+    "matrix-level run_health: run_divergence=1 (run 1), run_same_failure=2 (runs 2 and 3), run_all_ok=0, run_unknown=0.",
+    "Classification B per prompt v2 \u2014 mixed with 1 known-taxonomy divergence. cohort-B single-outbound closure for fresh04 is NOT achieved; the consecutive timeout-class chain stops at round 2 (R78 round 1, R82 round 2). class_history='[other, timeout, null, timeout, null]' where the trailing null is R83 mixed (no single same_failure_class).",
+    "fresh04 transitions from a stable cohort-B same_failure candidate into a cohort-A-style re-evaluation candidate. The divergence label app_minimal_diverged is in the four-element taxonomy, so no new structural divergence; no mid-flight stop was required.",
+    "Pre-gate (intake + dry-run + R81 subset_schema_gate with empty violations) all passed; the structural failure path that R80 hit is not the cause of R83's mixed outcome.",
+    "BHV 52/56 unchanged. Not sampler/dataplane regression. Not dual-kernel parity completion. Closure scope is strictly fresh04 single-outbound + timeout class; this finding does not extend to cohort B as a whole and does not affect the 6 historical stable same-failure outbounds (HK/JP/UK/US-A-BGP) that are already closed."
+  ],
+  "kind": "fresh04-cohort-b-closure-attempt-live-summary",
+  "live_executed": true,
+  "node_contact_executed": true,
+  "sampler_dataplane_modified": false,
+  "go_fork_source_modified": false,
+  "github_workflows_modified": false,
+  "bhv_52_56_unchanged_at_round_time": true,
+  "live_scope": {
+    "outbound": "fresh04",
+    "outbounds": [
+      "fresh04"
+    ],
+    "runs_per_outbound": 3,
+    "planned_total_runs": 3,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "fresh05_executed": false,
+    "cohort_c_executed": false,
+    "other_fresh_nodes_executed": false,
+    "hysteria2_executed": false,
+    "ws_plain_vless_executed": false,
+    "auto_extended": false
+  },
+  "pre_gate": {
+    "head_at_gate": "8b0ab0c2",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 1
+    },
+    "expected_intake_counts": {
+      "covered_existing": 1,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 1,
+      "runs_per_outbound": 3,
+      "planned_total_runs": 3,
+      "target": "example.com:80",
+      "dry_run": true,
+      "selected": [
+        "fresh04"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "subset_schema_gate_passed": true,
+    "subset_schema_gate": {
+      "ok": true,
+      "violations": [],
+      "stats": {
+        "outbounds_checked": 1,
+        "outbound_level_violations": 0,
+        "nested_violations": 0
+      }
+    },
+    "bhv": "52/56 unchanged"
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false,
+    "observed_phase_labels_in_taxonomy": [
+      "app_minimal_diverged"
+    ]
+  },
+  "fresh04_r73_r78_r80_r82_r83_comparison": {
+    "r73": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 5,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "probe_io_all_other": 5,
+        "reality_all_other": 5
+      },
+      "same_failure_class": "other",
+      "divergence_phase_label_breakdown": {},
+      "state": "same_failure"
+    },
+    "r78": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 3,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "same_failure_class": "timeout",
+      "divergence_phase_label_breakdown": {},
+      "state": "same_failure"
+    },
+    "r80": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 3
+      },
+      "label_counts": {},
+      "same_failure_class": null,
+      "divergence_phase_label_breakdown": {},
+      "state": "matrix_error",
+      "phase_probe_class_consistency": "phase probe 3/3 runs timeout class; consistent with R78 same-failure(timeout) at network level, but not matrix-level confirmation"
+    },
+    "r82": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 3,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "same_failure_class": "timeout",
+      "divergence_phase_label_breakdown": {},
+      "state": "same_failure"
+    },
+    "r83": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 1,
+        "run_same_failure": 2,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "app_minimal_diverged": 1,
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "same_failure_class": null,
+      "divergence_phase_label_breakdown": {
+        "app_minimal_diverged": 1
+      },
+      "state": "mixed"
+    },
+    "class_history": [
+      "other",
+      "timeout",
+      null,
+      "timeout",
+      null
+    ],
+    "assessment": "R83 produced 1 known-taxonomy divergence (app_minimal_diverged) + 2 same_failure (timeout). cohort-B single-outbound closure for fresh04 is NOT achieved at R83 because the consecutive timeout-class chain stops at round 2 (R78, R82). class_history is ['other', 'timeout', null, 'timeout', null] where the trailing null is R83 mixed (no single same_failure_class). fresh04 transitions from a stable cohort-B same_failure candidate into a cohort-A-style re-evaluation candidate. No new structural divergence; the divergence label is in the four-element taxonomy."
+  },
+  "closure_status": {
+    "timeout_class_consecutive_rounds": 2,
+    "timeout_class_consecutive_round_ids": [
+      "78",
+      "82"
+    ],
+    "cohort_b_single_outbound_closure_achieved": false,
+    "scope": "fresh04 only",
+    "chain_broken_at_round": "83",
+    "chain_broken_reason": "R83 produced 1 run_divergence (app_minimal_diverged) + 2 run_same_failure (timeout); not 3/3 same_failure(timeout). The timeout-class longer-repeat chain therefore stops at round 2 (R78, R82) and does not extend to round 3."
+  },
+  "classification": {
+    "final": "B",
+    "label": "mixed: 1 known-taxonomy divergence (app_minimal_diverged) + 2 same_failure (timeout); cohort-B single-outbound closure NOT achieved for fresh04",
+    "rationale": "Run 1 carried the known-taxonomy divergence label app_minimal_diverged (asymmetry between app and minimal probes at the vless_dial layer; minimal.vless_dial=connection_reset while every other class is timeout). Runs 2 and 3 produced the uniform-failure pair probe_io_all_timeout + reality_all_timeout (run_same_failure with class=timeout). The mix of 1 run_divergence + 2 run_same_failure puts R83 in the B branch per prompt v2: cohort-B single-outbound closure for fresh04 is NOT achieved because the consecutive timeout-class chain breaks here at round 2 (R78 round 1, R82 round 2, R83 mixed). fresh04 transitions from a stable cohort-B same_failure candidate into a cohort-A-style re-evaluation candidate. No new structural divergence (the divergence label is in the four-element taxonomy).",
+    "next_handling": "Do NOT auto-extend R83. fresh04's saga has shifted from stable cohort-B same_failure into a cohort-A-style re-evaluation candidate. Future authorized rounds against fresh04 should treat it as a divergence-carrier candidate (R76 cohort A semantics), not a same_failure carrier. cohort C round-2 (fresh01/09/15 \u00d73) and the 6 R73 unselected recovery nodes are independent lines and remain unaffected.",
+    "primary_branch": "B",
+    "sub_branch": null,
+    "closure_achieved": false,
+    "closure_scope": "fresh04 single-outbound + timeout class"
+  },
+  "redaction_notes": [
+    "Evidence uses only neutral outbound key fresh04.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed.",
+    "subset_schema_gate.violations is committed only because it is the empty array; the gate's structural redaction (violations carry only path/field/reason) is preserved."
+  ]
+}

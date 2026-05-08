@@ -7832,3 +7832,127 @@ same-failure(timeout) 一致；matrix-level 结果是权威的。
 - sampler / dataplane changes: 0
 - `go_fork_source/*` / `.github/workflows/*` 改动: 0
 - BHV 52/56 不变；Rust/live evidence，不写成 parity completion
+
+## R83 — fresh04 timeout-class round 3 of 3 longer-repeat (cohort-B closure attempt; closure NOT achieved)
+
+### 起因
+
+R82 把 fresh04 timeout-class same-failure 钉到 round 2 of 3，R83 是
+顺成的 cohort-B 单 outbound closure attempt：跑同尺寸 ×3，看
+timeout-class 链条是否能延到 round 3。
+
+### 范围
+
+- live REALITY/VLESS、fresh04 only ×3 = 3 runs、target example.com:80
+- HEAD at gate: 8b0ab0c2；main 与 origin/main 同步 ✓
+- 不动 sampler/dataplane / `go_fork_source/*` / `.github/workflows/*`
+  / golden_spec
+- BHV 52/56 不变
+- 不允许 auto-extend > 3；不允许本轮 retry "修补" 失败 run
+
+### Subset 清洗 + Pre-gate
+
+- 与 R82 同 recipe：`__id_in_gui` 等 `__`-prefixed 字段任意深度剥除；
+  outbound-level 字段全部落在 reality/vless allow-list
+- intake_counts: `covered_existing=1, fresh_ready=0, duplicate=0,
+  not_ready=0` ✓
+- dry-run: `selected_count=1, runs_per_outbound=3, planned_total_runs=3,
+  target=example.com:80, subset_schema_gate_passed=true,
+  subset_schema_gate.violations=[]` ✓
+- BHV: 52/56 不变
+
+### 实测分类: B（mixed）
+
+- 3/3 status=`completed`
+- 1 run_divergence (run 1: `app_minimal_diverged`) + 2 run_same_failure
+  (runs 2/3: timeout)
+- label_counts: `app_minimal_diverged=1, probe_io_all_timeout=3,
+  reality_all_timeout=3`
+- class_counts: `connection_reset=1, timeout=26`
+- divergence_phase_label_count=1，divergence_phase_label_breakdown
+  `{app_minimal_diverged: 1}`
+- run 1 根因：`minimal.vless_dial=connection_reset` 而其余 8 类全部
+  timeout，app/minimal 在 vless_dial 层不对称 → 触发
+  `app_minimal_diverged`
+- runs 2/3 没有复现这种不对称
+- 标签全部在四元 taxonomy 之内：no new structural divergence
+
+### Closure verdict（关键）
+
+- timeout-class consecutive rounds: **2**（R78 round 1 + R82 round 2）
+- timeout-class consecutive round ids: `[78, 82]`
+- chain broken at: **R83**
+- chain broken reason: R83 = 1 run_divergence + 2 run_same_failure(timeout)
+  ≠ 3/3 same_failure(timeout)；timeout-class longer-repeat 链停在
+  round 2，不延到 round 3
+- **`cohort_b_single_outbound_closure_achieved=false`**
+- closure scope: fresh04 single-outbound + timeout class（不扩张到
+  cohort B 整组；不影响 6 个历史 stable same-failure 的既有闭环）
+
+### fresh04 R73 -> R78 -> R80 -> R82 -> R83
+
+| round | run_health | labels | state | same_failure_class |
+| --- | --- | --- | --- | --- |
+| R73 | ok=0 div=0 sf=5 | probe_io_all_other=5, reality_all_other=5 | same_failure | other |
+| R78 | ok=0 div=0 sf=3 | probe_io_all_timeout=3, reality_all_timeout=3 | same_failure | timeout |
+| R80 | ok=0 div=0 sf=0 unk=3 | (matrix_error: no labels) | matrix_error | n/a |
+| R82 | ok=0 div=0 sf=3 | probe_io_all_timeout=3, reality_all_timeout=3 | same_failure | timeout |
+| R83 | ok=0 **div=1** sf=2 | app_minimal_diverged=1, probe_io_all_timeout=3, reality_all_timeout=3 | **mixed** | n/a (mixed) |
+
+`class_history`: `[other, timeout, null, timeout, null]`
+
+### 后续叙事
+
+- fresh04 saga 从稳定 cohort-B same_failure 候选翻成
+  cohort-A-style re-evaluation 候选。后续若再次授权 fresh04，按
+  divergence-carrier 语义处理（R76 cohort A），不当作 same_failure
+  carrier。
+- closure 不成立；不要在任何 evidence/文档里把 R83 写成 cohort-B
+  闭环完成。
+
+### Rollup delta
+
+- total_rounds: 24 → **25**
+- total_executed_runs: 221 → **224**
+- total_all_ok_runs: 93 → **93**（R83 无 all_ok）
+- latest_same_failure_outbound_count: 7 → **6**（fresh04 离开
+  same_failure 列表，进 divergence/mixed）
+- latest_stable_same_failure_outbound_count: 7 → **6**
+- latest_divergence_outbound_count: 0 → **1**
+  （`latest_divergence_outbounds=['fresh04']`）
+- latest_mixed_run_health_outbound_count: 0 → **1**
+  （`latest_mixed_run_health_outbounds=['fresh04']`）
+- recovered_outbound_count: 8 → **8**
+- fresh04 latest_round: 82 → **83**
+- fresh04 latest_health: `latest_same_failure` → **`latest_divergence`**
+- fresh04 latest_run_health_counts:
+  `{run_same_failure:3}` → `{run_divergence:1, run_same_failure:2}`
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round83_fresh04_recheck_summary.json`
+- `agents-only/mt_real_02_evidence/round83_fresh04_recheck_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`（25 rounds 重新生成）
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R83 committed-evidence
+  contract）
+- `agents-only/active_context.md`（≤95 行；显式记 closure NOT achieved）
+- 本文件 R83 节
+
+### Follow-up
+
+- 不再追加 fresh04 round（B 分支禁扩展）。
+- 后续若用户授权 fresh04 再起，应按 divergence-carrier 语义另起一轮
+  独立 cohort A-style 评估，不延续 cohort-B 闭环叙事。
+- cohort C round-2（fresh01/09/15 ×3）与 6 节点 round-2 仍是独立线，
+  不受 R83 影响。
+
+### 范围确认
+
+- live runs in R83: 3（fresh04 only）
+- node contact in R83: 1（fresh04）
+- fresh05 / cohort C / 其他 fresh / Hys2 / WS / plain-VLESS live: 0
+- sampler / dataplane changes: 0
+- `go_fork_source/*` / `.github/workflows/*` 改动: 0
+- BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
+  closure 不成立，scope 限 fresh04 单 outbound + timeout class

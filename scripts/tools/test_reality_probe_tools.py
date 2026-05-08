@@ -4727,5 +4727,194 @@ class R82Fresh04RecheckTests(unittest.TestCase):
         self.assertIn("R83", assessment)
 
 
+class R83Fresh04ClosureAttemptTests(unittest.TestCase):
+    """R83 fresh04 cohort-B single-outbound closure attempt.
+
+    Pins: scope (fresh04 only x3), pre-gate (R81 subset_schema_gate
+    passed with empty violations), classification B (mixed: 1 known-
+    taxonomy divergence + 2 same-failure), closure NOT achieved
+    (chain broken at R83), closure_status canonical key + round_ids
+    consistency, and the 5-round R73 -> R78 -> R80 -> R82 -> R83
+    transition with class_history.
+    """
+
+    def _committed_r83_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round83_fresh04_recheck_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r83 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r83_scope_and_pre_gate(self):
+        _, ev = self._committed_r83_evidence()
+        self.assertEqual(ev["round"], "83")
+        self.assertEqual(
+            ev["kind"],
+            "fresh04-cohort-b-closure-attempt-live-summary",
+        )
+        scope = ev["live_scope"]
+        self.assertEqual(scope["outbound"], "fresh04")
+        self.assertEqual(scope["outbounds"], ["fresh04"])
+        self.assertEqual(scope["runs_per_outbound"], 3)
+        self.assertEqual(scope["planned_total_runs"], 3)
+        self.assertTrue(scope["reality_vless_only"])
+        for forbidden in (
+            "fresh05_executed",
+            "cohort_c_executed",
+            "other_fresh_nodes_executed",
+            "hysteria2_executed",
+            "ws_plain_vless_executed",
+            "auto_extended",
+        ):
+            self.assertFalse(
+                scope[forbidden], msg=f"{forbidden} must be false in R83"
+            )
+        # R81 gate gate is the structural pre-condition for R83
+        pre = ev["pre_gate"]
+        self.assertEqual(pre["head_at_gate"], "8b0ab0c2")
+        self.assertTrue(pre["main_synced_with_origin_main_at_gate"])
+        self.assertTrue(pre["intake_gate_passed"])
+        self.assertTrue(pre["dry_run_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate_passed"])
+        self.assertEqual(pre["subset_schema_gate"]["violations"], [])
+        self.assertTrue(pre["subset_schema_gate"]["ok"])
+        self.assertEqual(pre["bhv"], "52/56 unchanged")
+        self.assertEqual(
+            pre["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 1,
+            },
+        )
+
+    def test_committed_r83_classification_is_b_and_closure_not_achieved(self):
+        _, ev = self._committed_r83_evidence()
+        classification = ev["classification"]
+        # Per prompt v2: B branch = mixed (1+ known-taxonomy divergence
+        # plus same-failure runs); closure_achieved must be False.
+        self.assertEqual(classification["final"], "B")
+        self.assertEqual(classification["primary_branch"], "B")
+        self.assertIsNone(classification["sub_branch"])
+        self.assertFalse(
+            classification["closure_achieved"],
+            msg="A.1 is the only branch where closure may be achieved",
+        )
+        self.assertEqual(
+            classification["closure_scope"],
+            "fresh04 single-outbound + timeout class",
+        )
+        # Summary-level run_health: 1 div + 2 same-failure
+        rhc = ev["summary"]["run_health_counts"]
+        self.assertEqual(
+            rhc,
+            {
+                "run_all_ok": 0,
+                "run_divergence": 1,
+                "run_same_failure": 2,
+                "run_unknown": 0,
+            },
+        )
+        # Label uniformity: 2 same-failure runs carry the timeout pair;
+        # the divergence label is the only known-taxonomy entry.
+        self.assertEqual(
+            ev["summary"]["label_counts"],
+            {
+                "app_minimal_diverged": 1,
+                "probe_io_all_timeout": 3,
+                "reality_all_timeout": 3,
+            },
+        )
+        # Out-of-scope guards
+        self.assertTrue(ev["bhv_52_56_unchanged_at_round_time"])
+        self.assertFalse(ev["sampler_dataplane_modified"])
+        self.assertFalse(ev["go_fork_source_modified"])
+        self.assertFalse(ev["github_workflows_modified"])
+        # Taxonomy: divergence label must be inside the four-element set,
+        # so new_structural_divergence must be False.
+        self.assertFalse(ev["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(ev["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertIn(
+            "app_minimal_diverged",
+            ev["taxonomy"]["allowed_phase_labels"],
+        )
+
+    def test_committed_r83_closure_status_canonical_and_round_ids_consistent(
+        self,
+    ):
+        _, ev = self._committed_r83_evidence()
+        cs = ev["closure_status"]
+        # Canonical key per planner refinement #1
+        self.assertIn("cohort_b_single_outbound_closure_achieved", cs)
+        self.assertFalse(cs["cohort_b_single_outbound_closure_achieved"])
+        # round_ids must be the contributing rounds to the consecutive
+        # count; their length must equal the consecutive count for
+        # auditability.
+        self.assertEqual(cs["timeout_class_consecutive_rounds"], 2)
+        self.assertEqual(
+            cs["timeout_class_consecutive_round_ids"], ["78", "82"]
+        )
+        self.assertEqual(
+            len(cs["timeout_class_consecutive_round_ids"]),
+            cs["timeout_class_consecutive_rounds"],
+        )
+        # Closure scope must remain narrow
+        self.assertEqual(cs["scope"], "fresh04 only")
+        # Chain must break at R83 with a redacted, structural reason
+        self.assertEqual(cs["chain_broken_at_round"], "83")
+        self.assertIn("run_divergence", cs["chain_broken_reason"])
+        # Cross-check: classification.closure_achieved and
+        # closure_status.cohort_b_single_outbound_closure_achieved must
+        # agree (no drift).
+        self.assertEqual(
+            ev["classification"]["closure_achieved"],
+            cs["cohort_b_single_outbound_closure_achieved"],
+        )
+
+    def test_committed_r83_fresh04_5_round_transition_and_class_history(self):
+        _, ev = self._committed_r83_evidence()
+        cmp = ev["fresh04_r73_r78_r80_r82_r83_comparison"]
+        # All five rounds present with the expected health/label shape
+        self.assertEqual(cmp["r73"]["same_failure_class"], "other")
+        self.assertEqual(cmp["r78"]["same_failure_class"], "timeout")
+        self.assertIsNone(cmp["r80"]["same_failure_class"])
+        self.assertEqual(cmp["r82"]["same_failure_class"], "timeout")
+        # R83 mixed: same_failure_class is null (no single class)
+        self.assertIsNone(cmp["r83"]["same_failure_class"])
+        # State transitions
+        self.assertEqual(cmp["r73"]["state"], "same_failure")
+        self.assertEqual(cmp["r78"]["state"], "same_failure")
+        self.assertEqual(cmp["r80"]["state"], "matrix_error")
+        self.assertEqual(cmp["r82"]["state"], "same_failure")
+        self.assertEqual(cmp["r83"]["state"], "mixed")
+        # class_history pin: trailing null is R83 mixed
+        self.assertEqual(
+            cmp["class_history"],
+            ["other", "timeout", None, "timeout", None],
+        )
+        # R83 run_health_counts: 1 div + 2 same-failure
+        self.assertEqual(
+            cmp["r83"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 1,
+                "run_same_failure": 2,
+                "run_unknown": 0,
+            },
+        )
+        # R83 divergence_phase_label_breakdown surfaces the divergence
+        self.assertEqual(
+            cmp["r83"]["divergence_phase_label_breakdown"],
+            {"app_minimal_diverged": 1},
+        )
+        # Assessment must explicitly reject closure for R83
+        assessment = cmp["assessment"]
+        self.assertIn("NOT achieved", assessment)
+        self.assertIn("round 2", assessment)
+
+
 if __name__ == "__main__":
     unittest.main()
