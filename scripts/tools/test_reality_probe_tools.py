@@ -3992,6 +3992,100 @@ class FreshConfirmationCohortTests(unittest.TestCase):
             evidence["fresh07_hk_connection_reset_same_type"]["r78_same_type"]
         )
 
+    def _committed_r79_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round79_fresh05_divergence_recheck_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r79 fresh05 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r79_fresh05_scope_and_counts(self):
+        _, evidence = self._committed_r79_evidence()
+        self.assertEqual(evidence["round"], "79")
+        self.assertEqual(evidence["kind"], "fresh05-divergence-recheck-live-summary")
+        scope = evidence["live_scope"]
+        self.assertEqual(scope["outbound"], "fresh05")
+        self.assertEqual(scope["outbounds"], ["fresh05"])
+        self.assertEqual(scope["runs_per_outbound"], 5)
+        self.assertEqual(scope["planned_total_runs"], 5)
+        self.assertTrue(scope["reality_vless_only"])
+        self.assertFalse(scope["fresh04_executed"])
+        self.assertFalse(scope["cohort_c_executed"])
+        self.assertFalse(scope["other_fresh_nodes_executed"])
+        self.assertFalse(scope["hysteria2_executed"])
+        self.assertFalse(scope["ws_plain_vless_executed"])
+        self.assertFalse(scope["auto_extended"])
+
+        self.assertEqual(
+            evidence["pre_gate"]["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 1,
+            },
+        )
+        self.assertTrue(evidence["pre_gate"]["intake_gate_passed"])
+        self.assertTrue(evidence["pre_gate"]["dry_run_gate_passed"])
+        self.assertEqual(evidence["pre_gate"]["bhv"], "52/56 unchanged")
+
+        summary = evidence["summary"]
+        self.assertEqual(summary["executed_runs"], 5)
+        self.assertEqual(
+            summary["run_health_counts"],
+            {
+                "run_all_ok": 5,
+                "run_divergence": 0,
+                "run_same_failure": 0,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(summary["divergence_phase_label_breakdown"], {})
+        self.assertFalse(evidence["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(evidence["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertEqual(evidence["classification"]["final"], "A")
+        self.assertTrue(evidence["bhv_52_56_unchanged"])
+
+    def test_committed_r79_fresh05_r73_r78_r79_transition(self):
+        _, evidence = self._committed_r79_evidence()
+        comparison = evidence["fresh05_r73_r78_r79_comparison"]
+        self.assertEqual(
+            comparison["r73"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 5,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(comparison["r73"]["same_failure_class"], "other")
+        self.assertEqual(
+            comparison["r78"]["run_health_counts"],
+            {
+                "run_all_ok": 2,
+                "run_divergence": 1,
+                "run_same_failure": 0,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(
+            comparison["r78"]["divergence_phase_label_breakdown"],
+            {"app_pre_post_diverged": 1},
+        )
+        self.assertEqual(
+            comparison["r79"]["run_health_counts"],
+            {
+                "run_all_ok": 5,
+                "run_divergence": 0,
+                "run_same_failure": 0,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(comparison["r79"]["divergence_phase_label_breakdown"], {})
+        self.assertEqual(comparison["r79"]["state"], "all_ok")
+
 
 if __name__ == "__main__":
     unittest.main()

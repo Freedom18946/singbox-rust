@@ -1,0 +1,258 @@
+{
+  "round": "79",
+  "date": "2026-05-08",
+  "description": "R79 fresh05 divergence-carrier bounded live recheck (fresh05 only)",
+  "source_summary": "/tmp/r79-fresh05-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r79_fresh05_subset_clean.json --plan-json /tmp/r79_fresh05_plan.json --runs 5 --target example.com:80 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r79_fresh05_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 5,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 5,
+    "executed_runs": 5,
+    "status_counts": {
+      "completed": 5
+    },
+    "label_counts": {
+      "all_ok": 5
+    },
+    "class_counts": {
+      "ok": 45
+    },
+    "divergence_run_count": 0,
+    "divergence_phase_label_count": 0,
+    "distinct_divergence_phase_label_count": 0,
+    "divergence_phase_label_breakdown": {},
+    "same_failure_run_count": 0,
+    "accounting_note": "divergence_run_count counts runs (a run is a divergence run iff it carries any of the four phase labels app_pre_post_diverged, app_minimal_diverged, minimal_transport_diverged, bridge_io_diverged); divergence_phase_label_count counts phase-label occurrences across those divergence runs (a single run can carry multiple phase labels). label_counts above is per-occurrence, matching divergence_phase_label_breakdown.",
+    "run_all_ok": 5,
+    "run_divergence": 0,
+    "run_same_failure": 0,
+    "run_unknown": 0,
+    "run_health_counts": {
+      "run_all_ok": 5,
+      "run_divergence": 0,
+      "run_same_failure": 0,
+      "run_unknown": 0
+    }
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 5,
+    "uniform_failure_labels": {}
+  },
+  "by_outbound": {
+    "fresh05": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "class_counts": {
+        "ok": 45
+      },
+      "run_health_counts": {
+        "run_all_ok": 5,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh05",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 1,
+      "run_index": 4,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh05",
+      "ordinal": 1,
+      "run_index": 5,
+      "status": "completed",
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    }
+  ],
+  "interpretation": [
+    "Fresh05 only: 5 runs total; no fresh04, no cohort C, no other fresh nodes, no Hysteria2, no WS/plain-VLESS.",
+    "All 5 R79 fresh05 runs reached all_ok. The R78 app_pre_post_diverged sample did not repeat; no same-failure returned and no taxonomy-outside divergence label appeared.",
+    "Classification: A -- actionable; no new structural divergence; fresh05 resolved to all_ok in the recheck. This remains Rust/live supporting evidence; BHV 52/56 unchanged."
+  ],
+  "kind": "fresh05-divergence-recheck-live-summary",
+  "live_executed": true,
+  "live_scope": {
+    "outbound": "fresh05",
+    "outbounds": [
+      "fresh05"
+    ],
+    "runs_per_outbound": 5,
+    "planned_total_runs": 5,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "fresh04_executed": false,
+    "cohort_c_executed": false,
+    "other_fresh_nodes_executed": false,
+    "hysteria2_executed": false,
+    "ws_plain_vless_executed": false,
+    "auto_extended": false
+  },
+  "pre_gate": {
+    "head_at_gate": "c178402e",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 1
+    },
+    "expected_intake_counts": {
+      "covered_existing": 1,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 1,
+      "runs_per_outbound": 5,
+      "planned_total_runs": 5,
+      "target": "example.com:80",
+      "dry_run": true,
+      "selected": [
+        "fresh05"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "bhv": "52/56 unchanged"
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false
+  },
+  "fresh05_r73_r78_r79_comparison": {
+    "r73": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 5,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "probe_io_all_other": 5,
+        "reality_all_other": 5
+      },
+      "same_failure_class": "other",
+      "divergence_phase_label_breakdown": {},
+      "state": "same_failure"
+    },
+    "r78": {
+      "run_health_counts": {
+        "run_all_ok": 2,
+        "run_divergence": 1,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "all_ok": 2,
+        "app_pre_post_diverged": 1
+      },
+      "same_failure_class": null,
+      "divergence_phase_label_breakdown": {
+        "app_pre_post_diverged": 1
+      },
+      "state": "divergence"
+    },
+    "r79": {
+      "run_health_counts": {
+        "run_all_ok": 5,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "all_ok": 5
+      },
+      "same_failure_class": null,
+      "divergence_phase_label_breakdown": {},
+      "state": "all_ok"
+    },
+    "assessment": "R78 app_pre_post_diverged did not repeat; R79 is 5/5 all_ok with no same-failure and no phase labels."
+  },
+  "classification": {
+    "final": "A",
+    "label": "actionable; no new structural divergence; fresh05 resolved to all_ok",
+    "rationale": "fresh05 moved from R73 same-failure(other) to R78 one known-taxonomy app_pre_post_diverged run plus two all_ok runs, then R79 5/5 all_ok. The R78 divergence did not repeat, same-failure did not return, and no taxonomy-outside phase label appeared.",
+    "next_handling": "Do not call this sampler/dataplane regression; keep as node/env-health churn resolved inside existing taxonomy."
+  },
+  "bhv_52_56_unchanged": true,
+  "redaction_notes": [
+    "Evidence uses only neutral outbound key fresh05.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed."
+  ]
+}

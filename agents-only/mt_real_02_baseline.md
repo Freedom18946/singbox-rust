@@ -7400,3 +7400,91 @@ node/env-health limited 处理；不能写成 sampler/dataplane regression。
 - 没有动 sampler/dataplane
 - 没有动 `go_fork_source/*` / `.github/workflows/*`
 - BHV 52/56 不变；Rust/live supporting evidence，不写成 parity completion
+
+---
+
+## R79 — Fresh05 divergence-carrier bounded live recheck (2026-05-08)
+
+### 授权范围
+
+用户显式授权 **ONLY fresh05** live probe：
+
+- outbound: fresh05
+- runs_per_outbound: 5
+- planned_total_runs: 5
+- target: `example.com:80`
+- scope: REALITY/VLESS only
+
+禁止 fresh04 / cohort C / 其他 fresh 节点、Hysteria2、WS/plain-VLESS，
+禁止超出 5 runs 自动扩展。
+
+### Pre-gate
+
+- HEAD at gate: `c178402e`；`main` 与 `origin/main` 同步
+- 使用本地 `/tmp` 映射生成 fresh05-only neutralized subset；raw
+  material 未写入 git
+- recheck intake:
+  `covered_existing=1`, `fresh_ready=0`, `duplicate=0`, `not_ready=0`
+- dry-run plan:
+  `selected_count=1`, `runs_per_outbound=5`, `planned_total_runs=5`,
+  `target=example.com:80`
+- golden_spec S1 仍为 52/56 BHV (92.9%)
+
+### Live 结果
+
+- executed_runs: 5 / 5
+- status_counts: `{completed: 5}`
+- run-level: `run_all_ok=5`, `run_divergence=0`,
+  `run_same_failure=0`, `run_unknown=0`
+- label_counts: `{all_ok:5}`
+- class_counts: `{ok:45}`
+- divergence_phase_label_count=0；unexpected phase labels=0
+
+Per-round R73 → R78 → R79 (fresh05):
+
+| round | run_health | labels / phase labels | state |
+| --- | --- | --- | --- |
+| R73 | ok=0, div=0, same_failure=5 | probe_io_all_other=5, reality_all_other=5 | same_failure |
+| R78 | ok=2, div=1, same_failure=0 | all_ok=2, app_pre_post_diverged=1 | divergence |
+| R79 | ok=5, div=0, same_failure=0 | all_ok=5 | all_ok |
+
+R78 的 `app_pre_post_diverged` 在 R79 没有重复，same-failure(other) 也
+没有回归，未出现 taxonomy 之外的 phase label。
+
+### 分类
+
+**A — actionable; no new structural divergence; fresh05 resolved to
+all_ok.** R78 的已知 taxonomy `app_pre_post_diverged` 在 R79 5 次重测中
+未复现，同时 R73 的 same-failure(other) 未回归；按现有规则归入
+node/env-health churn 已落回 taxonomy 内，禁止写成
+sampler/dataplane regression。
+
+### Rollup delta
+
+- total_rounds: 21 → 22
+- total_executed_runs: 210 → 215
+- total_all_ok_runs: 88 → 93
+- latest_divergence_outbound_count: 1 → 0
+- latest_same_failure_outbound_count: 7 → 7
+- recovered_outbound_count: 7 → 8
+- fresh05 latest_round: 78 → 79
+- fresh05 latest_health: `latest_divergence` → `latest_all_ok`
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round79_fresh05_divergence_recheck_summary.json`
+- `agents-only/mt_real_02_evidence/round79_fresh05_divergence_recheck_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R79 committed-evidence contract）
+- `agents-only/active_context.md`（≤95 行）
+- 本文件 R79 节
+
+### 范围确认
+
+- fresh04 / cohort C / 其他 fresh 节点: 0 runs
+- Hysteria2 live: 0 runs
+- WS/plain-VLESS live: 0 runs
+- 没有动 sampler/dataplane
+- 没有动 `go_fork_source/*` / `.github/workflows/*`
+- BHV 52/56 不变；Rust/live supporting evidence，不写成 parity completion
