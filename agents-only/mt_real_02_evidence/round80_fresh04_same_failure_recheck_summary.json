@@ -1,0 +1,289 @@
+{
+  "round": "80",
+  "date": "2026-05-08",
+  "description": "R80 fresh04 same-failure bounded live recheck (fresh04 only) — tooling/config blocker",
+  "source_summary": "/tmp/r80-fresh04-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r80_fresh04_subset_clean.json --plan-json /tmp/r80_fresh04_plan.json --runs 3 --target example.com:80 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r80_fresh04_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 3,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 3,
+    "executed_runs": 3,
+    "status_counts": {
+      "matrix_error": 3
+    },
+    "label_counts": {},
+    "class_counts": {},
+    "divergence_run_count": 0,
+    "divergence_phase_label_count": 0,
+    "distinct_divergence_phase_label_count": 0,
+    "divergence_phase_label_breakdown": {},
+    "same_failure_run_count": 0,
+    "accounting_note": "All 3 matrix runs returned status matrix_error: the rust app probe failed at config validation due to an `__id_in_gui` schema mismatch in the fresh04 subset. Phase probe data (3 runs all timeout class) is captured below as supporting evidence but is not authoritative because the matrix-level comparison did not run.",
+    "run_all_ok": 0,
+    "run_divergence": 0,
+    "run_same_failure": 0,
+    "run_unknown": 3,
+    "run_health_counts": {
+      "run_all_ok": 0,
+      "run_divergence": 0,
+      "run_same_failure": 0,
+      "run_unknown": 3
+    }
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 0,
+    "uniform_failure_labels": {}
+  },
+  "by_outbound": {
+    "fresh04": {
+      "status_counts": {
+        "matrix_error": 3
+      },
+      "label_counts": {},
+      "class_counts": {},
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 3
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh04",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "matrix_error",
+      "labels": [],
+      "class_counts": {},
+      "run_health": "run_unknown"
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "matrix_error",
+      "labels": [],
+      "class_counts": {},
+      "run_health": "run_unknown"
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "matrix_error",
+      "labels": [],
+      "class_counts": {},
+      "run_health": "run_unknown"
+    }
+  ],
+  "tooling_blocker": {
+    "blocker": "config validation failed in rust app sampler; matrix script returned exit 1 on all 3 runs",
+    "root_cause": "fresh04 subset retained an `__id_in_gui` field inherited from /tmp/mt_mixed_fresh_subset_reality_neutral.json; rust app config schema rejects the field as `unknown field at /outbounds/0/__id_in_gui`",
+    "first_run_app_stderr_excerpt": "Error: load config: ...; Caused by: config validation failed at /outbounds/0/__id_in_gui: unknown field",
+    "matrix_status_per_run": [
+      1,
+      1,
+      1
+    ],
+    "fix_recommendation": "Fresh REALITY/VLESS subset extraction must strip GUI-only fields (`__id_in_gui` plus any other non-rust-schema fields) before live probe; pre-gate dry-run does not catch this because it does not load the config in the rust app process.",
+    "follow_up": "Future fresh-cohort live runs should use a cleaning helper or assert subset key shape against a known whitelist before live probe."
+  },
+  "phase_probe_supporting_evidence": {
+    "note": "Phase probe ran in all 3 attempts and produced consistent timeout-class results across direct_reality, transport_reality, vless_dial, and vless_probe_io. This is supporting evidence that fresh04's network-level reachability still times out, consistent with R78 same-failure(timeout). It is NOT authoritative for the same-failure recheck because the matrix-level app probe and compare did not run; the per-run run_health stays run_unknown.",
+    "per_run": [
+      {
+        "run_index": 1,
+        "direct_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "transport_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_dial": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_probe_io": {
+          "ok": false,
+          "class": "timeout"
+        }
+      },
+      {
+        "run_index": 2,
+        "direct_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "transport_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_dial": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_probe_io": {
+          "ok": false,
+          "class": "timeout"
+        }
+      },
+      {
+        "run_index": 3,
+        "direct_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "transport_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_dial": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_probe_io": {
+          "ok": false,
+          "class": "timeout"
+        }
+      }
+    ],
+    "phase_timeout_class_runs": 3,
+    "phase_timeout_class_consistent_with_r78_same_failure_timeout": true
+  },
+  "interpretation": [
+    "Fresh04 only: 3 matrix runs total; no fresh05, no cohort C, no other fresh nodes, no Hysteria2, no WS/plain-VLESS.",
+    "All 3 matrix runs returned status matrix_error because the rust app config schema rejected the `__id_in_gui` field carried over from the neutralized REALITY subset; the matrix-level app/compare did not produce label or class data.",
+    "Phase probe data (lower-level network dial inside the matrix) shows 3/3 runs at timeout class for direct_reality / transport_reality / vless_dial / vless_probe_io. This is supporting evidence — fresh04 network reachability still times out, qualitatively consistent with R78 same-failure(timeout) — but not authoritative for the matrix-level same-failure recheck.",
+    "Classification: C — tooling/config blocker. fresh04 same-failure persistence is not formally re-confirmed by R80 because the matrix produced no run_health-bearing labels. BHV 52/56 unchanged. This is not sampler/dataplane regression and not dual-kernel parity completion."
+  ],
+  "kind": "fresh04-same-failure-recheck-live-summary",
+  "live_executed": true,
+  "live_scope": {
+    "outbound": "fresh04",
+    "outbounds": [
+      "fresh04"
+    ],
+    "runs_per_outbound": 3,
+    "planned_total_runs": 3,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "fresh05_executed": false,
+    "cohort_c_executed": false,
+    "other_fresh_nodes_executed": false,
+    "hysteria2_executed": false,
+    "ws_plain_vless_executed": false,
+    "auto_extended": false
+  },
+  "pre_gate": {
+    "head_at_gate": "ef26f1cf",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 1
+    },
+    "expected_intake_counts": {
+      "covered_existing": 1,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 1,
+      "runs_per_outbound": 3,
+      "planned_total_runs": 3,
+      "target": "example.com:80",
+      "dry_run": true,
+      "selected": [
+        "fresh04"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "bhv": "52/56 unchanged",
+    "pre_gate_did_not_catch_subset_schema_mismatch": true,
+    "pre_gate_gap_note": "Pre-gate counts (intake + dry-run) all matched, but the dry-run does not load the subset config in the rust app process; the schema mismatch only surfaced at live matrix execution time."
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false
+  },
+  "fresh04_r73_r78_r80_comparison": {
+    "r73": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 5,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "probe_io_all_other": 5,
+        "reality_all_other": 5
+      },
+      "same_failure_class": "other",
+      "divergence_phase_label_breakdown": {},
+      "state": "same_failure"
+    },
+    "r78": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 3,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "same_failure_class": "timeout",
+      "divergence_phase_label_breakdown": {},
+      "state": "same_failure"
+    },
+    "r80": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 3
+      },
+      "label_counts": {},
+      "same_failure_class": null,
+      "divergence_phase_label_breakdown": {},
+      "state": "matrix_error",
+      "phase_probe_class_consistency": "phase probe 3/3 runs timeout class; consistent with R78 same-failure(timeout) at network level, but not matrix-level confirmation"
+    },
+    "assessment": "R80 cannot formally re-confirm fresh04 same-failure status at the matrix level because all 3 runs failed at app-probe config validation. Phase probe data shows 3/3 timeout class, qualitatively consistent with R78 same-failure(timeout); this is supporting evidence only. The matrix-level run_health for fresh04 stays run_unknown."
+  },
+  "classification": {
+    "final": "C",
+    "label": "tooling/config blocker; fresh04 same-failure recheck not formally re-confirmed at matrix level",
+    "rationale": "All 3 fresh04 matrix runs returned matrix_error due to the rust app config validator rejecting `__id_in_gui` in the subset. Phase probe data (3/3 timeout class) is consistent with R78 same-failure(timeout) at the network level but is not authoritative for same-failure recheck because the matrix-level app probe and compare never ran.",
+    "next_handling": "Fix subset extraction discipline: strip GUI-only fields before live probe. Do not call this sampler/dataplane regression. Do not auto-extend the run cap; if fresh04 same-failure recheck is needed, re-authorize a separate bounded round with a cleaned subset."
+  },
+  "bhv_52_56_unchanged": true,
+  "redaction_notes": [
+    "Evidence uses only neutral outbound key fresh04.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed.",
+    "app.stderr excerpt in tooling_blocker is paraphrased to remove the absolute /tmp path; only the schema-mismatch error class is preserved."
+  ]
+}

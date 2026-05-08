@@ -4086,6 +4086,126 @@ class FreshConfirmationCohortTests(unittest.TestCase):
         self.assertEqual(comparison["r79"]["divergence_phase_label_breakdown"], {})
         self.assertEqual(comparison["r79"]["state"], "all_ok")
 
+    def _committed_r80_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round80_fresh04_same_failure_recheck_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r80 fresh04 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r80_fresh04_scope_and_tooling_blocker(self):
+        _, evidence = self._committed_r80_evidence()
+        self.assertEqual(evidence["round"], "80")
+        self.assertEqual(
+            evidence["kind"], "fresh04-same-failure-recheck-live-summary"
+        )
+        scope = evidence["live_scope"]
+        self.assertEqual(scope["outbound"], "fresh04")
+        self.assertEqual(scope["outbounds"], ["fresh04"])
+        self.assertEqual(scope["runs_per_outbound"], 3)
+        self.assertEqual(scope["planned_total_runs"], 3)
+        self.assertTrue(scope["reality_vless_only"])
+        self.assertFalse(scope["fresh05_executed"])
+        self.assertFalse(scope["cohort_c_executed"])
+        self.assertFalse(scope["other_fresh_nodes_executed"])
+        self.assertFalse(scope["hysteria2_executed"])
+        self.assertFalse(scope["ws_plain_vless_executed"])
+        self.assertFalse(scope["auto_extended"])
+
+        self.assertEqual(
+            evidence["pre_gate"]["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 1,
+            },
+        )
+        self.assertTrue(evidence["pre_gate"]["intake_gate_passed"])
+        self.assertTrue(evidence["pre_gate"]["dry_run_gate_passed"])
+        self.assertEqual(evidence["pre_gate"]["bhv"], "52/56 unchanged")
+
+        summary = evidence["summary"]
+        self.assertEqual(summary["executed_runs"], 3)
+        self.assertEqual(summary["status_counts"], {"matrix_error": 3})
+        self.assertEqual(
+            summary["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 0,
+                "run_unknown": 3,
+            },
+        )
+        self.assertEqual(summary["label_counts"], {})
+        self.assertEqual(summary["divergence_phase_label_breakdown"], {})
+
+        blocker = evidence["tooling_blocker"]
+        self.assertEqual(blocker["matrix_status_per_run"], [1, 1, 1])
+        self.assertIn("__id_in_gui", blocker["root_cause"])
+        self.assertIn("strip", blocker["fix_recommendation"])
+
+        self.assertFalse(evidence["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(evidence["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertEqual(evidence["classification"]["final"], "C")
+        self.assertTrue(evidence["bhv_52_56_unchanged"])
+
+    def test_committed_r80_fresh04_r73_r78_r80_transition(self):
+        _, evidence = self._committed_r80_evidence()
+        comparison = evidence["fresh04_r73_r78_r80_comparison"]
+        self.assertEqual(
+            comparison["r73"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 5,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(comparison["r73"]["same_failure_class"], "other")
+        self.assertEqual(
+            comparison["r78"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 3,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(comparison["r78"]["same_failure_class"], "timeout")
+        self.assertEqual(
+            comparison["r80"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 0,
+                "run_unknown": 3,
+            },
+        )
+        self.assertIsNone(comparison["r80"]["same_failure_class"])
+        self.assertEqual(comparison["r80"]["state"], "matrix_error")
+
+    def test_committed_r80_fresh04_phase_probe_supporting_evidence(self):
+        _, evidence = self._committed_r80_evidence()
+        phase = evidence["phase_probe_supporting_evidence"]
+        self.assertEqual(phase["phase_timeout_class_runs"], 3)
+        self.assertTrue(
+            phase["phase_timeout_class_consistent_with_r78_same_failure_timeout"]
+        )
+        per_run = phase["per_run"]
+        self.assertEqual(len(per_run), 3)
+        for entry in per_run:
+            for component in (
+                "direct_reality",
+                "transport_reality",
+                "vless_dial",
+                "vless_probe_io",
+            ):
+                self.assertEqual(entry[component]["class"], "timeout")
+                self.assertFalse(entry[component]["ok"])
+
 
 if __name__ == "__main__":
     unittest.main()

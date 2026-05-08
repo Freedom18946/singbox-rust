@@ -38,34 +38,34 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
   **171 tests PASS**.
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R79: 22 rounds, 215 runs, 93 all_ok.
+- live_rollup.json/md after R80: 23 rounds, 218 runs, 93 all_ok.
 
 ## Next Steps
 
-- MT-REAL-02 R79 fresh05 divergence-carrier recheck DONE
-  (2026-05-08). Authorized live only: fresh05 x5 = 5 runs. Pre-gate
+- MT-REAL-02 R80 fresh04 same-failure recheck DONE
+  (2026-05-08). Authorized live only: fresh04 x3 = 3 runs. Pre-gate
   passed covered_existing=1, fresh_ready=0, duplicate=0, not_ready=0;
-  dry-run selected=1, planned=5. Result: 5/5 run_all_ok,
-  run_divergence=0, run_same_failure=0. R73 same-failure(other) ->
-  R78 app_pre_post_diverged + 2 all_ok -> R79 all_ok; R78 divergence
-  did not repeat, same-failure did not return, no taxonomy-outside
-  phase label. Rollup latest_divergence_outbounds=0; fresh05
-  latest_all_ok/recovered. fresh04/cohort C/other fresh/Hys2/
-  WS/plain-VLESS: 0. BHV 52/56 unchanged.
-- MT-REAL-02 R75 fresh divergence attribution + run_health
-  materialization DONE (2026-05-08). Per-run `run_health` materialized
-  into round73 `runs[]` via `round_summary_run_health.materialize_run_health`;
-  attribution under golden_spec S4 `DEV-REALITY-01` (ARCH-LIMIT) — no
-  new S4 entry. Tests +7.
-- MT-REAL-02 R74 R73 evidence accounting audit DONE (2026-05-08).
-  Pure ledger correction: split divergence_run_count from
-  divergence_phase_label_count. Tests +4.
+  dry-run selected=1, planned=3. Result: 3/3 status=matrix_error,
+  run_unknown=3 (no labels). Tooling/config blocker: rust app config
+  validator rejected `__id_in_gui` carried over from neutralized
+  REALITY subset; pre-gate dry-run did not catch it. Phase probe
+  3/3 timeout class — supporting evidence consistent with R78
+  same-failure(timeout). Classification C. fresh04 R73
+  same-failure(other) -> R78 same-failure(timeout) -> R80
+  matrix_error / run_unknown; same-failure not formally
+  re-confirmed at matrix level; no taxonomy-outside phase label.
+  fresh04 latest_health: latest_same_failure -> latest_unknown.
+  fresh05/cohort C/other fresh/Hys2/WS/plain-VLESS: 0. No new
+  structural divergence. BHV 52/56 unchanged.
+- MT-REAL-02 R79 fresh05 divergence-carrier recheck DONE
+  (2026-05-08). 5/5 run_all_ok; R78 app_pre_post_diverged did not
+  repeat; fresh05 latest_all_ok / recovered. BHV 52/56 unchanged.
+- MT-REAL-02 R74/R75 evidence accounting + run_health
+  materialization DONE (2026-05-08). Pure ledger work; tests +11.
 - MT-REAL-02 R73 fresh REALITY/VLESS bounded live DONE (2026-05-08).
-  15×5=75 executed. Hys2/WS/plain-VLESS live: 0. A — actionable; no
-  new structural divergence.
+  15×5=75 executed. A — actionable; no new structural divergence.
 - MT-MIXED-FRESH-01 mixed fresh config intake DONE (2026-05-07).
 - MT-TROJAN-FRESH-15 line CLOSED (2026-05-07).
-- R71 fresh sample intake DONE (2026-05-04) A.
 
 ## Still-Valid Constraints
 

@@ -7488,3 +7488,136 @@ sampler/dataplane regression。
 - 没有动 sampler/dataplane
 - 没有动 `go_fork_source/*` / `.github/workflows/*`
 - BHV 52/56 不变；Rust/live supporting evidence，不写成 parity completion
+
+---
+
+## R80 — Fresh04 same-failure bounded live recheck (2026-05-08)
+
+### 授权范围
+
+用户显式授权 **ONLY fresh04** live probe：
+
+- outbound: fresh04
+- runs_per_outbound: 3
+- planned_total_runs: 3
+- target: `example.com:80`
+- scope: REALITY/VLESS only
+
+禁止 fresh05 / cohort C / 其他 fresh 节点、Hysteria2、WS/plain-VLESS，
+禁止超出 3 runs 自动扩展。
+
+### Pre-gate
+
+- HEAD at gate: `ef26f1cf`；`main` 与 `origin/main` 同步
+- 使用本地 `/tmp` 映射生成 fresh04-only neutralized subset；raw
+  material 未写入 git
+- recheck intake:
+  `covered_existing=1`, `fresh_ready=0`, `duplicate=0`, `not_ready=0`
+- dry-run plan:
+  `selected_count=1`, `runs_per_outbound=3`, `planned_total_runs=3`,
+  `target=example.com:80`
+- golden_spec S1 仍为 52/56 BHV (92.9%)
+- **Pre-gate gap**：counts (intake + dry-run) 全部通过，但 dry-run 不
+  在 rust app 进程内载入 subset config，所以 schema 不匹配只在 live
+  matrix 执行时暴露。
+
+### Live 结果
+
+- executed_runs: 3 / 3
+- status_counts: `{matrix_error: 3}`
+- run-level: `run_all_ok=0`, `run_divergence=0`,
+  `run_same_failure=0`, `run_unknown=3`
+- label_counts: `{}`（matrix_error 无 labels）
+- class_counts: `{}`
+- divergence_phase_label_count=0；unexpected phase labels=0
+
+### Tooling blocker（C 分类核心）
+
+- **Blocker**：rust app 配置校验在全部 3 次 run 中失败，matrix 脚本
+  返回 exit 1。
+- **Root cause**：fresh04 subset 沿用了
+  `/tmp/mt_mixed_fresh_subset_reality_neutral.json` 中的
+  `__id_in_gui` 字段；rust app 的配置 schema 拒绝该字段，报
+  `unknown field at /outbounds/0/__id_in_gui`。
+- **Matrix 状态**：所有 3 次 run 均 `matrix_status=1`。
+- **Fix recommendation**：fresh REALITY/VLESS subset 提取必须在 live
+  之前剥离 GUI-only 字段（`__id_in_gui` 及任何非 rust schema 字段）；
+  pre-gate dry-run 不会捕获该问题，因为 dry-run 不会在 rust app 进程
+  里载入配置。
+- **Follow-up**：未来 fresh-cohort live 应通过清洗助手或对 subset 的
+  键集做白名单校验，再执行 live。
+
+### Phase probe supporting evidence
+
+matrix 脚本里的 phase probe 在全部 3 次尝试都跑完，并产生 4 个 phase
+（`direct_reality`/`transport_reality`/`vless_dial`/`vless_probe_io`）
+全部 `timeout` 类的一致输出。这是 fresh04 网络可达性仍然超时的辅助
+证据，性质上与 R78 same-failure(timeout) 一致；但因为 matrix 层 app
+probe 与 compare 没有跑，per-run `run_health` 仍然是 `run_unknown`，
+不能视为 same-failure 在 matrix 层的正式复核。
+
+| run | direct_reality | transport_reality | vless_dial | vless_probe_io |
+| ---: | --- | --- | --- | --- |
+| 1 | timeout | timeout | timeout | timeout |
+| 2 | timeout | timeout | timeout | timeout |
+| 3 | timeout | timeout | timeout | timeout |
+
+### Per-round R73 → R78 → R80 (fresh04)
+
+| round | run_health | labels / phase labels | state |
+| --- | --- | --- | --- |
+| R73 | ok=0, div=0, same_failure=5 | probe_io_all_other=5, reality_all_other=5 | same_failure (other) |
+| R78 | ok=0, div=0, same_failure=3 | probe_io_all_timeout=3, reality_all_timeout=3 | same_failure (timeout) |
+| R80 | ok=0, div=0, same_failure=0, unknown=3 | (matrix_error: 无 labels) | matrix_error / run_unknown |
+
+R80 没有从 matrix 层正式复核 fresh04 的 same-failure；phase probe 的
+3/3 timeout 与 R78 timeout 在 class 上一致，但仅作辅助证据。
+
+### 分类
+
+**C — tooling/config blocker; fresh04 same-failure recheck not
+formally re-confirmed at matrix level.** 3 次 fresh04 matrix run 全部
+返回 matrix_error，原因是 rust app 配置校验拒绝了 subset 里的
+`__id_in_gui` 字段。phase probe 数据（3/3 timeout）与 R78
+same-failure(timeout) 在网络层一致，但不能作为 matrix 层 same-failure
+复核的权威结论。不写成 sampler/dataplane regression；不在本轮自动
+追加 run；如需正式复核 fresh04 same-failure，需另起一轮独立授权，并
+使用清洗后的 subset。
+
+### Rollup delta
+
+- total_rounds: 22 → 23
+- total_executed_runs: 215 → 218
+- total_all_ok_runs: 88 (R78) / 93 (R79) → 93 (R80 无 all_ok)
+- latest_divergence_outbound_count: 0 → 0
+- latest_same_failure_outbound_count: 7 → 6（fresh04 离开
+  same_failure，进入 unknown）
+- latest_stable_same_failure_outbound_count: 7 → 6
+- recovered_outbound_count: 8 → 8（fresh04 不是 recovered，是
+  unknown）
+- fresh04 latest_round: 78 → 80
+- fresh04 latest_health: `latest_same_failure` → `latest_unknown`
+- fresh04 latest_status_counts: `{completed:3}` →
+  `{matrix_error:3}`
+- fresh04 latest_run_health_counts: `{run_same_failure:3}` →
+  `{run_unknown:3}`
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round80_fresh04_same_failure_recheck_summary.json`
+- `agents-only/mt_real_02_evidence/round80_fresh04_same_failure_recheck_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R80 committed-evidence
+  contract）
+- `agents-only/active_context.md`（≤95 行）
+- 本文件 R80 节
+
+### 范围确认
+
+- fresh05 / cohort C / 其他 fresh 节点: 0 runs
+- Hysteria2 live: 0 runs
+- WS/plain-VLESS live: 0 runs
+- 没有动 sampler/dataplane
+- 没有动 `go_fork_source/*` / `.github/workflows/*`
+- BHV 52/56 不变；Rust/live supporting evidence，不写成 parity completion
