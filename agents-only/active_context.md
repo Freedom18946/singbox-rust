@@ -35,42 +35,37 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **190 tests PASS** (R81 added 14: 11 immediate + 3 committed-
-  evidence contract).
+  **193 tests PASS** (R82 added 3 committed-evidence contract).
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R80: 23 rounds, 218 runs, 93 all_ok
-  (R81 is no-live; rollup unchanged).
+- live_rollup.json/md after R82: **24 rounds, 221 runs, 93 all_ok**.
 
 ## Next Steps
 
+- MT-REAL-02 R82 fresh04 same-failure live recheck DONE
+  (2026-05-08). Authorized fresh04 only ×3 = 3 runs. Pre-gate
+  passed (intake `covered_existing=1`; dry-run `selected_count=1
+  planned_total_runs=3`; **subset_schema_gate_passed=true,
+  violations=[]**). Live: 3/3 status=completed,
+  run_same_failure=3, labels probe_io_all_timeout +
+  reality_all_timeout (uniform). class_counts={timeout:27}.
+  Phase probe 3/3 timeout (consistent with matrix). Classification
+  **A.1** — same-failure timeout-class round 2 of 3 for fresh04.
+  Closure counting: R78 timeout-class round 1, R80 excluded
+  (matrix_error), R82 timeout-class round 2; cohort-B single-
+  outbound closure for fresh04 still requires one more round
+  (proposed R83). class_history=[other, timeout, null, timeout].
+  fresh04 latest_health: latest_unknown -> latest_same_failure.
+  BHV 52/56 unchanged. Not parity completion. Not cohort-B closure.
 - MT-REAL-02 R81 subset-schema pre-gate hardening DONE
-  (2026-05-08). No live, no node contact, no sampler/dataplane.
-  Closes R80 pre-gate gap: new module
-  `reality_vless_subset_schema_gate.py` (prefix branch + reality/
-  vless allow-list branch + recursive nested-prefix rule), wired
-  into `reality_vless_probe_batch.py` dry-run path only. Dry-run
-  gate failure: plan/summary/stdout carry
-  `subset_schema_gate_passed=false`, exit 2. Live shape
-  unchanged. Compat audit clean (cohort/plan/evidence consumers
-  use dict.get). Violations carry only path/field/reason, no raw
-  values. Classification A. BHV 52/56 unchanged; not parity
-  completion. fresh04 retest still pending → recommended R82
-  (cleansed subset, requires explicit re-authorization).
+  (2026-05-08). No live; closes R80 pre-gate gap.
 - MT-REAL-02 R80 fresh04 same-failure recheck DONE (2026-05-08).
-  3/3 matrix_error due to `__id_in_gui` schema mismatch (closed
-  by R81). Phase probe 3/3 timeout — supporting evidence
-  consistent with R78 same-failure(timeout). Classification C.
-  fresh04 latest_health: latest_same_failure → latest_unknown.
-- MT-REAL-02 R79 fresh05 divergence-carrier recheck DONE
-  (2026-05-08). 5/5 run_all_ok; R78 app_pre_post_diverged did not
-  repeat; fresh05 latest_all_ok / recovered. BHV 52/56 unchanged.
-- MT-REAL-02 R74/R75 evidence accounting + run_health
-  materialization DONE (2026-05-08). Pure ledger work; tests +11.
-- MT-REAL-02 R73 fresh REALITY/VLESS bounded live DONE (2026-05-08).
-  15×5=75 executed. A — actionable; no new structural divergence.
-- MT-MIXED-FRESH-01 mixed fresh config intake DONE (2026-05-07).
-- MT-TROJAN-FRESH-15 line CLOSED (2026-05-07).
+  3/3 matrix_error; closed by R81; superseded by R82.
+- MT-REAL-02 R79 fresh05 divergence-carrier recheck DONE.
+- MT-REAL-02 R74/R75 evidence accounting DONE (tests +11).
+- MT-REAL-02 R73 fresh REALITY/VLESS bounded live DONE.
+- MT-MIXED-FRESH-01 mixed fresh config intake DONE.
+- MT-TROJAN-FRESH-15 line CLOSED.
 
 ## Still-Valid Constraints
 
@@ -85,6 +80,9 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - MT-REAL-02 stage closure is not project closure.
 - Any fresh-cohort live run must pass the R81 subset-schema dry-run
   gate before live authorization.
+- Do not write A.1/A.2/A.3 outcomes as cohort-B single-outbound
+  closure completion; closure requires a separate longer-repeat
+  round.
 
 ## Historical Detail
 

@@ -7729,3 +7729,106 @@ R81 不改 live 数据，不改 rollup：
 - sampler / dataplane changes: 0
 - `go_fork_source/*` / `.github/workflows/*` 改动: 0
 - BHV 52/56 不变；Rust-only quality / tooling，不写成 parity completion
+
+## R82 — fresh04 same-failure live recheck with cleansed subset
+
+### 起因
+
+R81 在 dry-run 阶段把 R80 暴露的 `__id_in_gui` schema-mismatch 路径关掉
+之后，fresh04 的 matrix-level same-failure 复核第一次有了真正可行
+路径。fresh04 仍是 fresh REALITY 面唯一 `latest_unknown` 的样本。
+R82 用清洗后的 subset 一次性把 fresh04 ×3 跑完。
+
+### 范围
+
+- live REALITY/VLESS、fresh04 only ×3 = 3 runs、target example.com:80
+- HEAD at gate: d6fd23a2；main 与 origin/main 同步 ✓
+- 不动 sampler/dataplane / `go_fork_source/*` / `.github/workflows/*`
+  / golden_spec
+- BHV 52/56 不变；不写成 dual-kernel parity completion
+- 不允许 auto-extend > 3；不允许本轮 retry "修补" 失败 run
+
+### Subset 清洗（一次过 R81 两条分支）
+
+- (a) `__`-prefixed 字段任意深度移除：`__id_in_gui` 已剥（R80 直接踩到的路径）
+- (b) outbound-level 字段全部落在 reality/vless allow-list 内
+- 清洗后的 `subset_schema_gate.violations==[]`，即 R81 gate 两条分支
+  都通过
+
+### Pre-gate 全部通过
+
+- intake_counts: `covered_existing=1, fresh_ready=0, duplicate=0,
+  not_ready=0`
+- dry-run: `selected_count=1, runs_per_outbound=3,
+  planned_total_runs=3, target=example.com:80,
+  subset_schema_gate_passed=true, subset_schema_gate.violations=[]`
+- BHV: 52/56 不变
+
+### 实测分类: A.1
+
+- 3/3 status=`completed`
+- 3/3 same-failure，`same_failure_class=timeout`
+- label_counts: `probe_io_all_timeout=3, reality_all_timeout=3`
+- class_counts: `timeout=27`（9 类 × 3 runs，全部 timeout）
+- divergence_phase_label_count=0；不存在 four-element taxonomy 之外
+  的新 phase label
+
+### 闭环计数（按 prompt v2 修订）
+
+- R73 = same_failure(**other**)：other-class round 1（不属于 timeout class）
+- R78 = same_failure(**timeout**)：timeout-class **round 1**（class
+  从 R73 翻 timeout，不是 R73 的 longer-repeat 延续）
+- R80 = matrix_error：**不计入** closure counting
+- R82 = same_failure(**timeout**)：timeout-class **round 2 of 3**
+- class_history: `['other', 'timeout', null, 'timeout']`
+- fresh04 cohort-B 单 outbound 闭环还差 1 轮（建议 R83），R82 **不是**
+  cohort-B 单 outbound 闭环完成
+
+### Phase probe supporting evidence
+
+3/3 runs 在 direct_reality / transport_reality / vless_dial /
+vless_probe_io 四级全部 timeout class。与 matrix-level
+same-failure(timeout) 一致；matrix-level 结果是权威的。
+
+### Rollup delta
+
+- total_rounds: 23 → **24**
+- total_executed_runs: 218 → **221**
+- total_all_ok_runs: 93 → **93**（R82 无 all_ok）
+- latest_same_failure_outbound_count: 6 → **7**（fresh04 重新进入
+  same_failure；之前 R80 临时落到 unknown）
+- latest_stable_same_failure_outbound_count: 6 → **7**
+- latest_divergence_outbound_count: 0 → **0**
+- recovered_outbound_count: 8 → **8**
+- fresh04 latest_round: 80 → **82**
+- fresh04 latest_health: `latest_unknown` → **`latest_same_failure`**
+- fresh04 latest_status_counts: `{matrix_error:3}` →
+  `{completed:3}`
+- fresh04 latest_run_health_counts: `{run_unknown:3}` →
+  `{run_same_failure:3}`
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round82_fresh04_recheck_summary.json`
+- `agents-only/mt_real_02_evidence/round82_fresh04_recheck_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`（24 rounds 重新生成）
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R82 committed-evidence
+  contract）
+- `agents-only/active_context.md`（≤95 行）
+- 本文件 R82 节
+
+### Follow-up
+
+- 建议 R83：fresh04 timeout-class round 3 of 3 with cleansed subset，
+  完成 cohort-B 单 outbound 闭环叙事。需要用户显式再次授权。
+- 不要在本轮 evidence / 文档里把 R82 写成 "cohort B 闭环完成"。
+
+### 范围确认
+
+- live runs in R82: 3（fresh04 only）
+- node contact in R82: 1（fresh04）
+- fresh05 / cohort C / 其他 fresh / Hys2 / WS / plain-VLESS live: 0
+- sampler / dataplane changes: 0
+- `go_fork_source/*` / `.github/workflows/*` 改动: 0
+- BHV 52/56 不变；Rust/live evidence，不写成 parity completion

@@ -4579,5 +4579,153 @@ class R81SubsetSchemaGateTests(unittest.TestCase):
             self.assertIn("no break", compat[tool].lower())
 
 
+class R82Fresh04RecheckTests(unittest.TestCase):
+    """R82 fresh04 same-failure live recheck with cleansed subset.
+
+    Pins: scope (fresh04 only x3), pre-gate (R81 subset_schema_gate
+    passed with empty violations), classification A.1 (timeout-class
+    round 2 of 3, NOT cohort-B closure), and the fresh04 history
+    transition R73 -> R78 -> R80 -> R82 with class_history.
+    """
+
+    def _committed_r82_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round82_fresh04_recheck_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r82 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r82_scope_and_pre_gate(self):
+        _, ev = self._committed_r82_evidence()
+        self.assertEqual(ev["round"], "82")
+        self.assertEqual(
+            ev["kind"], "fresh04-same-failure-recheck-live-summary"
+        )
+        scope = ev["live_scope"]
+        self.assertEqual(scope["outbound"], "fresh04")
+        self.assertEqual(scope["outbounds"], ["fresh04"])
+        self.assertEqual(scope["runs_per_outbound"], 3)
+        self.assertEqual(scope["planned_total_runs"], 3)
+        self.assertTrue(scope["reality_vless_only"])
+        for forbidden in (
+            "fresh05_executed",
+            "cohort_c_executed",
+            "other_fresh_nodes_executed",
+            "hysteria2_executed",
+            "ws_plain_vless_executed",
+            "auto_extended",
+        ):
+            self.assertFalse(
+                scope[forbidden], msg=f"{forbidden} must be false in R82"
+            )
+        # R81 gate is the structural pre-condition for R82
+        pre = ev["pre_gate"]
+        self.assertEqual(pre["head_at_gate"], "d6fd23a2")
+        self.assertTrue(pre["main_synced_with_origin_main_at_gate"])
+        self.assertTrue(pre["intake_gate_passed"])
+        self.assertTrue(pre["dry_run_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate_passed"])
+        self.assertEqual(pre["subset_schema_gate"]["violations"], [])
+        self.assertTrue(pre["subset_schema_gate"]["ok"])
+        self.assertEqual(pre["bhv"], "52/56 unchanged")
+        self.assertEqual(
+            pre["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 1,
+            },
+        )
+
+    def test_committed_r82_classification_is_a1_not_cohort_b_closure(self):
+        _, ev = self._committed_r82_evidence()
+        classification = ev["classification"]
+        # The sub-branch must be A.1 specifically — A.2/A.3/B/C/D are
+        # different judgments per prompt v2.
+        self.assertEqual(classification["final"], "A.1")
+        self.assertEqual(classification["primary_branch"], "A")
+        self.assertEqual(classification["sub_branch"], "A.1")
+        # Closure-narrative guard: A.1 must position itself as
+        # "round 2 of 3" (not yet closed) per prompt v2's explicit
+        # forbid against writing A.1/A.2/A.3 as cohort-B single-outbound
+        # closure completion. We pin the positive markers; the assessment
+        # field separately carries the explicit "not closure" wording.
+        rationale = classification["rationale"]
+        self.assertIn("round 2 of 3", rationale)
+        self.assertIn("R83", rationale)
+        # Summary-level run_health: 3/3 same-failure, no all_ok / div / unknown
+        rhc = ev["summary"]["run_health_counts"]
+        self.assertEqual(
+            rhc,
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 3,
+                "run_unknown": 0,
+            },
+        )
+        # Label uniformity (timeout class)
+        self.assertEqual(
+            ev["summary"]["label_counts"],
+            {
+                "probe_io_all_timeout": 3,
+                "reality_all_timeout": 3,
+            },
+        )
+        # Out-of-scope guards
+        self.assertTrue(ev["bhv_52_56_unchanged_at_round_time"])
+        self.assertFalse(ev["sampler_dataplane_modified"])
+        self.assertFalse(ev["go_fork_source_modified"])
+        self.assertFalse(ev["github_workflows_modified"])
+        self.assertFalse(ev["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(ev["taxonomy"]["unexpected_phase_labels"], [])
+
+    def test_committed_r82_fresh04_r73_r78_r80_r82_transition_and_class_history(
+        self,
+    ):
+        _, ev = self._committed_r82_evidence()
+        cmp = ev["fresh04_r73_r78_r80_r82_comparison"]
+        # All four rounds present with the expected health/label shape
+        self.assertEqual(cmp["r73"]["same_failure_class"], "other")
+        self.assertEqual(cmp["r78"]["same_failure_class"], "timeout")
+        self.assertIsNone(cmp["r80"]["same_failure_class"])
+        self.assertEqual(cmp["r82"]["same_failure_class"], "timeout")
+        # State transitions
+        self.assertEqual(cmp["r73"]["state"], "same_failure")
+        self.assertEqual(cmp["r78"]["state"], "same_failure")
+        self.assertEqual(cmp["r80"]["state"], "matrix_error")
+        self.assertEqual(cmp["r82"]["state"], "same_failure")
+        # class_history pin: R80 = null (matrix_error excluded from
+        # closure counting); R82 = timeout (round 2 of 3 longer-repeat)
+        self.assertEqual(
+            cmp["class_history"], ["other", "timeout", None, "timeout"]
+        )
+        # R82 run_health_counts and label_counts mirror summary
+        self.assertEqual(
+            cmp["r82"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 3,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(
+            cmp["r82"]["label_counts"],
+            {
+                "probe_io_all_timeout": 3,
+                "reality_all_timeout": 3,
+            },
+        )
+        # Assessment must explicitly call out that R82 is NOT cohort-B
+        # single-outbound closure.
+        assessment = cmp["assessment"]
+        self.assertIn("round 2 of 3", assessment)
+        self.assertIn("R83", assessment)
+
+
 if __name__ == "__main__":
     unittest.main()

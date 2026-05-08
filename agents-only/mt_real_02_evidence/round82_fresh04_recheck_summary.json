@@ -1,0 +1,344 @@
+{
+  "round": "82",
+  "date": "2026-05-08",
+  "description": "R82 fresh04 same-failure live recheck with cleansed subset (matrix-level recheck enabled by R81 gate).",
+  "source_summary": "/tmp/r82-fresh04-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r82_fresh04_subset_clean.json --outbound fresh04 --target example.com:80 --runs 3 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r82_fresh04_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 3,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 3,
+    "executed_runs": 3,
+    "status_counts": {
+      "completed": 3
+    },
+    "label_counts": {
+      "probe_io_all_timeout": 3,
+      "reality_all_timeout": 3
+    },
+    "class_counts": {
+      "timeout": 27
+    },
+    "divergence_run_count": 0,
+    "divergence_phase_label_count": 0,
+    "distinct_divergence_phase_label_count": 0,
+    "divergence_phase_label_breakdown": {},
+    "same_failure_run_count": 3,
+    "accounting_note": "divergence_run_count counts runs (a run is a divergence run iff it carries any of the four phase labels app_pre_post_diverged, app_minimal_diverged, minimal_transport_diverged, bridge_io_diverged); divergence_phase_label_count counts phase-label occurrences across those divergence runs (a single run can carry multiple phase labels). label_counts above is per-occurrence, matching divergence_phase_label_breakdown.",
+    "run_all_ok": 0,
+    "run_divergence": 0,
+    "run_same_failure": 3,
+    "run_unknown": 0,
+    "run_health_counts": {
+      "run_all_ok": 0,
+      "run_divergence": 0,
+      "run_same_failure": 3,
+      "run_unknown": 0
+    }
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 0,
+    "uniform_failure_labels": {
+      "probe_io_all_timeout": 3,
+      "reality_all_timeout": 3
+    }
+  },
+  "by_outbound": {
+    "fresh04": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "class_counts": {
+        "timeout": 27
+      },
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 3,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0,
+      "historical_has_non_all_ok": true
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh04",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh04",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    }
+  ],
+  "phase_probe_supporting_evidence": {
+    "note": "Phase probe ran in all 3 attempts and produced consistent timeout-class results across direct_reality, transport_reality, vless_dial, and vless_probe_io. This is consistent with the matrix-level same-failure(timeout) classification but is supporting evidence only; the matrix-level run_health is the authoritative basis.",
+    "per_run": [
+      {
+        "run_index": 1,
+        "direct_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "transport_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_dial": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_probe_io": {
+          "ok": false,
+          "class": "timeout"
+        }
+      },
+      {
+        "run_index": 2,
+        "direct_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "transport_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_dial": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_probe_io": {
+          "ok": false,
+          "class": "timeout"
+        }
+      },
+      {
+        "run_index": 3,
+        "direct_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "transport_reality": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_dial": {
+          "ok": false,
+          "class": "timeout"
+        },
+        "vless_probe_io": {
+          "ok": false,
+          "class": "timeout"
+        }
+      }
+    ],
+    "phase_timeout_class_runs": 3,
+    "phase_timeout_class_consistent_with_matrix_label": true
+  },
+  "interpretation": [
+    "Fresh04 only: 3 matrix runs total; no fresh05, no cohort C, no other fresh nodes, no Hysteria2, no WS/plain-VLESS.",
+    "All 3 matrix runs returned status=completed with identical labels probe_io_all_timeout and reality_all_timeout; class breakdown is uniformly timeout (27 timeout entries across 9 classes x 3 runs).",
+    "matrix-level run_health: run_same_failure=3, run_divergence=0, run_all_ok=0, run_unknown=0. fresh04 same-failure persistence at the matrix level is formally re-confirmed for the timeout class.",
+    "Closure-counting refinement (per R82 prompt v2): R73 was same_failure(other), R78 was same_failure(timeout) \u2014 these are different classes, so R78 was the timeout-class round 1, NOT a longer-repeat continuation of R73. R80 produced matrix_error and is not a valid round for closure counting. R82=timeout therefore is timeout-class round 2 of 3; cohort-B single-outbound closure for fresh04 still requires one more longer-repeat round (proposed R83). This is NOT cohort-B \u5355 outbound \u95ed\u73af.",
+    "Phase probe data (3/3 timeout class) is consistent with the matrix-level label and is included as supporting evidence; the matrix-level result is authoritative.",
+    "R81 subset-schema pre-gate (introduced 2026-05-08, commit d6fd23a2) is the structural change that enabled R82 to reach matrix-level recheck. The cleansed subset passed both the prefix and the reality/vless allow-list branches with violations==[].",
+    "Classification A.1 \u2014 3/3 same-failure with class==timeout. fresh04 latest_health: latest_unknown -> latest_same_failure(timeout). BHV 52/56 unchanged. Not sampler/dataplane regression and not dual-kernel parity completion."
+  ],
+  "kind": "fresh04-same-failure-recheck-live-summary",
+  "live_executed": true,
+  "node_contact_executed": true,
+  "sampler_dataplane_modified": false,
+  "go_fork_source_modified": false,
+  "github_workflows_modified": false,
+  "bhv_52_56_unchanged_at_round_time": true,
+  "live_scope": {
+    "outbound": "fresh04",
+    "outbounds": [
+      "fresh04"
+    ],
+    "runs_per_outbound": 3,
+    "planned_total_runs": 3,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "fresh05_executed": false,
+    "cohort_c_executed": false,
+    "other_fresh_nodes_executed": false,
+    "hysteria2_executed": false,
+    "ws_plain_vless_executed": false,
+    "auto_extended": false
+  },
+  "pre_gate": {
+    "head_at_gate": "d6fd23a2",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 1
+    },
+    "expected_intake_counts": {
+      "covered_existing": 1,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 1,
+      "runs_per_outbound": 3,
+      "planned_total_runs": 3,
+      "target": "example.com:80",
+      "dry_run": true,
+      "selected": [
+        "fresh04"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "subset_schema_gate_passed": true,
+    "subset_schema_gate": {
+      "ok": true,
+      "violations": [],
+      "stats": {
+        "outbounds_checked": 1,
+        "outbound_level_violations": 0,
+        "nested_violations": 0
+      }
+    },
+    "bhv": "52/56 unchanged"
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false
+  },
+  "fresh04_r73_r78_r80_r82_comparison": {
+    "r73": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 5,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "probe_io_all_other": 5,
+        "reality_all_other": 5
+      },
+      "same_failure_class": "other",
+      "divergence_phase_label_breakdown": {},
+      "state": "same_failure"
+    },
+    "r78": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 3,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "same_failure_class": "timeout",
+      "divergence_phase_label_breakdown": {},
+      "state": "same_failure"
+    },
+    "r80": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 3
+      },
+      "label_counts": {},
+      "same_failure_class": null,
+      "divergence_phase_label_breakdown": {},
+      "state": "matrix_error",
+      "phase_probe_class_consistency": "phase probe 3/3 runs timeout class; consistent with R78 same-failure(timeout) at network level, but not matrix-level confirmation"
+    },
+    "r82": {
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 3,
+        "run_unknown": 0
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 3,
+        "reality_all_timeout": 3
+      },
+      "same_failure_class": "timeout",
+      "divergence_phase_label_breakdown": {},
+      "state": "same_failure"
+    },
+    "class_history": [
+      "other",
+      "timeout",
+      null,
+      "timeout"
+    ],
+    "assessment": "R82 formally re-confirms fresh04 same-failure at the matrix level for the timeout class. Per the closure-counting refinement: R78 was timeout-class round 1; R82 is timeout-class round 2 of 3. fresh04 single-outbound cohort-B closure still requires one more longer-repeat round (proposed R83). R73 (other-class) is NOT counted as a timeout-class round, and R80 (matrix_error) is excluded from closure counting."
+  },
+  "classification": {
+    "final": "A.1",
+    "label": "same-failure timeout-class round 2 of 3 for fresh04 (matrix-level)",
+    "rationale": "All 3 fresh04 matrix runs returned status=completed, with identical labels probe_io_all_timeout + reality_all_timeout. matrix-level run_same_failure=3 with same_failure_class=timeout. R78 was the timeout-class round 1; R82 is round 2 of 3 longer-repeat. cohort-B single-outbound closure still requires one more round (proposed R83) before it can be claimed. R82 is NOT cohort-B \u5355 outbound \u95ed\u73af completion.",
+    "next_handling": "Optional R83 timeout-class round 3 with cleansed subset (requires explicit re-authorization) would close the cohort-B single-outbound narrative for fresh04. Do not auto-extend R82.",
+    "primary_branch": "A",
+    "sub_branch": "A.1"
+  },
+  "redaction_notes": [
+    "Evidence uses only neutral outbound key fresh04.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed.",
+    "subset_schema_gate.violations is committed only when empty; the gate's structural redaction (violations carry only path/field/reason) was preserved."
+  ]
+}
