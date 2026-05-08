@@ -35,36 +35,32 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **197 tests PASS** (R83 added 4 committed-evidence contract).
+  **201 tests PASS** (R84 added 4 committed-evidence contract).
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R83: **25 rounds, 224 runs, 93 all_ok**.
+- live_rollup.json/md after R84: **26 rounds, 229 runs, 93 all_ok**.
 
 ## Next Steps
 
+- MT-REAL-02 R84 fresh04 cohort-A-style re-evaluation DONE
+  (2026-05-08). Authorized fresh04 only ×5. Pre-gate passed.
+  Live: 5/5 same_failure (uniform timeout).
+  **A.same_failure_only**. R83 app_minimal_diverged did NOT
+  reproduce in 5 runs; cohort-A-style stable phase divergence
+  carrier hypothesis FALSIFIED. closure_status.evaluated=
+  **false** (R84 not a closure attempt; broken chain at R83
+  NOT patched). Future fresh04 closure attempt = R84 as round
+  1 + two more authorized rounds. latest_health:
+  latest_divergence -> latest_same_failure. class_history=
+  [other, timeout, null, timeout, null, timeout]. Rollup:
+  latest_divergence_outbounds []; latest_same_failure 6->7.
+  BHV 52/56 unchanged.
 - MT-REAL-02 R83 fresh04 cohort-B closure attempt DONE
-  (2026-05-08). Authorized fresh04 only ×3. Pre-gate passed
-  (intake + dry-run + R81 subset_schema_gate violations=[]).
-  Live: 3/3 completed; **1 run_divergence (run 1:
-  app_minimal_diverged) + 2 run_same_failure (timeout)**.
-  Classification **B**. **closure NOT achieved**:
-  `cohort_b_single_outbound_closure_achieved=false`,
-  timeout_class_consecutive_rounds=2 ([78,82]), chain broken
-  at R83. fresh04: cohort-B same_failure candidate ->
-  cohort-A-style re-evaluation candidate.
-  class_history=[other,timeout,null,timeout,null].
-  latest_health: latest_same_failure -> latest_divergence.
-  Rollup: latest_divergence_outbounds=[fresh04],
-  latest_mixed_run_health_outbounds=[fresh04],
-  latest_same_failure_outbound_count 7->6. Run 1 root:
-  minimal.vless_dial=connection_reset vs every other class
-  timeout (app/minimal asymmetry at vless_dial; label in the
-  four-element taxonomy, no new structural divergence). BHV
-  52/56 unchanged. Closure scope strictly fresh04 + timeout
-  class; does NOT extend to cohort B group.
+  (2026-05-08). Mixed (1 div + 2 same-failure); closure NOT
+  achieved; chain broken.
 - MT-REAL-02 R82 fresh04 same-failure live recheck DONE
-  (2026-05-08). 3/3 same_failure(timeout); A.1 timeout-class
-  round 2 of 3.
+  (2026-05-08). 3/3 same_failure(timeout); A.1; was timeout-
+  class round 2 of 3.
 - MT-REAL-02 R81 subset-schema pre-gate hardening DONE
   (2026-05-08). No-live tooling; closes R80 gap.
 - MT-REAL-02 R80 fresh04 recheck DONE; matrix_error.
@@ -85,6 +81,8 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - Any fresh-cohort live run must pass R81 subset-schema dry-run gate.
 - closure scope is per-outbound + per-class; never extend A.1 to
   cohort-B group closure without the required same-class chain.
+- A broken closure chain cannot be patched; restart needs a fresh
+  consecutive sequence.
 
 ## Historical Detail
 

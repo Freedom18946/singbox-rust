@@ -4916,5 +4916,197 @@ class R83Fresh04ClosureAttemptTests(unittest.TestCase):
         self.assertIn("round 2", assessment)
 
 
+class R84Fresh04CohortAStyleReEvaluationTests(unittest.TestCase):
+    """R84 fresh04 cohort-A-style divergence-carrier re-evaluation.
+
+    Pins: scope (fresh04 only x5), pre-gate (R81 subset_schema_gate
+    passed with empty violations), classification A.same_failure_only,
+    closure_status.evaluated=false with explicit broken-chain pin
+    (R83 chain cannot be patched by R84), classification dict does NOT
+    carry a closure_achieved key, and the 6-round R73 -> R78 -> R80 ->
+    R82 -> R83 -> R84 transition with class_history.
+    """
+
+    def _committed_r84_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round84_fresh04_recheck_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r84 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r84_scope_and_pre_gate(self):
+        _, ev = self._committed_r84_evidence()
+        self.assertEqual(ev["round"], "84")
+        self.assertEqual(
+            ev["kind"],
+            "fresh04-cohort-a-style-reevaluation-live-summary",
+        )
+        scope = ev["live_scope"]
+        self.assertEqual(scope["outbound"], "fresh04")
+        self.assertEqual(scope["outbounds"], ["fresh04"])
+        self.assertEqual(scope["runs_per_outbound"], 5)
+        self.assertEqual(scope["planned_total_runs"], 5)
+        self.assertTrue(scope["reality_vless_only"])
+        for forbidden in (
+            "fresh05_executed",
+            "cohort_c_executed",
+            "other_fresh_nodes_executed",
+            "hysteria2_executed",
+            "ws_plain_vless_executed",
+            "auto_extended",
+        ):
+            self.assertFalse(
+                scope[forbidden], msg=f"{forbidden} must be false in R84"
+            )
+        pre = ev["pre_gate"]
+        self.assertEqual(pre["head_at_gate"], "ae54c501")
+        self.assertTrue(pre["main_synced_with_origin_main_at_gate"])
+        self.assertTrue(pre["intake_gate_passed"])
+        self.assertTrue(pre["dry_run_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate_passed"])
+        self.assertEqual(pre["subset_schema_gate"]["violations"], [])
+        self.assertTrue(pre["subset_schema_gate"]["ok"])
+        self.assertEqual(pre["bhv"], "52/56 unchanged")
+        # Dry-run plan must reflect the ×5 depth (cohort-A-style)
+        self.assertEqual(pre["dry_run"]["runs_per_outbound"], 5)
+        self.assertEqual(pre["dry_run"]["planned_total_runs"], 5)
+        self.assertEqual(
+            pre["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 1,
+            },
+        )
+
+    def test_committed_r84_classification_is_a_same_failure_only_with_no_closure_field(
+        self,
+    ):
+        _, ev = self._committed_r84_evidence()
+        classification = ev["classification"]
+        self.assertEqual(classification["final"], "A.same_failure_only")
+        self.assertEqual(classification["primary_branch"], "A")
+        self.assertEqual(classification["sub_branch"], "A.same_failure_only")
+        # closure_achieved key must NOT appear in classification — R84
+        # is not a closure attempt round (planner refinement on R84
+        # prompt v2: closure_status.evaluated=false; classification
+        # carries no closure_achieved field).
+        self.assertNotIn(
+            "closure_achieved",
+            classification,
+            msg=(
+                "R84 classification must not carry closure_achieved; the "
+                "round is cohort-A-style re-evaluation, not a closure "
+                "attempt"
+            ),
+        )
+        # 5/5 run_same_failure
+        rhc = ev["summary"]["run_health_counts"]
+        self.assertEqual(
+            rhc,
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 5,
+                "run_unknown": 0,
+            },
+        )
+        # Uniform timeout labels at the round-summary level
+        self.assertEqual(
+            ev["summary"]["label_counts"],
+            {
+                "probe_io_all_timeout": 5,
+                "reality_all_timeout": 5,
+            },
+        )
+        # No divergence labels (R83 app_minimal_diverged did NOT
+        # reproduce — the cohort-A-style hypothesis is falsified).
+        self.assertEqual(
+            ev["summary"]["divergence_phase_label_breakdown"], {}
+        )
+        # Cohort-A-style assessment must record the falsified hypothesis
+        cas = ev["cohort_a_style_assessment"]
+        self.assertEqual(cas["verdict"], "A.same_failure_only")
+        self.assertFalse(cas["stable_phase_divergence_observed"])
+        self.assertFalse(cas["r83_app_minimal_diverged_reproduced"])
+        # Out-of-scope guards
+        self.assertTrue(ev["bhv_52_56_unchanged_at_round_time"])
+        self.assertFalse(ev["sampler_dataplane_modified"])
+        self.assertFalse(ev["go_fork_source_modified"])
+        self.assertFalse(ev["github_workflows_modified"])
+        self.assertFalse(ev["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(ev["taxonomy"]["unexpected_phase_labels"], [])
+
+    def test_committed_r84_closure_status_evaluated_false_with_broken_chain_pin(
+        self,
+    ):
+        _, ev = self._committed_r84_evidence()
+        cs = ev["closure_status"]
+        # R84 is cohort-A-style; closure must NOT be evaluated
+        self.assertFalse(cs["evaluated"])
+        # Broken chain pin (planner refinement): the field set must
+        # explicitly carry the broken-chain markers so a future reader
+        # cannot mis-read R78+R82+R84 as 3 consecutive timeout rounds.
+        self.assertIn("broken_chain_can_restart_only_in_new_round", cs)
+        self.assertTrue(cs["broken_chain_can_restart_only_in_new_round"])
+        self.assertEqual(cs["broken_chain_round"], "83")
+        self.assertFalse(cs["this_round_extends_broken_chain"])
+        self.assertIn(
+            "next_closure_attempt_would_require",
+            cs,
+            msg=(
+                "closure_status must spell out what a fresh attempt "
+                "would require; this is the planner refinement on the "
+                "R84 prompt v2"
+            ),
+        )
+        # Reason must call out the cohort-A-style reclassification origin
+        self.assertIn("cohort-A-style", cs["reason"])
+        # closure_achieved must NOT exist anywhere in classification
+        self.assertNotIn("closure_achieved", ev["classification"])
+
+    def test_committed_r84_fresh04_6_round_transition_and_class_history(self):
+        _, ev = self._committed_r84_evidence()
+        cmp = ev["fresh04_r73_r78_r80_r82_r83_r84_comparison"]
+        # All six rounds present
+        self.assertEqual(cmp["r73"]["same_failure_class"], "other")
+        self.assertEqual(cmp["r78"]["same_failure_class"], "timeout")
+        self.assertIsNone(cmp["r80"]["same_failure_class"])
+        self.assertEqual(cmp["r82"]["same_failure_class"], "timeout")
+        self.assertIsNone(cmp["r83"]["same_failure_class"])
+        self.assertEqual(cmp["r84"]["same_failure_class"], "timeout")
+        # State transitions
+        self.assertEqual(cmp["r73"]["state"], "same_failure")
+        self.assertEqual(cmp["r78"]["state"], "same_failure")
+        self.assertEqual(cmp["r80"]["state"], "matrix_error")
+        self.assertEqual(cmp["r82"]["state"], "same_failure")
+        self.assertEqual(cmp["r83"]["state"], "mixed")
+        self.assertEqual(cmp["r84"]["state"], "same_failure")
+        # class_history pin: 6 entries with R84 = timeout
+        self.assertEqual(
+            cmp["class_history"],
+            ["other", "timeout", None, "timeout", None, "timeout"],
+        )
+        # R84 run_health_counts: 5/5 same-failure, no other classes
+        self.assertEqual(
+            cmp["r84"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 5,
+                "run_unknown": 0,
+            },
+        )
+        # R84 has no divergence labels
+        self.assertEqual(cmp["r84"]["divergence_phase_label_breakdown"], {})
+        # Assessment must explicitly reject closure-chain patching
+        assessment = cmp["assessment"]
+        self.assertIn("FALSIFIED", assessment)
+        self.assertIn("broken closure chain", assessment)
+
+
 if __name__ == "__main__":
     unittest.main()
