@@ -1,0 +1,116 @@
+{
+  "round": "81",
+  "date": "2026-05-08",
+  "description": "R81 subset-schema pre-gate hardening (no-live, tooling). Closes the R80 pre-gate gap by validating REALITY/VLESS subset schema in the dry-run pre-gate stage.",
+  "kind": "subset-schema-gate-tooling-hardening-summary",
+  "live_executed": false,
+  "node_contact_executed": false,
+  "sampler_dataplane_modified": false,
+  "go_fork_source_modified": false,
+  "github_workflows_modified": false,
+  "bhv_52_56_unchanged_at_round_time": true,
+  "live_scope": {
+    "outbound": null,
+    "outbounds": [],
+    "runs_per_outbound": 0,
+    "planned_total_runs": 0,
+    "target": null,
+    "reality_vless_only": true,
+    "fresh04_executed": false,
+    "fresh05_executed": false,
+    "cohort_c_executed": false,
+    "other_fresh_nodes_executed": false,
+    "hysteria2_executed": false,
+    "ws_plain_vless_executed": false,
+    "auto_extended": false
+  },
+  "pre_gate": {
+    "head_at_gate": "b9729f52",
+    "main_synced_with_origin_main_at_gate": true,
+    "scope": "tooling/no-live",
+    "intake_counts_changed": false,
+    "dry_run_executed": false,
+    "live_authorization_required": false,
+    "bhv": "52/56 unchanged"
+  },
+  "tooling_change": {
+    "summary": "Closes the R80 pre-gate gap. The rust app's Config::load rejects unknown fields at /outbounds/i/... (e.g. GUI-only __id_in_gui), but the dry-run path in reality_vless_probe_batch.py never loaded the subset through the rust binary, so the rejection only surfaced at live matrix time. R81 adds a subset-schema gate that runs in the dry-run pre-gate stage.",
+    "module_added": "scripts/tools/reality_vless_subset_schema_gate.py",
+    "consumer_wired": "scripts/tools/reality_vless_probe_batch.py (dry-run path only)",
+    "live_path_modified": false,
+    "rules": [
+      "outbound-level fields with prefix `__` are rejected (catches GUI-only fields like `__id_in_gui` that R80 hit)",
+      "outbound-level fields not in the curated REALITY/VLESS allow-list are rejected (separate branch from the prefix rule)",
+      "nested fields with prefix `__` are rejected at any depth (covers e.g. tls.__leaked_meta, transport.__gui_path_hint)",
+      "nested whitelisting is NOT enforced; the rust loader's nested schema is large and protocol-shape-specific, matching it exactly is out of scope",
+      "field VALUES are never read or surfaced in violations; only path + field name + reason"
+    ],
+    "allow_list_source": "crates/sb-config/src/outbound/raw.rs::RawVlessConfig + crates/sb-config/src/compat.rs aliases (tag<->name, server_port<->port)",
+    "allow_list_size": 14,
+    "allow_list_scope": "REALITY/VLESS only; NOT a union of every protocol's outbound fields",
+    "compat_audit": {
+      "reality_vless_confirmation_cohorts": "no break — operates on round_summary shape; does not consume probe_batch dry-run output",
+      "reality_vless_probe_plan": "no break — uses dict.get and pre-existing fields only (selected_count, counts, selected); new gate fields are forward-compatible additions",
+      "reality_vless_probe_evidence": "no break — uses dict.get on plan/summary; new gate fields are forward-compatible additions"
+    },
+    "behavior_when_gate_fails": "dry-run writes plan.json and summary.json with subset_schema_gate_passed=false and the violations list, prints stdout payload, then exits with status 2 so cohort/orchestration scripts treat the dry-run as not-passed",
+    "behavior_when_gate_passes": "dry-run output gains subset_schema_gate_passed=true and exits 0 as before",
+    "behavior_on_live_run": "live (non-dry-run) path is unchanged; subset_schema_gate_passed and subset_schema_gate keys are absent on the live shape so no downstream consumer is forced to handle them"
+  },
+  "tests": {
+    "unittest_modules": [
+      "test_reality_probe_tools",
+      "test_reality_clienthello_family",
+      "test_dual_kernel_verification"
+    ],
+    "baseline_pass_count_before_r81": 176,
+    "added_in_r81": 14,
+    "expected_pass_count_after_r81": 190,
+    "measured_pass_count_after_r81": 190,
+    "branch_coverage": [
+      "double-underscore prefix rule at outbound level",
+      "non-underscore unknown field at outbound level (whitelist branch, distinct reason)",
+      "nested double-underscore at any depth",
+      "cleansed subset passes",
+      "redaction: violations carry only path/field/reason, no raw values",
+      "dry-run integration: gate failure -> exit 2, plan/summary/stdout carry subset_schema_gate_passed=false",
+      "dry-run integration: gate pass -> exit 0, plan/summary carry subset_schema_gate_passed=true",
+      "live path unchanged: no gate keys on plan/summary",
+      "allow-list scope: required fields in, foreign-protocol fields out",
+      "non-object subset root",
+      "non-vless outbound entry"
+    ],
+    "committed_evidence_contract_tests": [
+      "test_committed_r81_scope_and_no_live_flags",
+      "test_committed_r81_classification_and_redaction",
+      "test_committed_r81_tooling_change_records_compat_audit"
+    ]
+  },
+  "redaction": {
+    "raw_uuid_or_public_key_or_short_id_or_password_in_committed_files": false,
+    "raw_tag_or_server_or_server_name_in_committed_files": false,
+    "violations_carry_only_path_and_field_name": true,
+    "field_values_redacted": true,
+    "secret_scan_run_against_modified_and_new_files": true,
+    "secret_scan_findings_in_committed_files": 0
+  },
+  "classification": {
+    "final": "A",
+    "label": "actionable; tooling hardening; no live; no node contact",
+    "rationale": "R81 closes a structural pre-gate gap exposed by R80 (subset schema mismatch only fires at live matrix time). The fix is a no-live, no-node-contact, no-sampler/dataplane-touching tooling addition that surfaces the failure class at dry-run time, before any live authorization is granted. Future fresh-cohort live runs (fresh04 retest, cohort C round-2, R73 unselected recovery nodes) will benefit from this gate. BHV 52/56 unchanged; not a parity completion; not a sampler/dataplane regression.",
+    "next_handling": "R82 (proposed) would be the fresh04 same-failure recheck with a cleansed subset; requires explicit user re-authorization per the existing cohort-authorization discipline. R81 itself does not authorize any live run."
+  },
+  "follow_up": {
+    "fresh04_retest_pending": true,
+    "fresh04_retest_separate_round_required": true,
+    "fresh04_retest_requires_explicit_user_authorization": true,
+    "next_round_recommendation": "R82 fresh04 same-failure recheck with cleansed subset (same scope as R80: fresh04 only, REALITY/VLESS only, x3 runs, no auto-extension)"
+  },
+  "interpretation": [
+    "R80 returned classification C (tooling/config blocker). The blocker was that the rust app config validator rejected `__id_in_gui` carried over from a neutralized REALITY subset; the pre-gate dry-run did not catch it because dry-run does not load the config in the rust app process.",
+    "R81 closes that gap by adding a subset-schema gate at the dry-run stage. The gate is REALITY/VLESS-scoped and enforces two distinct rules at the outbound level (prefix rejection and allow-list) plus a recursive prefix rule at any depth. Field values are never read or surfaced; violations carry only path/field/reason.",
+    "The gate runs only in dry-run mode; the live path is unchanged. Operators are expected to pass the dry-run gate before authorizing a live run, which matches the existing pre-gate discipline.",
+    "Compat audit: reality_vless_confirmation_cohorts.py operates on round_summary shape and does not consume probe_batch dry-run output; reality_vless_probe_plan.py and reality_vless_probe_evidence.py both use dict.get on existing fields. Adding subset_schema_gate_passed and subset_schema_gate to dry-run output is forward-compatible.",
+    "BHV remains 52/56. R81 is not dual-kernel parity completion. R81 is not sampler/dataplane regression and does not modify go_fork_source/* or .github/workflows/*. Live reality/vless probe authorization remains separate; fresh04 same-failure recheck with a cleansed subset is proposed as R82 and requires explicit user re-authorization."
+  ]
+}

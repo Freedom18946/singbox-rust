@@ -19,6 +19,7 @@ MATRIX_TIMEOUT_STATUS = 124
 sys.path.insert(0, str(SCRIPT_DIR))
 
 import reality_vless_env_from_config as envtool  # noqa: E402
+import reality_vless_subset_schema_gate as schema_gate  # noqa: E402
 
 
 def safe_slug(value: str) -> str:
@@ -292,6 +293,17 @@ def main() -> None:
         "selected_count": len(selected),
         "selected": selected,
     }
+
+    # R81: subset-schema pre-gate. Only runs in dry-run mode so the
+    # live path is unaffected; operators are expected to pass this
+    # gate via dry-run before authorizing live runs. See
+    # reality_vless_subset_schema_gate.py for the rule contract.
+    gate_result: dict[str, Any] | None = None
+    if args.dry_run:
+        gate_result = schema_gate.validate_subset_schema(config)
+        plan["subset_schema_gate_passed"] = bool(gate_result["ok"])
+        plan["subset_schema_gate"] = gate_result
+
     write_json(output_dir / "plan.json", plan)
 
     results = []
@@ -364,22 +376,34 @@ def main() -> None:
         "summary": summarize_results(results),
         "results": results,
     }
+    if args.dry_run and gate_result is not None:
+        summary["subset_schema_gate_passed"] = bool(gate_result["ok"])
+        summary["subset_schema_gate"] = gate_result
     write_json(output_dir / "summary.json", summary)
+    stdout_payload: dict[str, Any] = {
+        "output_dir": str(output_dir),
+        "plan_json": str(output_dir / "plan.json"),
+        "summary_json": str(output_dir / "summary.json"),
+        "results_jsonl": None if args.dry_run else str(output_dir / "results.jsonl"),
+        "selected_count": len(selected),
+        "runs": args.runs,
+        "matrix_timeout_secs": matrix_timeout_secs,
+    }
+    if args.dry_run and gate_result is not None:
+        stdout_payload["subset_schema_gate_passed"] = bool(gate_result["ok"])
     json.dump(
-        {
-            "output_dir": str(output_dir),
-            "plan_json": str(output_dir / "plan.json"),
-            "summary_json": str(output_dir / "summary.json"),
-            "results_jsonl": None if args.dry_run else str(output_dir / "results.jsonl"),
-            "selected_count": len(selected),
-            "runs": args.runs,
-            "matrix_timeout_secs": matrix_timeout_secs,
-        },
+        stdout_payload,
         sys.stdout,
         indent=2,
         ensure_ascii=True,
     )
     sys.stdout.write("\n")
+    if args.dry_run and gate_result is not None and not gate_result["ok"]:
+        # Pre-gate gap that R80 exposed: schema mismatch in the
+        # subset must be visible BEFORE any live authorization. Exit
+        # non-zero so cohort/orchestration scripts treat this as
+        # "dry-run did not pass" and refuse to escalate.
+        raise SystemExit(2)
 
 
 if __name__ == "__main__":

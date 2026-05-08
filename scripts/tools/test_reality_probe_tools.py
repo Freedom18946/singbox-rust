@@ -19,6 +19,7 @@ import reality_vless_probe_evidence as evidence
 import reality_vless_probe_plan as plan
 import reality_vless_env_from_config as envtool
 import reality_vless_sample_intake as intake
+import reality_vless_subset_schema_gate as schema_gate
 import round_summary_run_health as round_health
 import trojan_config_normalize as trojan_normalize
 import trojan_sample_intake as trojan_intake
@@ -4205,6 +4206,377 @@ class FreshConfirmationCohortTests(unittest.TestCase):
             ):
                 self.assertEqual(entry[component]["class"], "timeout")
                 self.assertFalse(entry[component]["ok"])
+
+
+class R81SubsetSchemaGateTests(unittest.TestCase):
+    """R81 subset-schema pre-gate hardening (no-live, tooling).
+
+    Closes the R80 pre-gate gap: rust app config schema rejects
+    GUI-only fields like ``__id_in_gui`` at live time, but the
+    dry-run path does not load the subset through the rust binary.
+    The gate validates the subset schema in the dry-run pre-gate
+    stage so the failure surfaces before live authorization.
+    """
+
+    def _cleansed_outbound(self) -> dict:
+        return {
+            "type": "vless",
+            "tag": "fresh04",
+            "server": "redacted.example.invalid",
+            "server_port": 443,
+            "uuid": "redacted-uuid",
+            "flow": "xtls-rprx-vision",
+            "tls": {
+                "enabled": True,
+                "reality": {
+                    "public_key": "redacted-pk",
+                    "short_id": "redacted-sid",
+                    "server_name": "redacted.example.invalid",
+                },
+            },
+        }
+
+    def _cleansed_subset(self) -> dict:
+        return {"outbounds": [self._cleansed_outbound()]}
+
+    def _write_subset(self, tmp: str, payload: dict) -> pathlib.Path:
+        path = pathlib.Path(tmp) / "subset.json"
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        return path
+
+    def _run_batch(
+        self, args: list[str]
+    ) -> subprocess.CompletedProcess[str]:
+        script = (
+            pathlib.Path(__file__).resolve().parent
+            / "reality_vless_probe_batch.py"
+        )
+        return subprocess.run(
+            [sys.executable, "-B", str(script), *args],
+            capture_output=True,
+            text=True,
+        )
+
+    def test_outbound_level_double_underscore_field_uses_prefix_branch(self):
+        outbound = {**self._cleansed_outbound(), "__id_in_gui": "gui-id"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_subset(tmp, {"outbounds": [outbound]})
+            result = schema_gate.validate_subset_schema(path)
+        self.assertFalse(result["ok"])
+        self.assertEqual(len(result["violations"]), 1)
+        violation = result["violations"][0]
+        self.assertEqual(violation["field"], "__id_in_gui")
+        self.assertEqual(violation["path"], "/outbounds/0/__id_in_gui")
+        self.assertIn("rejected prefix", violation["reason"])
+        # Distinct from the whitelist-branch reason
+        self.assertNotIn("allow", violation["reason"].lower())
+
+    def test_outbound_level_unknown_non_underscore_field_uses_whitelist_branch(
+        self,
+    ):
+        # `unknown_kv` does not start with `__`, so it must trip the
+        # allow-list rule, NOT the prefix rule. Pinning this distinct
+        # branch prevents future regressions where the two rules
+        # collapse into a single reason string.
+        outbound = {**self._cleansed_outbound(), "unknown_kv": "val"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_subset(tmp, {"outbounds": [outbound]})
+            result = schema_gate.validate_subset_schema(path)
+        self.assertFalse(result["ok"])
+        self.assertEqual(len(result["violations"]), 1)
+        violation = result["violations"][0]
+        self.assertEqual(violation["field"], "unknown_kv")
+        self.assertEqual(violation["path"], "/outbounds/0/unknown_kv")
+        self.assertIn("not in", violation["reason"])
+        # Distinct from the prefix-branch reason
+        self.assertNotIn("rejected prefix", violation["reason"])
+
+    def test_cleansed_subset_passes_gate(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_subset(tmp, self._cleansed_subset())
+            result = schema_gate.validate_subset_schema(path)
+        self.assertTrue(result["ok"])
+        self.assertEqual(result["violations"], [])
+        self.assertEqual(result["stats"]["outbounds_checked"], 1)
+        self.assertEqual(result["stats"]["outbound_level_violations"], 0)
+        self.assertEqual(result["stats"]["nested_violations"], 0)
+
+    def test_nested_double_underscore_field_is_rejected_at_depth(self):
+        outbound = self._cleansed_outbound()
+        outbound["tls"] = {**outbound["tls"], "__leaked_meta": "redacted"}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_subset(tmp, {"outbounds": [outbound]})
+            result = schema_gate.validate_subset_schema(path)
+        self.assertFalse(result["ok"])
+        self.assertEqual(len(result["violations"]), 1)
+        violation = result["violations"][0]
+        self.assertEqual(violation["field"], "__leaked_meta")
+        self.assertEqual(violation["path"], "/outbounds/0/tls/__leaked_meta")
+        self.assertIn("rejected prefix", violation["reason"])
+        self.assertEqual(result["stats"]["nested_violations"], 1)
+        self.assertEqual(result["stats"]["outbound_level_violations"], 0)
+
+    def test_violation_payload_redacts_field_values(self):
+        secret = "SUPER_SECRET_VALUE_THAT_MUST_NEVER_LEAK_FROM_GATE"
+        outbound = {
+            **self._cleansed_outbound(),
+            "uuid": secret,
+            "__id_in_gui": secret,
+            "unknown_kv": secret,
+        }
+        outbound["tls"] = {**outbound["tls"], "__leaked_meta": secret}
+        with tempfile.TemporaryDirectory() as tmp:
+            path = self._write_subset(tmp, {"outbounds": [outbound]})
+            result = schema_gate.validate_subset_schema(path)
+        self.assertFalse(result["ok"])
+        rendered = json.dumps(result)
+        self.assertNotIn(secret, rendered)
+        # Each violation must surface only path/field/reason — no other keys
+        for violation in result["violations"]:
+            self.assertEqual(
+                set(violation.keys()), {"path", "field", "reason"}
+            )
+
+    def test_dry_run_propagates_gate_failure_to_plan_summary_and_exit_code(
+        self,
+    ):
+        outbound = {**self._cleansed_outbound(), "__id_in_gui": "gui-id"}
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            subset_path = self._write_subset(tmp, {"outbounds": [outbound]})
+            output_dir = tmp_path / "out"
+            proc = self._run_batch(
+                [
+                    "--config", str(subset_path),
+                    "--outbound", "fresh04",
+                    "--target", "example.com:80",
+                    "--runs", "1",
+                    "--output-dir", str(output_dir),
+                    "--dry-run",
+                ]
+            )
+            self.assertEqual(
+                proc.returncode,
+                2,
+                msg=(
+                    f"expected exit 2 on dry-run gate failure; "
+                    f"got {proc.returncode}; stderr={proc.stderr!r}"
+                ),
+            )
+            plan_payload = json.loads(
+                (output_dir / "plan.json").read_text(encoding="utf-8")
+            )
+            summary_payload = json.loads(
+                (output_dir / "summary.json").read_text(encoding="utf-8")
+            )
+            stdout_payload = json.loads(proc.stdout)
+        self.assertIn("subset_schema_gate_passed", plan_payload)
+        self.assertFalse(plan_payload["subset_schema_gate_passed"])
+        self.assertIn("subset_schema_gate", plan_payload)
+        plan_violations = plan_payload["subset_schema_gate"]["violations"]
+        self.assertEqual(len(plan_violations), 1)
+        self.assertEqual(plan_violations[0]["field"], "__id_in_gui")
+        self.assertIn("subset_schema_gate_passed", summary_payload)
+        self.assertFalse(summary_payload["subset_schema_gate_passed"])
+        self.assertFalse(stdout_payload["subset_schema_gate_passed"])
+
+    def test_dry_run_pass_is_reflected_in_plan_summary_and_zero_exit(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            subset_path = self._write_subset(tmp, self._cleansed_subset())
+            output_dir = tmp_path / "out"
+            proc = self._run_batch(
+                [
+                    "--config", str(subset_path),
+                    "--outbound", "fresh04",
+                    "--target", "example.com:80",
+                    "--runs", "1",
+                    "--output-dir", str(output_dir),
+                    "--dry-run",
+                ]
+            )
+            self.assertEqual(
+                proc.returncode,
+                0,
+                msg=(
+                    f"clean dry-run should exit 0; got {proc.returncode}; "
+                    f"stderr={proc.stderr!r}"
+                ),
+            )
+            plan_payload = json.loads(
+                (output_dir / "plan.json").read_text(encoding="utf-8")
+            )
+            summary_payload = json.loads(
+                (output_dir / "summary.json").read_text(encoding="utf-8")
+            )
+        self.assertTrue(plan_payload["subset_schema_gate_passed"])
+        self.assertTrue(summary_payload["subset_schema_gate_passed"])
+        self.assertEqual(
+            plan_payload["subset_schema_gate"]["violations"], []
+        )
+
+    def test_live_path_is_unaffected_and_carries_no_gate_field(self):
+        # The R81 gate only runs in dry-run; live invocations must
+        # produce the same plan/summary shape as before R81. Use a
+        # stub matrix script to keep the test offline.
+        with tempfile.TemporaryDirectory() as tmp:
+            tmp_path = pathlib.Path(tmp)
+            subset_path = self._write_subset(tmp, self._cleansed_subset())
+            output_dir = tmp_path / "out"
+            stub_script = tmp_path / "stub-matrix.sh"
+            stub_script.write_text(
+                "#!/usr/bin/env bash\nexit 0\n", encoding="utf-8"
+            )
+            stub_script.chmod(0o755)
+            proc = self._run_batch(
+                [
+                    "--config", str(subset_path),
+                    "--outbound", "fresh04",
+                    "--target", "example.com:80",
+                    "--runs", "1",
+                    "--output-dir", str(output_dir),
+                    "--matrix-script", str(stub_script),
+                ]
+            )
+            self.assertEqual(
+                proc.returncode,
+                0,
+                msg=(
+                    f"live (stub) run should exit 0; got {proc.returncode}; "
+                    f"stderr={proc.stderr!r}"
+                ),
+            )
+            plan_payload = json.loads(
+                (output_dir / "plan.json").read_text(encoding="utf-8")
+            )
+            summary_payload = json.loads(
+                (output_dir / "summary.json").read_text(encoding="utf-8")
+            )
+        self.assertNotIn("subset_schema_gate_passed", plan_payload)
+        self.assertNotIn("subset_schema_gate", plan_payload)
+        self.assertNotIn("subset_schema_gate_passed", summary_payload)
+        self.assertNotIn("subset_schema_gate", summary_payload)
+
+    def test_reality_vless_allow_list_is_protocol_scoped(self):
+        allowed = schema_gate.reality_vless_outbound_allowed_fields()
+        for required in (
+            "type",
+            "tag",
+            "name",
+            "server",
+            "server_port",
+            "port",
+            "uuid",
+            "flow",
+            "network",
+            "packet_encoding",
+            "connect_timeout_sec",
+            "tls",
+            "transport",
+            "multiplex",
+        ):
+            self.assertIn(
+                required,
+                allowed,
+                msg=(
+                    f"{required!r} is in RawVlessConfig (or its compat "
+                    f"alias) and must be in the reality/vless allow-list"
+                ),
+            )
+        # Foreign-protocol fields must NOT appear; the allow-list is
+        # reality/vless-scoped on purpose so the gate stays tight.
+        for foreign in ("password", "method", "obfs", "auth_str"):
+            self.assertNotIn(
+                foreign,
+                allowed,
+                msg=(
+                    f"{foreign!r} belongs to non-reality/vless protocols; "
+                    f"the allow-list must not widen to a protocol union"
+                ),
+            )
+
+    def test_non_object_subset_root_yields_redacted_violation(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "subset.json"
+            path.write_text(json.dumps([1, 2, 3]), encoding="utf-8")
+            result = schema_gate.validate_subset_schema(path)
+        self.assertFalse(result["ok"])
+        self.assertEqual(len(result["violations"]), 1)
+        self.assertEqual(result["violations"][0]["field"], "(root)")
+
+    def test_non_vless_outbound_is_rejected_as_out_of_scope(self):
+        with tempfile.TemporaryDirectory() as tmp:
+            path = pathlib.Path(tmp) / "subset.json"
+            path.write_text(
+                json.dumps({"outbounds": [{"type": "direct"}]}),
+                encoding="utf-8",
+            )
+            result = schema_gate.validate_subset_schema(path)
+        self.assertFalse(result["ok"])
+        violation = result["violations"][0]
+        self.assertEqual(violation["field"], "type")
+        self.assertIn("vless", violation["reason"].lower())
+
+    def _committed_r81_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round81_subset_schema_gate_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r81 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r81_scope_and_no_live_flags(self):
+        _, ev = self._committed_r81_evidence()
+        self.assertEqual(ev["round"], "81")
+        self.assertEqual(
+            ev["kind"],
+            "subset-schema-gate-tooling-hardening-summary",
+        )
+        self.assertFalse(ev["live_executed"])
+        self.assertFalse(ev["node_contact_executed"])
+        self.assertFalse(ev["sampler_dataplane_modified"])
+        self.assertFalse(ev["go_fork_source_modified"])
+        self.assertFalse(ev["github_workflows_modified"])
+        self.assertTrue(ev["bhv_52_56_unchanged_at_round_time"])
+        scope = ev["live_scope"]
+        self.assertEqual(scope["outbounds"], [])
+        self.assertEqual(scope["planned_total_runs"], 0)
+        self.assertFalse(scope["fresh04_executed"])
+        self.assertFalse(scope["fresh05_executed"])
+        self.assertFalse(scope["cohort_c_executed"])
+        self.assertFalse(scope["other_fresh_nodes_executed"])
+        self.assertFalse(scope["hysteria2_executed"])
+        self.assertFalse(scope["ws_plain_vless_executed"])
+
+    def test_committed_r81_classification_and_redaction(self):
+        _, ev = self._committed_r81_evidence()
+        classification = ev["classification"]
+        self.assertEqual(classification["final"], "A")
+        self.assertIn("tooling", classification["label"].lower())
+        red = ev["redaction"]
+        self.assertFalse(
+            red["raw_uuid_or_public_key_or_short_id_or_password_in_committed_files"]
+        )
+        self.assertTrue(red["violations_carry_only_path_and_field_name"])
+        self.assertTrue(red["field_values_redacted"])
+
+    def test_committed_r81_tooling_change_records_compat_audit(self):
+        _, ev = self._committed_r81_evidence()
+        change = ev["tooling_change"]
+        self.assertEqual(
+            change["module_added"],
+            "scripts/tools/reality_vless_subset_schema_gate.py",
+        )
+        self.assertFalse(change["live_path_modified"])
+        compat = change["compat_audit"]
+        for tool in (
+            "reality_vless_confirmation_cohorts",
+            "reality_vless_probe_plan",
+            "reality_vless_probe_evidence",
+        ):
+            self.assertIn(tool, compat)
+            self.assertIn("no break", compat[tool].lower())
 
 
 if __name__ == "__main__":

@@ -35,28 +35,33 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **171 tests PASS**.
+  **190 tests PASS** (R81 added 14: 11 immediate + 3 committed-
+  evidence contract).
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R80: 23 rounds, 218 runs, 93 all_ok.
+- live_rollup.json/md after R80: 23 rounds, 218 runs, 93 all_ok
+  (R81 is no-live; rollup unchanged).
 
 ## Next Steps
 
-- MT-REAL-02 R80 fresh04 same-failure recheck DONE
-  (2026-05-08). Authorized live only: fresh04 x3 = 3 runs. Pre-gate
-  passed covered_existing=1, fresh_ready=0, duplicate=0, not_ready=0;
-  dry-run selected=1, planned=3. Result: 3/3 status=matrix_error,
-  run_unknown=3 (no labels). Tooling/config blocker: rust app config
-  validator rejected `__id_in_gui` carried over from neutralized
-  REALITY subset; pre-gate dry-run did not catch it. Phase probe
-  3/3 timeout class — supporting evidence consistent with R78
-  same-failure(timeout). Classification C. fresh04 R73
-  same-failure(other) -> R78 same-failure(timeout) -> R80
-  matrix_error / run_unknown; same-failure not formally
-  re-confirmed at matrix level; no taxonomy-outside phase label.
-  fresh04 latest_health: latest_same_failure -> latest_unknown.
-  fresh05/cohort C/other fresh/Hys2/WS/plain-VLESS: 0. No new
-  structural divergence. BHV 52/56 unchanged.
+- MT-REAL-02 R81 subset-schema pre-gate hardening DONE
+  (2026-05-08). No live, no node contact, no sampler/dataplane.
+  Closes R80 pre-gate gap: new module
+  `reality_vless_subset_schema_gate.py` (prefix branch + reality/
+  vless allow-list branch + recursive nested-prefix rule), wired
+  into `reality_vless_probe_batch.py` dry-run path only. Dry-run
+  gate failure: plan/summary/stdout carry
+  `subset_schema_gate_passed=false`, exit 2. Live shape
+  unchanged. Compat audit clean (cohort/plan/evidence consumers
+  use dict.get). Violations carry only path/field/reason, no raw
+  values. Classification A. BHV 52/56 unchanged; not parity
+  completion. fresh04 retest still pending → recommended R82
+  (cleansed subset, requires explicit re-authorization).
+- MT-REAL-02 R80 fresh04 same-failure recheck DONE (2026-05-08).
+  3/3 matrix_error due to `__id_in_gui` schema mismatch (closed
+  by R81). Phase probe 3/3 timeout — supporting evidence
+  consistent with R78 same-failure(timeout). Classification C.
+  fresh04 latest_health: latest_same_failure → latest_unknown.
 - MT-REAL-02 R79 fresh05 divergence-carrier recheck DONE
   (2026-05-08). 5/5 run_all_ok; R78 app_pre_post_diverged did not
   repeat; fresh05 latest_all_ok / recovered. BHV 52/56 unchanged.
@@ -78,6 +83,8 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
   regression.
 - The user pursues the highest goal, not a maintenance-only posture.
 - MT-REAL-02 stage closure is not project closure.
+- Any fresh-cohort live run must pass the R81 subset-schema dry-run
+  gate before live authorization.
 
 ## Historical Detail
 

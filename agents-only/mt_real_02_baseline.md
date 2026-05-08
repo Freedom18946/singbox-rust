@@ -7621,3 +7621,111 @@ same-failure(timeout) 在网络层一致，但不能作为 matrix 层 same-failu
 - 没有动 sampler/dataplane
 - 没有动 `go_fork_source/*` / `.github/workflows/*`
 - BHV 52/56 不变；Rust/live supporting evidence，不写成 parity completion
+
+## R81 — Subset-schema pre-gate hardening (no-live, tooling)
+
+### 起因
+
+R80 暴露了一条 C-class tooling/config 路径：fresh04 subset 残留 GUI-only
+字段 `__id_in_gui`，rust app 配置校验在 live matrix 时 3/3 拒掉
+（unknown field at /outbounds/0/__id_in_gui）；pre-gate dry-run
+counts 全过，但 dry-run 不在 rust app 进程内 load subset，所以 schema
+mismatch 只在 live 时炸。R76 plan-C 已经预言过这条路径。
+
+任何 fresh-cohort live（fresh04 重测、cohort C round-2、R73 6 个未选
+recovery 节点）在这条路径关掉前都背着同一种结构性风险，所以 R81
+作为纯 tooling 修复优先于 fresh04 重测。
+
+### 范围
+
+- 无 live、无 node 联系、不动 sampler/dataplane
+- 不动 `go_fork_source/*`、不动 `.github/workflows/*`
+- BHV 52/56 不变；不写成 parity completion
+- 不授权任何 live；fresh04 重测仍待另起一轮（建议 R82）
+
+### 改动
+
+- 新增 `scripts/tools/reality_vless_subset_schema_gate.py`
+  - `validate_subset_schema(subset_path, *, allowed_outbound_fields,
+    rejected_field_prefixes)` 返回 `{ok, violations, stats}`
+  - 两条独立分支（reason 字符串区分）：
+    - 前缀分支：outbound-level 任何 `__` 前缀字段（GUI-only）
+    - 白名单分支：outbound-level 不在 reality/vless allow-list 的字段
+  - 嵌套层只跑前缀分支（不强制嵌套白名单；rust loader 嵌套 schema 太大）
+  - 违规输出只携带 `path` + `field` + `reason`，从不读取/泄漏 value
+  - allow-list 来源：`crates/sb-config/src/outbound/raw.rs::RawVlessConfig`
+    + `crates/sb-config/src/compat.rs` 别名（`tag↔name`、`server_port↔port`）
+  - allow-list 严格 reality/vless 范围，不是协议联合
+- 在 `scripts/tools/reality_vless_probe_batch.py` 的 dry-run 路径前置
+  此 gate
+  - dry-run 时 plan/summary/stdout 加 `subset_schema_gate_passed`
+    + `subset_schema_gate` 字段
+  - gate 失败时 plan/summary 仍写出（带 violations），exit 2
+  - live 路径完全不动；live shape 不带 gate 字段（向后兼容）
+
+### 兼容审计
+
+- `reality_vless_confirmation_cohorts.py`：消费 round_summary，不消费
+  probe_batch dry-run shape；无破坏。
+- `reality_vless_probe_plan.py` / `reality_vless_probe_evidence.py`：
+  `dict.get` 已有字段；新字段是纯叠加；无破坏。
+
+### 测试
+
+- 三模块 unittest baseline：176 PASS
+- R81 新增 14 用例（11 即时 + 3 committed-evidence contract）
+- R81 后实测：**190 PASS**
+- 分支覆盖：前缀 vs 白名单两分支独立 pin、嵌套前缀、清洁通过、redaction、
+  dry-run 失败/通过、live 路径不变、allow-list 范围、非对象根、非-vless
+  outbound、committed-evidence 三项契约
+
+### 安全/redaction
+
+- 提交文件中无 raw uuid/public_key/short_id/password/tag/server/server_name
+- 测试 fixture 全部使用合成 redacted 值（如 `redacted-uuid`、
+  `redacted.example.invalid`）
+- secret 扫描覆盖所有 modified+new 文件，0 命中
+
+### 分类
+
+**A — actionable; tooling hardening; no live; no node contact.**
+
+R81 把 R76 plan-C 预言、R80 操作上确认的结构性 pre-gate gap 关掉。
+未来任何 fresh-cohort live 在 dry-run 阶段就能拒绝带残留 GUI-only
+字段的 subset。BHV 52/56 不变；不是 sampler/dataplane regression；
+不是 dual-kernel parity completion。
+
+### Rollup delta
+
+R81 不改 live 数据，不改 rollup：
+
+- total_rounds、total_executed_runs、total_all_ok_runs：与 R80 一致
+- 无 fresh\_\* outbound 状态变化
+- BHV 52/56 不变
+
+### 产物
+
+- `scripts/tools/reality_vless_subset_schema_gate.py`（新增）
+- `scripts/tools/reality_vless_probe_batch.py`（dry-run 路径加 gate；
+  live 路径不动）
+- `scripts/tools/test_reality_probe_tools.py`（R81 类 + 三项 committed-
+  evidence 契约）
+- `agents-only/mt_real_02_evidence/round81_subset_schema_gate_summary.json`
+- `agents-only/mt_real_02_evidence/round81_subset_schema_gate_summary.md`
+- `agents-only/active_context.md`（≤95 行）
+- 本文件 R81 节
+
+### Follow-up
+
+- fresh04 重测仍 pending；R81 不授权任何 live。
+- 建议 R82：fresh04 same-failure recheck 用清洗后的 subset（fresh04
+  only / REALITY/VLESS only / ×3 / no auto-extend），需用户显式再次
+  授权。
+
+### 范围确认
+
+- live runs in R81: 0
+- node contact in R81: 0
+- sampler / dataplane changes: 0
+- `go_fork_source/*` / `.github/workflows/*` 改动: 0
+- BHV 52/56 不变；Rust-only quality / tooling，不写成 parity completion
