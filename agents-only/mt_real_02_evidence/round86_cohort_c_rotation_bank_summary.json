@@ -1,0 +1,574 @@
+{
+  "round": "86",
+  "date": "2026-05-09",
+  "description": "R86 cohort C rotation-bank round. Outcome: A.rotation_bank_clean; fresh01/fresh15 per-rep recovery closure achieved, fresh10 round 2 banked.",
+  "source_summary": "/tmp/r86-cohort-c-rotation-bank-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r86_cohort_c_rotation_bank_subset_clean.json --plan-json /tmp/r86_cohort_c_rotation_bank_plan.json --target example.com:80 --runs 3 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r86_cohort_c_rotation_bank_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 3,
+    "selected_count": 3
+  },
+  "summary": {
+    "total": 9,
+    "executed_runs": 9,
+    "status_counts": {
+      "completed": 9
+    },
+    "label_counts": {
+      "all_ok": 9
+    },
+    "class_counts": {
+      "ok": 81
+    },
+    "divergence_run_count": 0,
+    "divergence_phase_label_count": 0,
+    "distinct_divergence_phase_label_count": 0,
+    "divergence_phase_label_breakdown": {},
+    "same_failure_run_count": 0,
+    "accounting_note": "divergence_run_count counts runs (a run is a divergence run iff it carries any of the four phase labels app_pre_post_diverged, app_minimal_diverged, minimal_transport_diverged, bridge_io_diverged); divergence_phase_label_count counts phase-label occurrences across those divergence runs (a single run can carry multiple phase labels). label_counts above is per-occurrence, matching divergence_phase_label_breakdown.",
+    "run_health_counts": {
+      "run_all_ok": 9,
+      "run_divergence": 0,
+      "run_same_failure": 0,
+      "run_unknown": 0
+    },
+    "run_all_ok": 9,
+    "run_divergence": 0,
+    "run_same_failure": 0,
+    "run_unknown": 0
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 9,
+    "uniform_failure_labels": {}
+  },
+  "by_outbound": {
+    "fresh01": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      },
+      "run_health_counts": {
+        "run_all_ok": 3,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0,
+      "historical_has_non_all_ok": false,
+      "r86_state": "all_ok",
+      "recovery_consecutive_rounds_after_r86": 3,
+      "per_rep_recovery_closure_achieved": true,
+      "cohort_c_role": "clean_existing_rep_round3_closure_attempt"
+    },
+    "fresh15": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      },
+      "run_health_counts": {
+        "run_all_ok": 3,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0,
+      "historical_has_non_all_ok": false,
+      "r86_state": "all_ok",
+      "recovery_consecutive_rounds_after_r86": 3,
+      "per_rep_recovery_closure_achieved": true,
+      "cohort_c_role": "clean_existing_rep_round3_closure_attempt"
+    },
+    "fresh10": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      },
+      "run_health_counts": {
+        "run_all_ok": 3,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0,
+      "historical_has_non_all_ok": false,
+      "r86_state": "all_ok",
+      "recovery_consecutive_rounds_after_r86": 2,
+      "per_rep_recovery_closure_achieved": false,
+      "cohort_c_role": "replacement_rep_round2_bank"
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh01",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh01",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh01",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh15",
+      "ordinal": 2,
+      "run_index": 1,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh15",
+      "ordinal": 2,
+      "run_index": 2,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh15",
+      "ordinal": 2,
+      "run_index": 3,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 3,
+      "run_index": 1,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 3,
+      "run_index": 2,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 3,
+      "run_index": 3,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    }
+  ],
+  "interpretation": [
+    "R86 rotation-bank set only: fresh01, fresh15, fresh10. fresh09 and fresh04 were not run.",
+    "All 9 runs completed with matrix_status=0 and label all_ok; no divergence phase labels appeared.",
+    "fresh01 and fresh15 now have R73 + R85 + R86 consecutive all_ok and therefore reach per-rep recovery closure.",
+    "fresh10 is the replacement representative. It has R73 + R86 only, so R86 banks round 2 of 3 for fresh10 and does not close it.",
+    "Whole cohort C closure is not claimed: fresh09 broke at R85 and fresh10 is not yet at 3 consecutive rounds."
+  ],
+  "kind": "cohort-c-rotation-bank-live-summary",
+  "live_executed": true,
+  "node_contact_executed": true,
+  "sampler_dataplane_modified": false,
+  "go_fork_source_modified": false,
+  "github_workflows_modified": false,
+  "bhv_52_56_unchanged_at_round_time": true,
+  "live_scope": {
+    "outbounds": [
+      "fresh01",
+      "fresh15",
+      "fresh10"
+    ],
+    "runs_per_outbound": 3,
+    "planned_total_runs": 9,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "fresh09_executed": false,
+    "fresh04_executed": false,
+    "fresh08_11_12_13_14_executed": false,
+    "other_fresh_nodes_executed": false,
+    "hysteria2_executed": false,
+    "ws_plain_vless_executed": false,
+    "auto_extended": false,
+    "rotated_failed_rep_in_round": false,
+    "retried_failed_run": false,
+    "fresh02_03_05_06_07_executed": false
+  },
+  "pre_gate": {
+    "head_at_gate": "370e26ed",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 3
+    },
+    "expected_intake_counts": {
+      "covered_existing": 3,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 3,
+      "runs_per_outbound": 3,
+      "planned_total_runs": 9,
+      "target": "example.com:80",
+      "dry_run": true,
+      "subset_schema_gate_passed": true,
+      "selected": [
+        "fresh01",
+        "fresh15",
+        "fresh10"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "subset_schema_gate_passed": true,
+    "subset_schema_gate": {
+      "ok": true,
+      "violations": [],
+      "stats": {
+        "outbounds_checked": 3,
+        "outbound_level_violations": 0,
+        "nested_violations": 0
+      }
+    },
+    "bhv": "52/56 unchanged"
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false,
+    "observed_phase_labels_in_taxonomy": []
+  },
+  "cohort_c_rotation_bank_status": {
+    "cohort_c_round": "rotation-bank",
+    "consecutive_rounds_required": 3,
+    "rotated_out_rep": "fresh09",
+    "replacement_rep": "fresh10",
+    "closure_scope": "per-rep only",
+    "whole_cohort_c_closure_achieved": false,
+    "per_rep": {
+      "fresh01": {
+        "role": "clean_existing_rep_round3_closure_attempt",
+        "latest_state": "all_ok",
+        "recovery_consecutive_rounds": 3,
+        "r86_run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "round_banked_at_r86": true,
+        "per_rep_recovery_closure_achieved": true,
+        "closure_reason": "R73 + R85 + R86 are three consecutive all_ok recovery rounds."
+      },
+      "fresh15": {
+        "role": "clean_existing_rep_round3_closure_attempt",
+        "latest_state": "all_ok",
+        "recovery_consecutive_rounds": 3,
+        "r86_run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "round_banked_at_r86": true,
+        "per_rep_recovery_closure_achieved": true,
+        "closure_reason": "R73 + R85 + R86 are three consecutive all_ok recovery rounds."
+      },
+      "fresh10": {
+        "role": "replacement_rep_round2_bank",
+        "latest_state": "all_ok",
+        "recovery_consecutive_rounds": 2,
+        "r86_run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "round_banked_at_r86": true,
+        "per_rep_recovery_closure_achieved": false,
+        "closure_reason": "Replacement rep has R73 + R86 only; this is round 2 banked, not closure."
+      }
+    },
+    "clean_existing_reps_closed": [
+      "fresh01",
+      "fresh15"
+    ],
+    "replacement_reps_banked_round2": [
+      "fresh10"
+    ],
+    "all_r86_reps_clean": true,
+    "rotation_recommended_next": false
+  },
+  "cohort_c_per_rep_transition": {
+    "fresh01": [
+      {
+        "round": "73",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 5,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 5
+        },
+        "class_counts": {
+          "ok": 45
+        },
+        "recovery_consecutive_rounds_after_round": 1,
+        "same_failure_class": null,
+        "phase_labels": []
+      },
+      {
+        "round": "85",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "class_counts": {
+          "ok": 27
+        },
+        "recovery_consecutive_rounds_after_round": 2,
+        "same_failure_class": null,
+        "phase_labels": []
+      },
+      {
+        "round": "86",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "class_counts": {
+          "ok": 27
+        },
+        "recovery_consecutive_rounds_after_round": 3,
+        "same_failure_class": null,
+        "phase_labels": []
+      }
+    ],
+    "fresh15": [
+      {
+        "round": "73",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 5,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 5
+        },
+        "class_counts": {
+          "ok": 45
+        },
+        "recovery_consecutive_rounds_after_round": 1,
+        "same_failure_class": null,
+        "phase_labels": []
+      },
+      {
+        "round": "85",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "class_counts": {
+          "ok": 27
+        },
+        "recovery_consecutive_rounds_after_round": 2,
+        "same_failure_class": null,
+        "phase_labels": []
+      },
+      {
+        "round": "86",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "class_counts": {
+          "ok": 27
+        },
+        "recovery_consecutive_rounds_after_round": 3,
+        "same_failure_class": null,
+        "phase_labels": []
+      }
+    ],
+    "fresh10": [
+      {
+        "round": "73",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 5,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 5
+        },
+        "class_counts": {
+          "ok": 45
+        },
+        "recovery_consecutive_rounds_after_round": 1,
+        "same_failure_class": null,
+        "phase_labels": []
+      },
+      {
+        "round": "86",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "class_counts": {
+          "ok": 27
+        },
+        "recovery_consecutive_rounds_after_round": 2,
+        "same_failure_class": null,
+        "phase_labels": []
+      }
+    ]
+  },
+  "classification": {
+    "final": "A.rotation_bank_clean",
+    "primary_branch": "A",
+    "sub_branch": "A.rotation_bank_clean",
+    "label": "fresh01/fresh15 per-rep recovery closure achieved; fresh10 round 2 banked",
+    "rationale": "R86 executed only the authorized rotation-bank set fresh01, fresh15, fresh10 at 3 runs each. All 9 matrix runs completed with matrix_status=0 and label all_ok. fresh01 and fresh15 now have three consecutive all_ok recovery rounds (R73, R85, R86), so per-rep recovery closure is achieved for those two reps. fresh10 has R73 + R86 only and therefore banks round 2 of 3; it is not closed. No phase labels or taxonomy exceptions appeared.",
+    "whole_cohort_c_closure_achieved": false,
+    "whole_cohort_c_closure_reason": "Not all cohort C representative history is closed: fresh09 broke at R85 and was not rerun, while replacement fresh10 is only at consecutive round 2.",
+    "next_handling": "Do not auto-extend R86. The natural next authorized round is fresh10 round-3 closure attempt, optionally paired with any explicitly selected round-1-only recovery reps. fresh01/fresh15 need no immediate recovery work unless a future audit wants continued monitoring."
+  },
+  "redaction_notes": [
+    "Evidence uses only neutral outbound keys fresh01, fresh15, fresh10.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed.",
+    "subset_schema_gate.violations is committed only because it is the empty array; structural redaction is preserved."
+  ]
+}

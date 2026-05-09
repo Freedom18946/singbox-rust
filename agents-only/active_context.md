@@ -35,21 +35,24 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **205 tests PASS** (R85 added 4 committed-evidence contract).
+  **209 tests PASS** (R86 added 4 committed-evidence contract).
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R85: **27 rounds, 238 runs, 99 all_ok**.
+- live_rollup.json/md after R86: **28 rounds, 247 runs, 108 all_ok**.
 
 ## Next Steps
 
-- MT-REAL-02 R85 cohort C recovery-watch round 2 DONE
-  (2026-05-08). Authorized fresh01/fresh09/fresh15 ×3.
-  Pre-gate passed. Live: 9/9 completed, matrix_status=0.
-  **B.partial_per_rep**: fresh01=3/3 all_ok, consecutive=2;
-  fresh09=3/3 same_failure(timeout), consecutive reset=0;
-  fresh15=3/3 all_ok, consecutive=2. No phase labels. R85
-  is not recovery closure; next decision is fresh09 rotation
-  or explicit fresh09 recheck. BHV 52/56 unchanged.
+- MT-REAL-02 R86 cohort C rotation-bank DONE (2026-05-09).
+  Authorized fresh01/fresh15/fresh10 ×3. Pre-gate passed.
+  Live: 9/9 all_ok, matrix_status=0, no phase labels.
+  **A.rotation_bank_clean**: fresh01/fresh15 consecutive=3,
+  per-rep recovery closure achieved; fresh10 consecutive=2,
+  round 2 banked only. Whole cohort C closure NOT claimed.
+  Next natural candidate: fresh10 round-3 closure attempt.
+  BHV 52/56 unchanged.
+- MT-REAL-02 R85 cohort C recovery-watch round 2 DONE.
+  **B.partial_per_rep**: fresh01/fresh15 consecutive=2;
+  fresh09 3/3 same_failure(timeout), consecutive reset=0.
 - MT-REAL-02 R84 fresh04 cohort-A-style re-evaluation DONE.
   5/5 same_failure(timeout); **A.same_failure_only**. R83
   app_minimal_diverged did not reproduce; closure_status.

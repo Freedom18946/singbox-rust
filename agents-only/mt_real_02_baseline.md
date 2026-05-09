@@ -8219,3 +8219,117 @@ banked。fresh09 在 R85 被 timeout same_failure 打断，recovery
 - BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
   R85 evidence 不带 `closure_achieved` 字段，不写 recovery
   closure achieved
+
+## R86 — cohort C rotation-bank round
+
+### 起因
+
+R85 把 cohort C 三代表拆成两条状态：fresh01/fresh15
+连续 all_ok 到 round 2，fresh09 在 R85 3/3 timeout
+same_failure 断链 reset。R86 因此不是 fresh01/fresh09/fresh15
+all-three closure attempt，而是 rotation-bank：保留 clean reps
+做 round 3 per-rep closure attempt，同时从 R73 round-1-only
+recovery pool 里用 fresh10 替换 fresh09。
+
+### 范围
+
+- live REALITY/VLESS、fresh01/fresh15/fresh10 ×3 = 9 runs、
+  target example.com:80
+- HEAD at gate: 370e26ed；main 与 origin/main 同步 ✓
+- 不跑 fresh09 / fresh04 / fresh08/fresh11/fresh12/fresh13/fresh14 /
+  Hys2 / WS / plain-VLESS
+- 不动 sampler/dataplane / `go_fork_source/*` /
+  `.github/workflows/*` / golden_spec
+- BHV 52/56 不变
+- 不允许 auto-extend；不允许 retry 修补；不允许现场 rotate
+
+### Subset 清洗 + Pre-gate
+
+- R81 gate 双分支都过：任意深度移除 `__` 字段，
+  outbound-level 字段落在 REALITY/VLESS allow-list 内
+- intake_counts: `covered_existing=3, fresh_ready=0,
+  duplicate=0, not_ready=0` ✓
+- dry-run: `selected_count=3, runs_per_outbound=3,
+  planned_total_runs=9, target=example.com:80,
+  subset_schema_gate_passed=true, subset_schema_gate.violations=[]` ✓
+- BHV: 52/56 不变
+
+### 实测分类: A.rotation_bank_clean
+
+- 9/9 status=`completed`，9/9 `matrix_status=0`
+- run_health_counts:
+  `{run_all_ok=9, run_divergence=0, run_same_failure=0, run_unknown=0}`
+- label_counts: `{all_ok=9}`
+- class_counts: `{ok=81}`
+- divergence_phase_label_count=**0**
+- unexpected_phase_labels=[]；没有 NEW phase label
+
+### Rotation-bank recovery status
+
+| rep | chain | R86 | recovery_consecutive_rounds | closure |
+| --- | --- | --- | ---: | --- |
+| fresh01 | R73 + R85 + R86 | 3/3 all_ok | 3 | per-rep achieved |
+| fresh15 | R73 + R85 + R86 | 3/3 all_ok | 3 | per-rep achieved |
+| fresh10 | R73 + R86 | 3/3 all_ok | 2 | not closure |
+
+R86 只允许写 **per-rep recovery closure achieved** for
+fresh01/fresh15。不能写 whole cohort C closure：fresh09 在 R85
+断链且 R86 未跑；fresh10 作为 replacement 只有 R73 + R86 两轮。
+
+### Recovery transitions
+
+| rep | round | state | labels | consecutive |
+| --- | --- | --- | --- | ---: |
+| fresh01 | R73 | all_ok | all_ok×5 | 1 |
+| fresh01 | R85 | all_ok | all_ok×3 | 2 |
+| fresh01 | R86 | all_ok | all_ok×3 | 3 |
+| fresh15 | R73 | all_ok | all_ok×5 | 1 |
+| fresh15 | R85 | all_ok | all_ok×3 | 2 |
+| fresh15 | R86 | all_ok | all_ok×3 | 3 |
+| fresh10 | R73 | all_ok | all_ok×5 | 1 |
+| fresh10 | R86 | all_ok | all_ok×3 | 2 |
+
+### Rollup delta
+
+- total_rounds: 27 → **28**
+- total_executed_runs: 238 → **247**
+- total_all_ok_runs: 99 → **108**
+- latest_same_failure_outbound_count: **8**（unchanged；fresh09 仍 latest_same_failure）
+- latest_stable_same_failure_outbound_count: **8**（unchanged）
+- latest_non_all_ok_outbound_count: **8**（unchanged）
+- fresh01 latest_round: 85 → **86**；latest_health 仍 `latest_all_ok`
+- fresh15 latest_round: 85 → **86**；latest_health 仍 `latest_all_ok`
+- fresh10 latest_round: 73 → **86**；latest_health 仍 `latest_all_ok`
+- fresh09 latest_round remains **85**；latest_health remains
+  `latest_same_failure`
+
+### 后续叙事
+
+- R86 落 `A.rotation_bank_clean`
+- fresh01/fresh15 per-rep recovery closure achieved
+- fresh10 round 2 banked；下一轮自然候选是 fresh10 round-3
+  closure attempt（需独立授权）
+- 不再把 fresh09 带入 closure attempt；fresh09 仍是 broken rep
+- 不把 R86 写成 whole cohort C closure / dual-kernel parity completion
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.json`
+- `agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`（28 rounds 重新生成）
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R86
+  committed-evidence contract）
+- `agents-only/active_context.md`（≤100 行）
+- 本文件 R86 节
+
+### 范围确认
+
+- live runs in R86: 9（fresh01/fresh15/fresh10 only）
+- node contact in R86: 3 reps
+- fresh09 / fresh04 / fresh08/fresh11/fresh12/fresh13/fresh14 /
+  Hys2 / WS / plain-VLESS live: 0
+- sampler / dataplane changes: 0
+- `go_fork_source/*` / `.github/workflows/*` 改动: 0
+- BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
+  R86 不宣称 whole cohort C closure

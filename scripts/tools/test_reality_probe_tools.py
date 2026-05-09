@@ -5262,5 +5262,167 @@ class R85CohortCRecoveryRound2Tests(unittest.TestCase):
             self.assertEqual(row["recovery_consecutive_rounds_after_round"], 2)
 
 
+class R86CohortCRotationBankTests(unittest.TestCase):
+    """R86 cohort C rotation-bank contract.
+
+    Pins: scope (fresh01/fresh15/fresh10 only x3), no fresh09/fresh04
+    execution, R81 dry-run gate, per-rep closure for fresh01/fresh15
+    only, fresh10 as round-2 replacement bank, and no whole-cohort
+    closure claim or raw secret leakage.
+    """
+
+    def _committed_r86_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round86_cohort_c_rotation_bank_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r86 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r86_scope_and_pre_gate(self):
+        _, ev = self._committed_r86_evidence()
+        self.assertEqual(ev["round"], "86")
+        self.assertEqual(ev["kind"], "cohort-c-rotation-bank-live-summary")
+        scope = ev["live_scope"]
+        self.assertEqual(scope["outbounds"], ["fresh01", "fresh15", "fresh10"])
+        self.assertEqual(scope["runs_per_outbound"], 3)
+        self.assertEqual(scope["planned_total_runs"], 9)
+        self.assertEqual(scope["target"], "example.com:80")
+        self.assertTrue(scope["reality_vless_only"])
+        for forbidden in (
+            "fresh09_executed",
+            "fresh04_executed",
+            "fresh02_03_05_06_07_executed",
+            "fresh08_11_12_13_14_executed",
+            "other_fresh_nodes_executed",
+            "hysteria2_executed",
+            "ws_plain_vless_executed",
+            "auto_extended",
+            "rotated_failed_rep_in_round",
+            "retried_failed_run",
+        ):
+            self.assertFalse(scope[forbidden], msg=f"{forbidden} must be false")
+
+        pre = ev["pre_gate"]
+        self.assertEqual(pre["head_at_gate"], "370e26ed")
+        self.assertTrue(pre["main_synced_with_origin_main_at_gate"])
+        self.assertTrue(pre["intake_gate_passed"])
+        self.assertTrue(pre["dry_run_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate"]["ok"])
+        self.assertEqual(pre["subset_schema_gate"]["violations"], [])
+        self.assertEqual(pre["bhv"], "52/56 unchanged")
+        self.assertEqual(
+            pre["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 3,
+            },
+        )
+        self.assertEqual(pre["dry_run"]["selected_count"], 3)
+        self.assertEqual(pre["dry_run"]["runs_per_outbound"], 3)
+        self.assertEqual(pre["dry_run"]["planned_total_runs"], 9)
+        self.assertEqual(
+            pre["dry_run"]["selected"],
+            ["fresh01", "fresh15", "fresh10"],
+        )
+
+    def test_committed_r86_classification_and_no_whole_cohort_closure(self):
+        _, ev = self._committed_r86_evidence()
+        classification = ev["classification"]
+        self.assertEqual(classification["final"], "A.rotation_bank_clean")
+        self.assertEqual(classification["primary_branch"], "A")
+        self.assertEqual(classification["sub_branch"], "A.rotation_bank_clean")
+        self.assertFalse(classification["whole_cohort_c_closure_achieved"])
+        self.assertIn("fresh10", classification["whole_cohort_c_closure_reason"])
+        self.assertEqual(
+            ev["summary"]["run_health_counts"],
+            {
+                "run_all_ok": 9,
+                "run_divergence": 0,
+                "run_same_failure": 0,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(ev["summary"]["label_counts"], {"all_ok": 9})
+        self.assertEqual(ev["summary"]["class_counts"], {"ok": 81})
+        self.assertFalse(ev["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(ev["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertEqual(ev["taxonomy"]["observed_phase_labels_in_taxonomy"], [])
+        self.assertTrue(ev["bhv_52_56_unchanged_at_round_time"])
+        self.assertFalse(ev["sampler_dataplane_modified"])
+        self.assertFalse(ev["go_fork_source_modified"])
+        self.assertFalse(ev["github_workflows_modified"])
+
+    def test_committed_r86_rotation_bank_status(self):
+        _, ev = self._committed_r86_evidence()
+        status = ev["cohort_c_rotation_bank_status"]
+        self.assertEqual(status["cohort_c_round"], "rotation-bank")
+        self.assertEqual(status["rotated_out_rep"], "fresh09")
+        self.assertEqual(status["replacement_rep"], "fresh10")
+        self.assertEqual(status["closure_scope"], "per-rep only")
+        self.assertFalse(status["whole_cohort_c_closure_achieved"])
+        self.assertTrue(status["all_r86_reps_clean"])
+        self.assertEqual(status["clean_existing_reps_closed"], ["fresh01", "fresh15"])
+        self.assertEqual(status["replacement_reps_banked_round2"], ["fresh10"])
+        per_rep = status["per_rep"]
+        self.assertEqual(set(per_rep), {"fresh01", "fresh15", "fresh10"})
+        for name in ("fresh01", "fresh15"):
+            self.assertEqual(per_rep[name]["recovery_consecutive_rounds"], 3)
+            self.assertTrue(per_rep[name]["per_rep_recovery_closure_achieved"])
+            self.assertEqual(per_rep[name]["latest_state"], "all_ok")
+        self.assertEqual(per_rep["fresh10"]["recovery_consecutive_rounds"], 2)
+        self.assertFalse(per_rep["fresh10"]["per_rep_recovery_closure_achieved"])
+        self.assertTrue(per_rep["fresh10"]["round_banked_at_r86"])
+
+    def test_committed_r86_transitions_and_no_raw_secret_leak(self):
+        path, ev = self._committed_r86_evidence()
+        self.assertEqual(
+            set(ev["by_outbound"]),
+            {"fresh01", "fresh15", "fresh10"},
+        )
+        self.assertEqual(
+            {run["outbound"] for run in ev["runs"]},
+            {"fresh01", "fresh15", "fresh10"},
+        )
+        transitions = ev["cohort_c_per_rep_transition"]
+        self.assertEqual(
+            [row["round"] for row in transitions["fresh01"]],
+            ["73", "85", "86"],
+        )
+        self.assertEqual(
+            [row["round"] for row in transitions["fresh15"]],
+            ["73", "85", "86"],
+        )
+        self.assertEqual(
+            [row["round"] for row in transitions["fresh10"]],
+            ["73", "86"],
+        )
+        self.assertEqual(
+            transitions["fresh10"][-1]["recovery_consecutive_rounds_after_round"],
+            2,
+        )
+        for name in ("fresh01", "fresh15"):
+            self.assertEqual(
+                transitions[name][-1]["recovery_consecutive_rounds_after_round"],
+                3,
+            )
+        evidence_text = path.read_text(encoding="utf-8")
+        md_text = path.with_suffix(".md").read_text(encoding="utf-8")
+        for text in (evidence_text, md_text):
+            self.assertNotRegex(text, r"aws-link\d+\.liangxin1\.xyz")
+            self.assertNotRegex(
+                text,
+                r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{12}\b",
+            )
+            self.assertNotIn("\u6d41\u5a92\u4f53", text)
+            self.assertNotIn("\u9ad8\u901f", text)
+
+
 if __name__ == "__main__":
     unittest.main()

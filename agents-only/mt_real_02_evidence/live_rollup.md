@@ -1,8 +1,8 @@
 # MT-REAL-02 REALITY Live Evidence Rollup
 
-- rounds: 27
-- executed runs: 238
-- all_ok runs: 99
+- rounds: 28
+- executed runs: 247
+- all_ok runs: 108
 - non-all_ok runs: 139
 - has divergence: true
 - latest non-all_ok outbounds: 8
@@ -43,13 +43,14 @@
 | 83 | 3 | 0 | app_minimal_diverged=1, probe_io_all_timeout=3, reality_all_timeout=3 | connection_reset=1, timeout=26 | true |
 | 84 | 5 | 0 | probe_io_all_timeout=5, reality_all_timeout=5 | timeout=45 | false |
 | 85 | 9 | 6 | all_ok=6, probe_io_all_timeout=3, reality_all_timeout=3 | ok=54, timeout=27 | false |
+| 86 | 9 | 9 | all_ok=9 | ok=81 | false |
 
 ## Aggregates
 
-- labels: {"all_ok": 99, "app_minimal_diverged": 9, "app_pre_post_diverged": 9, "bridge_io_diverged": 3, "minimal_transport_diverged": 5, "probe_io_all_connection_reset": 44, "probe_io_all_other": 19, "probe_io_all_post_dial_eof": 3, "probe_io_all_reality_dial_eof": 12, "probe_io_all_timeout": 49, "reality_all_connection_reset": 45, "reality_all_other": 18, "reality_all_reality_dial_eof": 13, "reality_all_timeout": 46}
-- classes: {"connection_reset": 416, "ok": 933, "other": 172, "post_dial_eof": 6, "reality_dial_eof": 121, "timeout": 467}
+- labels: {"all_ok": 108, "app_minimal_diverged": 9, "app_pre_post_diverged": 9, "bridge_io_diverged": 3, "minimal_transport_diverged": 5, "probe_io_all_connection_reset": 44, "probe_io_all_other": 19, "probe_io_all_post_dial_eof": 3, "probe_io_all_reality_dial_eof": 12, "probe_io_all_timeout": 49, "reality_all_connection_reset": 45, "reality_all_other": 18, "reality_all_reality_dial_eof": 13, "reality_all_timeout": 46}
+- classes: {"connection_reset": 416, "ok": 1014, "other": 172, "post_dial_eof": 6, "reality_dial_eof": 121, "timeout": 467}
 - latest health: {"latest_all_ok": 28, "latest_same_failure": 8}
-- latest run health: {"run_all_ok": 74, "run_same_failure": 20}
+- latest run health: {"run_all_ok": 72, "run_same_failure": 20}
 
 ## Latest divergence phase composition
 
