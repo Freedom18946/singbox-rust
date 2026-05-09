@@ -8715,3 +8715,116 @@ round-2 bank attempt，不能把 R89 当作 recovery success。
 - `go_fork_source/*` / `.github/workflows/*` / `golden_spec` 改动: 0
 - BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
   R89 不声明 fresh12 bank/closure，也不声明 original cohort C closure
+
+## R90 — fresh13 isolated rotation-bank round
+
+### 起因
+
+R89 的 fresh12 是 matrix_error/inconclusive，不计 recovery success，
+不能补跑、不能把 fresh12 写成 banked。本轮继续 rotated active set
+扩展覆盖，从仍未使用的 R73 round-1-only recovery pool 中选 fresh13
+做 isolated rotation-bank round。R90 不重试 fresh12，不跑 fresh09，
+也不替代 original cohort C closure。
+
+### 范围
+
+- live REALITY/VLESS、fresh13 only ×3 = 3 runs、target example.com:80
+- HEAD at gate: `0e69cccdd8ae300c0626f007498833984db757f7`；
+  main 与 origin/main 同步 ✓
+- 不跑 fresh12 / fresh09 / fresh01 / fresh15 / fresh10 / fresh04 /
+  fresh02/03/05/06/07 / fresh08/11/14 /
+  Hys2 / WS / plain-VLESS
+- 不动 sampler/dataplane / `go_fork_source/*` /
+  `.github/workflows/*` / golden_spec
+- BHV 52/56 不变
+- 不允许 auto-extend；不允许 retry 修补；不允许现场 rotate
+
+### Subset 清洗 + Pre-gate
+
+- 从 `/tmp/mt_mixed_fresh_subset_reality_neutral.json` 取 fresh13
+  单节点 subset，移除 `__id_in_gui` 等 `__` GUI-only 字段，只保留
+  R81 REALITY/VLESS allow-list 字段
+- intake_counts: `covered_existing=1, fresh_ready=0,
+  duplicate=0, not_ready=0` ✓
+- dry-run: `selected_count=1, runs_per_outbound=3,
+  planned_total_runs=3, target=example.com:80,
+  subset_schema_gate_passed=true, subset_schema_gate.violations=[]` ✓
+- BHV: 52/56 不变
+
+### 实测分类: A.fresh13_round2_banked
+
+- 3/3 status=`completed`，3/3 `matrix_status=0`
+- run_health_counts:
+  `{run_all_ok=3, run_divergence=0, run_same_failure=0, run_unknown=0}`
+- label_counts: `{all_ok=3}`
+- class_counts: `{ok=27}`
+- divergence_phase_label_count=**0**
+- matrix_timeout=0；matrix_error=false；inconclusive=false
+- unexpected_phase_labels=[]；没有 NEW phase label；没有 NEW
+  structural divergence
+
+### fresh13 rotation-bank status
+
+| field | value |
+| --- | --- |
+| scope | isolated rotation bank round (fresh13) |
+| prior state | R73 round-1-only all_ok |
+| R90 state | all_ok |
+| round_counted_for_recovery_success | **true** |
+| recovery_consecutive_rounds_after_r90 | **2**（R73 + R90） |
+| fresh13 round 2 banked | **true** |
+| fresh13 closure declared | **false** |
+
+R90 只声明 fresh13 round 2 banked。fresh13 尚未达到 3 连
+clean 的 per-rep closure threshold，因此不能写 closure。若后续继续
+fresh13，需要新授权做 round-3 closure attempt。
+
+### Rollup delta
+
+- total_rounds: 31 → **32**
+- total_executed_runs: 258 → **261**
+- total_all_ok_runs: 111 → **114**
+- total_non_all_ok_runs: **147**（unchanged）
+- latest_same_failure_outbound_count: **9**（unchanged）
+- latest_mixed_run_health_outbound_count: **1**（unchanged；仍是
+  fresh12 R89）
+- fresh13 latest_round: 73 → **90**；latest_health remains
+  `latest_all_ok`；latest_run_health_counts `{run_all_ok=3}`
+- fresh12 latest_round remains **89**；R89 remains
+  `D.matrix_error_inconclusive` and **not banked**
+
+### 后续叙事
+
+- R90 落 `A.fresh13_round2_banked`
+- fresh13 recovery_consecutive_rounds=2（R73 + R90）
+- **写** fresh13 round 2 banked
+- **不写** fresh13 closure
+- fresh12 R89 仍是 inconclusive；**不写** fresh12 banked
+- fresh09 仍按 R88 口径为 steady-state broken；**不写** fresh09 recovered
+- **不写** whole / original cohort C closure
+- **不写** dual-kernel parity completion；BHV 52/56 不变
+- 下一轮自然候选：对 fresh13 做 round-3 closure attempt，或从
+  fresh08/fresh11/fresh14 中另选代表做 isolated rotation-bank round。
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round90_fresh13_rotation_bank_summary.json`
+- `agents-only/mt_real_02_evidence/round90_fresh13_rotation_bank_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`（32 rounds 重新生成）
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R90
+  committed-evidence contract）
+- `agents-only/active_context.md`（≤100 行）
+- 本文件 R90 节
+
+### 范围确认
+
+- live runs in R90: 3（fresh13 only）
+- node contact in R90: 1 rep
+- fresh12/fresh09/fresh01/fresh15/fresh10/fresh04 /
+  fresh02/03/05/06/07/08/11/14 /
+  Hys2 / WS / plain-VLESS live: 0
+- sampler / dataplane changes: 0
+- `go_fork_source/*` / `.github/workflows/*` / `golden_spec` 改动: 0
+- BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
+  R90 只声明 fresh13 round-2 bank，不声明 closure 或 original cohort C closure

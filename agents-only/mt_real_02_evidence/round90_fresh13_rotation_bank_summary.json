@@ -1,0 +1,296 @@
+{
+  "round": "90",
+  "date": "2026-05-09",
+  "description": "R90 fresh13 isolated rotation-bank round. Outcome: A.fresh13_round2_banked; 3/3 run_all_ok. fresh13 recovery_consecutive_rounds=2 via R73 + R90; round 2 banked, closure NOT declared.",
+  "source_summary": "/tmp/r90-fresh13-rotation-bank-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r90_fresh13_rotation_bank_subset_clean.json --plan-json /tmp/r90_fresh13_rotation_bank_plan.json --target example.com:80 --runs 3 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r90_fresh13_rotation_bank_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 3,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 3,
+    "executed_runs": 3,
+    "status_counts": {
+      "completed": 3
+    },
+    "label_counts": {
+      "all_ok": 3
+    },
+    "class_counts": {
+      "ok": 27
+    },
+    "divergence_run_count": 0,
+    "divergence_phase_label_count": 0,
+    "distinct_divergence_phase_label_count": 0,
+    "divergence_phase_label_breakdown": {},
+    "same_failure_run_count": 0,
+    "matrix_timeout_run_count": 0,
+    "matrix_error_run_count": 0,
+    "accounting_note": "R90 contains only completed all_ok runs; no matrix timeout/error and no divergence phase labels appeared. It is counted as fresh13 recovery round 2 bank, not closure.",
+    "run_health_counts": {
+      "run_all_ok": 3,
+      "run_divergence": 0,
+      "run_same_failure": 0,
+      "run_unknown": 0
+    },
+    "run_all_ok": 3,
+    "run_divergence": 0,
+    "run_same_failure": 0,
+    "run_unknown": 0
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 3,
+    "uniform_failure_labels": {},
+    "matrix_error": false,
+    "inconclusive": false
+  },
+  "matrix_status": {
+    "final": "ok",
+    "inconclusive": false,
+    "completed_runs": 3,
+    "matrix_timeout_runs": 0,
+    "matrix_error_runs": 0,
+    "matrix_status_counts": {
+      "0": 3
+    }
+  },
+  "by_outbound": {
+    "fresh13": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      },
+      "run_health_counts": {
+        "run_all_ok": 3,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0,
+      "historical_has_non_all_ok": false,
+      "r90_state": "all_ok",
+      "matrix_timeout_runs": 0,
+      "matrix_error_runs": 0,
+      "round_counted_for_recovery_success": true,
+      "recovery_consecutive_rounds_after_r90": 2,
+      "round2_banked": true,
+      "per_rep_recovery_closure_achieved": false,
+      "closure_declared": false,
+      "fresh13_role": "isolated_rotation_bank_candidate"
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh13",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh13",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh13",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    }
+  ],
+  "interpretation": [
+    "R90 isolated rotation-bank round ran only fresh13, 3 planned runs at example.com:80.",
+    "All 3 runs completed with matrix_status=0 and label all_ok; no divergence phase labels appeared.",
+    "fresh13 now has R73 + R90 consecutive all_ok evidence and reaches recovery_consecutive_rounds=2.",
+    "R90 banks fresh13 round 2 only; fresh13 closure is not declared and no dual-kernel parity completion is claimed."
+  ],
+  "kind": "fresh13-rotation-bank-live-summary",
+  "live_executed": true,
+  "node_contact_executed": true,
+  "sampler_dataplane_modified": false,
+  "go_fork_source_modified": false,
+  "github_workflows_modified": false,
+  "bhv_52_56_unchanged_at_round_time": true,
+  "live_scope": {
+    "outbounds": [
+      "fresh13"
+    ],
+    "runs_per_outbound": 3,
+    "planned_total_runs": 3,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "authorized_outbound_executed": true,
+    "excluded_outbounds_executed": false,
+    "excluded_protocols_executed": false,
+    "auto_extended": false,
+    "rotated_failed_rep_in_round": false,
+    "retried_failed_run": false
+  },
+  "pre_gate": {
+    "head_at_gate": "0e69cccdd8ae300c0626f007498833984db757f7",
+    "origin_main_at_gate": "0e69cccdd8ae300c0626f007498833984db757f7",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 1
+    },
+    "expected_intake_counts": {
+      "covered_existing": 1,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 1,
+      "runs_per_outbound": 3,
+      "planned_total_runs": 3,
+      "target": "example.com:80",
+      "dry_run": true,
+      "subset_schema_gate_passed": true,
+      "selected": [
+        "fresh13"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "subset_schema_gate_passed": true,
+    "subset_schema_gate": {
+      "ok": true,
+      "violations": [],
+      "stats": {
+        "outbounds_checked": 1,
+        "outbound_level_violations": 0,
+        "nested_violations": 0
+      }
+    },
+    "bhv": "52/56 unchanged"
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false,
+    "observed_phase_labels_in_taxonomy": []
+  },
+  "fresh13_rotation_bank_status": {
+    "scope": "isolated rotation bank round (fresh13)",
+    "source_pool_status_before_r90": "R73 round-1-only",
+    "fresh13_r73_state": "all_ok",
+    "fresh13_r90_state": "all_ok",
+    "matrix_error": false,
+    "inconclusive": false,
+    "round_counted_for_recovery_success": true,
+    "fresh13_recovery_consecutive_rounds_before_r90": 1,
+    "fresh13_recovery_consecutive_rounds_after_r90": 2,
+    "fresh13_round2_banked": true,
+    "fresh13_per_rep_recovery_closure_achieved": false,
+    "fresh13_closure_declared": false,
+    "next_round_natural_handling": "A future round may attempt fresh13 round-3 closure only with explicit authorization."
+  },
+  "fresh13_per_rep_transition": {
+    "fresh13": [
+      {
+        "round": "73",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 5,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 5
+        },
+        "class_counts": {
+          "ok": 45
+        },
+        "recovery_consecutive_rounds_after_round": 1,
+        "same_failure_class": null,
+        "phase_labels": [],
+        "round_counted_for_recovery_success": true
+      },
+      {
+        "round": "90",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "class_counts": {
+          "ok": 27
+        },
+        "recovery_consecutive_rounds_after_round": 2,
+        "same_failure_class": null,
+        "phase_labels": [],
+        "round_counted_for_recovery_success": true
+      }
+    ]
+  },
+  "classification": {
+    "final": "A.fresh13_round2_banked",
+    "primary_branch": "A",
+    "sub_branch": "A.fresh13_round2_banked",
+    "label": "fresh13 round 2 banked by clean isolated rotation-bank round",
+    "rationale": "R90 executed the authorized fresh13-only isolated rotation-bank round with 3 planned runs. All 3 runs completed with matrix_status=0 and label all_ok. No phase labels, no matrix error, and no NEW structural divergence appeared. fresh13 therefore reaches recovery_consecutive_rounds=2 via R73 + R90 and round 2 is banked. Closure is not declared because the per-rep closure threshold remains 3 consecutive clean rounds.",
+    "matrix_error": false,
+    "matrix_timeout_runs": 0,
+    "fresh13_recovery_consecutive_rounds": 2,
+    "fresh13_round2_banked": true,
+    "fresh13_closure_declared": false,
+    "original_cohort_c_closure_achieved": false,
+    "dual_kernel_parity_completion_claimed": false,
+    "next_handling": "Do not auto-extend R90. Do not write closure. A future explicitly authorized round may attempt fresh13 round-3 closure."
+  },
+  "redaction_notes": [
+    "Evidence uses only the neutral outbound key fresh13 for this round.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed.",
+    "subset_schema_gate.violations is committed only because it is the empty array; structural redaction is preserved."
+  ]
+}

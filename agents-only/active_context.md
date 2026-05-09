@@ -35,30 +35,33 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **PASS** (222 tests; R89 committed-evidence contract included).
+  **PASS** (R90 committed-evidence contract included).
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R89: **31 rounds, 258 runs, 111 all_ok**.
+- live_rollup.json/md after R90: **32 rounds, 261 runs, 114 all_ok**.
 
 ## Next Steps
 
-- MT-REAL-02 R89 fresh12 isolated rotation-bank DONE (2026-05-09).
-  Authorized fresh12 ×3 only. Pre-gate passed (selected_count=1,
+- MT-REAL-02 R90 fresh13 isolated rotation-bank DONE (2026-05-09).
+  Authorized fresh13 ×3 only. Pre-gate passed (selected_count=1,
   planned_total_runs=3, target=example.com:80,
-  subset_schema_gate_passed=true, violations=[]). Live:
-  2 matrix_timeout + 1 completed same_failure(connection_reset),
-  no phase labels. **D.matrix_error_inconclusive**; R89 is not
-  counted as recovery success. fresh12 recovery_consecutive_rounds=1
-  (R73 carry-forward); **fresh12 round 2 NOT banked**; **fresh12
-  closure NOT declared**. BHV 52/56 unchanged.
+  subset_schema_gate_passed=true, violations=[]). Live: 3/3
+  run_all_ok, matrix_status=0, no phase labels.
+  **A.fresh13_round2_banked**; fresh13 recovery_consecutive_rounds=2
+  (R73+R90); **fresh13 round 2 banked**; **fresh13 closure NOT
+  declared**. BHV 52/56 unchanged.
+- MT-REAL-02 R89 fresh12 isolated rotation-bank DONE (2026-05-09).
+  **D.matrix_error_inconclusive**: 2 matrix_timeout + 1 completed
+  same_failure(connection_reset); not counted as recovery success.
+  **fresh12 round 2 NOT banked**; **fresh12 closure NOT declared**.
 - MT-REAL-02 R88 fresh09 recheck DONE (2026-05-09).
   **A.fresh09_timeout_steady_state**: R85 timeout reproduced
   5/5; fresh09 recovery_consecutive_rounds=0; **fresh09 NOT
   recovered**; **original cohort C closure NOT claimed**.
 - R87 fresh10 round-3 closure DONE; R86 rotation-bank DONE; R85
-  recovery-watch round 2 DONE; R84/R83/R82/R81/R80/R79/R78/R77/R73
-  DONE. Rotated active set fresh01/fresh15/fresh10 is per-rep closed,
-  but this never substitutes for fresh09's original-cohort identity.
+  recovery-watch round 2 DONE; R84-R73 prior fresh rounds DONE.
+  Rotated active set fresh01/fresh15/fresh10 is per-rep closed, but
+  this never substitutes for fresh09's original-cohort identity.
 
 ## Still-Valid Constraints
 
