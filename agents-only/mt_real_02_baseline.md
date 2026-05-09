@@ -8459,3 +8459,141 @@ rotation replacement，不能替代 fresh09 的原-cohort 身份。
 - `go_fork_source/*` / `.github/workflows/*` / `golden_spec` 改动: 0
 - BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
   R87 不宣称 original / whole cohort C closure；fresh09 仍 broken
+
+## R88 — fresh09 single-node recheck
+
+### 起因
+
+R87 把 rotated active set（fresh01/fresh15/fresh10）三代表的 per-rep
+recovery closure 全部完成；但 fresh09 自 R85 3/3 timeout same_failure
+断链至今未 re-run，原 cohort C identity（fresh01+fresh09+fresh15）
+未声明 closure。R88 是单节点定向授权：只对 fresh09 做独立 recheck，
+判断 R85 timeout 是稳态还是噪声。R88 **不是** closure attempt：
+fresh09 recovery chain 已在 R85 reset 为 0；即使 R88 5/5 all_ok，
+也只能开启 fresh09 新 recovery chain 的 round 1，不能补上 R85 断链。
+
+### 范围
+
+- live REALITY/VLESS、fresh09 only ×5 = 5 runs、target example.com:80
+- HEAD at gate: `c56fd368`；main 与 origin/main 同步 ✓
+- 不跑 fresh01 / fresh15 / fresh10 / fresh04 /
+  fresh02/03/05/06/07 / fresh08/11/12/13/14 /
+  Hys2 / WS / plain-VLESS
+- 不动 sampler/dataplane / `go_fork_source/*` /
+  `.github/workflows/*` / golden_spec
+- BHV 52/56 不变
+- 不允许 auto-extend；不允许 retry 修补；不允许现场 rotate
+
+### Subset 清洗 + Pre-gate
+
+- 用 R85 的 fresh09 raw 作为 single-outbound subset；只保留 R81
+  allow-list 字段（type/tag/server/server_port/uuid/packet_encoding/
+  flow/tls→reality/utls）
+- R81 gate 双分支都过：任意深度移除 `__` 字段，
+  outbound-level 字段落在 REALITY/VLESS allow-list 内
+- intake_counts: `covered_existing=1, fresh_ready=0,
+  duplicate=0, not_ready=0` ✓
+- dry-run: `selected_count=1, runs_per_outbound=5,
+  planned_total_runs=5, target=example.com:80,
+  subset_schema_gate_passed=true, subset_schema_gate.violations=[]` ✓
+- BHV: 52/56 不变
+
+### 实测分类: A.fresh09_timeout_steady_state
+
+- 5/5 status=`completed`，5/5 `matrix_status=0`
+- run_health_counts:
+  `{run_all_ok=0, run_divergence=0, run_same_failure=5, run_unknown=0}`
+- label_counts: `{probe_io_all_timeout=5, reality_all_timeout=5}`
+- class_counts: `{timeout=45}`
+- divergence_phase_label_count=**0**
+- unexpected_phase_labels=[]；没有 NEW phase label；没有 NEW
+  structural divergence；没有 matrix_error
+- R85 3/3 timeout same_failure → R88 5/5 timeout same_failure
+  → R85 timeout 复现，**稳态而非噪声**
+
+### fresh09 recheck status
+
+| field | value |
+| --- | --- |
+| scope | single-node recheck (fresh09) |
+| is_closure_attempt | **false**（chain 已在 R85 reset） |
+| fresh09 R85 state | same_failure (timeout) |
+| fresh09 R88 state | same_failure (timeout) |
+| R85 timeout reproduced | **true** |
+| recovery_consecutive_rounds | **0** |
+| per_rep_recovery_closure_achieved | **false** |
+| fresh09 recovered | **false** |
+| original_cohort_c_closure_achieved | **false** |
+
+R88 不是 closure attempt：broken closure chain 不能补丁，
+restart 需要新的 consecutive sequence。fresh09 R88 5/5 timeout
+确认 R85 不是 noise。原 cohort C closure 仍不成立：fresh10
+R87 closure 是 rotated-replacement closure，不替代 fresh09 的
+原-cohort 身份。
+
+### Rotated active set 状态（post-R88，与 R87 一致）
+
+| rep | per_rep closure | closed at | chain |
+| --- | --- | --- | --- |
+| fresh01 | true | R86 | R73 + R85 + R86 |
+| fresh15 | true | R86 | R73 + R85 + R86 |
+| fresh10 | true | R87 | R73 + R86 + R87 |
+
+### fresh09 transition history
+
+| round | state | labels | consecutive |
+| --- | --- | --- | ---: |
+| R73 | all_ok | all_ok×5 | 1 |
+| R85 | same_failure (timeout) | probe_io_all_timeout×3, reality_all_timeout×3 | 0 |
+| R88 | same_failure (timeout) | probe_io_all_timeout×5, reality_all_timeout×5 | 0 |
+
+### Rollup delta
+
+- total_rounds: 29 → **30**
+- total_executed_runs: 250 → **255**
+- total_all_ok_runs: 111 → **111**（unchanged）
+- latest_same_failure_outbound_count: **8**（unchanged；fresh09 仍 latest_same_failure）
+- latest_stable_same_failure_outbound_count: **8**（unchanged）
+- latest_non_all_ok_outbound_count: **8**（unchanged）
+- fresh09 latest_round: 85 → **88**；latest_health remains
+  `latest_same_failure`；latest_run_health_counts 从
+  `{run_same_failure: 3}`（R85）变为 `{run_same_failure: 5}`（R88）
+- fresh01/fresh15/fresh10 latest_round 不变（86/86/87）
+
+### 后续叙事
+
+- R88 落 `A.fresh09_timeout_steady_state`
+- fresh09 R85 timeout 稳态确认；不是 noise
+- fresh09 recovery_consecutive_rounds=0；**不写** per-rep closure
+- **不写** fresh09 recovered
+- **不写** whole / original cohort C closure
+- **不写** dual-kernel parity completion；BHV 52/56 不变
+- 下一轮自然候选两路（任一都需独立授权）：
+  (a) 接受 fresh09 稳态 broken，继续 rotated active set 覆盖，
+  可从 R73 round-1-only recovery pool（fresh08/fresh11/fresh12/
+  fresh13/fresh14）选一个做单独 rotation；或
+  (b) 仅当有 R85+R88 timeout 可能为 transient 的具体假设
+  （例如 upstream 节点维护窗口）才再做一次 fresh09 recheck
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round88_fresh09_recheck_summary.json`
+- `agents-only/mt_real_02_evidence/round88_fresh09_recheck_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`（30 rounds 重新生成）
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R88
+  committed-evidence contract）
+- `agents-only/active_context.md`（≤100 行）
+- 本文件 R88 节
+
+### 范围确认
+
+- live runs in R88: 5（fresh09 only）
+- node contact in R88: 1 rep
+- fresh01/fresh15/fresh10/fresh04 /
+  fresh02/03/05/06/07/08/11/12/13/14 /
+  Hys2 / WS / plain-VLESS live: 0
+- sampler / dataplane changes: 0
+- `go_fork_source/*` / `.github/workflows/*` / `golden_spec` 改动: 0
+- BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
+  R88 不是 closure attempt；fresh09 仍 broken；R85 timeout 稳态确认

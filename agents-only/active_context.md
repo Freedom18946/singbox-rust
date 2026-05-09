@@ -35,39 +35,32 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **213 tests PASS** (R87 added 4 committed-evidence contract).
+  **PASS** (R88 added 4 committed-evidence contract tests).
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R87: **29 rounds, 250 runs, 111 all_ok**.
+- live_rollup.json/md after R88: **30 rounds, 255 runs, 111 all_ok**.
 
 ## Next Steps
 
-- MT-REAL-02 R87 fresh10 round-3 closure DONE (2026-05-09).
-  Authorized fresh10 ×3. Pre-gate passed (selected_count=1,
-  planned_total_runs=3, target=example.com:80,
+- MT-REAL-02 R88 fresh09 recheck DONE (2026-05-09).
+  Authorized fresh09 ×5. Pre-gate passed (selected_count=1,
+  planned_total_runs=5, target=example.com:80,
   subset_schema_gate_passed=true).
-  Live: 3/3 all_ok, matrix_status=0, no phase labels.
-  **A.per_rep_recovery_closure**: fresh10 chain R73+R86+R87,
-  recovery_consecutive_rounds=3, per-rep closure achieved.
-  Rotated active set (fresh01/fresh15/fresh10) all per-rep closed.
-  **Original cohort C closure NOT claimed** (fresh09 still R85
-  broken). **fresh09 NOT recovered**. BHV 52/56 unchanged.
-- MT-REAL-02 R86 cohort C rotation-bank DONE.
-  9/9 all_ok; **A.rotation_bank_clean**: fresh01/fresh15
-  consecutive=3, per-rep closure achieved; fresh10 round 2 banked.
-- MT-REAL-02 R85 cohort C recovery-watch round 2 DONE.
-  **B.partial_per_rep**: fresh01/fresh15 consecutive=2;
-  fresh09 3/3 same_failure(timeout), consecutive reset=0.
-- MT-REAL-02 R84 fresh04 cohort-A-style re-evaluation DONE.
-  5/5 same_failure(timeout); **A.same_failure_only**.
-- MT-REAL-02 R83 fresh04 cohort-B closure attempt DONE.
-  Mixed (1 div + 2 same-failure); closure NOT achieved.
-- MT-REAL-02 R82 fresh04 same-failure live recheck DONE.
-- MT-REAL-02 R81 subset-schema pre-gate hardening DONE.
-- MT-REAL-02 R80 fresh04 recheck DONE; matrix_error.
-- MT-REAL-02 R79 fresh05 divergence-carrier recheck DONE.
-- MT-REAL-02 R74/R75 evidence accounting DONE (tests +11).
-- MT-REAL-02 R73 fresh REALITY/VLESS bounded live DONE.
+  Live: 5/5 same_failure(timeout), matrix_status=0, no phase labels.
+  **A.fresh09_timeout_steady_state**: R85 timeout reproduced as
+  steady-state (5/5 timeout); fresh09 recovery_consecutive_rounds=0;
+  R88 NOT a closure attempt by design (chain reset at R85).
+  **fresh09 NOT recovered**; **per-rep closure NOT achieved**;
+  **original cohort C closure NOT claimed**. BHV 52/56 unchanged.
+- MT-REAL-02 R87 fresh10 round-3 closure DONE.
+  3/3 all_ok; **A.per_rep_recovery_closure**: fresh10 chain
+  R73+R86+R87; rotated active set all per-rep closed.
+- MT-REAL-02 R86 rotation-bank DONE; **A.rotation_bank_clean**:
+  fresh01/fresh15 consecutive=3 closure; fresh10 round 2 banked.
+- MT-REAL-02 R85 recovery-watch round 2 DONE; **B.partial_per_rep**:
+  fresh01/fresh15 consecutive=2; fresh09 timeout reset=0.
+- MT-REAL-02 R84 fresh04 5/5 same_failure(timeout) DONE.
+- MT-REAL-02 R83/R82/R81/R80/R79/R74/R75/R73 DONE.
 
 ## Still-Valid Constraints
 
@@ -87,6 +80,8 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - Rotated-replacement per-rep closure is not original-cohort closure.
   Original cohort C identity (fresh01+fresh09+fresh15) requires
   fresh09 itself to clear, not a replacement rep.
+- A single-node recheck of a broken rep is not a closure attempt;
+  even a hypothetical clean recheck only opens a new chain at round 1.
 
 ## Historical Detail
 

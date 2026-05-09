@@ -5642,5 +5642,264 @@ class R87Fresh10Round3ClosureTests(unittest.TestCase):
             self.assertNotIn("\u9ad8\u901f", text)
 
 
+class R88Fresh09RecheckTests(unittest.TestCase):
+    """R88 fresh09 single-node recheck contract.
+
+    Pins: scope (fresh09 only x5), no other fresh / Hys2 / WS / plain-VLESS
+    execution, R81 dry-run gate, fresh09 same_failure(timeout) reproduced
+    5/5, recovery_consecutive_rounds=0, R88 NOT a closure attempt by
+    design (chain reset at R85), per-rep closure NOT achieved, fresh09
+    NOT recovered, original cohort C closure NOT claimed, no raw secret
+    leakage in committed evidence, no rotated/non-active fresh reps
+    appear in committed payload as outbound keys.
+    """
+
+    def _committed_r88_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round88_fresh09_recheck_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r88 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r88_scope_and_pre_gate(self):
+        _, ev = self._committed_r88_evidence()
+        self.assertEqual(ev["round"], "88")
+        self.assertEqual(ev["kind"], "fresh09-recheck-live-summary")
+        scope = ev["live_scope"]
+        # fresh09 is the ONLY authorized outbound for R88.
+        self.assertEqual(scope["outbounds"], ["fresh09"])
+        self.assertEqual(scope["runs_per_outbound"], 5)
+        self.assertEqual(scope["planned_total_runs"], 5)
+        self.assertEqual(scope["target"], "example.com:80")
+        self.assertTrue(scope["reality_vless_only"])
+        for forbidden in (
+            "fresh01_executed",
+            "fresh15_executed",
+            "fresh10_executed",
+            "fresh04_executed",
+            "fresh02_03_05_06_07_executed",
+            "fresh08_11_12_13_14_executed",
+            "other_fresh_nodes_executed",
+            "hysteria2_executed",
+            "ws_plain_vless_executed",
+            "auto_extended",
+            "rotated_failed_rep_in_round",
+            "retried_failed_run",
+        ):
+            self.assertFalse(scope[forbidden], msg=f"{forbidden} must be false")
+
+        pre = ev["pre_gate"]
+        self.assertEqual(pre["head_at_gate"], "c56fd368")
+        self.assertTrue(pre["main_synced_with_origin_main_at_gate"])
+        self.assertTrue(pre["intake_gate_passed"])
+        self.assertTrue(pre["dry_run_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate"]["ok"])
+        self.assertEqual(pre["subset_schema_gate"]["violations"], [])
+        self.assertEqual(pre["bhv"], "52/56 unchanged")
+        self.assertEqual(
+            pre["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 1,
+            },
+        )
+        self.assertEqual(pre["dry_run"]["selected_count"], 1)
+        self.assertEqual(pre["dry_run"]["runs_per_outbound"], 5)
+        self.assertEqual(pre["dry_run"]["planned_total_runs"], 5)
+        self.assertEqual(pre["dry_run"]["selected"], ["fresh09"])
+
+    def test_committed_r88_classification_and_recheck_semantics(self):
+        _, ev = self._committed_r88_evidence()
+        classification = ev["classification"]
+        self.assertEqual(
+            classification["final"], "A.fresh09_timeout_steady_state"
+        )
+        self.assertEqual(classification["primary_branch"], "A")
+        self.assertEqual(
+            classification["sub_branch"], "A.fresh09_timeout_steady_state"
+        )
+        # Recheck-specific semantics (not closure semantics).
+        self.assertTrue(classification["r85_timeout_reproduced"])
+        self.assertEqual(classification["fresh09_recovery_consecutive_rounds"], 0)
+        self.assertFalse(
+            classification["fresh09_per_rep_recovery_closure_achieved"]
+        )
+        # fresh09 must NOT be marked recovered.
+        self.assertFalse(classification["fresh09_recovered"])
+        # Original cohort C closure must NOT be claimed.
+        self.assertFalse(classification["original_cohort_c_closure_achieved"])
+        self.assertIn(
+            "fresh09",
+            classification["original_cohort_c_closure_reason"],
+        )
+
+        # Run-health: 5/5 same_failure, no all_ok, no divergence,
+        # no unknown.
+        self.assertEqual(
+            ev["summary"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 5,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(
+            ev["summary"]["label_counts"],
+            {"probe_io_all_timeout": 5, "reality_all_timeout": 5},
+        )
+        self.assertEqual(ev["summary"]["class_counts"], {"timeout": 45})
+        self.assertEqual(ev["summary"]["divergence_run_count"], 0)
+        self.assertEqual(ev["summary"]["same_failure_run_count"], 5)
+        self.assertEqual(ev["summary"]["divergence_phase_label_count"], 0)
+        self.assertEqual(
+            ev["summary"]["divergence_phase_label_breakdown"], {}
+        )
+        # No NEW phase label, no NEW structural divergence.
+        self.assertFalse(ev["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(ev["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertEqual(
+            ev["taxonomy"]["observed_phase_labels_in_taxonomy"], []
+        )
+        # No matrix_error: every run completed with matrix_status=0.
+        self.assertEqual(ev["summary"]["status_counts"], {"completed": 5})
+
+        self.assertTrue(ev["bhv_52_56_unchanged_at_round_time"])
+        self.assertFalse(ev["sampler_dataplane_modified"])
+        self.assertFalse(ev["go_fork_source_modified"])
+        self.assertFalse(ev["github_workflows_modified"])
+
+    def test_committed_r88_fresh09_recheck_status(self):
+        _, ev = self._committed_r88_evidence()
+        status = ev["fresh09_recheck_status"]
+        self.assertEqual(status["scope"], "single-node recheck (fresh09)")
+        # R88 is explicitly NOT a closure attempt.
+        self.assertFalse(status["is_closure_attempt"])
+        self.assertIn(
+            "broken closure chain cannot be patched",
+            status["closure_attempt_blocked_reason"],
+        )
+        self.assertEqual(status["fresh09_r85_state"], "same_failure")
+        self.assertEqual(status["fresh09_r85_same_failure_class"], "timeout")
+        self.assertEqual(status["fresh09_r88_state"], "same_failure")
+        self.assertEqual(status["fresh09_r88_same_failure_class"], "timeout")
+        # R85 timeout reproduced (steady-state, not noise).
+        self.assertTrue(status["r85_timeout_reproduced"])
+        # Recovery chain remains broken.
+        self.assertEqual(status["fresh09_recovery_consecutive_rounds"], 0)
+        self.assertFalse(status["fresh09_per_rep_recovery_closure_achieved"])
+        self.assertFalse(status["fresh09_recovered"])
+
+        # Rotated active set state is unchanged from R87.
+        rotated = status["rotated_active_set_per_rep_closures"]
+        self.assertEqual(set(rotated), {"fresh01", "fresh15", "fresh10"})
+        for rep in ("fresh01", "fresh15", "fresh10"):
+            self.assertTrue(rotated[rep]["achieved"], msg=rep)
+        self.assertEqual(rotated["fresh01"]["achieved_at_round"], "86")
+        self.assertEqual(rotated["fresh15"]["achieved_at_round"], "86")
+        self.assertEqual(rotated["fresh10"]["achieved_at_round"], "87")
+        self.assertTrue(status["rotated_active_set_all_per_rep_closed"])
+
+        # Original cohort C closure must NOT be claimed at status level.
+        self.assertFalse(status["original_cohort_c_closure_achieved"])
+        self.assertIn("fresh09", status["original_cohort_c_closure_reason"])
+
+    def test_committed_r88_only_fresh09_no_others_no_secrets(self):
+        path, ev = self._committed_r88_evidence()
+        # Only fresh09 must appear in by_outbound and runs[].
+        self.assertEqual(set(ev["by_outbound"]), {"fresh09"})
+        self.assertEqual({run["outbound"] for run in ev["runs"]}, {"fresh09"})
+        self.assertEqual(len(ev["runs"]), 5)
+        for run in ev["runs"]:
+            self.assertEqual(run["status"], "completed")
+            self.assertEqual(run["matrix_status"], 0)
+            self.assertEqual(
+                run["labels"],
+                ["probe_io_all_timeout", "reality_all_timeout"],
+            )
+            self.assertEqual(run["run_health"], "run_same_failure")
+            self.assertEqual(run["class_counts"], {"timeout": 9})
+
+        f09 = ev["by_outbound"]["fresh09"]
+        self.assertEqual(f09["r88_state"], "same_failure")
+        self.assertEqual(f09["r88_same_failure_class"], "timeout")
+        self.assertEqual(f09["recovery_consecutive_rounds_after_r88"], 0)
+        self.assertFalse(f09["per_rep_recovery_closure_achieved"])
+        self.assertEqual(
+            f09["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 5,
+                "run_unknown": 0,
+            },
+        )
+
+        transitions = ev["cohort_c_per_rep_transition"]
+        # Only fresh09 transitions are committed; no fresh01/fresh15/
+        # fresh10/fresh04 transition records here.
+        self.assertEqual(set(transitions), {"fresh09"})
+        self.assertEqual(
+            [row["round"] for row in transitions["fresh09"]],
+            ["73", "85", "88"],
+        )
+        # fresh09 R88 row asserts steady-state same_failure and
+        # consecutive=0.
+        last = transitions["fresh09"][-1]
+        self.assertEqual(last["state"], "same_failure")
+        self.assertEqual(last["same_failure_class"], "timeout")
+        self.assertEqual(last["recovery_consecutive_rounds_after_round"], 0)
+        self.assertEqual(
+            last["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 5,
+                "run_unknown": 0,
+            },
+        )
+
+        # Forbidden outbound names must NOT appear as committed
+        # outbound keys. fresh01/fresh15/fresh10/fresh04 are mentioned
+        # in narrative text (rotated_active_set, closure-scope
+        # explanation), but the other fresh tags must not appear.
+        evidence_text = path.read_text(encoding="utf-8")
+        md_text = path.with_suffix(".md").read_text(encoding="utf-8")
+        for forbidden_outbound in (
+            '"fresh02"',
+            '"fresh03"',
+            '"fresh05"',
+            '"fresh06"',
+            '"fresh07"',
+            '"fresh08"',
+            '"fresh11"',
+            '"fresh12"',
+            '"fresh13"',
+            '"fresh14"',
+        ):
+            self.assertNotIn(
+                forbidden_outbound,
+                evidence_text,
+                msg=f"{forbidden_outbound} must not appear in committed json",
+            )
+
+        # Raw secrets must not leak.
+        for text in (evidence_text, md_text):
+            self.assertNotRegex(text, r"aws-link\d+\.liangxin1\.xyz")
+            self.assertNotRegex(
+                text,
+                r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{12}\b",
+            )
+            self.assertNotIn("\u6d41\u5a92\u4f53", text)
+            self.assertNotIn("\u9ad8\u901f", text)
+
+
 if __name__ == "__main__":
     unittest.main()

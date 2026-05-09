@@ -1,8 +1,8 @@
 {
-  "total_rounds": 29,
-  "total_executed_runs": 250,
+  "total_rounds": 30,
+  "total_executed_runs": 255,
   "total_all_ok_runs": 111,
-  "total_non_all_ok_runs": 139,
+  "total_non_all_ok_runs": 144,
   "has_any_divergence": true,
   "latest_non_all_ok_outbounds": [
     "HK-A-BGP-1.0",
@@ -66,10 +66,10 @@
   },
   "latest_run_health_counts": {
     "run_all_ok": 72,
-    "run_same_failure": 20
+    "run_same_failure": 22
   },
   "status_counts": {
-    "completed": 247,
+    "completed": 252,
     "matrix_error": 3
   },
   "label_counts": {
@@ -82,11 +82,11 @@
     "probe_io_all_other": 19,
     "probe_io_all_post_dial_eof": 3,
     "probe_io_all_reality_dial_eof": 12,
-    "probe_io_all_timeout": 49,
+    "probe_io_all_timeout": 54,
     "reality_all_connection_reset": 45,
     "reality_all_other": 18,
     "reality_all_reality_dial_eof": 13,
-    "reality_all_timeout": 46
+    "reality_all_timeout": 51
   },
   "class_counts": {
     "connection_reset": 416,
@@ -94,7 +94,7 @@
     "other": 172,
     "post_dial_eof": 6,
     "reality_dial_eof": 121,
-    "timeout": 467
+    "timeout": 512
   },
   "rounds": [
     {
@@ -836,6 +836,29 @@
       },
       "class_counts": {
         "ok": 27
+      }
+    },
+    {
+      "round": "88",
+      "date": "2026-05-09",
+      "path": "agents-only/mt_real_02_evidence/round88_fresh09_recheck_summary.json",
+      "description": "R88 fresh09 single-node recheck. Outcome: A.fresh09_timeout_steady_state; fresh09 reproduces R85 5/5 same_failure(timeout), recovery_consecutive_rounds=0. Original cohort C closure NOT claimed; fresh09 NOT recovered; not a closure attempt by design (recovery chain was reset at R85).",
+      "total": 5,
+      "executed_runs": 5,
+      "all_ok_runs": 0,
+      "has_divergence": false,
+      "uniform_failure_labels": {
+        "reality_all_timeout": 5
+      },
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 5,
+        "reality_all_timeout": 5
+      },
+      "class_counts": {
+        "timeout": 45
       }
     }
   ],
@@ -7156,23 +7179,24 @@
     "fresh09": {
       "rounds": [
         "73",
-        "85"
+        "85",
+        "88"
       ],
       "status_counts": {
-        "completed": 8
+        "completed": 13
       },
       "label_counts": {
         "all_ok": 5,
-        "probe_io_all_timeout": 3,
-        "reality_all_timeout": 3
+        "probe_io_all_timeout": 8,
+        "reality_all_timeout": 8
       },
       "class_counts": {
         "ok": 45,
-        "timeout": 27
+        "timeout": 72
       },
       "run_health_counts": {
         "run_all_ok": 5,
-        "run_same_failure": 3
+        "run_same_failure": 8
       },
       "divergence_phase_counts": {},
       "history": [
@@ -7323,24 +7347,114 @@
               }
             }
           ]
+        },
+        {
+          "round": "88",
+          "path": "agents-only/mt_real_02_evidence/round88_fresh09_recheck_summary.json",
+          "status_counts": {
+            "completed": 5
+          },
+          "label_counts": {
+            "probe_io_all_timeout": 5,
+            "reality_all_timeout": 5
+          },
+          "class_counts": {
+            "timeout": 45
+          },
+          "run_health_counts": {
+            "run_same_failure": 5
+          },
+          "divergence_phase_counts": {},
+          "round_run_count": 5,
+          "divergence_run_count": 0,
+          "divergence_run_ratio": 0.0,
+          "is_bi_modal": false,
+          "divergence_phase_dominance": null,
+          "runs": [
+            {
+              "ordinal": 1,
+              "run_index": 1,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "timeout": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 2,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "timeout": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 3,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "timeout": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 4,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "timeout": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 5,
+              "status": "completed",
+              "labels": [
+                "probe_io_all_timeout",
+                "reality_all_timeout"
+              ],
+              "run_health": "run_same_failure",
+              "class_counts": {
+                "timeout": 9
+              }
+            }
+          ]
         }
       ],
-      "latest_round": "85",
+      "latest_round": "88",
       "latest_status_counts": {
-        "completed": 3
+        "completed": 5
       },
       "latest_label_counts": {
-        "probe_io_all_timeout": 3,
-        "reality_all_timeout": 3
+        "probe_io_all_timeout": 5,
+        "reality_all_timeout": 5
       },
       "latest_class_counts": {
-        "timeout": 27
+        "timeout": 45
       },
       "latest_run_health_counts": {
-        "run_same_failure": 3
+        "run_same_failure": 5
       },
       "latest_divergence_phase_counts": {},
-      "latest_round_run_count": 3,
+      "latest_round_run_count": 5,
       "latest_divergence_run_count": 0,
       "latest_divergence_run_ratio": 0.0,
       "latest_divergence_phase_dominance": null,
@@ -7354,6 +7468,12 @@
         },
         {
           "round": "85",
+          "dominant_phase": null,
+          "dominant_count": 0,
+          "divergence_run_count": 0
+        },
+        {
+          "round": "88",
           "dominant_phase": null,
           "dominant_count": 0,
           "divergence_run_count": 0

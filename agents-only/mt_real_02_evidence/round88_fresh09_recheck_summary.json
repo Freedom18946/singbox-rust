@@ -1,0 +1,358 @@
+{
+  "round": "88",
+  "date": "2026-05-09",
+  "description": "R88 fresh09 single-node recheck. Outcome: A.fresh09_timeout_steady_state; fresh09 reproduces R85 5/5 same_failure(timeout), recovery_consecutive_rounds=0. Original cohort C closure NOT claimed; fresh09 NOT recovered; not a closure attempt by design (recovery chain was reset at R85).",
+  "source_summary": "/tmp/r88-fresh09-recheck-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r88_fresh09_recheck_subset_clean.json --plan-json /tmp/r88_fresh09_plan.json --target example.com:80 --runs 5 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r88_fresh09_recheck_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 5,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 5,
+    "executed_runs": 5,
+    "status_counts": {
+      "completed": 5
+    },
+    "label_counts": {
+      "probe_io_all_timeout": 5,
+      "reality_all_timeout": 5
+    },
+    "class_counts": {
+      "timeout": 45
+    },
+    "divergence_run_count": 0,
+    "divergence_phase_label_count": 0,
+    "distinct_divergence_phase_label_count": 0,
+    "divergence_phase_label_breakdown": {},
+    "same_failure_run_count": 5,
+    "accounting_note": "divergence_run_count counts runs (a run is a divergence run iff it carries any of the four phase labels app_pre_post_diverged, app_minimal_diverged, minimal_transport_diverged, bridge_io_diverged); divergence_phase_label_count counts phase-label occurrences across those divergence runs (a single run can carry multiple phase labels). label_counts above is per-occurrence, matching divergence_phase_label_breakdown.",
+    "run_health_counts": {
+      "run_all_ok": 0,
+      "run_divergence": 0,
+      "run_same_failure": 5,
+      "run_unknown": 0
+    },
+    "run_all_ok": 0,
+    "run_divergence": 0,
+    "run_same_failure": 5,
+    "run_unknown": 0
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 0,
+    "uniform_failure_labels": {
+      "reality_all_timeout": 5
+    }
+  },
+  "by_outbound": {
+    "fresh09": {
+      "status_counts": {
+        "completed": 5
+      },
+      "label_counts": {
+        "probe_io_all_timeout": 5,
+        "reality_all_timeout": 5
+      },
+      "class_counts": {
+        "timeout": 45
+      },
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 5,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0,
+      "historical_has_non_all_ok": true,
+      "r88_state": "same_failure",
+      "r88_same_failure_class": "timeout",
+      "recovery_consecutive_rounds_after_r88": 0,
+      "per_rep_recovery_closure_achieved": false,
+      "fresh09_role": "broken_rep_recheck"
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh09",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh09",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh09",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh09",
+      "ordinal": 1,
+      "run_index": 4,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    },
+    {
+      "outbound": "fresh09",
+      "ordinal": 1,
+      "run_index": 5,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "probe_io_all_timeout",
+        "reality_all_timeout"
+      ],
+      "class_counts": {
+        "timeout": 9
+      },
+      "run_health": "run_same_failure"
+    }
+  ],
+  "interpretation": [
+    "R88 single-node recheck: fresh09 only. fresh01, fresh15, fresh10, fresh04 and all other fresh nodes were not run.",
+    "All 5 runs completed with matrix_status=0 and uniform same_failure labels (probe_io_all_timeout + reality_all_timeout); no divergence phase labels appeared.",
+    "fresh09 5/5 same_failure(timeout) reproduces the R85 result; the R85 timeout is steady-state, not transient noise.",
+    "fresh09 recovery_consecutive_rounds remains 0 after R88 (chain was reset at R85; no all_ok run in this round).",
+    "R88 is not a closure attempt by design: a broken closure chain cannot be patched, restart needs a fresh consecutive sequence beginning with at least one all_ok round.",
+    "Original cohort C closure (fresh01+fresh09+fresh15) is NOT claimed: fresh09 remains the broken member; fresh10 closure at R87 was a rotated-replacement closure, not a substitute for fresh09."
+  ],
+  "kind": "fresh09-recheck-live-summary",
+  "live_executed": true,
+  "node_contact_executed": true,
+  "sampler_dataplane_modified": false,
+  "go_fork_source_modified": false,
+  "github_workflows_modified": false,
+  "bhv_52_56_unchanged_at_round_time": true,
+  "live_scope": {
+    "outbounds": [
+      "fresh09"
+    ],
+    "runs_per_outbound": 5,
+    "planned_total_runs": 5,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "fresh01_executed": false,
+    "fresh15_executed": false,
+    "fresh10_executed": false,
+    "fresh04_executed": false,
+    "fresh08_11_12_13_14_executed": false,
+    "fresh02_03_05_06_07_executed": false,
+    "other_fresh_nodes_executed": false,
+    "hysteria2_executed": false,
+    "ws_plain_vless_executed": false,
+    "auto_extended": false,
+    "rotated_failed_rep_in_round": false,
+    "retried_failed_run": false
+  },
+  "pre_gate": {
+    "head_at_gate": "c56fd368",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 1
+    },
+    "expected_intake_counts": {
+      "covered_existing": 1,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 1,
+      "runs_per_outbound": 5,
+      "planned_total_runs": 5,
+      "target": "example.com:80",
+      "dry_run": true,
+      "subset_schema_gate_passed": true,
+      "selected": [
+        "fresh09"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "subset_schema_gate_passed": true,
+    "subset_schema_gate": {
+      "ok": true,
+      "violations": [],
+      "stats": {
+        "outbounds_checked": 1,
+        "outbound_level_violations": 0,
+        "nested_violations": 0
+      }
+    },
+    "bhv": "52/56 unchanged"
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false,
+    "observed_phase_labels_in_taxonomy": []
+  },
+  "fresh09_recheck_status": {
+    "scope": "single-node recheck (fresh09)",
+    "is_closure_attempt": false,
+    "closure_attempt_blocked_reason": "fresh09 recovery chain was reset to 0 at R85 (3/3 same_failure timeout). A broken closure chain cannot be patched; restart requires a fresh consecutive sequence. R88 is therefore a recheck, not a closure attempt.",
+    "fresh09_r85_state": "same_failure",
+    "fresh09_r85_same_failure_class": "timeout",
+    "fresh09_r88_state": "same_failure",
+    "fresh09_r88_same_failure_class": "timeout",
+    "r85_timeout_reproduced": true,
+    "fresh09_recovery_consecutive_rounds": 0,
+    "fresh09_per_rep_recovery_closure_achieved": false,
+    "fresh09_recovered": false,
+    "rotated_active_set_per_rep_closures": {
+      "fresh01": {
+        "achieved": true,
+        "achieved_at_round": "86",
+        "chain": ["R73", "R85", "R86"]
+      },
+      "fresh15": {
+        "achieved": true,
+        "achieved_at_round": "86",
+        "chain": ["R73", "R85", "R86"]
+      },
+      "fresh10": {
+        "achieved": true,
+        "achieved_at_round": "87",
+        "chain": ["R73", "R86", "R87"]
+      }
+    },
+    "rotated_active_set_all_per_rep_closed": true,
+    "original_cohort_c_closure_achieved": false,
+    "original_cohort_c_closure_reason": "Original cohort C identity is fresh01+fresh09+fresh15. fresh09 reproduced 5/5 same_failure(timeout) at R88, confirming the R85 timeout as steady-state. fresh09 is therefore NOT recovered and original cohort C closure remains NOT achieved. fresh10's closure is a rotated-replacement closure for the active set, not a substitute for fresh09's original-cohort identity."
+  },
+  "cohort_c_per_rep_transition": {
+    "fresh09": [
+      {
+        "round": "73",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 5,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 5
+        },
+        "class_counts": {
+          "ok": 45
+        },
+        "recovery_consecutive_rounds_after_round": 1,
+        "same_failure_class": null,
+        "phase_labels": []
+      },
+      {
+        "round": "85",
+        "state": "same_failure",
+        "run_health_counts": {
+          "run_all_ok": 0,
+          "run_divergence": 0,
+          "run_same_failure": 3,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "probe_io_all_timeout": 3,
+          "reality_all_timeout": 3
+        },
+        "class_counts": {
+          "timeout": 27
+        },
+        "recovery_consecutive_rounds_after_round": 0,
+        "same_failure_class": "timeout",
+        "phase_labels": []
+      },
+      {
+        "round": "88",
+        "state": "same_failure",
+        "run_health_counts": {
+          "run_all_ok": 0,
+          "run_divergence": 0,
+          "run_same_failure": 5,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "probe_io_all_timeout": 5,
+          "reality_all_timeout": 5
+        },
+        "class_counts": {
+          "timeout": 45
+        },
+        "recovery_consecutive_rounds_after_round": 0,
+        "same_failure_class": "timeout",
+        "phase_labels": []
+      }
+    ]
+  },
+  "classification": {
+    "final": "A.fresh09_timeout_steady_state",
+    "primary_branch": "A",
+    "sub_branch": "A.fresh09_timeout_steady_state",
+    "label": "fresh09 R85 timeout reproduced as steady-state (single-node recheck, no closure)",
+    "rationale": "R88 ran the authorized single-node recheck for fresh09 only, 5 runs at example.com:80. All 5 runs completed with matrix_status=0 and uniform same_failure labels (probe_io_all_timeout + reality_all_timeout, classes={timeout:9} per run). No phase labels and no NEW structural divergence. fresh09 reproduces the R85 same_failure(timeout) at 5/5, so the R85 result is steady-state rather than transient noise. R88 is NOT a closure attempt: fresh09's recovery chain was reset to 0 at R85, and a broken chain cannot be patched. recovery_consecutive_rounds remains 0; per-rep recovery closure is NOT achieved.",
+    "r85_timeout_reproduced": true,
+    "fresh09_recovery_consecutive_rounds": 0,
+    "fresh09_per_rep_recovery_closure_achieved": false,
+    "original_cohort_c_closure_achieved": false,
+    "original_cohort_c_closure_reason": "fresh09 reproduces R85 same_failure(timeout) 5/5 at R88; remains broken; fresh10 R87 closure is a rotated-replacement closure, not a substitute for fresh09's original-cohort identity.",
+    "fresh09_recovered": false,
+    "next_handling": "Do not auto-extend R88. Do not retry failed runs to patch the result. Do not write fresh09 recovered. Do not write whole / original cohort C closure. fresh09 is now confirmed as steady-state same_failure(timeout) at R85 + R88. Next natural authorized round, if desired, would be either: (a) accept fresh09 as steady-state broken and continue the rotated active set (fresh01/fresh15/fresh10) coverage, possibly drawing from R73 round-1-only recovery pool (fresh08/fresh11/fresh12/fresh13/fresh14) for additional rotated reps; or (b) attempt another fresh09 recheck only if there is a hypothesis about why R85+R88 timeouts could be transient (e.g. upstream node maintenance window). Either path requires a new explicit user authorization."
+  },
+  "redaction_notes": [
+    "Evidence uses only the neutral outbound key fresh09.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed.",
+    "subset_schema_gate.violations is committed only because it is the empty array; structural redaction is preserved."
+  ]
+}
