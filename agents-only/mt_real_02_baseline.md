@@ -8597,3 +8597,121 @@ R87 closure 是 rotated-replacement closure，不替代 fresh09 的
 - `go_fork_source/*` / `.github/workflows/*` / `golden_spec` 改动: 0
 - BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
   R88 不是 closure attempt；fresh09 仍 broken；R85 timeout 稳态确认
+
+## R89 — fresh12 isolated rotation-bank round
+
+### 起因
+
+R88 接受 fresh09 为 steady-state broken 后，本轮不再跑 fresh09，
+也不回到 fresh01/fresh15/fresh10/fresh04 或其他已排除 fresh 节点。
+R89 从 R73 round-1-only recovery pool 选 fresh12 作为中位代表，
+做 isolated rotation-bank round：目标只判断 fresh12 能否从 R73
+round 1 进入 round 2 bank，不声明 closure，不替代 original cohort C。
+
+### 范围
+
+- live REALITY/VLESS、fresh12 only ×3 = 3 runs、target example.com:80
+- HEAD at gate: `a1d92ffc8d088f5d15a952d20fa1d3ecdf605618`；
+  main 与 origin/main 同步 ✓
+- 不跑 fresh09 / fresh01 / fresh15 / fresh10 / fresh04 /
+  fresh02/03/05/06/07 / fresh08/11/13/14 /
+  Hys2 / WS / plain-VLESS
+- 不动 sampler/dataplane / `go_fork_source/*` /
+  `.github/workflows/*` / golden_spec
+- BHV 52/56 不变
+- 不允许 auto-extend；不允许 retry 修补；不允许现场 rotate
+
+### Subset 清洗 + Pre-gate
+
+- 从 `/tmp/mt_mixed_fresh_subset_reality_neutral.json` 取 fresh12
+  单节点 subset，移除 `__id_in_gui` 等 `__` GUI-only 字段，只保留
+  R81 REALITY/VLESS allow-list 字段
+- intake_counts: `covered_existing=1, fresh_ready=0,
+  duplicate=0, not_ready=0` ✓
+- dry-run: `selected_count=1, runs_per_outbound=3,
+  planned_total_runs=3, target=example.com:80,
+  subset_schema_gate_passed=true, subset_schema_gate.violations=[]` ✓
+- BHV: 52/56 不变
+
+### 实测分类: D.matrix_error_inconclusive
+
+- 3/3 planned runs 执行完成；没有补跑
+- status_counts: `{completed=1, matrix_timeout=2}`
+- matrix_status_counts: `{0=1, 124=2}`
+- run_health_counts:
+  `{run_all_ok=0, run_divergence=0, run_same_failure=1, run_unknown=2}`
+- completed run: `probe_io_all_connection_reset` +
+  `reality_all_connection_reset`；class_counts `{connection_reset=9}`
+- divergence_phase_label_count=**0**
+- unexpected_phase_labels=[]；没有 NEW phase label；没有 NEW
+  structural divergence
+- 因为 2 个 run 是 matrix_timeout 且没有 compare payload，本轮按
+  matrix/tooling error → inconclusive 处理，不计入 recovery success
+
+### fresh12 rotation-bank status
+
+| field | value |
+| --- | --- |
+| scope | isolated rotation bank round (fresh12) |
+| prior state | R73 round-1-only all_ok |
+| R89 state | matrix_error_inconclusive |
+| completed run state | same_failure (connection_reset) |
+| round_counted_for_recovery_success | **false** |
+| recovery_consecutive_rounds_after_r89 | **1**（R73 carry-forward） |
+| fresh12 round 2 banked | **false** |
+| fresh12 closure declared | **false** |
+
+R89 不是 fresh12 closure attempt；它原本只是 round-2 bank attempt。
+因为 matrix_timeout 让本轮 inconclusive，fresh12 不能记 round 2
+bank，不能写 closure。若后续继续 fresh12，需要新授权重新做
+round-2 bank attempt，不能把 R89 当作 recovery success。
+
+### Rollup delta
+
+- total_rounds: 30 → **31**
+- total_executed_runs: 255 → **258**
+- total_all_ok_runs: 111 → **111**（unchanged）
+- total_non_all_ok_runs: 144 → **147**
+- latest_same_failure_outbound_count: 8 → **9**
+- latest_mixed_run_health_outbound_count: 0 → **1**（fresh12:
+  run_same_failure=1 + run_unknown=2）
+- fresh12 latest_round: 73 → **89**；latest_health becomes
+  `latest_same_failure` from the single completed compare payload, but
+  round classification remains `D.matrix_error_inconclusive`
+- latest_run_health_counts now includes `run_unknown=2`
+
+### 后续叙事
+
+- R89 落 `D.matrix_error_inconclusive`
+- fresh12 recovery_consecutive_rounds=1（R73 carry-forward；R89 不计 success）
+- **不写** fresh12 round 2 banked
+- **不写** fresh12 closure
+- fresh09 仍按 R88 口径为 steady-state broken；**不写** fresh09 recovered
+- **不写** whole / original cohort C closure
+- **不写** dual-kernel parity completion；BHV 52/56 不变
+- 下一轮自然候选：若继续 fresh12，需独立授权重做 round-2 bank
+  attempt；也可选 fresh08/fresh11/fresh13/fresh14 中另一代表做
+  isolated rotation-bank round。任一路都不能 auto-extend R89。
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round89_fresh12_rotation_bank_summary.json`
+- `agents-only/mt_real_02_evidence/round89_fresh12_rotation_bank_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`（31 rounds 重新生成）
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R89
+  committed-evidence contract）
+- `agents-only/active_context.md`（≤100 行）
+- 本文件 R89 节
+
+### 范围确认
+
+- live runs in R89: 3（fresh12 only）
+- node contact in R89: 1 rep
+- fresh09/fresh01/fresh15/fresh10/fresh04 /
+  fresh02/03/05/06/07/08/11/13/14 /
+  Hys2 / WS / plain-VLESS live: 0
+- sampler / dataplane changes: 0
+- `go_fork_source/*` / `.github/workflows/*` / `golden_spec` 改动: 0
+- BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
+  R89 不声明 fresh12 bank/closure，也不声明 original cohort C closure

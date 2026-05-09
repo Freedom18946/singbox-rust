@@ -1,0 +1,299 @@
+{
+  "round": "89",
+  "date": "2026-05-09",
+  "description": "R89 fresh12 isolated rotation-bank round. Outcome: D.matrix_error_inconclusive; 2/3 matrix_timeout and 1/3 completed same_failure(connection_reset). R89 is not counted as recovery success; fresh12 round 2 bank and closure are NOT declared.",
+  "source_summary": "/tmp/r89-fresh12-rotation-bank-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r89_fresh12_rotation_bank_subset_clean.json --plan-json /tmp/r89_fresh12_rotation_bank_plan.json --target example.com:80 --runs 3 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r89_fresh12_rotation_bank_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 3,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 3,
+    "executed_runs": 3,
+    "status_counts": {
+      "completed": 1,
+      "matrix_timeout": 2
+    },
+    "label_counts": {
+      "probe_io_all_connection_reset": 1,
+      "reality_all_connection_reset": 1
+    },
+    "class_counts": {
+      "connection_reset": 9
+    },
+    "divergence_run_count": 0,
+    "divergence_phase_label_count": 0,
+    "distinct_divergence_phase_label_count": 0,
+    "divergence_phase_label_breakdown": {},
+    "same_failure_run_count": 1,
+    "matrix_timeout_run_count": 2,
+    "accounting_note": "matrix_timeout runs have no compare payload and are counted as run_unknown; R89 is therefore matrix_error/inconclusive and is not counted as recovery success.",
+    "run_health_counts": {
+      "run_all_ok": 0,
+      "run_divergence": 0,
+      "run_same_failure": 1,
+      "run_unknown": 2
+    },
+    "run_all_ok": 0,
+    "run_divergence": 0,
+    "run_same_failure": 1,
+    "run_unknown": 2
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 0,
+    "uniform_failure_labels": {
+      "reality_all_connection_reset": 1
+    },
+    "matrix_error": true,
+    "inconclusive": true
+  },
+  "matrix_status": {
+    "final": "matrix_error",
+    "inconclusive": true,
+    "completed_runs": 1,
+    "matrix_timeout_runs": 2,
+    "matrix_status_counts": {
+      "0": 1,
+      "124": 2
+    }
+  },
+  "by_outbound": {
+    "fresh12": {
+      "status_counts": {
+        "completed": 1,
+        "matrix_timeout": 2
+      },
+      "label_counts": {
+        "probe_io_all_connection_reset": 1,
+        "reality_all_connection_reset": 1
+      },
+      "class_counts": {
+        "connection_reset": 9
+      },
+      "run_health_counts": {
+        "run_all_ok": 0,
+        "run_divergence": 0,
+        "run_same_failure": 1,
+        "run_unknown": 2
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0,
+      "historical_has_non_all_ok": true,
+      "r89_state": "matrix_error_inconclusive",
+      "completed_run_state": "same_failure",
+      "completed_same_failure_class": "connection_reset",
+      "matrix_timeout_runs": 2,
+      "round_counted_for_recovery_success": false,
+      "recovery_consecutive_rounds_after_r89": 1,
+      "round2_banked": false,
+      "per_rep_recovery_closure_achieved": false,
+      "closure_declared": false,
+      "fresh12_role": "isolated_rotation_bank_candidate"
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh12",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "matrix_timeout",
+      "matrix_status": 124,
+      "labels": [],
+      "class_counts": {},
+      "run_health": "run_unknown"
+    },
+    {
+      "outbound": "fresh12",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "matrix_timeout",
+      "matrix_status": 124,
+      "labels": [],
+      "class_counts": {},
+      "run_health": "run_unknown"
+    },
+    {
+      "outbound": "fresh12",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "probe_io_all_connection_reset",
+        "reality_all_connection_reset"
+      ],
+      "class_counts": {
+        "connection_reset": 9
+      },
+      "run_health": "run_same_failure"
+    }
+  ],
+  "interpretation": [
+    "R89 isolated rotation-bank round ran only fresh12, 3 planned runs at example.com:80.",
+    "Two runs returned matrix_timeout with no compare payload; one run completed with same_failure(connection_reset) labels.",
+    "Because a matrix/tooling timeout occurred, R89 is classified as matrix_error/inconclusive and is not counted as recovery success.",
+    "fresh12 round 2 bank is NOT achieved, fresh12 closure is NOT declared, and no dual-kernel parity completion is claimed."
+  ],
+  "kind": "fresh12-rotation-bank-live-summary",
+  "live_executed": true,
+  "node_contact_executed": true,
+  "sampler_dataplane_modified": false,
+  "go_fork_source_modified": false,
+  "github_workflows_modified": false,
+  "bhv_52_56_unchanged_at_round_time": true,
+  "live_scope": {
+    "outbounds": [
+      "fresh12"
+    ],
+    "runs_per_outbound": 3,
+    "planned_total_runs": 3,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "authorized_outbound_executed": true,
+    "excluded_outbounds_executed": false,
+    "excluded_protocols_executed": false,
+    "auto_extended": false,
+    "rotated_failed_rep_in_round": false,
+    "retried_failed_run": false
+  },
+  "pre_gate": {
+    "head_at_gate": "a1d92ffc8d088f5d15a952d20fa1d3ecdf605618",
+    "origin_main_at_gate": "a1d92ffc8d088f5d15a952d20fa1d3ecdf605618",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 1
+    },
+    "expected_intake_counts": {
+      "covered_existing": 1,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 1,
+      "runs_per_outbound": 3,
+      "planned_total_runs": 3,
+      "target": "example.com:80",
+      "dry_run": true,
+      "subset_schema_gate_passed": true,
+      "selected": [
+        "fresh12"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "subset_schema_gate_passed": true,
+    "subset_schema_gate": {
+      "ok": true,
+      "violations": [],
+      "stats": {
+        "outbounds_checked": 1,
+        "outbound_level_violations": 0,
+        "nested_violations": 0
+      }
+    },
+    "bhv": "52/56 unchanged"
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false,
+    "observed_phase_labels_in_taxonomy": []
+  },
+  "fresh12_rotation_bank_status": {
+    "scope": "isolated rotation bank round (fresh12)",
+    "source_pool_status_before_r89": "R73 round-1-only",
+    "fresh12_r73_state": "all_ok",
+    "fresh12_r89_state": "matrix_error_inconclusive",
+    "completed_run_state": "same_failure",
+    "completed_same_failure_class": "connection_reset",
+    "matrix_error": true,
+    "inconclusive": true,
+    "round_counted_for_recovery_success": false,
+    "fresh12_recovery_consecutive_rounds_before_r89": 1,
+    "fresh12_recovery_consecutive_rounds_after_r89": 1,
+    "fresh12_round2_banked": false,
+    "fresh12_per_rep_recovery_closure_achieved": false,
+    "fresh12_closure_declared": false,
+    "next_round_natural_handling": "Do not auto-extend or retry R89. A future round needs explicit authorization and should treat fresh12 as not banked by R89."
+  },
+  "fresh12_per_rep_transition": {
+    "fresh12": [
+      {
+        "round": "73",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 5,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 5
+        },
+        "class_counts": {
+          "ok": 45
+        },
+        "recovery_consecutive_rounds_after_round": 1,
+        "same_failure_class": null,
+        "phase_labels": [],
+        "round_counted_for_recovery_success": true
+      },
+      {
+        "round": "89",
+        "state": "matrix_error_inconclusive",
+        "run_health_counts": {
+          "run_all_ok": 0,
+          "run_divergence": 0,
+          "run_same_failure": 1,
+          "run_unknown": 2
+        },
+        "label_counts": {
+          "probe_io_all_connection_reset": 1,
+          "reality_all_connection_reset": 1
+        },
+        "class_counts": {
+          "connection_reset": 9
+        },
+        "recovery_consecutive_rounds_after_round": 1,
+        "same_failure_class": "connection_reset",
+        "phase_labels": [],
+        "round_counted_for_recovery_success": false
+      }
+    ]
+  },
+  "classification": {
+    "final": "D.matrix_error_inconclusive",
+    "primary_branch": "D",
+    "sub_branch": "D.matrix_error_inconclusive",
+    "label": "matrix/tooling timeout made the isolated rotation-bank round inconclusive",
+    "rationale": "R89 executed the authorized fresh12-only rotation-bank round with 3 planned runs. Two runs timed out at matrix level and produced no compare payload; one run completed as same_failure(connection_reset). Because matrix/tooling timeout occurred, this round is inconclusive and is not counted as recovery success.",
+    "matrix_error": true,
+    "matrix_timeout_runs": 2,
+    "completed_same_failure_runs": 1,
+    "fresh12_recovery_consecutive_rounds": 1,
+    "fresh12_round2_banked": false,
+    "fresh12_closure_declared": false,
+    "original_cohort_c_closure_achieved": false,
+    "dual_kernel_parity_completion_claimed": false,
+    "next_handling": "Do not auto-extend, retry failed runs, or rotate in-round. Treat fresh12 as not banked by R89; any future bank attempt requires explicit authorization."
+  },
+  "redaction_notes": [
+    "Evidence uses only the neutral outbound key fresh12 for this round.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed.",
+    "subset_schema_gate.violations is committed only because it is the empty array; structural redaction is preserved."
+  ]
+}

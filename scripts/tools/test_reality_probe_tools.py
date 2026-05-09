@@ -5901,5 +5901,239 @@ class R88Fresh09RecheckTests(unittest.TestCase):
             self.assertNotIn("\u9ad8\u901f", text)
 
 
+class R89Fresh12RotationBankTests(unittest.TestCase):
+    """R89 fresh12 isolated rotation-bank committed-evidence contract.
+
+    Pins: scope (fresh12 only x3), R81 dry-run gate, no other fresh
+    neutral key in the round summary, matrix_timeout/inconclusive
+    classification, no recovery success, no round-2 bank, no closure,
+    no original cohort C closure, no parity completion, and no raw
+    secret leakage.
+    """
+
+    def _committed_r89_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round89_fresh12_rotation_bank_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r89 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r89_scope_and_pre_gate(self):
+        _, ev = self._committed_r89_evidence()
+        self.assertEqual(ev["round"], "89")
+        self.assertEqual(ev["kind"], "fresh12-rotation-bank-live-summary")
+
+        scope = ev["live_scope"]
+        self.assertEqual(scope["outbounds"], ["fresh12"])
+        self.assertEqual(scope["runs_per_outbound"], 3)
+        self.assertEqual(scope["planned_total_runs"], 3)
+        self.assertEqual(scope["target"], "example.com:80")
+        self.assertTrue(scope["reality_vless_only"])
+        self.assertTrue(scope["authorized_outbound_executed"])
+        self.assertFalse(scope["excluded_outbounds_executed"])
+        self.assertFalse(scope["excluded_protocols_executed"])
+        self.assertFalse(scope["auto_extended"])
+        self.assertFalse(scope["rotated_failed_rep_in_round"])
+        self.assertFalse(scope["retried_failed_run"])
+
+        pre = ev["pre_gate"]
+        self.assertEqual(
+            pre["head_at_gate"],
+            "a1d92ffc8d088f5d15a952d20fa1d3ecdf605618",
+        )
+        self.assertEqual(
+            pre["origin_main_at_gate"],
+            "a1d92ffc8d088f5d15a952d20fa1d3ecdf605618",
+        )
+        self.assertTrue(pre["main_synced_with_origin_main_at_gate"])
+        self.assertTrue(pre["intake_gate_passed"])
+        self.assertTrue(pre["dry_run_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate"]["ok"])
+        self.assertEqual(pre["subset_schema_gate"]["violations"], [])
+        self.assertEqual(pre["bhv"], "52/56 unchanged")
+        self.assertEqual(
+            pre["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 1,
+            },
+        )
+        self.assertEqual(pre["dry_run"]["selected_count"], 1)
+        self.assertEqual(pre["dry_run"]["runs_per_outbound"], 3)
+        self.assertEqual(pre["dry_run"]["planned_total_runs"], 3)
+        self.assertEqual(pre["dry_run"]["target"], "example.com:80")
+        self.assertTrue(pre["dry_run"]["subset_schema_gate_passed"])
+        self.assertEqual(pre["dry_run"]["selected"], ["fresh12"])
+
+    def test_committed_r89_classification_and_matrix_error_semantics(self):
+        _, ev = self._committed_r89_evidence()
+        classification = ev["classification"]
+        self.assertEqual(classification["final"], "D.matrix_error_inconclusive")
+        self.assertEqual(classification["primary_branch"], "D")
+        self.assertEqual(
+            classification["sub_branch"], "D.matrix_error_inconclusive"
+        )
+        self.assertTrue(classification["matrix_error"])
+        self.assertEqual(classification["matrix_timeout_runs"], 2)
+        self.assertEqual(classification["completed_same_failure_runs"], 1)
+        self.assertEqual(classification["fresh12_recovery_consecutive_rounds"], 1)
+        self.assertFalse(classification["fresh12_round2_banked"])
+        self.assertFalse(classification["fresh12_closure_declared"])
+        self.assertFalse(classification["original_cohort_c_closure_achieved"])
+        self.assertFalse(classification["dual_kernel_parity_completion_claimed"])
+
+        self.assertEqual(
+            ev["summary"]["status_counts"],
+            {"completed": 1, "matrix_timeout": 2},
+        )
+        self.assertEqual(
+            ev["summary"]["run_health_counts"],
+            {
+                "run_all_ok": 0,
+                "run_divergence": 0,
+                "run_same_failure": 1,
+                "run_unknown": 2,
+            },
+        )
+        self.assertEqual(
+            ev["summary"]["label_counts"],
+            {
+                "probe_io_all_connection_reset": 1,
+                "reality_all_connection_reset": 1,
+            },
+        )
+        self.assertEqual(ev["summary"]["class_counts"], {"connection_reset": 9})
+        self.assertEqual(ev["summary"]["divergence_run_count"], 0)
+        self.assertEqual(ev["summary"]["divergence_phase_label_count"], 0)
+        self.assertEqual(
+            ev["summary"]["divergence_phase_label_breakdown"], {}
+        )
+        self.assertEqual(ev["summary"]["same_failure_run_count"], 1)
+        self.assertEqual(ev["summary"]["matrix_timeout_run_count"], 2)
+
+        matrix_status = ev["matrix_status"]
+        self.assertEqual(matrix_status["final"], "matrix_error")
+        self.assertTrue(matrix_status["inconclusive"])
+        self.assertEqual(matrix_status["completed_runs"], 1)
+        self.assertEqual(matrix_status["matrix_timeout_runs"], 2)
+        self.assertEqual(matrix_status["matrix_status_counts"], {"0": 1, "124": 2})
+
+        self.assertTrue(ev["matrix_health"]["matrix_error"])
+        self.assertTrue(ev["matrix_health"]["inconclusive"])
+        self.assertFalse(ev["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(ev["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertEqual(ev["taxonomy"]["observed_phase_labels_in_taxonomy"], [])
+        self.assertTrue(ev["bhv_52_56_unchanged_at_round_time"])
+        self.assertFalse(ev["sampler_dataplane_modified"])
+        self.assertFalse(ev["go_fork_source_modified"])
+        self.assertFalse(ev["github_workflows_modified"])
+
+    def test_committed_r89_fresh12_status_and_runs(self):
+        _, ev = self._committed_r89_evidence()
+        self.assertEqual(set(ev["by_outbound"]), {"fresh12"})
+        self.assertEqual({run["outbound"] for run in ev["runs"]}, {"fresh12"})
+        self.assertEqual(len(ev["runs"]), 3)
+        self.assertEqual(
+            [run["status"] for run in ev["runs"]],
+            ["matrix_timeout", "matrix_timeout", "completed"],
+        )
+        self.assertEqual(
+            [run["matrix_status"] for run in ev["runs"]],
+            [124, 124, 0],
+        )
+        self.assertEqual(
+            [run["run_health"] for run in ev["runs"]],
+            ["run_unknown", "run_unknown", "run_same_failure"],
+        )
+        self.assertEqual(ev["runs"][0]["labels"], [])
+        self.assertEqual(ev["runs"][1]["labels"], [])
+        self.assertEqual(
+            ev["runs"][2]["labels"],
+            ["probe_io_all_connection_reset", "reality_all_connection_reset"],
+        )
+        self.assertEqual(ev["runs"][2]["class_counts"], {"connection_reset": 9})
+
+        status = ev["fresh12_rotation_bank_status"]
+        self.assertEqual(status["scope"], "isolated rotation bank round (fresh12)")
+        self.assertEqual(status["source_pool_status_before_r89"], "R73 round-1-only")
+        self.assertEqual(status["fresh12_r73_state"], "all_ok")
+        self.assertEqual(status["fresh12_r89_state"], "matrix_error_inconclusive")
+        self.assertEqual(status["completed_run_state"], "same_failure")
+        self.assertEqual(status["completed_same_failure_class"], "connection_reset")
+        self.assertTrue(status["matrix_error"])
+        self.assertTrue(status["inconclusive"])
+        self.assertFalse(status["round_counted_for_recovery_success"])
+        self.assertEqual(status["fresh12_recovery_consecutive_rounds_before_r89"], 1)
+        self.assertEqual(status["fresh12_recovery_consecutive_rounds_after_r89"], 1)
+        self.assertFalse(status["fresh12_round2_banked"])
+        self.assertFalse(status["fresh12_per_rep_recovery_closure_achieved"])
+        self.assertFalse(status["fresh12_closure_declared"])
+
+        transitions = ev["fresh12_per_rep_transition"]
+        self.assertEqual(set(transitions), {"fresh12"})
+        self.assertEqual(
+            [row["round"] for row in transitions["fresh12"]],
+            ["73", "89"],
+        )
+        self.assertTrue(transitions["fresh12"][0]["round_counted_for_recovery_success"])
+        self.assertFalse(transitions["fresh12"][1]["round_counted_for_recovery_success"])
+        self.assertEqual(
+            transitions["fresh12"][1]["recovery_consecutive_rounds_after_round"],
+            1,
+        )
+
+    def test_committed_r89_only_fresh12_no_others_no_secrets(self):
+        path, _ = self._committed_r89_evidence()
+        evidence_text = path.read_text(encoding="utf-8")
+        md_text = path.with_suffix(".md").read_text(encoding="utf-8")
+
+        for text in (evidence_text, md_text):
+            self.assertIn("fresh12", text)
+            for index in range(1, 16):
+                key = f"fresh{index:02d}"
+                if key == "fresh12":
+                    continue
+                self.assertNotIn(
+                    key,
+                    text,
+                    msg=f"{key} must not appear in R89 round summary",
+                )
+            self.assertNotIn("recovered\": true", text)
+            self.assertNotIn("closure_declared\": true", text)
+            self.assertNotRegex(text, r"aws-link\d+\.liangxin1\.xyz")
+            self.assertNotRegex(
+                text,
+                r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{12}\b",
+            )
+            self.assertNotIn("\u6d41\u5a92\u4f53", text)
+            self.assertNotIn("\u9ad8\u901f", text)
+
+    def test_committed_r89_rollup_delta_for_fresh12(self):
+        rollup_path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/live_rollup.json"
+        )
+        if not rollup_path.exists():
+            self.skipTest("live rollup not yet committed")
+        rollup = json.loads(rollup_path.read_text(encoding="utf-8"))
+        self.assertEqual(rollup["total_rounds"], 31)
+        self.assertEqual(rollup["total_executed_runs"], 258)
+        self.assertEqual(rollup["total_all_ok_runs"], 111)
+        fresh12 = rollup["by_outbound"]["fresh12"]
+        self.assertEqual(fresh12["latest_round"], "89")
+        self.assertEqual(fresh12["latest_status_counts"], {"completed": 1, "matrix_timeout": 2})
+        self.assertEqual(
+            fresh12["latest_run_health_counts"],
+            {"run_same_failure": 1, "run_unknown": 2},
+        )
+        self.assertIn("fresh12", rollup["latest_mixed_run_health_outbounds"])
+
+
 if __name__ == "__main__":
     unittest.main()
