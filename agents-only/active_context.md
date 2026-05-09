@@ -35,21 +35,25 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - cargo check --workspace: PASS
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
-  **PASS** (R90 committed-evidence contract included).
+  **PASS** (R91 committed-evidence contract included).
 - cargo test -p sb-adapters --features adapter-trojan --test
   trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R90: **32 rounds, 261 runs, 114 all_ok**.
+- live_rollup.json/md after R91: **33 rounds, 264 runs, 117 all_ok**.
 
 ## Next Steps
 
-- MT-REAL-02 R90 fresh13 isolated rotation-bank DONE (2026-05-09).
+- MT-REAL-02 R91 fresh13 round-3 closure attempt DONE (2026-05-09).
   Authorized fresh13 ×3 only. Pre-gate passed (selected_count=1,
   planned_total_runs=3, target=example.com:80,
   subset_schema_gate_passed=true, violations=[]). Live: 3/3
   run_all_ok, matrix_status=0, no phase labels.
-  **A.fresh13_round2_banked**; fresh13 recovery_consecutive_rounds=2
-  (R73+R90); **fresh13 round 2 banked**; **fresh13 closure NOT
-  declared**. BHV 52/56 unchanged.
+  **A.fresh13_per_rep_recovery_closure**; fresh13
+  recovery_consecutive_rounds=3 (R73+R90+R91); **fresh13 per-rep
+  recovery closure achieved**. **original cohort C closure NOT claimed**;
+  BHV 52/56 unchanged.
+- MT-REAL-02 R90 fresh13 isolated rotation-bank DONE (2026-05-09).
+  **A.fresh13_round2_banked**; 3/3 run_all_ok;
+  recovery_consecutive_rounds=2; **fresh13 closure NOT declared**.
 - MT-REAL-02 R89 fresh12 isolated rotation-bank DONE (2026-05-09).
   **D.matrix_error_inconclusive**: 2 matrix_timeout + 1 completed
   same_failure(connection_reset); not counted as recovery success.

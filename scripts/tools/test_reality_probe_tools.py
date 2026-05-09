@@ -6122,9 +6122,9 @@ class R89Fresh12RotationBankTests(unittest.TestCase):
         if not rollup_path.exists():
             self.skipTest("live rollup not yet committed")
         rollup = json.loads(rollup_path.read_text(encoding="utf-8"))
-        self.assertEqual(rollup["total_rounds"], 32)
-        self.assertEqual(rollup["total_executed_runs"], 261)
-        self.assertEqual(rollup["total_all_ok_runs"], 114)
+        self.assertGreaterEqual(rollup["total_rounds"], 32)
+        self.assertGreaterEqual(rollup["total_executed_runs"], 261)
+        self.assertGreaterEqual(rollup["total_all_ok_runs"], 114)
         fresh12 = rollup["by_outbound"]["fresh12"]
         self.assertEqual(fresh12["latest_round"], "89")
         self.assertEqual(fresh12["latest_status_counts"], {"completed": 1, "matrix_timeout": 2})
@@ -6332,15 +6332,259 @@ class R90Fresh13RotationBankTests(unittest.TestCase):
         if not rollup_path.exists():
             self.skipTest("live rollup not yet committed")
         rollup = json.loads(rollup_path.read_text(encoding="utf-8"))
-        self.assertEqual(rollup["total_rounds"], 32)
-        self.assertEqual(rollup["total_executed_runs"], 261)
-        self.assertEqual(rollup["total_all_ok_runs"], 114)
+        self.assertGreaterEqual(rollup["total_rounds"], 32)
+        self.assertGreaterEqual(rollup["total_executed_runs"], 261)
+        self.assertGreaterEqual(rollup["total_all_ok_runs"], 114)
 
         fresh13 = rollup["by_outbound"]["fresh13"]
-        self.assertEqual(fresh13["latest_round"], "90")
+        self.assertIn("90", fresh13["rounds"])
+        r90_history = [
+            row for row in fresh13["history"] if row.get("round") == "90"
+        ]
+        self.assertEqual(len(r90_history), 1)
+        self.assertEqual(r90_history[0]["status_counts"], {"completed": 3})
+        self.assertEqual(r90_history[0]["run_health_counts"], {"run_all_ok": 3})
+
+        r89_path = root / (
+            "agents-only/mt_real_02_evidence/"
+            "round89_fresh12_rotation_bank_summary.json"
+        )
+        r88_path = root / (
+            "agents-only/mt_real_02_evidence/"
+            "round88_fresh09_recheck_summary.json"
+        )
+        if not r89_path.exists() or not r88_path.exists():
+            self.skipTest("prior boundary evidence missing")
+        r89 = json.loads(r89_path.read_text(encoding="utf-8"))
+        r88 = json.loads(r88_path.read_text(encoding="utf-8"))
+        self.assertFalse(r89["classification"]["fresh12_round2_banked"])
+        self.assertFalse(r89["classification"]["fresh12_closure_declared"])
+        self.assertFalse(r88["classification"]["fresh09_recovered"])
+        self.assertFalse(r88["classification"]["original_cohort_c_closure_achieved"])
+
+
+class R91Fresh13Round3ClosureTests(unittest.TestCase):
+    """R91 fresh13 round-3 closure committed-evidence contract.
+
+    Pins: scope (fresh13 only x3), R81 dry-run gate, no other fresh
+    neutral key in the round summary, 3/3 all_ok, per-rep closure only,
+    no original cohort C closure, no parity completion, fresh12 still
+    not banked in R89, fresh09 still not recovered in R88, and no raw
+    secret leakage.
+    """
+
+    def _committed_r91_evidence(self) -> tuple[pathlib.Path, dict]:
+        path = pathlib.Path(__file__).resolve().parents[2] / (
+            "agents-only/mt_real_02_evidence/"
+            "round91_fresh13_round3_closure_summary.json"
+        )
+        if not path.exists():
+            self.skipTest("r91 evidence not yet committed")
+        return path, json.loads(path.read_text(encoding="utf-8"))
+
+    def test_committed_r91_scope_and_pre_gate(self):
+        _, ev = self._committed_r91_evidence()
+        self.assertEqual(ev["round"], "91")
+        self.assertEqual(ev["kind"], "fresh13-round3-closure-live-summary")
+
+        scope = ev["live_scope"]
+        self.assertEqual(scope["outbounds"], ["fresh13"])
+        self.assertEqual(scope["runs_per_outbound"], 3)
+        self.assertEqual(scope["planned_total_runs"], 3)
+        self.assertEqual(scope["target"], "example.com:80")
+        self.assertTrue(scope["reality_vless_only"])
+        self.assertTrue(scope["authorized_outbound_executed"])
+        self.assertFalse(scope["excluded_outbounds_executed"])
+        self.assertFalse(scope["excluded_protocols_executed"])
+        self.assertFalse(scope["auto_extended"])
+        self.assertFalse(scope["rotated_failed_rep_in_round"])
+        self.assertFalse(scope["retried_failed_run"])
+
+        pre = ev["pre_gate"]
+        self.assertEqual(
+            pre["head_at_gate"],
+            "ce7fa0bfe9c454dba2b617e9633f3f98cd410b9b",
+        )
+        self.assertEqual(
+            pre["origin_main_at_gate"],
+            "ce7fa0bfe9c454dba2b617e9633f3f98cd410b9b",
+        )
+        self.assertTrue(pre["main_synced_with_origin_main_at_gate"])
+        self.assertTrue(pre["intake_gate_passed"])
+        self.assertTrue(pre["dry_run_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate_passed"])
+        self.assertTrue(pre["subset_schema_gate"]["ok"])
+        self.assertEqual(pre["subset_schema_gate"]["violations"], [])
+        self.assertEqual(pre["bhv"], "52/56 unchanged")
+        self.assertEqual(
+            pre["intake_counts"],
+            {
+                "fresh_ready": 0,
+                "duplicate": 0,
+                "not_ready": 0,
+                "covered_existing": 1,
+            },
+        )
+        self.assertEqual(pre["dry_run"]["selected_count"], 1)
+        self.assertEqual(pre["dry_run"]["runs_per_outbound"], 3)
+        self.assertEqual(pre["dry_run"]["planned_total_runs"], 3)
+        self.assertEqual(pre["dry_run"]["target"], "example.com:80")
+        self.assertTrue(pre["dry_run"]["subset_schema_gate_passed"])
+        self.assertEqual(pre["dry_run"]["selected"], ["fresh13"])
+
+    def test_committed_r91_classification_and_closure_semantics(self):
+        _, ev = self._committed_r91_evidence()
+        classification = ev["classification"]
+        self.assertEqual(
+            classification["final"],
+            "A.fresh13_per_rep_recovery_closure",
+        )
+        self.assertEqual(classification["primary_branch"], "A")
+        self.assertEqual(
+            classification["sub_branch"],
+            "A.fresh13_per_rep_recovery_closure",
+        )
+        self.assertFalse(classification["matrix_error"])
+        self.assertEqual(classification["matrix_timeout_runs"], 0)
+        self.assertEqual(classification["fresh13_recovery_consecutive_rounds"], 3)
+        self.assertTrue(classification["fresh13_round2_banked_carried_forward"])
+        self.assertTrue(
+            classification["fresh13_per_rep_recovery_closure_achieved"]
+        )
+        self.assertTrue(classification["fresh13_closure_declared"])
+        self.assertFalse(classification["original_cohort_c_closure_achieved"])
+        self.assertFalse(classification["dual_kernel_parity_completion_claimed"])
+
+        self.assertEqual(ev["summary"]["status_counts"], {"completed": 3})
+        self.assertEqual(
+            ev["summary"]["run_health_counts"],
+            {
+                "run_all_ok": 3,
+                "run_divergence": 0,
+                "run_same_failure": 0,
+                "run_unknown": 0,
+            },
+        )
+        self.assertEqual(ev["summary"]["label_counts"], {"all_ok": 3})
+        self.assertEqual(ev["summary"]["class_counts"], {"ok": 27})
+        self.assertEqual(ev["summary"]["divergence_run_count"], 0)
+        self.assertEqual(ev["summary"]["divergence_phase_label_count"], 0)
+        self.assertEqual(
+            ev["summary"]["divergence_phase_label_breakdown"], {}
+        )
+        self.assertEqual(ev["summary"]["same_failure_run_count"], 0)
+        self.assertEqual(ev["summary"]["matrix_timeout_run_count"], 0)
+        self.assertEqual(ev["summary"]["matrix_error_run_count"], 0)
+
+        matrix_status = ev["matrix_status"]
+        self.assertEqual(matrix_status["final"], "ok")
+        self.assertFalse(matrix_status["inconclusive"])
+        self.assertEqual(matrix_status["completed_runs"], 3)
+        self.assertEqual(matrix_status["matrix_timeout_runs"], 0)
+        self.assertEqual(matrix_status["matrix_error_runs"], 0)
+        self.assertEqual(matrix_status["matrix_status_counts"], {"0": 3})
+
+        self.assertFalse(ev["matrix_health"]["matrix_error"])
+        self.assertFalse(ev["matrix_health"]["inconclusive"])
+        self.assertFalse(ev["taxonomy"]["new_structural_divergence"])
+        self.assertEqual(ev["taxonomy"]["unexpected_phase_labels"], [])
+        self.assertEqual(ev["taxonomy"]["observed_phase_labels_in_taxonomy"], [])
+        self.assertTrue(ev["bhv_52_56_unchanged_at_round_time"])
+        self.assertFalse(ev["sampler_dataplane_modified"])
+        self.assertFalse(ev["go_fork_source_modified"])
+        self.assertFalse(ev["github_workflows_modified"])
+
+    def test_committed_r91_fresh13_status_and_runs(self):
+        _, ev = self._committed_r91_evidence()
+        self.assertEqual(set(ev["by_outbound"]), {"fresh13"})
+        self.assertEqual({run["outbound"] for run in ev["runs"]}, {"fresh13"})
+        self.assertEqual(len(ev["runs"]), 3)
+        for run in ev["runs"]:
+            self.assertEqual(run["status"], "completed")
+            self.assertEqual(run["matrix_status"], 0)
+            self.assertEqual(run["labels"], ["all_ok"])
+            self.assertEqual(run["class_counts"], {"ok": 9})
+            self.assertEqual(run["run_health"], "run_all_ok")
+
+        status = ev["fresh13_round3_closure_status"]
+        self.assertEqual(
+            status["scope"], "per-rep recovery closure attempt (fresh13)"
+        )
+        self.assertEqual(
+            status["source_bank_before_r91"],
+            "R73 + R90 consecutive all_ok evidence",
+        )
+        self.assertEqual(status["fresh13_r73_state"], "all_ok")
+        self.assertEqual(status["fresh13_r90_state"], "all_ok")
+        self.assertEqual(status["fresh13_r91_state"], "all_ok")
+        self.assertFalse(status["matrix_error"])
+        self.assertFalse(status["inconclusive"])
+        self.assertTrue(status["round_counted_for_recovery_success"])
+        self.assertEqual(status["per_rep_closure_threshold_rounds"], 3)
+        self.assertEqual(status["fresh13_recovery_consecutive_rounds_before_r91"], 2)
+        self.assertEqual(status["fresh13_recovery_consecutive_rounds_after_r91"], 3)
+        self.assertTrue(status["fresh13_per_rep_recovery_closure_achieved"])
+        self.assertTrue(status["fresh13_closure_declared"])
+        self.assertEqual(status["closure_scope"], "fresh13 per-rep only")
+
+        transitions = ev["fresh13_per_rep_transition"]
+        self.assertEqual(set(transitions), {"fresh13"})
+        self.assertEqual(
+            [row["round"] for row in transitions["fresh13"]],
+            ["73", "90", "91"],
+        )
+        for row in transitions["fresh13"]:
+            self.assertTrue(row["round_counted_for_recovery_success"])
+        self.assertEqual(
+            transitions["fresh13"][2]["recovery_consecutive_rounds_after_round"],
+            3,
+        )
+
+    def test_committed_r91_only_fresh13_no_others_no_secrets(self):
+        path, _ = self._committed_r91_evidence()
+        evidence_text = path.read_text(encoding="utf-8")
+        md_text = path.with_suffix(".md").read_text(encoding="utf-8")
+
+        for text in (evidence_text, md_text):
+            self.assertIn("fresh13", text)
+            for index in range(1, 16):
+                key = f"fresh{index:02d}"
+                if key == "fresh13":
+                    continue
+                self.assertNotIn(
+                    key,
+                    text,
+                    msg=f"{key} must not appear in R91 round summary",
+                )
+            self.assertNotIn("original_cohort_c_closure_achieved\": true", text)
+            self.assertNotIn("dual_kernel_parity_completion_claimed\": true", text)
+            self.assertNotRegex(text, r"aws-link\d+\.liangxin1\.xyz")
+            self.assertNotRegex(
+                text,
+                r"\b[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-"
+                r"[0-9a-fA-F]{12}\b",
+            )
+            self.assertNotIn("\u6d41\u5a92\u4f53", text)
+            self.assertNotIn("\u9ad8\u901f", text)
+
+    def test_committed_r91_rollup_and_prior_boundaries(self):
+        root = pathlib.Path(__file__).resolve().parents[2]
+        rollup_path = root / "agents-only/mt_real_02_evidence/live_rollup.json"
+        if not rollup_path.exists():
+            self.skipTest("live rollup not yet committed")
+        rollup = json.loads(rollup_path.read_text(encoding="utf-8"))
+        self.assertEqual(rollup["total_rounds"], 33)
+        self.assertEqual(rollup["total_executed_runs"], 264)
+        self.assertEqual(rollup["total_all_ok_runs"], 117)
+        self.assertEqual(rollup["total_non_all_ok_runs"], 147)
+
+        fresh13 = rollup["by_outbound"]["fresh13"]
+        self.assertEqual(fresh13["latest_round"], "91")
         self.assertEqual(fresh13["latest_health"], "latest_all_ok")
         self.assertEqual(fresh13["latest_status_counts"], {"completed": 3})
         self.assertEqual(fresh13["latest_run_health_counts"], {"run_all_ok": 3})
+        self.assertIn("91", fresh13["rounds"])
 
         r89_path = root / (
             "agents-only/mt_real_02_evidence/"

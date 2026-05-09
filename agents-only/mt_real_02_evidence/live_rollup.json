@@ -1,7 +1,7 @@
 {
-  "total_rounds": 32,
-  "total_executed_runs": 261,
-  "total_all_ok_runs": 114,
+  "total_rounds": 33,
+  "total_executed_runs": 264,
+  "total_all_ok_runs": 117,
   "total_non_all_ok_runs": 147,
   "has_any_divergence": true,
   "latest_non_all_ok_outbounds": [
@@ -74,12 +74,12 @@
     "run_unknown": 2
   },
   "status_counts": {
-    "completed": 256,
+    "completed": 259,
     "matrix_error": 3,
     "matrix_timeout": 2
   },
   "label_counts": {
-    "all_ok": 114,
+    "all_ok": 117,
     "app_minimal_diverged": 9,
     "app_pre_post_diverged": 9,
     "bridge_io_diverged": 3,
@@ -96,7 +96,7 @@
   },
   "class_counts": {
     "connection_reset": 425,
-    "ok": 1068,
+    "ok": 1095,
     "other": 172,
     "post_dial_eof": 6,
     "reality_dial_eof": 121,
@@ -106,7 +106,7 @@
     {
       "round": "41",
       "date": "2026-04-26",
-      "path": "agents-only/mt_real_02_evidence/round41_live_batch_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round41_live_batch_summary.json",
       "description": "Small repeat live batch using Round 40 REALITY batch matrix tooling.",
       "total": 4,
       "executed_runs": 4,
@@ -126,7 +126,7 @@
     {
       "round": "42",
       "date": "2026-04-26",
-      "path": "agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
       "description": "Bounded cross-region live batch using the repeat-aware REALITY matrix runner.",
       "total": 3,
       "executed_runs": 3,
@@ -150,7 +150,7 @@
     {
       "round": "44",
       "date": "2026-04-26",
-      "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
       "description": "wide-region REALITY live batch evidence",
       "total": 5,
       "executed_runs": 5,
@@ -174,7 +174,7 @@
     {
       "round": "47",
       "date": "2026-04-26",
-      "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
       "description": "planner-selected uncovered REALITY live batch evidence",
       "total": 5,
       "executed_runs": 5,
@@ -203,7 +203,7 @@
     {
       "round": "48",
       "date": "2026-04-26",
-      "path": "agents-only/mt_real_02_evidence/round48_tw_divergence_repeat_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round48_tw_divergence_repeat_summary.json",
       "description": "targeted TW-A-BGP-1.0 repeat after Round 47 divergence",
       "total": 3,
       "executed_runs": 3,
@@ -223,7 +223,7 @@
     {
       "round": "50",
       "date": "2026-04-26",
-      "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
       "description": "planner-selected REALITY live batch after probe IO label fix",
       "total": 5,
       "executed_runs": 5,
@@ -250,7 +250,7 @@
     {
       "round": "52",
       "date": "2026-04-26",
-      "path": "agents-only/mt_real_02_evidence/round52_final_uncovered_live_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round52_final_uncovered_live_summary.json",
       "description": "final non-internal uncovered REALITY live batch evidence",
       "total": 1,
       "executed_runs": 1,
@@ -270,7 +270,7 @@
     {
       "round": "54",
       "date": "2026-04-26",
-      "path": "agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
       "description": "latest non-all-ok REALITY live repeat recheck",
       "total": 12,
       "executed_runs": 12,
@@ -305,7 +305,7 @@
     {
       "round": "56",
       "date": "2026-04-29",
-      "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
       "description": "plan-json latest health live recheck",
       "total": 12,
       "executed_runs": 12,
@@ -341,7 +341,7 @@
     {
       "round": "57",
       "date": "2026-04-29",
-      "path": "agents-only/mt_real_02_evidence/round57_hk_mixed_divergence_repeat_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round57_hk_mixed_divergence_repeat_summary.json",
       "description": "HK latest mixed divergence targeted repeat",
       "total": 4,
       "executed_runs": 4,
@@ -369,7 +369,7 @@
     {
       "round": "58",
       "date": "2026-04-30",
-      "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
       "description": "pure same-failure latest bucket recheck",
       "total": 8,
       "executed_runs": 8,
@@ -400,7 +400,7 @@
     {
       "round": "59-B",
       "date": "2026-04-30",
-      "path": "agents-only/mt_real_02_evidence/round59b_hk_longer_repeat_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round59b_hk_longer_repeat_summary.json",
       "description": "HK 12-run longer repeat to determine phase dominance with adequate sample",
       "total": 12,
       "executed_runs": 12,
@@ -430,7 +430,7 @@
     {
       "round": "60",
       "date": "2026-04-30",
-      "path": "agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
       "description": "Stable same-failure 4 nodes 4-run longer repeat to verify bucket stability after HK bi-modal discovery",
       "total": 16,
       "executed_runs": 16,
@@ -461,7 +461,7 @@
     {
       "round": "61",
       "date": "2026-05-04",
-      "path": "agents-only/mt_real_02_evidence/round61_stage3_phase_shifting_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_phase_shifting_summary.json",
       "description": "R67 stage-3 path A: phase-shifting bucket recheck on HK-A-BGP-2.0 (4 runs)",
       "total": 4,
       "executed_runs": 4,
@@ -484,7 +484,7 @@
     {
       "round": "61",
       "date": "2026-05-04",
-      "path": "agents-only/mt_real_02_evidence/round61_stage3_sanity_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_sanity_summary.json",
       "description": "R67 stage-3 path A: sanity recheck on 3 latest_all_ok outbounds with --include-covered (1 run each)",
       "total": 3,
       "executed_runs": 3,
@@ -509,7 +509,7 @@
     {
       "round": "61",
       "date": "2026-05-04",
-      "path": "agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
       "description": "R67 stage-3 path A: stable same-failure recheck on 4 prior latest_same_failure outbounds (2 runs each)",
       "total": 8,
       "executed_runs": 8,
@@ -538,7 +538,7 @@
     {
       "round": "62",
       "date": "2026-05-04",
-      "path": "agents-only/mt_real_02_evidence/round62_stage3_hk_confirmation_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round62_stage3_hk_confirmation_summary.json",
       "description": "R69 stage-3 path A: HK-A-BGP-2.0 longer-repeat confirmation #2 (4 runs)",
       "total": 4,
       "executed_runs": 4,
@@ -561,7 +561,7 @@
     {
       "round": "63",
       "date": "2026-05-04",
-      "path": "agents-only/mt_real_02_evidence/round63_stage3_hk_final_confirmation_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round63_stage3_hk_final_confirmation_summary.json",
       "description": "R70 stage-3 path A: HK-A-BGP-2.0 longer-repeat final confirmation #3 (4 runs)",
       "total": 4,
       "executed_runs": 4,
@@ -584,7 +584,7 @@
     {
       "round": "73",
       "date": "2026-05-08",
-      "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
       "description": "R73 MT-MIXED-FRESH-01 fresh REALITY/VLESS bounded live (15 candidates \u00d7 5 runs). Neutral outbound keys fresh01..fresh15 \u2014 original tags / server material redacted in this committed evidence; raw values live only in /tmp.",
       "total": 75,
       "executed_runs": 75,
@@ -624,7 +624,7 @@
     {
       "round": "77",
       "date": "2026-05-08",
-      "path": "agents-only/mt_real_02_evidence/round77_cohort_a_divergence_confirmation_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round77_cohort_a_divergence_confirmation_summary.json",
       "description": "R77 cohort A divergence-carrier bounded live confirmation (fresh02/fresh06 only)",
       "total": 10,
       "executed_runs": 10,
@@ -644,7 +644,7 @@
     {
       "round": "78",
       "date": "2026-05-08",
-      "path": "agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
       "description": "R78 cohort B same-failure bounded live confirmation (fresh03/fresh04/fresh05/fresh07 only)",
       "total": 12,
       "executed_runs": 12,
@@ -671,7 +671,7 @@
     {
       "round": "79",
       "date": "2026-05-08",
-      "path": "agents-only/mt_real_02_evidence/round79_fresh05_divergence_recheck_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round79_fresh05_divergence_recheck_summary.json",
       "description": "R79 fresh05 divergence-carrier bounded live recheck (fresh05 only)",
       "total": 5,
       "executed_runs": 5,
@@ -691,7 +691,7 @@
     {
       "round": "80",
       "date": "2026-05-08",
-      "path": "agents-only/mt_real_02_evidence/round80_fresh04_same_failure_recheck_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round80_fresh04_same_failure_recheck_summary.json",
       "description": "R80 fresh04 same-failure bounded live recheck (fresh04 only) \u2014 tooling/config blocker",
       "total": 3,
       "executed_runs": 3,
@@ -707,7 +707,7 @@
     {
       "round": "82",
       "date": "2026-05-08",
-      "path": "agents-only/mt_real_02_evidence/round82_fresh04_recheck_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round82_fresh04_recheck_summary.json",
       "description": "R82 fresh04 same-failure live recheck with cleansed subset (matrix-level recheck enabled by R81 gate).",
       "total": 3,
       "executed_runs": 3,
@@ -731,7 +731,7 @@
     {
       "round": "83",
       "date": "2026-05-08",
-      "path": "agents-only/mt_real_02_evidence/round83_fresh04_recheck_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round83_fresh04_recheck_summary.json",
       "description": "R83 fresh04 timeout-class round 3 of 3 longer-repeat (cohort-B single-outbound closure attempt). Outcome: classification B; closure NOT achieved.",
       "total": 3,
       "executed_runs": 3,
@@ -757,7 +757,7 @@
     {
       "round": "84",
       "date": "2026-05-08",
-      "path": "agents-only/mt_real_02_evidence/round84_fresh04_recheck_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round84_fresh04_recheck_summary.json",
       "description": "R84 fresh04 cohort-A-style divergence-carrier re-evaluation (5-run depth). Outcome: A.same_failure_only with class=timeout; R83 phase divergence did not reproduce; closure_status NOT evaluated.",
       "total": 5,
       "executed_runs": 5,
@@ -781,7 +781,7 @@
     {
       "round": "85",
       "date": "2026-05-08",
-      "path": "agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.json",
       "description": "R85 cohort C recovery-watch round 2 of 3. Outcome: B.partial_per_rep; fresh01 and fresh15 banked round 2, fresh09 reset on timeout same-failure.",
       "total": 9,
       "executed_runs": 9,
@@ -807,7 +807,7 @@
     {
       "round": "86",
       "date": "2026-05-09",
-      "path": "agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.json",
       "description": "R86 cohort C rotation-bank round. Outcome: A.rotation_bank_clean; fresh01/fresh15 per-rep recovery closure achieved, fresh10 round 2 banked.",
       "total": 9,
       "executed_runs": 9,
@@ -827,7 +827,7 @@
     {
       "round": "87",
       "date": "2026-05-09",
-      "path": "agents-only/mt_real_02_evidence/round87_fresh10_round3_closure_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round87_fresh10_round3_closure_summary.json",
       "description": "R87 fresh10 round-3 closure attempt. Outcome: A.per_rep_recovery_closure; fresh10 reaches recovery_consecutive_rounds=3 via R73 + R86 + R87, per-rep recovery closure achieved. Original cohort C closure NOT claimed; fresh09 remains broken at R85.",
       "total": 3,
       "executed_runs": 3,
@@ -847,7 +847,7 @@
     {
       "round": "88",
       "date": "2026-05-09",
-      "path": "agents-only/mt_real_02_evidence/round88_fresh09_recheck_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round88_fresh09_recheck_summary.json",
       "description": "R88 fresh09 single-node recheck. Outcome: A.fresh09_timeout_steady_state; fresh09 reproduces R85 5/5 same_failure(timeout), recovery_consecutive_rounds=0. Original cohort C closure NOT claimed; fresh09 NOT recovered; not a closure attempt by design (recovery chain was reset at R85).",
       "total": 5,
       "executed_runs": 5,
@@ -870,7 +870,7 @@
     {
       "round": "89",
       "date": "2026-05-09",
-      "path": "agents-only/mt_real_02_evidence/round89_fresh12_rotation_bank_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round89_fresh12_rotation_bank_summary.json",
       "description": "R89 fresh12 isolated rotation-bank round. Outcome: D.matrix_error_inconclusive; 2/3 matrix_timeout and 1/3 completed same_failure(connection_reset). R89 is not counted as recovery success; fresh12 round 2 bank and closure are NOT declared.",
       "total": 3,
       "executed_runs": 3,
@@ -894,8 +894,28 @@
     {
       "round": "90",
       "date": "2026-05-09",
-      "path": "agents-only/mt_real_02_evidence/round90_fresh13_rotation_bank_summary.json",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round90_fresh13_rotation_bank_summary.json",
       "description": "R90 fresh13 isolated rotation-bank round. Outcome: A.fresh13_round2_banked; 3/3 run_all_ok. fresh13 recovery_consecutive_rounds=2 via R73 + R90; round 2 banked, closure NOT declared.",
+      "total": 3,
+      "executed_runs": 3,
+      "all_ok_runs": 3,
+      "has_divergence": false,
+      "uniform_failure_labels": {},
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      }
+    },
+    {
+      "round": "91",
+      "date": "2026-05-09",
+      "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round91_fresh13_round3_closure_summary.json",
+      "description": "R91 fresh13 independent round-3 closure attempt. Outcome: A.fresh13_per_rep_recovery_closure; 3/3 run_all_ok. fresh13 recovery_consecutive_rounds=3 via R73 + R90 + R91; per-rep recovery closure achieved.",
       "total": 3,
       "executed_runs": 3,
       "all_ok_runs": 3,
@@ -933,7 +953,7 @@
       "history": [
         {
           "round": "44",
-          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -1021,7 +1041,7 @@
       "history": [
         {
           "round": "41",
-          "path": "agents-only/mt_real_02_evidence/round41_live_batch_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round41_live_batch_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -1042,7 +1062,7 @@
         },
         {
           "round": "61",
-          "path": "agents-only/mt_real_02_evidence/round61_stage3_sanity_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_sanity_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -1139,7 +1159,7 @@
       "history": [
         {
           "round": "41",
-          "path": "agents-only/mt_real_02_evidence/round41_live_batch_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round41_live_batch_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -1160,7 +1180,7 @@
         },
         {
           "round": "61",
-          "path": "agents-only/mt_real_02_evidence/round61_stage3_sanity_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_sanity_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -1279,7 +1299,7 @@
       "history": [
         {
           "round": "47",
-          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -1315,7 +1335,7 @@
         },
         {
           "round": "54",
-          "path": "agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -1379,7 +1399,7 @@
         },
         {
           "round": "56",
-          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -1448,7 +1468,7 @@
         },
         {
           "round": "57",
-          "path": "agents-only/mt_real_02_evidence/round57_hk_mixed_divergence_repeat_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round57_hk_mixed_divergence_repeat_summary.json",
           "status_counts": {
             "completed": 4
           },
@@ -1547,7 +1567,7 @@
         },
         {
           "round": "59-B",
-          "path": "agents-only/mt_real_02_evidence/round59b_hk_longer_repeat_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round59b_hk_longer_repeat_summary.json",
           "status_counts": {
             "completed": 12
           },
@@ -1759,7 +1779,7 @@
         },
         {
           "round": "61",
-          "path": "agents-only/mt_real_02_evidence/round61_stage3_phase_shifting_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_phase_shifting_summary.json",
           "status_counts": {
             "completed": 4
           },
@@ -1836,7 +1856,7 @@
         },
         {
           "round": "62",
-          "path": "agents-only/mt_real_02_evidence/round62_stage3_hk_confirmation_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round62_stage3_hk_confirmation_summary.json",
           "status_counts": {
             "completed": 4
           },
@@ -1913,7 +1933,7 @@
         },
         {
           "round": "63",
-          "path": "agents-only/mt_real_02_evidence/round63_stage3_hk_final_confirmation_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round63_stage3_hk_final_confirmation_summary.json",
           "status_counts": {
             "completed": 4
           },
@@ -2089,7 +2109,7 @@
       "history": [
         {
           "round": "47",
-          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -2125,7 +2145,7 @@
         },
         {
           "round": "61",
-          "path": "agents-only/mt_real_02_evidence/round61_stage3_sanity_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_sanity_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -2221,7 +2241,7 @@
       "history": [
         {
           "round": "44",
-          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -2314,7 +2334,7 @@
       "history": [
         {
           "round": "47",
-          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -2350,7 +2370,7 @@
         },
         {
           "round": "54",
-          "path": "agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -2401,7 +2421,7 @@
         },
         {
           "round": "56",
-          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -2452,7 +2472,7 @@
         },
         {
           "round": "58",
-          "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -2503,7 +2523,7 @@
         },
         {
           "round": "60",
-          "path": "agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
           "status_counts": {
             "completed": 4
           },
@@ -2580,7 +2600,7 @@
         },
         {
           "round": "61",
-          "path": "agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -2722,7 +2742,7 @@
       "history": [
         {
           "round": "42",
-          "path": "agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -2743,7 +2763,7 @@
         },
         {
           "round": "54",
-          "path": "agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -2794,7 +2814,7 @@
         },
         {
           "round": "56",
-          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -2845,7 +2865,7 @@
         },
         {
           "round": "58",
-          "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -2896,7 +2916,7 @@
         },
         {
           "round": "60",
-          "path": "agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
           "status_counts": {
             "completed": 4
           },
@@ -2973,7 +2993,7 @@
         },
         {
           "round": "61",
-          "path": "agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -3102,7 +3122,7 @@
       "history": [
         {
           "round": "47",
-          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -3189,7 +3209,7 @@
       "history": [
         {
           "round": "50",
-          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -3276,7 +3296,7 @@
       "history": [
         {
           "round": "50",
-          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -3361,7 +3381,7 @@
       "history": [
         {
           "round": "42",
-          "path": "agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -3431,7 +3451,7 @@
       "history": [
         {
           "round": "44",
-          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -3526,7 +3546,7 @@
       "history": [
         {
           "round": "47",
-          "path": "agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round47_planner_uncovered_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -3576,7 +3596,7 @@
         },
         {
           "round": "48",
-          "path": "agents-only/mt_real_02_evidence/round48_tw_divergence_repeat_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round48_tw_divergence_repeat_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -3693,7 +3713,7 @@
       "history": [
         {
           "round": "44",
-          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -3786,7 +3806,7 @@
       "history": [
         {
           "round": "44",
-          "path": "agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round44_wide_region_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -3822,7 +3842,7 @@
         },
         {
           "round": "54",
-          "path": "agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -3873,7 +3893,7 @@
         },
         {
           "round": "56",
-          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -3924,7 +3944,7 @@
         },
         {
           "round": "58",
-          "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -3975,7 +3995,7 @@
         },
         {
           "round": "60",
-          "path": "agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
           "status_counts": {
             "completed": 4
           },
@@ -4052,7 +4072,7 @@
         },
         {
           "round": "61",
-          "path": "agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -4185,7 +4205,7 @@
       "history": [
         {
           "round": "50",
-          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -4270,7 +4290,7 @@
       "history": [
         {
           "round": "42",
-          "path": "agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round42_cross_region_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -4346,7 +4366,7 @@
       "history": [
         {
           "round": "50",
-          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -4384,7 +4404,7 @@
         },
         {
           "round": "54",
-          "path": "agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -4435,7 +4455,7 @@
         },
         {
           "round": "56",
-          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -4486,7 +4506,7 @@
         },
         {
           "round": "58",
-          "path": "agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round58_same_failure_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -4537,7 +4557,7 @@
         },
         {
           "round": "60",
-          "path": "agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round60_stable_same_failure_longer_repeat_summary.json",
           "status_counts": {
             "completed": 4
           },
@@ -4614,7 +4634,7 @@
         },
         {
           "round": "61",
-          "path": "agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round61_stage3_stable_same_failure_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -4752,7 +4772,7 @@
       "history": [
         {
           "round": "50",
-          "path": "agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round50_probe_io_labeled_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -4790,7 +4810,7 @@
         },
         {
           "round": "54",
-          "path": "agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round54_latest_non_all_ok_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -4841,7 +4861,7 @@
         },
         {
           "round": "56",
-          "path": "agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round56_latest_health_recheck_summary.json",
           "status_counts": {
             "completed": 2
           },
@@ -4952,7 +4972,7 @@
       "history": [
         {
           "round": "52",
-          "path": "agents-only/mt_real_02_evidence/round52_final_uncovered_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round52_final_uncovered_live_summary.json",
           "status_counts": {
             "completed": 1
           },
@@ -5041,7 +5061,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -5125,7 +5145,7 @@
         },
         {
           "round": "85",
-          "path": "agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -5185,7 +5205,7 @@
         },
         {
           "round": "86",
-          "path": "agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -5322,7 +5342,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -5431,7 +5451,7 @@
         },
         {
           "round": "77",
-          "path": "agents-only/mt_real_02_evidence/round77_cohort_a_divergence_confirmation_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round77_cohort_a_divergence_confirmation_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -5577,7 +5597,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -5667,7 +5687,7 @@
         },
         {
           "round": "78",
-          "path": "agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -5800,7 +5820,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -5890,7 +5910,7 @@
         },
         {
           "round": "78",
-          "path": "agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -5954,7 +5974,7 @@
         },
         {
           "round": "80",
-          "path": "agents-only/mt_real_02_evidence/round80_fresh04_same_failure_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round80_fresh04_same_failure_recheck_summary.json",
           "status_counts": {
             "matrix_error": 3
           },
@@ -5998,7 +6018,7 @@
         },
         {
           "round": "82",
-          "path": "agents-only/mt_real_02_evidence/round82_fresh04_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round82_fresh04_recheck_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -6062,7 +6082,7 @@
         },
         {
           "round": "83",
-          "path": "agents-only/mt_real_02_evidence/round83_fresh04_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round83_fresh04_recheck_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -6140,7 +6160,7 @@
         },
         {
           "round": "84",
-          "path": "agents-only/mt_real_02_evidence/round84_fresh04_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round84_fresh04_recheck_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -6323,7 +6343,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -6413,7 +6433,7 @@
         },
         {
           "round": "78",
-          "path": "agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -6486,7 +6506,7 @@
         },
         {
           "round": "79",
-          "path": "agents-only/mt_real_02_evidence/round79_fresh05_divergence_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round79_fresh05_divergence_recheck_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -6647,7 +6667,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -6758,7 +6778,7 @@
         },
         {
           "round": "77",
-          "path": "agents-only/mt_real_02_evidence/round77_cohort_a_divergence_confirmation_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round77_cohort_a_divergence_confirmation_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -6904,7 +6924,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -6994,7 +7014,7 @@
         },
         {
           "round": "78",
-          "path": "agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round78_cohort_b_same_failure_confirmation_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -7111,7 +7131,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -7252,7 +7272,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -7336,7 +7356,7 @@
         },
         {
           "round": "85",
-          "path": "agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -7400,7 +7420,7 @@
         },
         {
           "round": "88",
-          "path": "agents-only/mt_real_02_evidence/round88_fresh09_recheck_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round88_fresh09_recheck_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -7556,7 +7576,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -7640,7 +7660,7 @@
         },
         {
           "round": "86",
-          "path": "agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -7700,7 +7720,7 @@
         },
         {
           "round": "87",
-          "path": "agents-only/mt_real_02_evidence/round87_fresh10_round3_closure_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round87_fresh10_round3_closure_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -7823,7 +7843,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -7965,7 +7985,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -8049,7 +8069,7 @@
         },
         {
           "round": "89",
-          "path": "agents-only/mt_real_02_evidence/round89_fresh12_rotation_bank_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round89_fresh12_rotation_bank_summary.json",
           "status_counts": {
             "completed": 1,
             "matrix_timeout": 2
@@ -8148,25 +8168,26 @@
     "fresh13": {
       "rounds": [
         "73",
-        "90"
+        "90",
+        "91"
       ],
       "status_counts": {
-        "completed": 8
+        "completed": 11
       },
       "label_counts": {
-        "all_ok": 8
+        "all_ok": 11
       },
       "class_counts": {
-        "ok": 72
+        "ok": 99
       },
       "run_health_counts": {
-        "run_all_ok": 8
+        "run_all_ok": 11
       },
       "divergence_phase_counts": {},
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -8250,7 +8271,67 @@
         },
         {
           "round": "90",
-          "path": "agents-only/mt_real_02_evidence/round90_fresh13_rotation_bank_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round90_fresh13_rotation_bank_summary.json",
+          "status_counts": {
+            "completed": 3
+          },
+          "label_counts": {
+            "all_ok": 3
+          },
+          "class_counts": {
+            "ok": 27
+          },
+          "run_health_counts": {
+            "run_all_ok": 3
+          },
+          "divergence_phase_counts": {},
+          "round_run_count": 3,
+          "divergence_run_count": 0,
+          "divergence_run_ratio": 0.0,
+          "is_bi_modal": false,
+          "divergence_phase_dominance": null,
+          "runs": [
+            {
+              "ordinal": 1,
+              "run_index": 1,
+              "status": "completed",
+              "labels": [
+                "all_ok"
+              ],
+              "run_health": "run_all_ok",
+              "class_counts": {
+                "ok": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 2,
+              "status": "completed",
+              "labels": [
+                "all_ok"
+              ],
+              "run_health": "run_all_ok",
+              "class_counts": {
+                "ok": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 3,
+              "status": "completed",
+              "labels": [
+                "all_ok"
+              ],
+              "run_health": "run_all_ok",
+              "class_counts": {
+                "ok": 9
+              }
+            }
+          ]
+        },
+        {
+          "round": "91",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round91_fresh13_round3_closure_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -8309,7 +8390,7 @@
           ]
         }
       ],
-      "latest_round": "90",
+      "latest_round": "91",
       "latest_status_counts": {
         "completed": 3
       },
@@ -8340,6 +8421,12 @@
           "dominant_phase": null,
           "dominant_count": 0,
           "divergence_run_count": 0
+        },
+        {
+          "round": "91",
+          "dominant_phase": null,
+          "dominant_count": 0,
+          "divergence_run_count": 0
         }
       ],
       "is_phase_shifting": false,
@@ -8367,7 +8454,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -8504,7 +8591,7 @@
       "history": [
         {
           "round": "73",
-          "path": "agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json",
           "status_counts": {
             "completed": 5
           },
@@ -8588,7 +8675,7 @@
         },
         {
           "round": "85",
-          "path": "agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round85_cohort_c_round2_summary.json",
           "status_counts": {
             "completed": 3
           },
@@ -8648,7 +8735,7 @@
         },
         {
           "round": "86",
-          "path": "agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.json",
+          "path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/mt_real_02_evidence/round86_cohort_c_rotation_bank_summary.json",
           "status_counts": {
             "completed": 3
           },
