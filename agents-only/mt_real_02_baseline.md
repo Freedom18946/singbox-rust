@@ -8333,3 +8333,129 @@ fresh01/fresh15。不能写 whole cohort C closure：fresh09 在 R85
 - `go_fork_source/*` / `.github/workflows/*` 改动: 0
 - BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
   R86 不宣称 whole cohort C closure
+
+## R87 — fresh10 round-3 closure attempt
+
+### 起因
+
+R86 把 cohort C rotation-bank 收成两条状态：fresh01/fresh15
+R73+R85+R86 三连 all_ok，per-rep recovery closure achieved；
+fresh10 作为 fresh09 的 rotation replacement，只有 R73 + R86 两轮，
+属于 round 2 banked。R87 因此是单节点定向授权：只对 fresh10
+做 round-3 closure attempt，把 fresh10 的 recovery chain 推到三连。
+
+### 范围
+
+- live REALITY/VLESS、fresh10 only ×3 = 3 runs、target example.com:80
+- HEAD at gate: `ee229a27`；main 与 origin/main 同步 ✓
+- 不跑 fresh01 / fresh15 / fresh09 / fresh04 /
+  fresh02/03/05/06/07 / fresh08/11/12/13/14 /
+  Hys2 / WS / plain-VLESS
+- 不动 sampler/dataplane / `go_fork_source/*` /
+  `.github/workflows/*` / golden_spec
+- BHV 52/56 不变
+- 不允许 auto-extend；不允许 retry 修补；不允许现场 rotate
+
+### Subset 清洗 + Pre-gate
+
+- 用 R86 的 subset_clean 提取 fresh10 single-outbound subset
+- R81 gate 双分支都过：任意深度移除 `__` 字段，
+  outbound-level 字段落在 REALITY/VLESS allow-list 内
+- intake_counts: `covered_existing=1, fresh_ready=0,
+  duplicate=0, not_ready=0` ✓
+- dry-run: `selected_count=1, runs_per_outbound=3,
+  planned_total_runs=3, target=example.com:80,
+  subset_schema_gate_passed=true, subset_schema_gate.violations=[]` ✓
+- BHV: 52/56 不变
+
+### 实测分类: A.per_rep_recovery_closure
+
+- 3/3 status=`completed`，3/3 `matrix_status=0`
+- run_health_counts:
+  `{run_all_ok=3, run_divergence=0, run_same_failure=0, run_unknown=0}`
+- label_counts: `{all_ok=3}`
+- class_counts: `{ok=27}`
+- divergence_phase_label_count=**0**
+- unexpected_phase_labels=[]；没有 NEW phase label
+
+### fresh10 round-3 closure status
+
+| field | value |
+| --- | --- |
+| scope | per-rep only (fresh10) |
+| chain | R73 + R86 + R87 |
+| recovery_consecutive_rounds | 3 |
+| per_rep_recovery_closure_achieved | **true** |
+| original_cohort_c_closure_achieved | **false** |
+| fresh09 recovered | **false** |
+
+### Rotated active set 状态（post-R87）
+
+| rep | per_rep closure | closed at | chain |
+| --- | --- | --- | --- |
+| fresh01 | true | R86 | R73 + R85 + R86 |
+| fresh15 | true | R86 | R73 + R85 + R86 |
+| fresh10 | true | R87 | R73 + R86 + R87 |
+
+R87 把 rotated active set 三个代表的 per-rep recovery closure
+全部完成。但 **不能** 写成 original cohort C closure：
+原 cohort C identity 是 fresh01+fresh09+fresh15。fresh09
+在 R85 3/3 timeout same_failure 断链，R87 未跑；fresh10 是
+rotation replacement，不能替代 fresh09 的原-cohort 身份。
+
+### Recovery transitions（fresh10）
+
+| round | state | labels | consecutive |
+| --- | --- | --- | ---: |
+| R73 | all_ok | all_ok×5 | 1 |
+| R86 | all_ok | all_ok×3 | 2 |
+| R87 | all_ok | all_ok×3 | 3 |
+
+### Rollup delta
+
+- total_rounds: 28 → **29**
+- total_executed_runs: 247 → **250**
+- total_all_ok_runs: 108 → **111**
+- latest_same_failure_outbound_count: **8**（unchanged；fresh09
+  仍 latest_same_failure）
+- latest_stable_same_failure_outbound_count: **8**（unchanged）
+- latest_non_all_ok_outbound_count: **8**（unchanged）
+- fresh10 latest_round: 86 → **87**；latest_health 仍 `latest_all_ok`
+- fresh09 latest_round remains **85**；latest_health remains
+  `latest_same_failure`
+
+### 后续叙事
+
+- R87 落 `A.per_rep_recovery_closure`
+- fresh10 per-rep recovery closure achieved
+- rotated active set（fresh01/fresh15/fresh10）per-rep closure 全部完成
+- **不写** original / whole cohort C closure
+- **不写** fresh09 recovered
+- **不写** dual-kernel parity completion；BHV 52/56 不变
+- 下一轮自然候选两路（任一都需独立授权）：
+  (a) 从 R73 round-1-only recovery pool（fresh08/fresh11/fresh12/
+  fresh13/fresh14）选一个做单独 rotation；或
+  (b) 单独重测 fresh09，决定 R85 timeout 是否稳态
+
+### 产物
+
+- `agents-only/mt_real_02_evidence/round87_fresh10_round3_closure_summary.json`
+- `agents-only/mt_real_02_evidence/round87_fresh10_round3_closure_summary.md`
+- `agents-only/mt_real_02_evidence/live_rollup.json`（29 rounds 重新生成）
+- `agents-only/mt_real_02_evidence/live_rollup.md`
+- `scripts/tools/test_reality_probe_tools.py`（R87
+  committed-evidence contract）
+- `agents-only/active_context.md`（≤100 行）
+- 本文件 R87 节
+
+### 范围确认
+
+- live runs in R87: 3（fresh10 only）
+- node contact in R87: 1 rep
+- fresh01/fresh15/fresh09/fresh04 /
+  fresh02/03/05/06/07/08/11/12/13/14 /
+  Hys2 / WS / plain-VLESS live: 0
+- sampler / dataplane changes: 0
+- `go_fork_source/*` / `.github/workflows/*` / `golden_spec` 改动: 0
+- BHV 52/56 不变；Rust/live evidence，不写成 parity completion；
+  R87 不宣称 original / whole cohort C closure；fresh09 仍 broken

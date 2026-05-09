@@ -1,0 +1,320 @@
+{
+  "round": "87",
+  "date": "2026-05-09",
+  "description": "R87 fresh10 round-3 closure attempt. Outcome: A.per_rep_recovery_closure; fresh10 reaches recovery_consecutive_rounds=3 via R73 + R86 + R87, per-rep recovery closure achieved. Original cohort C closure NOT claimed; fresh09 remains broken at R85.",
+  "source_summary": "/tmp/r87-fresh10-round3-live/summary.json",
+  "command": "reality_vless_probe_batch.py --config /tmp/r87_fresh10_round3_subset_clean.json --plan-json /tmp/r87_fresh10_round3_plan.json --target example.com:80 --runs 3 --timeout 10 --phase-timeout-ms 10000 --probe-io-timeout-ms 10000",
+  "selection": {
+    "config": "/tmp/r87_fresh10_round3_subset_clean.json",
+    "target": "example.com:80",
+    "runs": 3,
+    "selected_count": 1
+  },
+  "summary": {
+    "total": 3,
+    "executed_runs": 3,
+    "status_counts": {
+      "completed": 3
+    },
+    "label_counts": {
+      "all_ok": 3
+    },
+    "class_counts": {
+      "ok": 27
+    },
+    "divergence_run_count": 0,
+    "divergence_phase_label_count": 0,
+    "distinct_divergence_phase_label_count": 0,
+    "divergence_phase_label_breakdown": {},
+    "same_failure_run_count": 0,
+    "accounting_note": "divergence_run_count counts runs (a run is a divergence run iff it carries any of the four phase labels app_pre_post_diverged, app_minimal_diverged, minimal_transport_diverged, bridge_io_diverged); divergence_phase_label_count counts phase-label occurrences across those divergence runs (a single run can carry multiple phase labels). label_counts above is per-occurrence, matching divergence_phase_label_breakdown.",
+    "run_health_counts": {
+      "run_all_ok": 3,
+      "run_divergence": 0,
+      "run_same_failure": 0,
+      "run_unknown": 0
+    },
+    "run_all_ok": 3,
+    "run_divergence": 0,
+    "run_same_failure": 0,
+    "run_unknown": 0
+  },
+  "matrix_health": {
+    "has_divergence": false,
+    "divergence_labels": {},
+    "all_ok_runs": 3,
+    "uniform_failure_labels": {}
+  },
+  "by_outbound": {
+    "fresh10": {
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
+      },
+      "run_health_counts": {
+        "run_all_ok": 3,
+        "run_divergence": 0,
+        "run_same_failure": 0,
+        "run_unknown": 0
+      },
+      "divergence_phase_label_breakdown": {},
+      "divergence_phase_label_count": 0,
+      "historical_has_non_all_ok": false,
+      "r87_state": "all_ok",
+      "recovery_consecutive_rounds_after_r87": 3,
+      "per_rep_recovery_closure_achieved": true,
+      "fresh10_role": "replacement_rep_round3_closure_attempt"
+    }
+  },
+  "runs": [
+    {
+      "outbound": "fresh10",
+      "ordinal": 1,
+      "run_index": 1,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 1,
+      "run_index": 2,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    },
+    {
+      "outbound": "fresh10",
+      "ordinal": 1,
+      "run_index": 3,
+      "status": "completed",
+      "matrix_status": 0,
+      "labels": [
+        "all_ok"
+      ],
+      "class_counts": {
+        "ok": 9
+      },
+      "run_health": "run_all_ok"
+    }
+  ],
+  "interpretation": [
+    "R87 round-3 closure attempt set: fresh10 only. fresh01, fresh15, fresh09, fresh04 and all other fresh nodes were not run.",
+    "All 3 runs completed with matrix_status=0 and label all_ok; no divergence phase labels appeared.",
+    "fresh10 now has R73 + R86 + R87 consecutive all_ok and therefore reaches per-rep recovery closure (recovery_consecutive_rounds=3).",
+    "Combined with R86 closures for fresh01 and fresh15, the rotated active set fresh01/fresh15/fresh10 all hold per-rep recovery closure.",
+    "Original cohort C closure is NOT claimed: fresh09 broke at R85 with 3/3 same_failure(timeout) and was not re-run; it remains the broken rep, and the original cohort C identity (fresh01+fresh09+fresh15) cannot be closed without a fresh re-evaluation of fresh09."
+  ],
+  "kind": "fresh10-round3-closure-live-summary",
+  "live_executed": true,
+  "node_contact_executed": true,
+  "sampler_dataplane_modified": false,
+  "go_fork_source_modified": false,
+  "github_workflows_modified": false,
+  "bhv_52_56_unchanged_at_round_time": true,
+  "live_scope": {
+    "outbounds": [
+      "fresh10"
+    ],
+    "runs_per_outbound": 3,
+    "planned_total_runs": 3,
+    "target": "example.com:80",
+    "reality_vless_only": true,
+    "fresh01_executed": false,
+    "fresh15_executed": false,
+    "fresh09_executed": false,
+    "fresh04_executed": false,
+    "fresh08_11_12_13_14_executed": false,
+    "fresh02_03_05_06_07_executed": false,
+    "other_fresh_nodes_executed": false,
+    "hysteria2_executed": false,
+    "ws_plain_vless_executed": false,
+    "auto_extended": false,
+    "rotated_failed_rep_in_round": false,
+    "retried_failed_run": false
+  },
+  "pre_gate": {
+    "head_at_gate": "ee229a27",
+    "main_synced_with_origin_main_at_gate": true,
+    "intake_counts": {
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0,
+      "covered_existing": 1
+    },
+    "expected_intake_counts": {
+      "covered_existing": 1,
+      "fresh_ready": 0,
+      "duplicate": 0,
+      "not_ready": 0
+    },
+    "intake_gate_passed": true,
+    "dry_run": {
+      "selected_count": 1,
+      "runs_per_outbound": 3,
+      "planned_total_runs": 3,
+      "target": "example.com:80",
+      "dry_run": true,
+      "subset_schema_gate_passed": true,
+      "selected": [
+        "fresh10"
+      ]
+    },
+    "dry_run_gate_passed": true,
+    "subset_schema_gate_passed": true,
+    "subset_schema_gate": {
+      "ok": true,
+      "violations": [],
+      "stats": {
+        "outbounds_checked": 1,
+        "outbound_level_violations": 0,
+        "nested_violations": 0
+      }
+    },
+    "bhv": "52/56 unchanged"
+  },
+  "taxonomy": {
+    "allowed_phase_labels": [
+      "app_pre_post_diverged",
+      "app_minimal_diverged",
+      "minimal_transport_diverged",
+      "bridge_io_diverged"
+    ],
+    "unexpected_phase_labels": [],
+    "new_structural_divergence": false,
+    "observed_phase_labels_in_taxonomy": []
+  },
+  "fresh10_round3_closure_status": {
+    "scope": "per-rep only (fresh10)",
+    "consecutive_rounds_required": 3,
+    "fresh10_recovery_chain": [
+      "R73",
+      "R86",
+      "R87"
+    ],
+    "fresh10_recovery_consecutive_rounds": 3,
+    "fresh10_per_rep_recovery_closure_achieved": true,
+    "rotated_active_set_per_rep_closures": {
+      "fresh01": {
+        "achieved": true,
+        "achieved_at_round": "86",
+        "chain": ["R73", "R85", "R86"]
+      },
+      "fresh15": {
+        "achieved": true,
+        "achieved_at_round": "86",
+        "chain": ["R73", "R85", "R86"]
+      },
+      "fresh10": {
+        "achieved": true,
+        "achieved_at_round": "87",
+        "chain": ["R73", "R86", "R87"]
+      }
+    },
+    "rotated_active_set_all_per_rep_closed": true,
+    "original_cohort_c_closure_achieved": false,
+    "original_cohort_c_closure_reason": "Original cohort C identity is fresh01+fresh09+fresh15. fresh09 broke at R85 with 3/3 same_failure(timeout), reset its recovery chain to 0, and was not re-run in R87. fresh10 closure is a rotated-replacement closure, not a substitute for fresh09's original-cohort membership.",
+    "fresh09_status": {
+      "latest_round": "85",
+      "latest_state": "same_failure",
+      "latest_same_failure_class": "timeout",
+      "recovered": false,
+      "recovery_consecutive_rounds": 0,
+      "note": "fresh09 was not run in R87 and is NOT recovered. It remains the R85 broken rep."
+    }
+  },
+  "cohort_c_per_rep_transition": {
+    "fresh10": [
+      {
+        "round": "73",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 5,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 5
+        },
+        "class_counts": {
+          "ok": 45
+        },
+        "recovery_consecutive_rounds_after_round": 1,
+        "same_failure_class": null,
+        "phase_labels": []
+      },
+      {
+        "round": "86",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "class_counts": {
+          "ok": 27
+        },
+        "recovery_consecutive_rounds_after_round": 2,
+        "same_failure_class": null,
+        "phase_labels": []
+      },
+      {
+        "round": "87",
+        "state": "all_ok",
+        "run_health_counts": {
+          "run_all_ok": 3,
+          "run_divergence": 0,
+          "run_same_failure": 0,
+          "run_unknown": 0
+        },
+        "label_counts": {
+          "all_ok": 3
+        },
+        "class_counts": {
+          "ok": 27
+        },
+        "recovery_consecutive_rounds_after_round": 3,
+        "same_failure_class": null,
+        "phase_labels": []
+      }
+    ]
+  },
+  "classification": {
+    "final": "A.per_rep_recovery_closure",
+    "primary_branch": "A",
+    "sub_branch": "A.per_rep_recovery_closure",
+    "label": "fresh10 per-rep recovery closure achieved (round-3 closure attempt)",
+    "rationale": "R87 executed only the authorized round-3 closure attempt for fresh10, 3 runs at example.com:80. All 3 matrix runs completed with matrix_status=0 and label all_ok, no phase labels, no NEW structural divergence. fresh10 now has three consecutive all_ok recovery rounds (R73, R86, R87), so per-rep recovery closure is achieved. Combined with fresh01/fresh15 R86 closures, the rotated active set fresh01/fresh15/fresh10 holds per-rep recovery closure end-to-end.",
+    "original_cohort_c_closure_achieved": false,
+    "original_cohort_c_closure_reason": "fresh09 (the original cohort C member) broke at R85 with 3/3 same_failure(timeout) and was not re-run; it remains broken. fresh10 is a rotated replacement, not a substitute for fresh09 in the original-cohort identity.",
+    "fresh09_recovered": false,
+    "next_handling": "Do not auto-extend R87. Do not write whole / original cohort C closure. Do not write fresh09 recovered. Next natural authorized round, if desired, would either: (a) draw from R73 round-1-only recovery pool (fresh08/fresh11/fresh12/fresh13/fresh14) for additional rotated coverage, or (b) re-evaluate fresh09 with a fresh independent run to decide whether the R85 timeout was steady-state or noise. Either path requires a new explicit user authorization."
+  },
+  "redaction_notes": [
+    "Evidence uses only the neutral outbound key fresh10.",
+    "Raw tag/server/uuid/public_key/short_id/path/header/server_name/password material remains only in local /tmp inputs and is not committed.",
+    "subset_schema_gate.violations is committed only because it is the empty array; structural redaction is preserved."
+  ]
+}

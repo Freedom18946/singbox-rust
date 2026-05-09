@@ -1,7 +1,7 @@
 {
-  "total_rounds": 28,
-  "total_executed_runs": 247,
-  "total_all_ok_runs": 108,
+  "total_rounds": 29,
+  "total_executed_runs": 250,
+  "total_all_ok_runs": 111,
   "total_non_all_ok_runs": 139,
   "has_any_divergence": true,
   "latest_non_all_ok_outbounds": [
@@ -69,11 +69,11 @@
     "run_same_failure": 20
   },
   "status_counts": {
-    "completed": 244,
+    "completed": 247,
     "matrix_error": 3
   },
   "label_counts": {
-    "all_ok": 108,
+    "all_ok": 111,
     "app_minimal_diverged": 9,
     "app_pre_post_diverged": 9,
     "bridge_io_diverged": 3,
@@ -90,7 +90,7 @@
   },
   "class_counts": {
     "connection_reset": 416,
-    "ok": 1014,
+    "ok": 1041,
     "other": 172,
     "post_dial_eof": 6,
     "reality_dial_eof": 121,
@@ -816,6 +816,26 @@
       },
       "class_counts": {
         "ok": 81
+      }
+    },
+    {
+      "round": "87",
+      "date": "2026-05-09",
+      "path": "agents-only/mt_real_02_evidence/round87_fresh10_round3_closure_summary.json",
+      "description": "R87 fresh10 round-3 closure attempt. Outcome: A.per_rep_recovery_closure; fresh10 reaches recovery_consecutive_rounds=3 via R73 + R86 + R87, per-rep recovery closure achieved. Original cohort C closure NOT claimed; fresh09 remains broken at R85.",
+      "total": 3,
+      "executed_runs": 3,
+      "all_ok_runs": 3,
+      "has_divergence": false,
+      "uniform_failure_labels": {},
+      "status_counts": {
+        "completed": 3
+      },
+      "label_counts": {
+        "all_ok": 3
+      },
+      "class_counts": {
+        "ok": 27
       }
     }
   ],
@@ -7347,19 +7367,20 @@
     "fresh10": {
       "rounds": [
         "73",
-        "86"
+        "86",
+        "87"
       ],
       "status_counts": {
-        "completed": 8
+        "completed": 11
       },
       "label_counts": {
-        "all_ok": 8
+        "all_ok": 11
       },
       "class_counts": {
-        "ok": 72
+        "ok": 99
       },
       "run_health_counts": {
-        "run_all_ok": 8
+        "run_all_ok": 11
       },
       "divergence_phase_counts": {},
       "history": [
@@ -7506,9 +7527,69 @@
               }
             }
           ]
+        },
+        {
+          "round": "87",
+          "path": "agents-only/mt_real_02_evidence/round87_fresh10_round3_closure_summary.json",
+          "status_counts": {
+            "completed": 3
+          },
+          "label_counts": {
+            "all_ok": 3
+          },
+          "class_counts": {
+            "ok": 27
+          },
+          "run_health_counts": {
+            "run_all_ok": 3
+          },
+          "divergence_phase_counts": {},
+          "round_run_count": 3,
+          "divergence_run_count": 0,
+          "divergence_run_ratio": 0.0,
+          "is_bi_modal": false,
+          "divergence_phase_dominance": null,
+          "runs": [
+            {
+              "ordinal": 1,
+              "run_index": 1,
+              "status": "completed",
+              "labels": [
+                "all_ok"
+              ],
+              "run_health": "run_all_ok",
+              "class_counts": {
+                "ok": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 2,
+              "status": "completed",
+              "labels": [
+                "all_ok"
+              ],
+              "run_health": "run_all_ok",
+              "class_counts": {
+                "ok": 9
+              }
+            },
+            {
+              "ordinal": 1,
+              "run_index": 3,
+              "status": "completed",
+              "labels": [
+                "all_ok"
+              ],
+              "run_health": "run_all_ok",
+              "class_counts": {
+                "ok": 9
+              }
+            }
+          ]
         }
       ],
-      "latest_round": "86",
+      "latest_round": "87",
       "latest_status_counts": {
         "completed": 3
       },
@@ -7536,6 +7617,12 @@
         },
         {
           "round": "86",
+          "dominant_phase": null,
+          "dominant_count": 0,
+          "divergence_run_count": 0
+        },
+        {
+          "round": "87",
           "dominant_phase": null,
           "dominant_count": 0,
           "divergence_run_count": 0
