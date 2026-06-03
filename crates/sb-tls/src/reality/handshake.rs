@@ -617,6 +617,10 @@ fn chrome_ech_payload_len_from_seed(randomization_seed: u16) -> usize {
     UTLS_GREASE_ECH_PAYLOAD_LENS[(randomization_seed as usize) % UTLS_GREASE_ECH_PAYLOAD_LENS.len()]
 }
 
+// The payload_len buckets (144/176/208/240 + fallback) form an explicit lookup
+// table for the active uTLS fingerprint sampler. Arms that currently share a
+// body may diverge as MT-REAL-02 tuning continues, so keep them enumerated.
+#[allow(clippy::match_same_arms)]
 fn chrome_fe0d_position_profile(payload_len: usize) -> &'static [usize] {
     match payload_len {
         144 => &CHROME_FE0D_POSITIONS_186,
@@ -627,6 +631,8 @@ fn chrome_fe0d_position_profile(payload_len: usize) -> &'static [usize] {
     }
 }
 
+// Explicit payload_len bucket table; see chrome_fe0d_position_profile.
+#[allow(clippy::match_same_arms)]
 fn chrome_bucket_targets(payload_len: usize) -> &'static [(u16, u8)] {
     match payload_len {
         144 => &CHROME_BUCKET_TARGETS_186,
@@ -641,10 +647,11 @@ fn chrome_bucket_target_position(payload_len: usize, ext_type: u16) -> u8 {
     chrome_bucket_targets(payload_len)
         .iter()
         .find(|(candidate, _)| *candidate == ext_type)
-        .map(|(_, position)| *position)
-        .unwrap_or(9)
+        .map_or(9, |(_, position)| *position)
 }
 
+// Explicit payload_len bucket table; see chrome_fe0d_position_profile.
+#[allow(clippy::match_same_arms)]
 fn chrome_bucket_signature_modes(payload_len: usize) -> &'static [[i8; 5]] {
     match payload_len {
         144 => &CHROME_BUCKET_SIGNATURE_MODES_186,
@@ -655,7 +662,7 @@ fn chrome_bucket_signature_modes(payload_len: usize) -> &'static [[i8; 5]] {
     }
 }
 
-fn chrome_apply_signature_mode_bias(mode: &[i8; 5], ext_type: u16, weight: i16) -> i16 {
+fn chrome_apply_signature_mode_bias(mode: [i8; 5], ext_type: u16, weight: i16) -> i16 {
     CHROME_SIGNATURE_PAIRS
         .iter()
         .zip(mode.iter())
@@ -676,9 +683,9 @@ fn chrome_signature_mode_index(randomization_seed: u16, payload_len: usize, salt
 
 fn chrome_bucket_pairwise_bias(randomization_seed: u16, payload_len: usize, ext_type: u16) -> i16 {
     let modes = chrome_bucket_signature_modes(payload_len);
-    let primary_mode = &modes[chrome_signature_mode_index(randomization_seed, payload_len, 0x2f91)];
+    let primary_mode = modes[chrome_signature_mode_index(randomization_seed, payload_len, 0x2f91)];
     let secondary_mode =
-        &modes[chrome_signature_mode_index(randomization_seed, payload_len, 0x7b4d)];
+        modes[chrome_signature_mode_index(randomization_seed, payload_len, 0x7b4d)];
 
     chrome_apply_signature_mode_bias(primary_mode, ext_type, CHROME_SIGNATURE_MODE_WEIGHT)
         + chrome_apply_signature_mode_bias(
@@ -754,6 +761,8 @@ fn chrome_classify_fe0d_position_band(
     }
 }
 
+// Explicit (payload_len, band) bias table; see chrome_fe0d_position_profile.
+#[allow(clippy::match_same_arms)]
 fn chrome_fe0d_band_target_bias(payload_len: usize, band: ChromeFe0dPositionBand) -> i8 {
     match (payload_len, band) {
         // Bucket 186 still lands too early. Nudge late-ish seeds a touch further back
@@ -768,6 +777,9 @@ fn chrome_fe0d_band_target_bias(payload_len: usize, band: ChromeFe0dPositionBand
     }
 }
 
+// `len()` is a small compile-time array length and `clamp(1, ..)` keeps the value
+// positive and in range, so the i16/u8 casts cannot actually wrap or lose sign.
+#[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
 fn chrome_adjust_fe0d_target_position(
     base_target_position: u8,
     payload_len: usize,
@@ -778,6 +790,8 @@ fn chrome_adjust_fe0d_target_position(
     adjusted.clamp(1, CHROME_BASELINE_MIDDLE_EXTENSIONS.len() as i16) as u8
 }
 
+// Explicit payload_len anchor table; see chrome_fe0d_position_profile.
+#[allow(clippy::match_same_arms)]
 fn blend_fe0d_target_position(raw_position: u8, payload_len: usize) -> u8 {
     let anchor: u8 = match payload_len {
         144 => 11,
@@ -803,7 +817,7 @@ fn build_utls_boring_grease_ech_extension(randomization_seed: u16) -> Vec<u8> {
     rng.fill_bytes(&mut config_id);
 
     let payload_len = chrome_ech_payload_len_from_seed(randomization_seed);
-    let encapsulated_key = PublicKey::from(&StaticSecret::random_from_rng(&mut rng)).to_bytes();
+    let encapsulated_key = PublicKey::from(&StaticSecret::random_from_rng(rng)).to_bytes();
     let mut payload = vec![0u8; payload_len];
     rng.fill_bytes(&mut payload);
 
@@ -1537,7 +1551,7 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
     use base64::Engine as _;
@@ -1614,7 +1628,7 @@ mod tests {
     #[test]
     fn test_rustls_emits_encrypted_reality_session_id() {
         let config = Arc::new(test_config());
-        let handshake = RealityHandshake::new(config.clone()).unwrap();
+        let handshake = RealityHandshake::new(config).unwrap();
         let wire = handshake.emit_client_hello_record().unwrap();
 
         assert_eq!(wire[0], 22);
@@ -1789,7 +1803,7 @@ mod tests {
         ]));
         assert_eq!(extension_types.first().copied(), Some(GREASE_EXT_HEAD));
         assert_eq!(extension_types.last().copied(), Some(GREASE_EXT_TAIL));
-        let mut sorted_extension_types = extension_types.clone();
+        let mut sorted_extension_types = extension_types;
         sorted_extension_types.sort_unstable();
         let mut expected_extension_types = vec![
             EXT_SERVER_NAME,
@@ -1979,36 +1993,12 @@ mod tests {
 
     #[test]
     fn test_chrome_bucket_signature_modes_capture_go_top_signatures() {
-        assert!(
-            chrome_bucket_signature_modes(144)
-                .iter()
-                .any(|mode| *mode == [1, -1, -1, -1, 1])
-        );
-        assert!(
-            chrome_bucket_signature_modes(176)
-                .iter()
-                .any(|mode| *mode == [1, 1, 1, -1, -1])
-        );
-        assert!(
-            chrome_bucket_signature_modes(176)
-                .iter()
-                .any(|mode| *mode == [-1, -1, -1, -1, -1])
-        );
-        assert!(
-            chrome_bucket_signature_modes(208)
-                .iter()
-                .any(|mode| *mode == [-1, -1, -1, -1, 1])
-        );
-        assert!(
-            chrome_bucket_signature_modes(208)
-                .iter()
-                .any(|mode| *mode == [1, 1, 1, 1, -1])
-        );
-        assert!(
-            chrome_bucket_signature_modes(240)
-                .iter()
-                .any(|mode| *mode == [-1, 1, 1, 1, -1])
-        );
+        assert!(chrome_bucket_signature_modes(144).contains(&[1, -1, -1, -1, 1]));
+        assert!(chrome_bucket_signature_modes(176).contains(&[1, 1, 1, -1, -1]));
+        assert!(chrome_bucket_signature_modes(176).contains(&[-1, -1, -1, -1, -1]));
+        assert!(chrome_bucket_signature_modes(208).contains(&[-1, -1, -1, -1, 1]));
+        assert!(chrome_bucket_signature_modes(208).contains(&[1, 1, 1, 1, -1]));
+        assert!(chrome_bucket_signature_modes(240).contains(&[-1, 1, 1, 1, -1]));
     }
 
     #[test]

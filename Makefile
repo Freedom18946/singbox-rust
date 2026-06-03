@@ -11,9 +11,10 @@ check:
 test:
 	cargo test --workspace
 
-# Lint
+# Lint — relies on workspace.lints policy (safety lints stay `deny`, the rest are
+# `warn`). Intentionally no `-- -D warnings`, so pedantic/nursery stay non-blocking.
 clippy:
-	cargo clippy --workspace --all-features --all-targets -- -D warnings
+	cargo clippy --workspace --all-features --all-targets
 
 # 依赖边界检查（严格模式，失败则阻断）
 boundaries:

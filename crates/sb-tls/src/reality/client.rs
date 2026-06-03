@@ -297,7 +297,7 @@ impl TlsConnector for RealityConnector {
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used)]
+#[allow(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
 mod tests {
     use super::*;
 
@@ -335,10 +335,10 @@ mod tests {
 
     #[tokio::test]
     async fn test_read_tls_stops_before_coalesced_raw_bytes() {
-        crate::ensure_crypto_provider();
-
         const TLS_PAYLOAD: &[u8] = b"vision-direct-frame";
         const RAW_PAYLOAD: &[u8] = b"raw-after-direct";
+
+        crate::ensure_crypto_provider();
 
         let (acceptor, connector) = test_tls_pair();
         let (client_io, server_io) = tokio::io::duplex(8192);

@@ -304,7 +304,7 @@ async fn main() -> Result<()> {
                 "connect",
                 "timeout",
                 connected_ms,
-                &format!("timeout after {}s", args.timeout),
+                format!("timeout after {}s", args.timeout),
             );
             maybe_print_probe_json(args.json, &probe_output);
             anyhow::bail!("connect timeout after {}s", args.timeout);
@@ -367,7 +367,7 @@ async fn main() -> Result<()> {
                         "connect",
                         "timeout",
                         connected_ms,
-                        &format!("timeout after {}s", args.timeout),
+                        format!("timeout after {}s", args.timeout),
                     );
                     maybe_print_probe_json(args.json, &probe_output);
                     anyhow::bail!("connect_io timeout after {}s", args.timeout);
@@ -430,7 +430,7 @@ async fn main() -> Result<()> {
                 "write",
                 "timeout",
                 connected_ms,
-                &format!("timeout after {}s", args.timeout),
+                format!("timeout after {}s", args.timeout),
             );
             maybe_print_probe_json(args.json, &probe_output);
             anyhow::bail!("write request timeout after {}s", args.timeout);
@@ -484,7 +484,7 @@ async fn main() -> Result<()> {
                 "read",
                 "timeout",
                 connected_ms,
-                &format!("timeout after {}s", args.timeout),
+                format!("timeout after {}s", args.timeout),
             );
             maybe_print_probe_json(args.json, &probe_output);
             anyhow::bail!("read response timeout after {}s", args.timeout);

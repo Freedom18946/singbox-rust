@@ -41,7 +41,9 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 
 ## Current Build And Gate
 
-- cargo check --workspace: PASS
+- check/build/clippy (all-features,all-targets): **all PASS, 0 clippy
+  warn** (lint relaxed 2026-06-03: warnings/dead_code deny→warn, safety
+  lints kept deny, sb-tls test mods allow expect_used; 28 warns cleared).
 - python3 -B -m unittest test_reality_probe_tools
   test_reality_clienthello_family test_dual_kernel_verification:
   **PASS** (R91 committed-evidence contract included).
@@ -60,13 +62,9 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
   recovery_consecutive_rounds=3 (R73+R90+R91); **fresh13 per-rep
   recovery closure achieved**. **original cohort C closure NOT claimed**;
   BHV 52/56 unchanged.
-- MT-REAL-02 R90 fresh13 isolated rotation-bank DONE (2026-05-09).
-  **A.fresh13_round2_banked**; 3/3 run_all_ok;
-  recovery_consecutive_rounds=2; **fresh13 closure NOT declared**.
-- R89 fresh12 rotation-bank: **D.matrix_error_inconclusive** (2
-  matrix_timeout + 1 same_failure connection_reset); NOT banked.
-  R88 fresh09 recheck: R85 timeout reproduced 5/5; recovery=0;
-  **fresh09 NOT recovered**; original cohort C closure NOT claimed.
+- R90 fresh13 round2 banked (3/3 run_all_ok, recovery=2; closure NOT
+  declared). R89 fresh12 D.matrix_error_inconclusive (NOT banked). R88
+  fresh09 recheck: R85 timeout 5/5, recovery=0, fresh09 NOT recovered.
 - R87 fresh10 round-3 closure DONE; R86 rotation-bank DONE; R85
   recovery-watch round 2 DONE; R84-R73 prior fresh rounds DONE.
   Rotated active set fresh01/fresh15/fresh10 is per-rep closed, but
