@@ -1,8 +1,11 @@
 # 后续 Agents 开发准则（Durable Guidelines）
 
-> **用途**：将 Rust 规范、维护复盘结论和当前仓库事实固化为后续 agents 的长期开发准则。  
-> **适用阶段**：2026-04 maintenance close-out 之后，进入“实际部署收尾验收”准备阶段。  
-> **口径**：maintenance / structural-quality / deployment-acceptance prep。**不是 dual-kernel parity completion。**
+> **用途**：将 Rust 规范、维护复盘结论和当前仓库事实固化为后续 agents 的长期开发准则。
+> **适用阶段**：2026-04 maintenance close-out 之后。**注意：本文写于 MT-REAL-02 重开（2026-04-16）之前**，
+> 故下文"默认目标=部署验收准备 / 不开新线"的口径已被取代——当前最高目标线是 MT-REAL-02
+> （REALITY ClientHello 突破，见 `active_context.md` + `mt_real_02_baseline.md`）。
+> **§3.1 的 Rust 长期规则仍全部有效**，是本文的核心持久价值。
+> **口径**：maintenance / structural-quality 准则 + 一条活跃实验前沿。**不是 dual-kernel parity completion。**
 
 ---
 
@@ -13,13 +16,14 @@
 1. `AGENTS.md`
 2. `agents-only/active_context.md`
 3. `agents-only/workpackage_latest.md`
-4. 本文档
-5. `agents-only/Rust_spec_v2.md`
-6. `agents-only/reference/ACCEPTANCE-CRITERIA.md`
-7. `agents-only/reference/ARCHITECTURE-SPEC.md`
-8. `agents-only/maintenance_recap_2026-04-03.md`
-9. `agents-only/mt_audit_01_reconciliation.md`
-10. `agents-only/mt_audit_01_full_report.md`
+4. `agents-only/mt_real_02_baseline.md`（活跃前沿，续推实验线时）
+5. 本文档
+6. `agents-only/reference/Rust_spec_v2.md`
+7. `agents-only/reference/ACCEPTANCE-CRITERIA.md`
+8. `agents-only/reference/ARCHITECTURE-SPEC.md`
+9. `agents-only/archive/MT-MAINTENANCE/maintenance_recap_2026-04-03.md`
+10. `agents-only/archive/MT-AUDIT/mt_audit_01_reconciliation.md`
+11. `agents-only/archive/MT-AUDIT/mt_audit_01_full_report.md`
 
 解释：
 
@@ -31,7 +35,11 @@
 
 ## 2. 当前阶段默认目标
 
-当前阶段的默认目标已经不是继续拆 maintenance 细卡，而是：
+> ⚠️ **已更新（2026-06）**：MT-REAL-02 重开后，"默认目标=部署验收准备、不开新线"不再成立。
+> 当前**默认优先线是 MT-REAL-02 REALITY 突破**（最高目标，baseline-driven）；维护基线则保持稳定。
+> 下文保留作历史口径参考。
+
+维护基线侧的默认目标不是继续拆 maintenance 细卡，而是：
 
 - 准备“实际部署的收尾验收”
 - 保持当前 maintenance close-out 的稳定状态
@@ -167,11 +175,11 @@
 对后续 agents 而言，当前最重要的认识是：
 
 - 仓库已经完成一轮大规模 maintenance close-out
-- 当前没有新的最前置 blocker
-- 默认动作应从“继续拆 maintenance 卡”切换为“准备部署收尾验收”
-- 所有后续改动都应先问一句：
-  - 这件事是否真的阻塞部署验收？
+- 维护基线侧当前没有新的最前置 blocker
+- **但项目不是纯维护态**：最高目标线 MT-REAL-02（REALITY 突破）已重开并优先于维护卡
+- 维护基线侧的后续改动仍应先问一句：
+  - 这件事是否真的阻塞部署/运行？
   - 如果不阻塞，是否值得作为高层 regroup 主题推进？
 
-若答案都是否定的，就不应继续开卡。
+若答案都是否定的（且与 MT-REAL-02 前沿无关），就不应继续开维护卡。
 

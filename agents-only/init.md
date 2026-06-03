@@ -1,83 +1,68 @@
+<!-- tier: S -->
 # AI 初始化检查（Init Checklist）
 
-> ⚠️ **强制执行**：任何 AI/Agent/LLM 首次读到本文件，必须立即执行以下校验和更新操作。
+> ⚠️ **强制执行**：任何 AI/Agent 首次进入本仓库，按顺序执行以下校验。
+> 目标：30 秒内抓住"当前在做什么 + 最近构建状态 + 别再踩的坑"。
 
 ---
 
-## 🚨 初始化流程（必须按顺序执行）
+## Step 1: 读取当前上下文（按此顺序）
 
-### Step 1: 读取当前上下文（优先）
 ```
-查阅 agents-only/active_context.md
-查阅 agents-only/workpackage_latest.md
-查阅 agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md
-查阅 agents-only/deployment_acceptance_next_stage.md
+1. agents-only/active_context.md          # 当前状态唯一权威（必读）
+2. agents-only/workpackage_latest.md       # 阶段地图 / 全局位置
+3. CLAUDE.md  +  AGENTS.md                 # 稳定约定 / 硬规则 / 单一真相源
 ```
-**目的**：瞬间抓住当前聚焦模块、活跃阻碍项、最近构建状态
 
-> ⚠️ **DRP（灾难恢复）**：如果 `active_context.md` 为空或损坏，立即执行：
-> ```bash
-> ./agents-only/06-scripts/restore-context.sh
-> ```
+**当前前沿（若续推实验线）**：
+```
+agents-only/mt_real_02_baseline.md         # REALITY ClientHello 基线长报告
+agents-only/mt_real_02_evidence/           # 轮次证据
+scripts/tools/test_reality_probe_tools.py  # 探测工具链
+```
 
-### Step 2: 验证战略一致性
+> ⚠️ **DRP（灾难恢复）**：若 `active_context.md` 为空/损坏：
+> `./agents-only/06-scripts/restore-context.sh`
+
+## Step 2: 验证战略一致性
+
 ```bash
 ./agents-only/06-scripts/verify-consistency.sh
 ```
-**目的**：防止战术-战略漂移
+防止 active_context 与 workpackage 漂移。
 
-### Step 3: 检查长期记忆
-```
-查阅 agents-only/memory/LEARNED-PATTERNS.md
-查阅 agents-only/memory/TROUBLESHOOTING.md
-```
-**目的**：避免重复踩坑，复用已积累的经验
+## Step 3: 检查长期记忆（避免重复踩坑）
 
-### Step 4: 检查代码库变更
+```
+agents-only/memory/LEARNED-PATTERNS.md     # 可复用模式
+agents-only/memory/TROUBLESHOOTING.md      # 踩坑记录
+```
+（`memory/implementation-history.md` 与 `log.md` 是 C-tier 历史，**勿主动读**。）
+
+## Step 4: 检查代码库变更
+
 ```bash
 git log --oneline -5 && git status --short
-```
-**目的**：确认当前代码状态，识别进行中的工作
-
-### Step 5: 了解可用工具
-```
-查阅 agents-only/06-scripts/TOOLS_DEF.md
-```
-**目的**：了解可调用的脚本，避免重复造轮子
-
-### Step 6: 归档过期 dump 文件（软删除）
-```bash
-# 将 7 天前的 dump 文件移动到归档（可选执行）
-mkdir -p agents-only/archive/dump
-find agents-only/dump -type f -mtime +7 -name "*.md" \
-  -exec mv {} agents-only/archive/dump/ \;
-```
-**目的**：防止僵尸文件误导，但保留可恢复性
-
----
-
-## ⚡ 快速校验命令
-
-```bash
-cd /Users/bob/Desktop/Projects/ING/sing/singbox-rust
-
-# Git 状态
-git log --oneline -5 && git status --short
-
-# 构建验证
 cargo check -p app 2>&1 | tail -5
+```
+
+## Step 5: 了解可用工具
+
+```
+agents-only/06-scripts/TOOLS_DEF.md        # 可调用脚本，避免重复造轮子
+agents-only/reference/SCRIPTS-MAP.md       # scripts/ 与 06-scripts/ 全景
 ```
 
 ---
 
 ## 📋 AI 行为准则
 
-1. **先读后写**：执行任何修改前，先完成初始化检查
-2. **验证一致性**：确保 active_context 与 workpackage 同步
-3. **更新上下文**：任务结束前，更新 `active_context.md`
-4. **记录经验**：遇到问题或学到模式，更新 `07-memory/`
-5. **遵守规则**：严格遵守 `archive/AI-RULES.md`
-6. **查阅术语**：不确定术语时查阅 `reference/GLOSSARY.md`
+1. **先读后写**：任何修改前先完成本检查清单。
+2. **单一真相源**：易变数字（parity / 测试数 / 门禁）只活在权威源里，引用不复制（见 `CLAUDE.md`）。
+3. **更新上下文**：任务结束前更新 `agents-only/active_context.md`（≤100 行，先删旧快照）。
+4. **记录经验**：学到模式/踩到坑 → 更新 `agents-only/memory/`（注意：是 `memory/`，不是 `07-memory/`）。
+5. **关闭即归档**：工作线关闭后产物 `git mv` 进 `archive/{track}/`，不留顶层、不在根目录建工作目录。
+6. **查阅术语**：不确定术语查 `reference/GLOSSARY.md`；操作规则参考 `archive/AI-RULES.md`（C-tier）。
 
 ---
 
@@ -85,13 +70,13 @@ cargo check -p app 2>&1 | tail -5
 
 | 优先级 | 文件 | 用途 |
 |--------|------|------|
-| 1️⃣ | `active_context.md` | 当前状态快照 |
-| 2️⃣ | `workpackage_latest.md` | 当前阶段与线路收束 |
-| 3️⃣ | `reference/AGENT-DEVELOPMENT-GUIDELINES.md` | 长期开发准则 |
-| 4️⃣ | `deployment_acceptance_next_stage.md` | 下一阶段默认目标 |
-| 5️⃣ | `memory/*.md` | 经验积累 |
-| 6️⃣ | `reference/GLOSSARY.md` | 术语确认 |
-| 7️⃣ | `log.md` | 历史记录（按需） |
+| 1️⃣ | `active_context.md` | 当前状态唯一权威 |
+| 2️⃣ | `workpackage_latest.md` | 阶段与全局位置 |
+| 3️⃣ | `CLAUDE.md` / `AGENTS.md` | 稳定约定 / 硬规则 |
+| 4️⃣ | `mt_real_02_baseline.md` | 活跃前沿（实验线续推时） |
+| 5️⃣ | `reference/AGENT-DEVELOPMENT-GUIDELINES.md` | 长期开发准则 |
+| 6️⃣ | `memory/*.md` | 经验积累 |
+| 7️⃣ | `log.md` | 历史流水（C-tier，按需） |
 
 ---
 

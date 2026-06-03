@@ -1,26 +1,33 @@
 # Agents-Only 文档索引
 
-> **AI 必读**：执行任何任务前，先完成 [init.md](./init.md) 检查清单。  
-> **AI 必遵**：严格遵守 [archive/AI-RULES.md](./archive/AI-RULES.md) 操作规则。  
-> **当前阶段**：maintenance close-out 已完成，默认进入“部署收尾验收准备”阶段。
+> **AI 必读**：执行任何任务前，先完成 [init.md](./init.md) 检查清单。
+> **AI 必遵**：稳定约定与硬规则见仓库根 [CLAUDE.md](../CLAUDE.md) + [AGENTS.md](../AGENTS.md)；
+> 操作规则 [archive/AI-RULES.md](./archive/AI-RULES.md)（C-tier）。
+> **当前阶段**：L1-L25 + 全部 MT-* 维护/验收线已关闭；**MT-REAL-02（REALITY ClientHello）
+> 实验前沿**为最高目标线，截至 2026-06-03 在 R91 后休眠待续。实时状态见 active_context.md。
 
 ---
 
-## 📁 当前目录结构
+## 📁 当前目录结构（2026-06 重构后）
 
 ```
 agents-only/
-├── init.md
-├── active_context.md
-├── log.md
-├── workpackage_latest.md
-├── README.md
-├── 06-scripts/                 # 辅助脚本
-├── planning/                   # 当前工作包
-├── reference/                  # 权威参考
-├── memory/                     # 长期记忆
-├── templates/                  # 模板
-└── archive/                    # 历史归档
+├── active_context.md            # S: 当前状态唯一权威（易变状态只在这里）
+├── workpackage_latest.md        # S: 阶段地图 / 全局位置
+├── init.md                      # S: 启动检查清单
+├── README.md                    # 本索引
+├── log.md                       # C: 终极流水帐（勿主动读）
+├── mt_real_02_baseline.md       # 活跃前沿：REALITY ClientHello 基线长报告
+├── mt_real_02_fresh_sample_intake.md   # 活跃前沿
+├── mt_mixed_fresh_intake.md     # 前沿邻接（被 baseline 引用）
+├── mt_trojan_fresh_sample_intake.md    # 被 trojan.rs 源码引用
+├── mt_real_02_evidence/         # 前沿轮次证据
+├── reference/                   # A: 权威参考（含 Rust_spec_v2.md）
+├── memory/                      # A: 经验 + C: implementation-history
+├── 06-scripts/                  # 辅助脚本
+├── templates/                   # 文档模板
+├── planning/                    # 空（活跃规划用；旧 layer12 工作包已归档）
+└── archive/                     # C: 历史归档（含 MT-* 已关闭轨迹）
 ```
 
 ---
@@ -30,22 +37,22 @@ agents-only/
 | 场景 | 文档 |
 |------|------|
 | 新 AI 开始工作 | [init.md](./init.md) |
-| 当前状态 | [active_context.md](./active_context.md) |
+| **当前状态（唯一权威）** | [active_context.md](./active_context.md) |
+| 阶段总览 / 全局位置 | [workpackage_latest.md](./workpackage_latest.md) |
+| **活跃前沿（REALITY 续推）** | [mt_real_02_baseline.md](./mt_real_02_baseline.md) |
+| 稳定约定 / 硬规则 | [../CLAUDE.md](../CLAUDE.md)、[../AGENTS.md](../AGENTS.md) |
 | 后续开发准则 | [reference/AGENT-DEVELOPMENT-GUIDELINES.md](./reference/AGENT-DEVELOPMENT-GUIDELINES.md) |
-| 下一阶段目标 | [deployment_acceptance_next_stage.md](./deployment_acceptance_next_stage.md) |
-| 操作规则 | [archive/AI-RULES.md](./archive/AI-RULES.md) |
-| Rust 规则原文 | [Rust_spec_v2.md](./Rust_spec_v2.md) |
-| 审计复扫结论 | [mt_audit_01_reconciliation.md](./mt_audit_01_reconciliation.md) |
-| 审计长报告 | [mt_audit_01_full_report.md](./mt_audit_01_full_report.md) |
-| 理解架构约束 | [reference/ARCHITECTURE-SPEC.md](./reference/ARCHITECTURE-SPEC.md) |
-| 理解验收口径 | [reference/ACCEPTANCE-CRITERIA.md](./reference/ACCEPTANCE-CRITERIA.md) |
-| 理解脚本入口 | [reference/SCRIPTS-MAP.md](./reference/SCRIPTS-MAP.md) |
-| 查看阶段总览 | [workpackage_latest.md](./workpackage_latest.md) |
+| Rust 规则原文 | [reference/Rust_spec_v2.md](./reference/Rust_spec_v2.md) |
+| 架构约束 | [reference/ARCHITECTURE-SPEC.md](./reference/ARCHITECTURE-SPEC.md) |
+| 验收口径 | [reference/ACCEPTANCE-CRITERIA.md](./reference/ACCEPTANCE-CRITERIA.md) |
+| 脚本入口 | [reference/SCRIPTS-MAP.md](./reference/SCRIPTS-MAP.md) |
+| Parity 矩阵（验收基线） | [reference/GO_PARITY_MATRIX.md](./reference/GO_PARITY_MATRIX.md) |
 | 术语查询 | [reference/GLOSSARY.md](./reference/GLOSSARY.md) |
 | 经验积累 | [memory/](./memory/) |
 | 创建新文档 | [templates/README.md](./templates/README.md) |
+| 审计结论（已归档） | [archive/MT-AUDIT/mt_audit_01_reconciliation.md](./archive/MT-AUDIT/mt_audit_01_reconciliation.md) |
 | 历史归档 | [archive/](./archive/) |
 
 ---
 
-*更新时间: 2026-04-09*
+*更新时间: 2026-06-03*

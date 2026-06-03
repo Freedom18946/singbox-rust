@@ -5,8 +5,17 @@
 > session.
 > Discipline: keep only current-stage facts. This file must stay
 > under 100 lines.
+> **This file is the single source of truth for volatile state**
+> (phase, parity-BHV, build/gate). Other docs point here, not copy.
 
 ---
+
+## Resume (2026-06-03)
+
+MT-REAL-02 **dormant since R91 (2026-05-09)**, ~3.5 weeks no new rounds;
+paused awaiting an authorized fresh-sample intake (any live run must
+clear the R81 subset-schema dry-run gate). Continue: read this +
+`mt_real_02_baseline.md`. Build PASS; boundary exit 1 (known drift).
 
 ## Strategic State
 
@@ -54,14 +63,10 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - MT-REAL-02 R90 fresh13 isolated rotation-bank DONE (2026-05-09).
   **A.fresh13_round2_banked**; 3/3 run_all_ok;
   recovery_consecutive_rounds=2; **fresh13 closure NOT declared**.
-- MT-REAL-02 R89 fresh12 isolated rotation-bank DONE (2026-05-09).
-  **D.matrix_error_inconclusive**: 2 matrix_timeout + 1 completed
-  same_failure(connection_reset); not counted as recovery success.
-  **fresh12 round 2 NOT banked**; **fresh12 closure NOT declared**.
-- MT-REAL-02 R88 fresh09 recheck DONE (2026-05-09).
-  **A.fresh09_timeout_steady_state**: R85 timeout reproduced
-  5/5; fresh09 recovery_consecutive_rounds=0; **fresh09 NOT
-  recovered**; **original cohort C closure NOT claimed**.
+- R89 fresh12 rotation-bank: **D.matrix_error_inconclusive** (2
+  matrix_timeout + 1 same_failure connection_reset); NOT banked.
+  R88 fresh09 recheck: R85 timeout reproduced 5/5; recovery=0;
+  **fresh09 NOT recovered**; original cohort C closure NOT claimed.
 - R87 fresh10 round-3 closure DONE; R86 rotation-bank DONE; R85
   recovery-watch round 2 DONE; R84-R73 prior fresh rounds DONE.
   Rotated active set fresh01/fresh15/fresh10 is per-rep closed, but
@@ -90,8 +95,6 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 
 ## Historical Detail
 
-- R33-R60 + early ClientHello/Vision/REALITY:
-  agents-only/mt_real_02_baseline.md
-- L01-L25: agents-only/archive/L*/
-- Dual-kernel golden spec:
-  labs/interop-lab/docs/dual_kernel_golden_spec.md
+- R33-R60 + early ClientHello/Vision/REALITY: `mt_real_02_baseline.md`.
+  L01-L25: `archive/L*/`. Closed MT-* tracks: `archive/MT-*/`.
+  Golden spec: `labs/interop-lab/docs/dual_kernel_golden_spec.md`.

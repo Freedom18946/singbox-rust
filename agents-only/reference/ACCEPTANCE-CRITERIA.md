@@ -82,6 +82,12 @@
 - exit 0 才算 `PASS-STRICT`
 - `--report` 可作为预检，但不能代替严格门禁
 
+> ⚠️ **当前现状（2026-06 复核）**：`check-boundaries.sh` 当前 **exit 1**（约 22/541 V7 迁移断言失败，
+> 集中在 `app/src/bootstrap.rs` / `app/src/run_engine.rs` 显式迁移提示模式 + 对已拆分文件
+> `crates/sb-config/src/validator/v2.rs`（现为 `validator/v2/` 目录）的 W87/W88 失配）。这是
+> **登记在案的脚本陈旧目标漂移、非阻塞、非回归**，故 boundary 维度当前暂不满足 `PASS-STRICT`。
+> 实时失败计数以 `agents-only/active_context.md` 为准。
+
 ### 2.2 当前架构归属规则
 
 | 条目 | 验收标准 |
@@ -95,7 +101,7 @@
 
 | 条目 | 验收标准 |
 |------|---------|
-| ADR 对齐 | 存在 `agents-only/04-decisions/ADR-L19.3.1-sb-core-role.md` 且当前 reference 文档不再使用旧纯引擎层口径 |
+| ADR 对齐 | 存在 `agents-only/archive/L19-L21-MIG/ADR-L19.3.1-sb-core-role.md` 且当前 reference 文档不再使用旧纯引擎层口径 |
 | 文档对齐 | `ARCHITECTURE-SPEC.md`、`GLOSSARY.md`、`07-DEPENDENCY-AUDIT.md` 口径一致 |
 | 门禁对齐 | `boundary-policy.json` 与 `check-boundaries.sh` 描述一致 |
 
@@ -179,7 +185,7 @@ cargo clippy --workspace --all-features -- -D warnings
 cargo test --workspace
 cargo build -p app --features parity --release
 ./target/release/app version
-./target/release/app check -c test_config.json
+./target/release/app check -c examples/quick-start/01-minimal.json
 ```
 
 说明：

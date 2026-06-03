@@ -2,13 +2,22 @@
 
 ## Project Status
 
-All phases (L1-L25) are **Closed**. The repository is in **maintenance mode**.
+L1-L25 baseline phases and the 2026-04 MT-* maintenance/acceptance lines are **Closed**.
+The repo is **NOT in pure maintenance mode**: the **MT-REAL-02** experimental line
+(REALITY ClientHello / `uTLS` fingerprint parity, reopened 2026-04-16) is the current
+highest-goal frontier. Treat the project as "maintenance baseline + one active
+experimental line", not "all done".
 
-## Authoritative Sources
+## Authoritative Sources (read in this order)
 
-- Dual-kernel parity status: `labs/interop-lab/docs/dual_kernel_golden_spec.md` (single source of truth)
-- Current context: `agents-only/active_context.md`
-- Phase map: `agents-only/workpackage_latest.md`
+- **Live frontier state** (what's happening now, latest round, next step):
+  `agents-only/active_context.md` — single source of truth for volatile state.
+- **MT-REAL-02 working set**: `agents-only/mt_real_02_baseline.md` +
+  `agents-only/mt_real_02_evidence/` + `scripts/tools/test_reality_probe_tools.py`.
+- **Dual-kernel parity ledger** (closed-item accounting only): `labs/interop-lab/docs/dual_kernel_golden_spec.md`.
+  This is authoritative for the parity *ledger*, NOT for the live MT-REAL-02 experiment.
+- **Phase map**: `agents-only/workpackage_latest.md`.
+- **Stable project memory / conventions**: `CLAUDE.md`.
 
 ## Hard Rules
 
@@ -17,6 +26,8 @@ All phases (L1-L25) are **Closed**. The repository is in **maintenance mode**.
 - Prefer promoting existing strict Rust replay cases to `kernel_mode: both` over adding new Rust-only tests.
 - Do not revert unrelated workspace changes.
 - Treat repo-level maintenance work (TUN, provider hot-reload e2e, flaky test isolation) as quality work, not parity completion.
+- Do not duplicate volatile numbers (parity, test counts, gate status) across docs — point to the single source of truth (see `CLAUDE.md` → 单一真相源).
+- Do not create working/scratch directories in the repo root; agent artifacts go under `agents-only/`.
 
 ## Dual-Kernel Oracle Rules
 
