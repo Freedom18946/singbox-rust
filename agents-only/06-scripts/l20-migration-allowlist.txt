@@ -41,12 +41,12 @@ forbid|W4-05-no-outbound-manager-fallback-source|crates/sb-core/src/outbound/man
 require|W4-06-resolve-default-explicit-error|crates/sb-core/src/outbound/manager.rs|no outbound connectors available; cannot resolve default outbound|Default resolution must fail explicitly when connector set is empty
 forbid|W4-07-no-bootstrap-fallback-direct-call|app/src/bootstrap.rs|ensure_fallback_direct|Bootstrap must not request direct fallback injection from outbound manager
 
-forbid|W4-08-no-run-engine-core-transport-target|app/src/run_engine.rs|target: \"sb_core::transport\"|run_engine transport planning logs must not use sb_core::transport target label
-require|W4-09-run-engine-sb-transport-target|app/src/run_engine.rs|target: \"sb_transport\"|run_engine transport planning logs should align to sb_transport ownership
+forbid|W4-08-no-run-engine-core-transport-target|app/src/run_engine_runtime/output.rs|target: \"sb_core::transport\"|run_engine transport planning logs must not use sb_core::transport target label
+require|W4-09-run-engine-sb-transport-target|app/src/run_engine_runtime/output.rs|target: \"sb_transport\"|run_engine transport planning logs should align to sb_transport ownership
 
 forbid|W5-01-no-probe-switchboard-builder|app/src/bin/probe-outbound.rs|SwitchboardBuilder::from_config_ir|probe-outbound must avoid runtime switchboard fallback path
 require|W5-02-probe-uses-adapter-bridge|app/src/bin/probe-outbound.rs|sb_core::adapter::bridge::build_bridge|probe-outbound must resolve outbounds through adapter bridge
-require|W5-03-probe-register-adapters|app/src/bin/probe-outbound.rs|app::util::register_adapters_once|probe-outbound must register adapters before bridge assembly
+require|W5-03-probe-register-adapters|app/src/bin/probe-outbound.rs|register_adapters_once\(\)|probe-outbound must register adapters before bridge assembly
 
 forbid|W6-01-no-switchboard-builder-http-connect-test|app/tests/http_connect_inbound.rs|SwitchboardBuilder::from_config_ir|http_connect_inbound test should avoid switchboard concrete builder path
 forbid|W6-02-no-switchboard-builder-socks-e2e-test|app/tests/socks_end2end.rs|SwitchboardBuilder::from_config_ir|socks_end2end test should avoid switchboard concrete builder path
@@ -87,35 +87,31 @@ forbid|W15-02-no-urltest-outbound-concrete|crates/sb-adapters/src/outbound/urlte
 require|W15-03-selector-builder-uses-core-group|crates/sb-adapters/src/outbound/selector.rs|SelectorGroup::new_manual|selector builder should use core SelectorGroup implementation
 require|W15-04-urltest-builder-uses-core-group|crates/sb-adapters/src/outbound/urltest.rs|SelectorGroup::new_urltest|urltest builder should use core SelectorGroup implementation
 
-forbid|W16-01-no-bootstrap-hy2-core-concrete|app/src/bootstrap.rs|sb_core::outbound::hysteria2::Hysteria2Outbound|bootstrap selector/urltest connector path should not construct core Hysteria2 concrete
-require|W16-02-bootstrap-hy2-explicit-disabled-msg|app/src/bootstrap.rs|Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Hysteria2 path should emit explicit migration guidance
+forbid|W16-01-no-bootstrap-hy2-core-concrete|app/src/outbound_groups.rs|sb_core::outbound::hysteria2::Hysteria2Outbound|bootstrap selector/urltest connector path should not construct core Hysteria2 concrete
+require|W16-02-bootstrap-hy2-explicit-disabled-msg|app/src/outbound_groups.rs|Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Hysteria2 path should emit explicit migration guidance
 
-forbid|W17-01-no-bootstrap-socks-core-concrete|app/src/bootstrap.rs|socks_upstream::SocksUp|bootstrap selector/urltest connector path should not construct core SOCKS concrete
-require|W17-02-bootstrap-socks-explicit-disabled-msg|app/src/bootstrap.rs|SOCKS5 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap SOCKS5 path should emit explicit migration guidance
+forbid|W17-01-no-bootstrap-socks-core-concrete|app/src/outbound_groups.rs|socks_upstream::SocksUp|bootstrap selector/urltest connector path should not construct core SOCKS concrete
+require|W17-02-bootstrap-socks-explicit-disabled-msg|app/src/outbound_groups.rs|SOCKS5 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap SOCKS5 path should emit explicit migration guidance
 
-forbid|W18-01-no-bootstrap-http-core-concrete|app/src/bootstrap.rs|http_upstream::HttpUp|bootstrap selector/urltest connector path should not construct core HTTP upstream concrete
-require|W18-02-bootstrap-http-explicit-disabled-msg|app/src/bootstrap.rs|HTTP proxy selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap HTTP proxy path should emit explicit migration guidance
+forbid|W18-01-no-bootstrap-http-core-concrete|app/src/outbound_groups.rs|http_upstream::HttpUp|bootstrap selector/urltest connector path should not construct core HTTP upstream concrete
+require|W18-02-bootstrap-http-explicit-disabled-msg|app/src/outbound_groups.rs|HTTP proxy selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap HTTP proxy path should emit explicit migration guidance
 
-forbid|W19-01-no-bootstrap-tuic-core-concrete|app/src/bootstrap.rs|outbound::tuic::TuicOutbound|bootstrap selector/urltest connector path should not construct core TUIC concrete
-require|W19-02-bootstrap-tuic-explicit-disabled-msg|app/src/bootstrap.rs|TUIC selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap TUIC path should emit explicit migration guidance
+forbid|W19-01-no-bootstrap-tuic-core-concrete|app/src/outbound_groups.rs|outbound::tuic::TuicOutbound|bootstrap selector/urltest connector path should not construct core TUIC concrete
 
-forbid|W20-01-no-bootstrap-vmess-core-concrete|app/src/bootstrap.rs|outbound::vmess::VmessOutbound|bootstrap selector/urltest connector path should not construct core VMess concrete
-require|W20-02-bootstrap-vmess-explicit-disabled-msg|app/src/bootstrap.rs|VMess selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap VMess path should emit explicit migration guidance
+forbid|W20-01-no-bootstrap-vmess-core-concrete|app/src/outbound_groups.rs|outbound::vmess::VmessOutbound|bootstrap selector/urltest connector path should not construct core VMess concrete
 
-forbid|W21-01-no-bootstrap-vless-core-concrete|app/src/bootstrap.rs|outbound::vless::VlessOutbound|bootstrap selector/urltest connector path should not construct core VLESS concrete
-require|W21-02-bootstrap-vless-explicit-disabled-msg|app/src/bootstrap.rs|VLESS selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap VLESS path should emit explicit migration guidance
+forbid|W21-01-no-bootstrap-vless-core-concrete|app/src/outbound_groups.rs|outbound::vless::VlessOutbound|bootstrap selector/urltest connector path should not construct core VLESS concrete
 
-forbid|W22-01-no-bootstrap-direct-core-concrete|app/src/bootstrap.rs|direct_connector::DirectConnector|bootstrap selector/urltest connector path should not construct core direct concrete
-require|W22-02-bootstrap-direct-uses-adapter-wrapper|app/src/bootstrap.rs|BootstrapDirectAdapterConnector::new|bootstrap direct path should route through adapter direct wrapper
+forbid|W22-01-no-bootstrap-direct-core-concrete|app/src/outbound_groups.rs|direct_connector::DirectConnector|bootstrap selector/urltest connector path should not construct core direct concrete
+require|W22-02-bootstrap-direct-uses-adapter-wrapper|app/src/outbound_groups.rs|DirectConnector::new\(\)|bootstrap direct path should route through adapter direct wrapper
 
-forbid|W23-01-no-bootstrap-trojan-core-concrete|app/src/bootstrap.rs|outbound::trojan::TrojanOutbound|bootstrap selector/urltest connector path should not construct core Trojan concrete
-require|W23-02-bootstrap-trojan-explicit-disabled-msg|app/src/bootstrap.rs|Trojan selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Trojan path should emit explicit migration guidance
+forbid|W23-01-no-bootstrap-trojan-core-concrete|app/src/outbound_groups.rs|outbound::trojan::TrojanOutbound|bootstrap selector/urltest connector path should not construct core Trojan concrete
 
-forbid|W24-01-no-bootstrap-silent-fallback-none|app/src/bootstrap.rs|other => None|bootstrap selector/urltest connector path should not use silent fallback none
-require|W24-02-bootstrap-fallback-explicit-disabled-msg|app/src/bootstrap.rs|unsupported selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap fallback path should emit explicit migration guidance
+forbid|W24-01-no-bootstrap-silent-fallback-none|app/src/outbound_groups.rs|other => None|bootstrap selector/urltest connector path should not use silent fallback none
+require|W24-02-bootstrap-fallback-explicit-disabled-msg|app/src/outbound_groups.rs|unsupported selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap fallback path should emit explicit migration guidance
 
-require|W25-01-bootstrap-block-explicit-disabled-msg|app/src/bootstrap.rs|Block selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Block path should emit explicit migration guidance
-require|W25-02-bootstrap-nested-connector-explicit-disabled-msg|app/src/bootstrap.rs|Nested connector selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap nested connector path should emit explicit migration guidance
+require|W25-01-bootstrap-block-explicit-disabled-msg|app/src/outbound_groups.rs|Block selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Block path should emit explicit migration guidance
+require|W25-02-bootstrap-nested-connector-explicit-disabled-msg|app/src/outbound_groups.rs|Nested connector selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap nested connector path should emit explicit migration guidance
 
 forbid|W26-01-no-switchboard-httpup-concrete|crates/sb-core/src/runtime/switchboard.rs|outbound::http_upstream::HttpUp|switchboard should not construct core HTTP upstream concrete
 require|W26-02-switchboard-http-explicit-disabled|crates/sb-core/src/runtime/switchboard.rs|HTTP outbound in switchboard is disabled; use adapter bridge/supervisor path|switchboard HTTP path should emit explicit migration guidance
@@ -189,7 +185,7 @@ forbid|W54-01-no-socks-udp-proxy-direct-fallback-msg|crates/sb-adapters/src/inbo
 require|W54-02-socks-udp-proxy-explicit-disabled-msg|crates/sb-adapters/src/inbound/socks/udp.rs|socks5-udp: proxy decision is unsupported; direct fallback is disabled; packet dropped|socks5-udp proxy decision path should emit explicit no-fallback diagnostics
 require|W54-03-socks-udp-proxy-unsupported-metric|crates/sb-adapters/src/inbound/socks/udp.rs|\"class\"=>\"proxy_unsupported\"|socks5-udp proxy decision path should increment explicit unsupported metric
 forbid|W55-01-no-http-inbound-health-direct-fallback-msg|crates/sb-adapters/src/inbound/http.rs|proxy unhealthy; fallback to direct \(http inbound\)|http inbound health check path should not fallback to direct
-forbid|W55-02-no-http-inbound-health-direct-override|crates/sb-adapters/src/inbound/http.rs|decision = RDecision::Direct;|http inbound health check path should not override routing decision to direct
+forbid|W55-02-no-http-inbound-health-direct-override|crates/sb-adapters/src/inbound/http.rs|\"to\" *=> *\"direct\"|http inbound health check path should not override routing decision to direct
 require|W55-03-http-inbound-health-explicit-disabled-msg|crates/sb-adapters/src/inbound/http.rs|proxy unhealthy; direct fallback is disabled \(http inbound\)|http inbound health check path should emit explicit no-fallback diagnostics
 forbid|W56-01-no-vmess-fallback-connect-helper|crates/sb-adapters/src/inbound/vmess.rs|fallback_connect\(|vmess inbound should not keep implicit fallback connect helper in proxy decision path
 require|W56-02-vmess-named-proxy-explicit-no-fallback-msg|crates/sb-adapters/src/inbound/vmess.rs|named proxy decision '.*' .*implicit fallback is disabled; use adapter bridge/supervisor path|vmess named proxy decision path should emit explicit no-fallback migration diagnostics
@@ -260,18 +256,18 @@ forbid|W81-01-no-router-builder-default-direct-literal|crates/sb-core/src/router
 require|W81-02-router-builder-default-unresolved-literal|crates/sb-core/src/router/builder.rs|unwrap_or\(\"unresolved\"\)|router builder should use explicit unresolved marker for default decision
 forbid|W82-01-no-adapter-bridge-final-rule-default-direct-literal|crates/sb-core/src/adapter/bridge.rs|unwrap_or\(\"direct\"\)|adapter bridge final rule should not use silent direct fallback
 require|W82-02-adapter-bridge-final-rule-default-unresolved-literal|crates/sb-core/src/adapter/bridge.rs|unwrap_or\(\"unresolved\"\)|adapter bridge final rule should use explicit unresolved marker
-forbid|W83-01-no-bootstrap-router-rules-text-rule-outbound-direct-default|app/src/bootstrap.rs|unwrap_or\(\"direct\"\)|bootstrap router rules text rule_outbound should not use silent direct fallback
-require|W83-02-bootstrap-router-rules-text-rule-outbound-unresolved-default|app/src/bootstrap.rs|unwrap_or\(\"unresolved\"\)|bootstrap router rules text rule_outbound should use explicit unresolved marker
+forbid|W83-01-no-bootstrap-router-rules-text-rule-outbound-direct-default|app/src/router_text.rs|unwrap_or\(\"direct\"\)|bootstrap router rules text rule_outbound should not use silent direct fallback
+require|W83-02-bootstrap-router-rules-text-rule-outbound-unresolved-default|app/src/router_text.rs|unwrap_or\(\"unresolved\"\)|bootstrap router rules text rule_outbound should use explicit unresolved marker
 forbid|W84-01-no-env-dump-udp-proxy-mode-direct-default|app/src/env_dump.rs|\"direct\"\.to_string\(\)|env dump should not silently default SB_UDP_PROXY_MODE to direct
 require|W84-02-env-dump-udp-proxy-mode-unresolved-default|app/src/env_dump.rs|\"unresolved\"\.to_string\(\)|env dump should emit explicit unresolved marker for SB_UDP_PROXY_MODE default
 forbid|W85-01-no-router-mod-default-direct-literal|crates/sb-core/src/router/mod.rs|default: default\.unwrap_or\(\"direct\"\),|router mod builder should not silently fallback default decision to direct
 require|W85-02-router-mod-default-unresolved-literal|crates/sb-core/src/router/mod.rs|default: default\.unwrap_or\(\"unresolved\"\),|router mod builder should use explicit unresolved marker for default decision
-forbid|W86-01-no-bootstrap-router-rules-text-default-direct-literal|app/src/bootstrap.rs|rules\.push\(\"default=direct\"\.to_string\(\)\);|bootstrap router rules text should not silently fallback final default to direct
-require|W86-02-bootstrap-router-rules-text-default-unresolved-literal|app/src/bootstrap.rs|rules\.push\(\"default=unresolved\"\.to_string\(\)\);|bootstrap router rules text should use explicit unresolved marker for missing final default
-forbid|W87-01-no-validator-v2-outbound-type-default-direct-literal|crates/sb-config/src/validator/v2.rs|unwrap_or\(\"direct\"\)|validator v2 outbound type parser should not use silent direct default literal
-require|W87-02-validator-v2-outbound-type-default-unresolved-literal|crates/sb-config/src/validator/v2.rs|unwrap_or\(\"unresolved\"\)|validator v2 outbound type parser should use explicit unresolved default literal
-forbid|W88-01-no-validator-v2-outbound-type-unknown-direct-fallback|crates/sb-config/src/validator/v2.rs|_ => crate::ir::OutboundType::Direct,|validator v2 outbound type parser should not silently fallback unknown type to direct
-require|W88-02-validator-v2-outbound-type-unknown-block-fallback|crates/sb-config/src/validator/v2.rs|_ => crate::ir::OutboundType::Block,|validator v2 outbound type parser should fallback unknown type to explicit block
+forbid|W86-01-no-bootstrap-router-rules-text-default-direct-literal|app/src/router_text.rs|rules\.push\(\"default=direct\"\.to_string\(\)\);|bootstrap router rules text should not silently fallback final default to direct
+require|W86-02-bootstrap-router-rules-text-default-unresolved-literal|app/src/router_text.rs|rules\.push\(\"default=unresolved\"\.to_string\(\)\);|bootstrap router rules text should use explicit unresolved marker for missing final default
+forbid|W87-01-no-validator-v2-outbound-type-default-direct-literal|crates/sb-config/src/validator/v2/outbound.rs|unwrap_or\(\"direct\"\)|validator v2 outbound type parser should not use silent direct default literal
+require|W87-02-validator-v2-outbound-type-default-unresolved-literal|crates/sb-config/src/validator/v2/outbound.rs|unwrap_or\(\"unresolved\"\)|validator v2 outbound type parser should use explicit unresolved default literal
+forbid|W88-01-no-validator-v2-outbound-type-unknown-direct-fallback|crates/sb-config/src/validator/v2/outbound.rs|_ => crate::ir::OutboundType::Direct,|validator v2 outbound type parser should not silently fallback unknown type to direct
+require|W88-02-validator-v2-outbound-type-unknown-block-fallback|crates/sb-config/src/validator/v2/outbound.rs|_ => crate::ir::OutboundType::Block,|validator v2 outbound type parser should fallback unknown type to explicit block
 forbid|W89-01-no-router-hot-reload-validation-default-direct-literal|crates/sb-core/src/router/hot_reload.rs|default=direct|router hot_reload validation sample should not keep silent direct default literal
 require|W89-02-router-hot-reload-validation-default-unresolved-literal|crates/sb-core/src/router/hot_reload.rs|default=unresolved|router hot_reload validation sample should use explicit unresolved default literal
 forbid|W90-01-no-dsl-sample-default-direct-literal|app/examples/dsl.sample.txt|default=direct|dsl sample should not keep silent direct default literal
@@ -402,7 +398,7 @@ require|W152-01-register-vmess-server-addr-parse-helper|crates/sb-adapters/src/r
 require|W152-02-register-vmess-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vmess\", reason\)|vmess outbound builder should surface invalid server socket address through explicit invalid-config connector
 require|W153-01-register-vless-server-addr-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_socket_addr\(\"vless\", outbound_name, server, port\)|vless outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
 require|W153-02-register-vless-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vless\", reason\)|vless outbound builder should surface invalid server socket address through explicit invalid-config connector
-forbid|W154-01-no-register-listen-parse-silent-fallback|crates/sb-adapters/src/register.rs|listen[[:space:]]*\\.[[:space:]]*parse\\([[:space:]]*\\)[[:space:]]*\\.[[:space:]]*ok\\([[:space:]]*\\)[[:space:]]*\\.[[:space:]]*or_else\\([[:space:]]*\\|\\|[[:space:]]*format!\\(\"\\{listen\\}:\\{port\\}\"\\)\\.parse\\(\\)\\.ok\\(\\)\\)|listen addr helper should not silently fallback through chained parse\(\)\.ok\(\)
+forbid|W154-01-no-register-listen-parse-silent-fallback|crates/sb-adapters/src/register.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|register listen addr must not silently fallback via chained parse().ok()
 require|W154-02-register-listen-parse-explicit-normalize-msg|crates/sb-adapters/src/register.rs|explicit normalization to '\{normalized\}' is applied; silent listen parse fallback is disabled|listen addr helper should emit explicit normalization diagnostics instead of silent fallback
 require|W155-01-router-rules-max-env-parse-helper|crates/sb-core/src/router/mod.rs|let max_rules = router_rules_max_from_env\(\);|router rules max env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
 require|W155-02-router-rules-max-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_MAX' value '.*' is invalid; silent parse fallback is disabled|router rules max env invalid value should emit explicit diagnostics instead of silent ignore
@@ -463,20 +459,20 @@ require|W177-06-engine-dns-timeout-explicit-warn|crates/sb-core/src/router/engin
 require|W177-07-engine-geoip-enabled-helper|crates/sb-core/src/router/engine.rs|geoip_enabled_from_env\(\)|engine geoip enabled should parse through explicit helper
 require|W177-08-engine-geoip-enabled-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_GEOIP_ENABLE' value '.*' is not a recognized boolean; silent parse fallback is disabled|engine geoip enabled env should emit explicit diagnostics
 
-forbid|W178-01-no-bootstrap-rules-max-silent-parse|app/src/bootstrap.rs|\.and_then\(\|v\| v\.parse\(\)\.ok\(\)\)\.unwrap_or\(100_000|bootstrap SB_ROUTER_RULES_MAX must not silently swallow parse failures
+forbid|W178-01-no-bootstrap-rules-max-silent-parse|app/src/bootstrap_runtime/router_helpers.rs|\.ok\(\)\.unwrap_or\(|bootstrap SB_ROUTER_RULES_MAX must not silently swallow parse failures
 require|W178-02-bootstrap-rules-max-helper|app/src/bootstrap.rs|parse_env_usize\("SB_ROUTER_RULES_MAX"|bootstrap rules max should use explicit parse helper
-require|W178-03-bootstrap-rules-max-explicit-warn|app/src/bootstrap.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|bootstrap rules max env should emit explicit diagnostics
+require|W178-03-bootstrap-rules-max-explicit-warn|app/src/bootstrap_runtime/router_helpers.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|bootstrap rules max env should emit explicit diagnostics
 
-forbid|W179-01-no-logging-sample-silent-parse|app/src/logging.rs|\.and_then\(\|s\| s\.parse::<u32>\(\)\.ok\(\)\)|logging SB_LOG_SAMPLE must not silently swallow parse failures
+forbid|W179-01-no-logging-sample-silent-parse|app/src/logging.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|logging SB_LOG_SAMPLE must not silently swallow parse failures
 require|W179-02-logging-sample-explicit-warn|app/src/logging.rs|env 'SB_LOG_SAMPLE' value '.*' is not a valid u32; silent parse fallback is disabled|logging sample env should emit explicit diagnostics
 
-forbid|W180-01-no-panic-log-max-silent-parse|app/src/panic.rs|\.and_then\(\|v\| v\.parse::<usize>\(\)\.ok\(\)\)\.unwrap_or\(10\)|panic SB_PANIC_LOG_MAX must not silently swallow parse failures
+forbid|W180-01-no-panic-log-max-silent-parse|app/src/panic.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|panic SB_PANIC_LOG_MAX must not silently swallow parse failures
 require|W180-02-panic-log-max-explicit-warn|app/src/panic.rs|env 'SB_PANIC_LOG_MAX' value '.*' is not a valid usize; silent parse fallback is disabled|panic log max env should emit explicit diagnostics
 
-forbid|W181-01-no-dns-cache-ttl-silent-parse|app/src/run_engine.rs|\.and_then\(\|s\| s\.parse\(\)\.ok\(\)\)\.unwrap_or\(30\)|run_engine DNS_CACHE_TTL must not silently swallow parse failures
-require|W181-02-dns-cache-ttl-explicit-warn|app/src/run_engine.rs|env 'DNS_CACHE_TTL' value '.*' is not a valid u64; silent parse fallback is disabled|dns cache ttl env should emit explicit diagnostics
+forbid|W181-01-no-dns-cache-ttl-silent-parse|app/src/run_engine_runtime/supervisor.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|run_engine DNS_CACHE_TTL must not silently swallow parse failures
+require|W181-02-dns-cache-ttl-explicit-warn|app/src/run_engine_runtime/supervisor.rs|env 'DNS_CACHE_TTL' value '.*' is not a valid u64; silent parse fallback is disabled|dns cache ttl env should emit explicit diagnostics
 
-forbid|W182-01-no-prefetch-cap-silent-parse|app/src/admin_debug/prefetch.rs|\.and_then\(\|s\| s\.parse\(\)\.ok\(\)\)\.unwrap_or\(128\)|prefetch SB_PREFETCH_CAP must not silently swallow parse failures
+forbid|W182-01-no-prefetch-cap-silent-parse|app/src/admin_debug/prefetch.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|prefetch SB_PREFETCH_CAP must not silently swallow parse failures
 require|W182-02-prefetch-cap-helper|app/src/admin_debug/prefetch.rs|parse_prefetch_env_usize\("SB_PREFETCH_CAP"|prefetch cap should use explicit parse helper
 require|W182-03-prefetch-workers-helper|app/src/admin_debug/prefetch.rs|parse_prefetch_env_usize\("SB_PREFETCH_WORKERS"|prefetch workers should use explicit parse helper
 require|W182-04-prefetch-retries-helper|app/src/admin_debug/prefetch.rs|parse_prefetch_env_u8\("SB_PREFETCH_RETRIES"|prefetch retries should use explicit u8 parse helper
@@ -493,7 +489,7 @@ require|W184-03-breaker-fails-helper|app/src/admin_debug/breaker.rs|parse_breake
 require|W184-04-breaker-ratio-helper|app/src/admin_debug/breaker.rs|parse_breaker_env_f64\("SB_SUBS_BR_RATIO"|breaker ratio should use explicit parse helper
 require|W184-05-breaker-explicit-warn|app/src/admin_debug/breaker.rs|env '.*' value '.*' is not a valid .64; silent parse fallback is disabled|breaker env should emit explicit diagnostics
 
-forbid|W185-01-no-subs-env-usize-silent|app/src/admin_debug/endpoints/subs.rs|\.and_then\(\|v\| v\.parse\(\)\.ok\(\)\)\.unwrap_or\(def\)|subs env_usize must not silently swallow parse failures
+forbid|W185-01-no-subs-env-usize-silent|app/src/admin_debug/endpoints/subs.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|subs env_usize must not silently swallow parse failures
 require|W185-02-subs-env-usize-explicit-warn|app/src/admin_debug/endpoints/subs.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|subs env_usize should emit explicit diagnostics
 require|W185-03-subs-env-u64-explicit-warn|app/src/admin_debug/endpoints/subs.rs|env '.*' value '.*' is not a valid u64; silent parse fallback is disabled|subs env_u64 should emit explicit diagnostics
 
@@ -502,7 +498,7 @@ require|W186-02-fs-scan-timeout-helper|app/src/cli/fs_scan.rs|parse_fs_scan_env_
 require|W186-03-fs-scan-bytes-helper|app/src/cli/fs_scan.rs|parse_fs_scan_env_u64\("SB_SUBS_MAX_BYTES"|fs_scan max_bytes should use explicit parse helper
 require|W186-04-fs-scan-explicit-warn|app/src/cli/fs_scan.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|fs_scan env should emit explicit diagnostics
 
-forbid|W187-01-no-reloadable-silent-parse|app/src/admin_debug/reloadable.rs|\.and_then\(\|v\| v\.parse\(\)\.ok\(\)\)|reloadable EnvConfig must not silently swallow parse failures
+forbid|W187-01-no-reloadable-silent-parse|app/src/admin_debug/reloadable.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|reloadable EnvConfig must not silently swallow parse failures
 require|W187-02-reloadable-env-cfg-usize|app/src/admin_debug/reloadable.rs|env_cfg_usize\("SB_SUBS_MAX_REDIRECTS"|reloadable redirects should use explicit parse helper
 require|W187-03-reloadable-env-cfg-u64|app/src/admin_debug/reloadable.rs|env_cfg_u64\("SB_SUBS_TIMEOUT_MS"|reloadable timeout should use explicit parse helper
 require|W187-04-reloadable-explicit-warn|app/src/admin_debug/reloadable.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|reloadable env should emit explicit diagnostics
