@@ -53,22 +53,22 @@ fresh09 steady-state broken R85/R88.
 
 ## A4 Projection Track — CLOSED through A4.4 (2026-06-06)
 
-- A4.1 mapping + A4.2A prototype + A4.3 disposition + A4.4 contract all DONE.
-  A4.3 committed (route C, `a5b7a41f`); A4.4 froze the contract at
-  reference/reality_historical_projection_contract.md (A-tier).
-- Full-corpus read-only inventory (a43 + a42/outputs/batch_inventory.json):
-  34/34 projected; 0 promotable; 31 PARTIAL; 3 UNSUPPORTED; canonical_candidate null.
-  Adversarially verified (8-agent workflow, 0 refuted).
-- Route C: canonical schema stays STRICT (native-live only); historical projection is
-  TERMINAL (universal-four floor + R80/82/83/84 ⊥ R85-91 disjoint ceiling). Prototype
-  stays in agents-only (NOT moved to labs/). No formal adapter / CI / schema edit.
-- Do NOT: coerce unknown/mixed → canonical bool; invent matrix exit code; propagate
-  bhv_52_56_*; restore a fixed public-node closure identity (S4 §D/§E).
-- Deferred hardening G1 (--rollup must compute, not flag→DD) / G2 (real unique
-  observation_id; source.sha256 = today's join key) / G3 (multi-mode disclosure: 7
-  real vs prototype's 2). Fix all three before any tool promotion.
-- Next priority after A4.4: evaluate A2.1 automatic wiring (local gate → CI/L18),
-  then tier-3 ClientHello fingerprint project. No public network.
+- A4.1 mapping + A4.2A prototype + A4.3 disposition (route C, `a5b7a41f`) + A4.4
+  contract (`b042a683`, reference/reality_historical_projection_contract.md) all DONE.
+- Inventory (a43 + a42/outputs/batch_inventory.json): 34/34 projected; 0 promotable;
+  31 PARTIAL; 3 UNSUPPORTED; canonical_candidate null; adversarially verified (0 refuted).
+- Route C: canonical schema stays STRICT; historical projection TERMINAL (universal-four
+  floor + R80/82/83/84 ⊥ R85-91 ceiling); prototype stays agents-only. Deferred G1/G2/G3.
+
+## A2 REALITY-Gate Wiring (2026-06-06)
+
+- A2.1 DONE (a21_reality_local_gate_wiring_evaluation.md). Route B adopted for
+  implementation = an L18 local capstone gate, NOT server-side merge enforcement
+  (GitHub Actions permanently disabled; no required-check layer).
+- A2.2 next: wire `make verify-reality-local` into scripts/l18/l18_capstone.sh after
+  ORACLE. Fixed-port single-instance preflight REQUIRED (18443/18444/18445/11180/11181
+  free before fixture); NO exit-77 skip by default (missing dep → reviewer-readable FAIL).
+- tier-2 (public fresh-cohort) remains pre-release only; tier-3 ClientHello remains OPEN.
 - agents-only/a0_reality_spike/ stays pre-existing untracked; do not commit/delete.
 
 ## Still-Valid Constraints
