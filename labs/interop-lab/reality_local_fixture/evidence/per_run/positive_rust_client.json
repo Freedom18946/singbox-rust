@@ -1,0 +1,202 @@
+[
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 1,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 3.0,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 2,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 2.4,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 3,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.9,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 4,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.9,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 5,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.7,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 6,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.7,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 7,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 2.3,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 8,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.9,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 9,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.7,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 10,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.9,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 11,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.8,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 12,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.8,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 13,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.9,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 14,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.8,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 15,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.8,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 16,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.7,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 17,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.7,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 18,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.8,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 19,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.7,
+    "curl_rc": 0,
+    "err": ""
+  },
+  {
+    "case": "positive",
+    "kernel": "rust_client",
+    "run_index": 20,
+    "http_code": "200",
+    "token_match": true,
+    "elapsed_ms": 1.7,
+    "curl_rc": 0,
+    "err": ""
+  }
+]

@@ -1,0 +1,1178 @@
+{
+  "fixture_version": "a1-reality-local-v1",
+  "git_revision": "f8783897262468b8675bf6f7c341e302b1b836c5",
+  "go_build_tags": "with_utls",
+  "manifest_checksum": "sha256:8b95a6ab810394e2427b76b0734bf5ce73c36b1cb1f2c5a57a6783c8c797c31a",
+  "run_id": "20260606T140647",
+  "generated_at": "2026-06-06T14:06:56",
+  "scope": "Go-client + Rust-client FUNCTIONAL dataplane parity vs one Go REALITY server; NOT server interop; NOT a 52/56 BHV increment.",
+  "acceptance_model": {
+    "tier": "local_deterministic_gate",
+    "meaning": "This fixture is the merge-blocking tier: functional local REALITY client dataplane parity against a controlled Go REALITY server. ClientHello byte-level uTLS fingerprint parity and real-network camouflage are NOT validated here; those belong to the external healthy-cohort pre-release observation tier (no single public node is a mandatory closure gate)."
+  },
+  "topology": {
+    "reality_server": "127.0.0.1:18443",
+    "tls_dest": "127.0.0.1:18444",
+    "http_target": "127.0.0.1:18445",
+    "go_client_socks": "127.0.0.1:11180",
+    "rust_client_socks": "127.0.0.1:11181",
+    "sni": "www.fixture.local",
+    "flow": "xtls-rprx-vision",
+    "token": "reality-fixture-ok"
+  },
+  "artifacts": {
+    "per_run": "per_run/",
+    "rendered_configs": "rendered/",
+    "process_logs": "logs/"
+  },
+  "config_validation": {
+    "go_server": 0,
+    "go_client": 0,
+    "rust_client": 0
+  },
+  "positive": {
+    "readiness": {
+      "tls_dest": true,
+      "http_target": true,
+      "reality_server": true,
+      "go_client": true,
+      "rust_client": true
+    },
+    "go_client": {
+      "runs": 20,
+      "token_match_count": 20,
+      "all_ok": true,
+      "per_run": [
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 1,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 3.8,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 2,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.5,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 3,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.4,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 4,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.4,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 5,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.4,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 6,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.3,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 7,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.1,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 8,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.1,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 9,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.1,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 10,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.4,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 11,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.0,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 12,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.0,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 13,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.9,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 14,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.0,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 15,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.0,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 16,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.3,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 17,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.0,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 18,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.0,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 19,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.0,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "go_client",
+          "run_index": 20,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.9,
+          "curl_rc": 0,
+          "err": ""
+        }
+      ]
+    },
+    "rust_client": {
+      "runs": 20,
+      "token_match_count": 20,
+      "all_ok": true,
+      "per_run": [
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 1,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 3.0,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 2,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.4,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 3,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.9,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 4,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.9,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 5,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.7,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 6,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.7,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 7,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 2.3,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 8,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.9,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 9,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.7,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 10,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.9,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 11,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.8,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 12,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.8,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 13,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.9,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 14,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.8,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 15,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.8,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 16,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.7,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 17,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.7,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 18,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.8,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 19,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.7,
+          "curl_rc": 0,
+          "err": ""
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_client",
+          "run_index": 20,
+          "http_code": "200",
+          "token_match": true,
+          "elapsed_ms": 1.7,
+          "curl_rc": 0,
+          "err": ""
+        }
+      ]
+    },
+    "rust_phase_probe": {
+      "runs": 20,
+      "all_phases_ok_count": 20,
+      "all_ok": true,
+      "per_run": [
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 1,
+          "elapsed_ms": 648.5,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 2,
+          "elapsed_ms": 10.5,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 3,
+          "elapsed_ms": 11.0,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 4,
+          "elapsed_ms": 10.8,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 5,
+          "elapsed_ms": 11.1,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 6,
+          "elapsed_ms": 11.2,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 7,
+          "elapsed_ms": 10.8,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 8,
+          "elapsed_ms": 10.1,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 9,
+          "elapsed_ms": 10.3,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 10,
+          "elapsed_ms": 9.9,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 11,
+          "elapsed_ms": 9.8,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 12,
+          "elapsed_ms": 9.4,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 13,
+          "elapsed_ms": 9.4,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 14,
+          "elapsed_ms": 9.1,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 15,
+          "elapsed_ms": 8.9,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 16,
+          "elapsed_ms": 9.1,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 17,
+          "elapsed_ms": 9.2,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 18,
+          "elapsed_ms": 9.4,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 19,
+          "elapsed_ms": 9.1,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 20,
+          "elapsed_ms": 9.2,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        }
+      ]
+    }
+  },
+  "negative": {
+    "bad_public_key": {
+      "expectation": "direct_reality fails; no phase falsely reports success",
+      "pass": true,
+      "observed": {
+        "elapsed_ms": 10.3,
+        "timed_out": false,
+        "phase_results": {
+          "direct_reality": {
+            "ok": false,
+            "class": "other",
+            "error": "Handshake failed: TLS handshake failed: invalid peer certificate: UnknownIssuer"
+          },
+          "transport_reality": {
+            "ok": false,
+            "class": "other",
+            "error": "Handshake failed: TLS handshake failed: invalid peer certificate: UnknownIssuer"
+          },
+          "vless_dial": {
+            "ok": false,
+            "class": "other",
+            "error": "Other error: REALITY handshake failed: Handshake failed: TLS handshake failed: invalid peer certificate: UnknownIssuer"
+          },
+          "vless_probe_io": {
+            "ok": false,
+            "class": "other",
+            "error": "Other error: REALITY handshake failed: Handshake failed: TLS handshake failed: invalid peer certificate: UnknownIssuer"
+          }
+        }
+      }
+    },
+    "bad_uuid": {
+      "expectation": "REALITY phase ok; vless_probe_io fails",
+      "pass": true,
+      "observed": {
+        "elapsed_ms": 11.5,
+        "timed_out": false,
+        "phase_results": {
+          "direct_reality": {
+            "ok": true,
+            "class": null,
+            "error": null
+          },
+          "transport_reality": {
+            "ok": true,
+            "class": null,
+            "error": null
+          },
+          "vless_dial": {
+            "ok": true,
+            "class": null,
+            "error": null
+          },
+          "vless_probe_io": {
+            "ok": false,
+            "class": "post_dial_eof",
+            "error": "I/O error: early eof"
+          }
+        }
+      }
+    },
+    "dead_dest": {
+      "expectation": "fails fast (direct_reality not ok), exits within timeout, no wedge",
+      "pass": true,
+      "observed": {
+        "elapsed_ms": 8.2,
+        "timed_out": false,
+        "phase_results": {
+          "direct_reality": {
+            "ok": false,
+            "class": "reality_dial_eof",
+            "error": "Handshake failed: TLS handshake failed: tls handshake eof"
+          },
+          "transport_reality": {
+            "ok": false,
+            "class": "reality_dial_eof",
+            "error": "Handshake failed: TLS handshake failed: tls handshake eof"
+          },
+          "vless_dial": {
+            "ok": false,
+            "class": "reality_dial_eof",
+            "error": "Other error: REALITY handshake failed: Handshake failed: TLS handshake failed: tls handshake eof"
+          },
+          "vless_probe_io": {
+            "ok": false,
+            "class": "reality_dial_eof",
+            "error": "Other error: REALITY handshake failed: Handshake failed: TLS handshake failed: tls handshake eof"
+          }
+        }
+      }
+    },
+    "occupied_port": {
+      "expectation": "fixture startup fails with a diagnosable bind error",
+      "pass": true,
+      "observed": {
+        "server_exited": true,
+        "exit_code": 1,
+        "diagnostic": "FATAL[0000] start service: start inbound/vless[vless-reality-in]: listen tcp 127.0.0.1:18443: bind: address already in use"
+      }
+    }
+  },
+  "teardown": {
+    "positive": {
+      "rust_client": "terminated",
+      "go_client": "terminated",
+      "reality_server": "terminated",
+      "http_target": "terminated",
+      "tls_dest": "terminated"
+    },
+    "bad_public_key": {
+      "reality_server": "terminated",
+      "http_target": "terminated",
+      "tls_dest": "terminated"
+    },
+    "bad_uuid": {
+      "reality_server": "terminated",
+      "http_target": "terminated",
+      "tls_dest": "terminated"
+    },
+    "dead_dest": {
+      "reality_server": "terminated",
+      "http_target": "terminated",
+      "tls_dest": "terminated"
+    },
+    "occupied_port": {
+      "reality_server": "exited:1",
+      "occupier": "terminated"
+    }
+  },
+  "verdict": {
+    "positive_all_ok": true,
+    "negative_all_pass": true,
+    "config_validation_ok": true,
+    "local_deterministic_gate": "PASS"
+  }
+}

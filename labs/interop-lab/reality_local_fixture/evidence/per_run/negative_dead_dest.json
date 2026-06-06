@@ -1,0 +1,26 @@
+{
+  "elapsed_ms": 8.2,
+  "timed_out": false,
+  "phase_results": {
+    "direct_reality": {
+      "ok": false,
+      "class": "reality_dial_eof",
+      "error": "Handshake failed: TLS handshake failed: tls handshake eof"
+    },
+    "transport_reality": {
+      "ok": false,
+      "class": "reality_dial_eof",
+      "error": "Handshake failed: TLS handshake failed: tls handshake eof"
+    },
+    "vless_dial": {
+      "ok": false,
+      "class": "reality_dial_eof",
+      "error": "Other error: REALITY handshake failed: Handshake failed: TLS handshake failed: tls handshake eof"
+    },
+    "vless_probe_io": {
+      "ok": false,
+      "class": "reality_dial_eof",
+      "error": "Other error: REALITY handshake failed: Handshake failed: TLS handshake failed: tls handshake eof"
+    }
+  }
+}

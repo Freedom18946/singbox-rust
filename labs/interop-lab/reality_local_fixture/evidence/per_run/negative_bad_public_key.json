@@ -1,0 +1,26 @@
+{
+  "elapsed_ms": 10.3,
+  "timed_out": false,
+  "phase_results": {
+    "direct_reality": {
+      "ok": false,
+      "class": "other",
+      "error": "Handshake failed: TLS handshake failed: invalid peer certificate: UnknownIssuer"
+    },
+    "transport_reality": {
+      "ok": false,
+      "class": "other",
+      "error": "Handshake failed: TLS handshake failed: invalid peer certificate: UnknownIssuer"
+    },
+    "vless_dial": {
+      "ok": false,
+      "class": "other",
+      "error": "Other error: REALITY handshake failed: Handshake failed: TLS handshake failed: invalid peer certificate: UnknownIssuer"
+    },
+    "vless_probe_io": {
+      "ok": false,
+      "class": "other",
+      "error": "Other error: REALITY handshake failed: Handshake failed: TLS handshake failed: invalid peer certificate: UnknownIssuer"
+    }
+  }
+}

@@ -1,0 +1,26 @@
+{
+  "elapsed_ms": 11.5,
+  "timed_out": false,
+  "phase_results": {
+    "direct_reality": {
+      "ok": true,
+      "class": null,
+      "error": null
+    },
+    "transport_reality": {
+      "ok": true,
+      "class": null,
+      "error": null
+    },
+    "vless_dial": {
+      "ok": true,
+      "class": null,
+      "error": null
+    },
+    "vless_probe_io": {
+      "ok": false,
+      "class": "post_dial_eof",
+      "error": "I/O error: early eof"
+    }
+  }
+}
