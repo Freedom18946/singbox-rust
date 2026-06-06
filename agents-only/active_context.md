@@ -67,8 +67,8 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
   fresh09 recheck: R85 timeout 5/5, recovery=0, fresh09 NOT recovered.
 - R87 fresh10 round-3 closure DONE; R86 rotation-bank DONE; R85
   recovery-watch round 2 DONE; R84-R73 prior fresh rounds DONE.
-  Rotated active set fresh01/fresh15/fresh10 is per-rep closed, but
-  this never substitutes for fresh09's original-cohort identity.
+  Rotated active set fresh01/fresh15/fresh10 is per-rep closed
+  (observation-tier under the two-tier model; not a merge gate).
 
 ## Still-Valid Constraints
 
@@ -86,8 +86,10 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
 - A broken closure chain cannot be patched; restart needs a fresh
   consecutive sequence.
 - Rotated-replacement per-rep closure is not original-cohort closure.
-  Original cohort C identity (fresh01+fresh09+fresh15) requires
-  fresh09 itself to clear, not a replacement rep.
+- Public-node (cohort C / fresh09) closure is external-healthy-cohort
+  observation, not a merge gate; no single public node is mandatory
+  (golden_spec DEV-REALITY-01 two-tier; merge-block = local fixture
+  `labs/interop-lab/reality_local_fixture/`).
 - A single-node recheck of a broken rep is not a closure attempt;
   even a hypothetical clean recheck only opens a new chain at round 1.
 

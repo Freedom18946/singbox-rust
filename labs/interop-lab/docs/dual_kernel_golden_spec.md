@@ -220,7 +220,27 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Decision ID | Tag | Scope | Disposition | Evidence |
 |-------------|-----|-------|-------------|----------|
-| DEV-REALITY-01 | ARCH-LIMIT | REALITY (`vless+reality`) live dataplane | Rust `rustls` lacks a `uTLS`-equivalent browser TLS mimic layer. REALITY's server-side classifier rejects the Rust ClientHello before session auth can proceed, so control-plane wiring is healthy but live handshakes still fail. FIX-03 aligned cryptography/session_id, FIX-04 aligned top-level ClientHello fingerprinting, FIX-05 aligned typed substructure GREASE/versions/groups/key_share/sigalgs; live result remained `0/21` success. Go treats `uTLS` as a hard dependency in [`reality_client.go`](../../../go_fork_source/sing-box-1.12.14/common/tls/reality_client.go). This divergence remains accepted until Rust gains a `uTLS`-equivalent library or REALITY stops requiring browser-grade ClientHello fingerprinting. | `agents-only/archive/MT-REAL-01/mt_real_01_fix_03.md`, `agents-only/archive/MT-REAL-01/mt_real_01_fix_04.md`, `agents-only/archive/MT-REAL-01/mt_real_01_fix_05.md`, `agents-only/archive/MT-REAL-01/mt_real_01_env_01.md` |
+| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): functional **client** dataplane = validated by local gate; ClientHello uTLS fingerprint + real-network camouflage = open | **Functional local REALITY client dataplane parity is reproducibly validated against a controlled Go REALITY server fixture** (`labs/interop-lab/reality_local_fixture/`, A1, 2026-06-06). Topology is Go=`with_utls` REALITY server, {Go,Rust}=clients dialing it through a local concurrent Go `tls.Listener` dest to a local HTTP token target. The Go client and the Rust client each pass a consecutive end-to-end token matrix; the Rust phase probe passes all four phases (`direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io`); and four negative controls distinguish REALITY-auth rejection (`bad_public_key` → `direct_reality` fails) from VLESS-data-stage rejection (`bad_uuid` → REALITY phases pass, `vless_probe_io` fails), plus fail-fast `dead_dest` and diagnosable `occupied_port`. The per-run matrix lives in the fixture's `round-summary.json` — **do not copy counts here**. **ClientHello byte-level uTLS fingerprint parity and real-network camouflage validation remain open**: Rust `rustls` still lacks a `uTLS`-equivalent browser-TLS mimic. FIX-03 aligned cryptography/session_id, FIX-04 top-level ClientHello fingerprinting, FIX-05 typed substructure GREASE/versions/groups/key_share/sigalgs; the live public-cohort handshake result historically remained `0/21`, and Go treats `uTLS` as a hard dependency in [`reality_client.go`](../../../go_fork_source/sing-box-1.12.14/common/tls/reality_client.go). This entry is **client-only / Rust-only functional evidence — NOT a `52/56` BHV behavior-parity increment and NOT a claim of REALITY *server* bidirectional interop**. Acceptance is governed by the two-tier model below. | A1 fixture `labs/interop-lab/reality_local_fixture/` (+ its `round-summary.json` per run); fingerprint history `agents-only/archive/MT-REAL-01/mt_real_01_fix_03.md`, `..._fix_04.md`, `..._fix_05.md`, `..._env_01.md` |
+
+#### REALITY Two-Tier Acceptance Model
+
+REALITY client parity is accepted in two distinct tiers. Do not conflate them, and
+do not let one substitute for the other.
+
+1. **Local deterministic gate — merge-blocking.** The A1 controlled-local fixture
+   (`labs/interop-lab/reality_local_fixture/`). Offline, deterministic, zero public
+   node: the Go and Rust clients prove functional REALITY handshake + VLESS
+   dataplane parity against one Go `with_utls` REALITY server, backed by four
+   negative controls. This tier is the authoritative "does the Rust REALITY client
+   functionally work end-to-end" signal and is the one that blocks merges.
+2. **External healthy-cohort observation — pre-release only.** Live public REALITY
+   nodes (the MT-REAL-02 fresh-cohort rounds). Measures ClientHello uTLS fingerprint
+   acceptance and real-network camouflage under real middleboxes. These are
+   **pre-release observation signals, not merge gates**: public nodes are volatile,
+   so **no single public node (e.g. the historical `fresh09`) is a mandatory closure
+   identity** — node outage is not a sampler regression, and a per-rep public-node
+   result never gates a merge. uTLS fingerprint parity (the open part of
+   DEV-REALITY-01) lives entirely in this tier.
 
 ### Critical (User-Visible)
 
