@@ -1,0 +1,68 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://singbox-rust/agents-only/a42_historical_projection_spike/historical_projection.schema.json",
+  "title": "REALITY Historical Round -> External-Observation Projection (read-only spike)",
+  "description": "A4.2A spike wrapper. Projects ONE MT-REAL-02 historical round summary onto a provenance-annotated, NON-canonical envelope. This is NOT an external observation record and is NEVER a merge gate. A projection only ever yields a canonical_candidate (still un-promoted) when every canonical required field is DIRECT or strictly DERIVED_DETERMINISTIC. Heuristic / synthesized / missing fields force PARTIAL or UNSUPPORTED with canonical_candidate=null. Canonical structural rules live in labs/interop-lab/reality_external_observation/ (NOT modified by this spike).",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "projection_schema_version", "record_origin", "source", "epoch",
+    "projection_status", "field_provenance", "warnings", "promotion_blockers",
+    "canonical_candidate"
+  ],
+  "properties": {
+    "projection_schema_version": { "const": 1 },
+    "record_origin": {
+      "const": "historical-projection",
+      "description": "Fixed. A projection is never a 'live' record; the live default is intentionally disallowed so an adapted historical round can never be mistaken for a native observation."
+    },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["relative_path", "sha256", "round_id", "source_date", "source_kind"],
+      "properties": {
+        "relative_path": { "type": "string", "minLength": 1 },
+        "sha256": { "type": "string", "pattern": "^[0-9a-f]{64}$" },
+        "round_id": { "type": "string", "minLength": 1 },
+        "source_date": { "type": "string", "minLength": 1 },
+        "source_kind": { "type": ["string", "null"] }
+      }
+    },
+    "epoch": {
+      "enum": [
+        "R41_R42_NO_RUNS",
+        "R44_R73_RUN_LABELS",
+        "R77_R81_PRE_GATE",
+        "R82_R84_SUBSET_GATE_PHASE_PROBE",
+        "R85_R88_RECOVERY",
+        "R89_R91_MATRIX_STATUS_OBJECT"
+      ],
+      "description": "Coarse structural era of the source round (see report.md / a41 spike for the verified boundaries R44/R77/R82/R85). Phase-probe DIRECT data actually spans R80,R82,R83,R84 and is detected structurally, not by epoch alone."
+    },
+    "projection_status": {
+      "enum": ["PROMOTABLE_CANDIDATE", "PARTIAL", "UNSUPPORTED"],
+      "description": "PROMOTABLE_CANDIDATE iff EVERY canonical required field is DIRECT or DERIVED_DETERMINISTIC. PARTIAL iff at least one canonical required field is DERIVED_HEURISTIC / SYNTHETIC_PLACEHOLDER / MISSING. UNSUPPORTED for rounds with no per-node observational data (pre-R44 / no-live tooling rounds)."
+    },
+    "field_provenance": {
+      "type": "object",
+      "description": "Maps each canonical external_observation field path to how this projection obtained it.",
+      "additionalProperties": {
+        "enum": ["DIRECT", "DERIVED_DETERMINISTIC", "DERIVED_HEURISTIC", "SYNTHETIC_PLACEHOLDER", "MISSING"]
+      }
+    },
+    "warnings": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "Explicit, human-readable lossiness/synthesis disclosures (synthesized timestamp, gitrev-proxy fingerprint, lossy phase collapse, bi-modal collapse, missing matrix exit status, missing admission gate, missing recovery-chain depth, ...)."
+    },
+    "promotion_blockers": {
+      "type": "array",
+      "items": { "type": "string" },
+      "description": "The minimal set of canonical field paths whose provenance is DERIVED_HEURISTIC / SYNTHETIC_PLACEHOLDER / MISSING and therefore block promotion. Empty iff projection_status == PROMOTABLE_CANDIDATE."
+    },
+    "canonical_candidate": {
+      "type": ["object", "null"],
+      "description": "A candidate external_observation record, populated ONLY when projection_status == PROMOTABLE_CANDIDATE. Even when non-null it is a CANDIDATE only: it must NOT be written into the live observation corpus, must NOT be described as a formal external observation, and must NOT be counted as a dual-kernel parity increment."
+    }
+  }
+}

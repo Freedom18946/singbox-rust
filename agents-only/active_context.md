@@ -15,7 +15,8 @@
 REALITY local deterministic gate committed (A1/A2): fixture +
 `make verify-reality-local` (opt-in merge-precheck). Public fresh-cohort
 is now the external healthy-cohort observation tier (pre-release,
-non-gating; golden_spec S4 3-tier model). Build PASS; boundary exit 1.
+non-gating; golden_spec S4 3-tier model). A4.1 mapping spike + A4.2A read-only
+projection prototype landed (see A4 track).
 
 ## Strategic State
 
@@ -26,31 +27,21 @@ validated, ClientHello fingerprint parity open (golden_spec S4).
 
 ## MT-REAL-02 Stage-2 Closure Summary
 
-Five latest non-all_ok candidates falsified as noise. Full record in
-`archive/mt_real_02/round_45_60_evidence_framework.md`; closure +
-stage-3 paths in `archive/mt_real_02/closure_report.md`.
+Five latest non-all_ok candidates falsified as noise; full record + stage-3 paths
+in archive/mt_real_02/ (round_45_60_evidence_framework.md, closure_report.md).
 
 ## Evidence Framework Capability
 
-Per outbound: latest_health, latest_run_health_counts,
-latest_divergence_phase_counts, latest_divergence_phase_dominance,
-latest_divergence_run_ratio, is_bi_modal, dominant_phase_history,
-is_phase_shifting. Top level adds latest_*_outbounds (phase_dominant,
-phase_no_dominance, bi_modal, phase_shifting). Planner filters:
---latest-health, --latest-run-health, --only-latest-run-health,
---latest-phase-dominance, --latest-bi-modal, --latest-phase-shifting.
+Per-outbound rollup capability fields + planner --latest-* filters; full list in
+live_rollup.json + mt_real_02_baseline.md.
 
 ## Current Build And Gate
 
-- check/build/clippy (all-features,all-targets): **all PASS, 0 clippy
-  warn** (lint relaxed 2026-06-03: warnings/dead_code deny→warn, safety
-  lints kept deny, sb-tls test mods allow expect_used; 28 warns cleared).
-- python3 -B -m unittest test_reality_probe_tools
-  test_reality_clienthello_family test_dual_kernel_verification:
-  **PASS** (R91 committed-evidence contract included).
-- cargo test -p sb-adapters --features adapter-trojan --test
-  trojan_integration: **17 PASS, 2 ignored**.
-- live_rollup.json/md after R91: **33 rounds, 264 runs, 117 all_ok**.
+- check/build/clippy (all-features,all-targets): **all PASS, 0 clippy warn**
+  (lint relaxed 2026-06-03: warnings/dead_code deny→warn, safety kept deny).
+- python3 unittest (reality_probe_tools / clienthello_family /
+  dual_kernel_verification): **PASS**. trojan_integration: **17 PASS, 2 ign**.
+- live_rollup after R91: **33 rounds, 264 runs, 117 all_ok**.
 
 ## REALITY Acceptance (3-tier; golden_spec S4)
 
@@ -66,12 +57,26 @@ Retired non-goal: original cohort-C closure (was bound to fresh09).
 History (mt_real_02_baseline.md): fresh13 per-rep closure R73+R90+R91;
 fresh09 steady-state broken R85/R88.
 
+## A4 External-Observation Track (2026-06-06)
+
+- HEAD includes the committed A4 formal external healthy-cohort schema + stdlib
+  validator + fixtures (labs/interop-lab/reality_external_observation/).
+- A4.1 historical mapping spike DONE (a41_historical_mapping_spike.md);
+  A4.2A historical projection prototype DONE (a42_historical_projection_spike/).
+- canonical live schema v1 stays STRICT; historical records live permanently at
+  the projection layer and do NOT auto-promote to canonical observations.
+- Do NOT coerce unknown/mixed historical evidence into canonical phase booleans.
+- Do NOT invent matrix exit codes. pre-R44 records are outside promotable scope.
+- Real epochs R44/R77/R82/R85; DIRECT phase-probe in R80/R82/R83/R84.
+- R82 and R91 projections are both PARTIAL, canonical_candidate=null.
+- Next card: A4.3 projection-layer disposition (no public network).
+- agents-only/a0_reality_spike/ stays pre-existing untracked; do not commit/delete.
+
 ## Still-Valid Constraints
 
 - Do not return to a static ClientHello template.
 - Do not hard-code precedence or position-to-mode behavior.
-- Round 12 seed-selected signature modes are the stable sampler.
-- Round 13 position hard coupling is falsified.
+- Round 12 seed-selected modes = stable sampler; Round 13 position coupling falsified.
 - Real node usability is not guaranteed; node outage is not sampler
   regression.
 - The user pursues the highest goal, not maintenance-only posture.
@@ -82,11 +87,8 @@ fresh09 steady-state broken R85/R88.
 - A broken closure chain cannot be patched; restart needs a fresh
   consecutive sequence.
 - Rotated-replacement per-rep closure is not original-cohort closure.
-- Public-node (cohort C / fresh09) closure is external-healthy-cohort
-  observation, not a merge gate; no single public node is mandatory and
-  original cohort-C closure is a retired non-goal. Merge-precheck
-  (opt-in, not yet auto-enforced) = local gate `make verify-reality-local`
-  (golden_spec S4 3-tier model).
+- Public-node (cohort C / fresh09) closure = external-healthy-cohort observation,
+  not a merge gate; no single node mandatory; merge-precheck = local gate only.
 - A single-node recheck of a broken rep is not a closure attempt;
   even a hypothetical clean recheck only opens a new chain at round 1.
 
