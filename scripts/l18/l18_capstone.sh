@@ -260,6 +260,7 @@ DUAL_RUST_LOG="${DUAL_RUNTIME_DIR}/rust.log"
 
 PREFLIGHT_STATUS="UNTESTED"
 ORACLE_STATUS="UNTESTED"
+REALITY_LOCAL_STATUS="UNTESTED"
 BOUNDARIES_STATUS="UNTESTED"
 PARITY_STATUS="UNTESTED"
 WORKSPACE_TEST_STATUS="UNTESTED"
@@ -283,6 +284,7 @@ set_gate_status() {
   case "$key" in
     PREFLIGHT) PREFLIGHT_STATUS="$value" ;;
     ORACLE) ORACLE_STATUS="$value" ;;
+    REALITY_LOCAL) REALITY_LOCAL_STATUS="$value" ;;
     BOUNDARIES) BOUNDARIES_STATUS="$value" ;;
     PARITY) PARITY_STATUS="$value" ;;
     WORKSPACE_TEST) WORKSPACE_TEST_STATUS="$value" ;;
@@ -334,6 +336,7 @@ finalize_status() {
   "gates": {
     "preflight": "${PREFLIGHT_STATUS}",
     "oracle": "${ORACLE_STATUS}",
+    "reality_local": "${REALITY_LOCAL_STATUS}",
     "boundaries": "${BOUNDARIES_STATUS}",
     "parity": "${PARITY_STATUS}",
     "workspace_test": "${WORKSPACE_TEST_STATUS}",
@@ -409,6 +412,61 @@ check_port_free() {
     return 1
   fi
   return 0
+}
+
+# REALITY local deterministic gate (A1 fixture) — tier-1 of the REALITY three-tier
+# acceptance model. Runs `make verify-reality-local` (20x Go + Rust + phase-probe
+# positive matrix + 4 negative controls), the normative LOCAL merge-precheck for
+# REALITY client dataplane parity.
+#
+# This is an L18 LOCAL capstone gate, NOT server-side merge enforcement: GitHub
+# Actions is permanently disabled and there is no required-check layer.
+#
+# Single-instance / serialized constraint: the fixture binds FIXED loopback ports
+# (18443/18444/18445/11180/11181). Concurrent standalone `make verify-reality-local`
+# runs are unsupported and can fail via cross-run port contamination (readiness
+# probes by port, not by pid). This is an inherited fixed-port constraint, NOT silent
+# corruption; parallel-runner support would need dynamic ports or an explicit lock and
+# is out of scope. The preflight below refuses to start the fixture if any fixed port
+# is already in use.
+#
+# No exit-77 skip: when this gate is selected, a missing required dependency fails with
+# a reviewer-readable error (PREFLIGHT/ORACLE already guarantee the toolchain in-capstone,
+# so the dependency check is defense-in-depth).
+run_reality_local_gate() {
+  local missing=()
+  local cmd
+  for cmd in go cargo python3 curl make; do
+    command -v "$cmd" >/dev/null 2>&1 || missing+=("$cmd")
+  done
+  if [[ "${#missing[@]}" -ne 0 ]]; then
+    echo "[REALITY_LOCAL] missing required command(s): ${missing[*]}" >&2
+    echo "[REALITY_LOCAL] tier-1 REALITY gate requires go (with_utls build), cargo, python3, curl, make — failing (no skip)." >&2
+    return 1
+  fi
+  # lsof-INDEPENDENT busy-port probe: a TCP connect to 127.0.0.1:<port> succeeds iff
+  # something is already listening. python3 is a required dep (checked above) so this
+  # works even when lsof is absent. NOTE: the file-global check_port_free() relies on
+  # lsof (and is backed by the PREFLIGHT gate's hard lsof requirement); it is left
+  # untouched and intentionally NOT reused here so this preflight stays correct without
+  # lsof. lsof, when present, only adds a best-effort diagnostic below.
+  local busy=()
+  local port
+  for port in 18443 18444 18445 11180 11181; do
+    if python3 -c "import socket,sys; s=socket.socket(); s.settimeout(0.5); sys.exit(0 if s.connect_ex(('127.0.0.1',$port))==0 else 1)" 2>/dev/null; then
+      busy+=("$port")
+    fi
+  done
+  if [[ "${#busy[@]}" -ne 0 ]]; then
+    echo "[REALITY_LOCAL] fixed loopback port(s) already in use: ${busy[*]}" >&2
+    echo "[REALITY_LOCAL] refusing to start the fixture (single-instance; cross-run port contamination risk)." >&2
+    if command -v lsof >/dev/null 2>&1; then
+      for port in "${busy[@]}"; do lsof -nP -iTCP:"${port}" -sTCP:LISTEN >&2 || true; done
+    fi
+    return 1
+  fi
+  echo "[REALITY_LOCAL] deps present; fixed ports {18443,18444,18445,11180,11181} free; running make verify-reality-local"
+  make -C "${ROOT_DIR}" verify-reality-local
 }
 
 spawn_in_own_session() {
@@ -779,6 +837,7 @@ PY
 
 run_gate_with_fail_fast "PREFLIGHT" "${ROOT_DIR}/scripts/l18/preflight_macos.sh" --require-docker "$REQUIRE_DOCKER"
 run_gate_with_fail_fast "ORACLE" "${ROOT_DIR}/scripts/l18/build_go_oracle.sh"
+run_gate_with_fail_fast "REALITY_LOCAL" run_reality_local_gate
 run_gate_with_fail_fast "BOUNDARIES" bash "${ROOT_DIR}/agents-only/06-scripts/check-boundaries.sh"
 run_gate_with_fail_fast "PARITY" cargo check -p app --features parity
 run_gate_with_fail_fast "WORKSPACE_TEST" env RUST_TEST_THREADS="${WORKSPACE_TEST_THREADS}" cargo test --workspace
