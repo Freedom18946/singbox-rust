@@ -58,6 +58,17 @@ configs and do not duplicate any parameter** — change `manifest.json` and re-r
 python3 labs/interop-lab/reality_local_fixture/run_fixture.py --runs 20
 ```
 
+Or via the repo task runner (stable, discoverable entrypoint — optional merge-precheck):
+
+```bash
+make verify-reality-local
+```
+
+`make verify-reality-local` runs the exact command above with the default `--out`
+(a git-ignored runtime dir under `labs/interop-lab/artifacts/`), so it never
+overwrites the committed `evidence/` snapshot, and it exits non-zero on any
+positive / negative / config-validation / readiness / teardown failure.
+
 That single command: builds the Go kernel (`-tags with_utls`), the Go helper, the
 Rust `app`, and the Rust phase probe → renders configs from the manifest →
 validates them with the real kernels → brings up the local topology (readiness +
