@@ -6576,7 +6576,6 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "humantime",
- "reqwest 0.12.28",
  "sb-types",
  "serde",
  "serde_json",

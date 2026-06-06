@@ -1,6 +1,5 @@
 //! DNS facilities
 //! - 默认仅提供轻量 stub（不依赖 reqwest）
-//! - 当启用 `dns_http` 特性时，编译 HTTP DNS 客户端（使用 reqwest blocking + rustls）
 
 use std::collections::HashMap;
 #[cfg(any(test, feature = "dns_cache", feature = "dev-cli"))]
@@ -30,8 +29,6 @@ pub mod enhanced_client;
 pub mod fakeip;
 pub mod global;
 pub mod hosts;
-#[cfg(feature = "dns_http")]
-pub mod http_client;
 pub mod message;
 pub mod metrics;
 pub mod resolve;

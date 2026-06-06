@@ -10,7 +10,7 @@ cleanup() {
 }
 trap cleanup EXIT
 
-echo "[1/6] fmt/clippy/build/tests (default=scaffold, dns_http off)..."
+echo "[1/6] fmt/clippy/build/tests (default=scaffold)..."
 cargo fmt --all
 cargo clippy --all-targets --all-features -- -D warnings
 cargo build --bins --tests
