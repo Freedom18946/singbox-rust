@@ -1,5 +1,10 @@
 # MT-REAL-02: Go uTLS vs Rust REALITY ClientHello Baseline Harness
 
+> **Superseded-governance pointer (2026-06-06).** Current closure governance is
+> superseded by `labs/interop-lab/docs/dual_kernel_golden_spec.md` S4 and
+> `agents-only/active_context.md`. This file is retained as a historical audit
+> record; fresh09 identity is not an active closure obligation.
+
 日期：2026-04-16
 
 ## 目标

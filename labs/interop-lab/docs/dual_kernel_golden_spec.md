@@ -220,27 +220,115 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Decision ID | Tag | Scope | Disposition | Evidence |
 |-------------|-----|-------|-------------|----------|
-| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): functional **client** dataplane = validated by local gate; ClientHello uTLS fingerprint + real-network camouflage = open | **Functional local REALITY client dataplane parity is reproducibly validated against a controlled Go REALITY server fixture** (`labs/interop-lab/reality_local_fixture/`, A1, 2026-06-06). Topology is Go=`with_utls` REALITY server, {Go,Rust}=clients dialing it through a local concurrent Go `tls.Listener` dest to a local HTTP token target. The Go client and the Rust client each pass a consecutive end-to-end token matrix; the Rust phase probe passes all four phases (`direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io`); and four negative controls distinguish REALITY-auth rejection (`bad_public_key` → `direct_reality` fails) from VLESS-data-stage rejection (`bad_uuid` → REALITY phases pass, `vless_probe_io` fails), plus fail-fast `dead_dest` and diagnosable `occupied_port`. The per-run matrix lives in the fixture's `round-summary.json` — **do not copy counts here**. **ClientHello byte-level uTLS fingerprint parity and real-network camouflage validation remain open**: Rust `rustls` still lacks a `uTLS`-equivalent browser-TLS mimic. FIX-03 aligned cryptography/session_id, FIX-04 top-level ClientHello fingerprinting, FIX-05 typed substructure GREASE/versions/groups/key_share/sigalgs; the live public-cohort handshake result historically remained `0/21`, and Go treats `uTLS` as a hard dependency in [`reality_client.go`](../../../go_fork_source/sing-box-1.12.14/common/tls/reality_client.go). This entry is **client-only / Rust-only functional evidence — NOT a `52/56` BHV behavior-parity increment and NOT a claim of REALITY *server* bidirectional interop**. Acceptance is governed by the two-tier model below. | A1 fixture `labs/interop-lab/reality_local_fixture/` (+ its `round-summary.json` per run); fingerprint history `agents-only/archive/MT-REAL-01/mt_real_01_fix_03.md`, `..._fix_04.md`, `..._fix_05.md`, `..._env_01.md` |
+| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): functional **client** dataplane = validated by local gate; ClientHello uTLS fingerprint + real-network camouflage = open | **Functional local REALITY client dataplane parity is reproducibly validated against a controlled Go REALITY server fixture** (`labs/interop-lab/reality_local_fixture/`, A1, 2026-06-06). Topology is Go=`with_utls` REALITY server, {Go,Rust}=clients dialing it through a local concurrent Go `tls.Listener` dest to a local HTTP token target. The Go client and the Rust client each pass a consecutive end-to-end token matrix; the Rust phase probe passes all four phases (`direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io`); and four negative controls distinguish REALITY-auth rejection (`bad_public_key` → `direct_reality` fails) from VLESS-data-stage rejection (`bad_uuid` → REALITY phases pass, `vless_probe_io` fails), plus fail-fast `dead_dest` and diagnosable `occupied_port`. The per-run matrix lives in the fixture's `round-summary.json` — **do not copy counts here**. **ClientHello byte-level uTLS fingerprint parity and real-network camouflage validation remain open**: Rust `rustls` still lacks a `uTLS`-equivalent browser-TLS mimic. FIX-03 aligned cryptography/session_id, FIX-04 top-level ClientHello fingerprinting, FIX-05 typed substructure GREASE/versions/groups/key_share/sigalgs; the live public-cohort handshake result historically remained `0/21`, and Go treats `uTLS` as a hard dependency in [`reality_client.go`](../../../go_fork_source/sing-box-1.12.14/common/tls/reality_client.go). This entry is **client-only / Rust-only functional evidence — NOT a `52/56` BHV behavior-parity increment and NOT a claim of REALITY *server* bidirectional interop**. Acceptance is governed by the three-tier model below. | A1 fixture `labs/interop-lab/reality_local_fixture/` (+ its `round-summary.json` per run); fingerprint history `agents-only/archive/MT-REAL-01/mt_real_01_fix_03.md`, `..._fix_04.md`, `..._fix_05.md`, `..._env_01.md` |
 
-#### REALITY Two-Tier Acceptance Model
+#### REALITY Acceptance: Three-Tier Model
 
-REALITY client parity is accepted in two distinct tiers. Do not conflate them, and
-do not let one substitute for the other.
+REALITY client parity is accepted in three distinct tiers. Do not conflate them, do
+not let one substitute for another, and do not claim closure of one from another.
 
-1. **Local deterministic gate — merge-blocking.** The A1 controlled-local fixture
-   (`labs/interop-lab/reality_local_fixture/`). Offline, deterministic, zero public
-   node: the Go and Rust clients prove functional REALITY handshake + VLESS
-   dataplane parity against one Go `with_utls` REALITY server, backed by four
-   negative controls. This tier is the authoritative "does the Rust REALITY client
-   functionally work end-to-end" signal and is the one that blocks merges.
-2. **External healthy-cohort observation — pre-release only.** Live public REALITY
-   nodes (the MT-REAL-02 fresh-cohort rounds). Measures ClientHello uTLS fingerprint
-   acceptance and real-network camouflage under real middleboxes. These are
-   **pre-release observation signals, not merge gates**: public nodes are volatile,
-   so **no single public node (e.g. the historical `fresh09`) is a mandatory closure
-   identity** — node outage is not a sampler regression, and a per-rep public-node
-   result never gates a merge. uTLS fingerprint parity (the open part of
-   DEV-REALITY-01) lives entirely in this tier.
+1. **Local deterministic gate.**
+   - Entry: `make verify-reality-local` → `run_fixture.py --runs 20`
+     (the controlled local REALITY client functional-parity fixture,
+     `labs/interop-lab/reality_local_fixture/`).
+   - Validates: the REALITY client functional path + VLESS dataplane + four negative
+     controls + teardown — offline, deterministic, against one Go `with_utls` server,
+     zero public node.
+   - Status: **normative merge-precheck**. Currently **opt-in** (a Make target); it is
+     NOT yet an automatically enforced merge gate (no CI / L18 capstone wiring).
+   - Does NOT prove: ClientHello byte-level fingerprint parity, real-network
+     camouflage quality, or REALITY *server* interop.
+2. **External healthy-cohort observation — pre-release only.**
+   - Purpose: pre-release real-network observation (the MT-REAL-02 public
+     fresh-cohort rounds).
+   - **Not a merge gate.** Bound to no single public node identity; a dead node such
+     as `fresh09` must never constitute a permanent closure blocker.
+   - Verdicts are tri-state: PASS / DEGRADED / INCONCLUSIVE (defined below).
+   - Node-infrastructure failure (outage / timeout / reset) must NOT be recorded as a
+     Rust functional regression.
+   - Governed by the External Healthy-Cohort Observation Protocol below.
+3. **ClientHello fingerprint parity — residual open item.**
+   - Scope: byte-level / classification-level difference between the Rust ClientHello
+     and the target uTLS fingerprint family.
+   - Independent and OPEN. NOT closed by a passing local gate, and NOT closed by
+     occasional external-cohort success. (Standing constraint: do not return to a
+     static ClientHello template.)
+
+#### External Healthy-Cohort Observation Protocol
+
+Formalizes the **existing** MT-REAL-02 rules (extracted from
+`agents-only/mt_real_02_baseline.md`, `archive/mt_real_02/closure_report.md`,
+`active_context.md`); no new N×M thresholds are invented. This tier is observational
+and never blocks a merge. The named tri-state (PASS/DEGRADED/INCONCLUSIVE) is the
+synthesis label set for this tier; it maps onto the pre-existing run-health labels.
+
+**A. External cohort admission gate.** A node enters a cohort round only if ALL hold:
+   - credentials present; AND
+   - config parses; AND
+   - `reality_vless_ready_reason` fields complete (vless type, name, server, port,
+     uuid, reality `public_key`, plain-TCP); AND
+   - the run plan passes the **R81 subset-schema dry-run gate**
+     (`subset_schema_gate_passed=true`, `violations=[]`; rejects `__`-prefixed
+     GUI-only fields and any field outside the REALITY/VLESS allow-list); AND
+   - `intake_counts` consistent (`fresh_ready` / `covered_existing` / `duplicate` /
+     `not_ready`).
+   This is a config/intake gate only — it introduces **no** pre-screen numeric
+   liveness SLA.
+
+**B. Runtime infra-health classification** (assessed *after* a run, never a
+   pre-screen):
+   - node liveness has **no committed numeric SLA**;
+   - `timeout`, `connection_reset`, REALITY-dest-unavailable, etc. are **post-run**
+     classifications;
+   - a uniform same-class failure where `probe_io class == reality class` is bucketed
+     **infrastructure-dead**;
+   - infrastructure-dead is **excluded from the Rust-client regression verdict** and
+     the node may be **replaced** (see E);
+   - **node outage != Rust regression**.
+
+**C. Observation record unit** (one row per node per round):
+   `cohort_id, node_id, round_id, timestamp, config_fingerprint, direct_reality,
+   transport_reality, vless_dial, vless_probe_io, infra_health, verdict,
+   exclusion_reason?`. The four phase axes and run-health labels already exist in the
+   probe / rollup; `cohort_id` and `exclusion_reason` are made explicit here.
+
+**D. Verdict (tri-state)**, mapped from existing run-health labels:
+   - **PASS** — healthy cohort meeting the existing formal threshold: `run_all_ok`
+     with `run_same_failure==0 ∧ run_divergence==0`, `matrix_status=0`; for
+     recovery-watch, **3 consecutive all_ok rounds** (a single 3/3 round is only
+     "banked", not closure).
+   - **DEGRADED** — a *reproducible client* anomaly: `run_divergence>0` carrying phase
+     labels (`app_*_diverged` / `*_transport_diverged` / `bridge_io_diverged`)
+     reproducibly across rounds (cross-round `is_phase_shifting` comparison), not yet
+     attributable to a known taxonomy entry. A node leaves the suspect list only when
+     `is_phase_shifting=false` stably across 3+ longer-repeat rounds — and when the
+     residual failure is then uniform same-class it lands in INCONCLUSIVE (infra-dead,
+     per B/E), NOT in PASS.
+   - **INCONCLUSIVE** — too few healthy nodes, node death / infrastructure
+     same-failure (uniform timeout/reset), abnormal network, matrix error
+     (`matrix_timeout`/exit 124 → `matrix_error_inconclusive`, `run_unknown`), or
+     incomplete evidence. INCONCLUSIVE rounds are **not banked** and do not count
+     toward closure.
+
+**E. Identity & replacement.**
+   - Closure does **not** require `fresh09` (or any specific node) to recover. The
+     historical "original cohort C identity = `fresh01+fresh09+fresh15`" binding is
+     **retired** under this tier.
+   - A dead node may be replaced by any admission-gate-passing node; the replacement
+     **must be recorded** (node_id + round_id + reason).
+   - The sample face must not be **silently expanded** (R81 + `intake_counts` enforce
+     this); a per-rep public-node result never gates a merge.
+   - Rust-only / client-only results must **not** be written as a dual-kernel
+     (`52/56`) behavior-parity increment.
+
+**F. Threshold provenance** (kept verbatim from MT-REAL-02, no invention; under this
+   tier these are *observation* thresholds, not merge gates): cohort buckets
+   (`run_divergence>0`→divergence-carrier; `run_all_ok==0 ∧ run_same_failure>0 ∧
+   run_divergence==0`→same-failure; `run_all_ok>0 ∧ run_same_failure==0 ∧
+   run_divergence==0`→recovery-watch; else neutral/manual review); recovery closure =
+   3 consecutive all_ok rounds; original cohort sizes (A `fresh02,fresh06` ×5 runs;
+   B `fresh03,fresh04,fresh05,fresh07` ×3; C 3 reps ×3). A broken chain cannot be
+   patched — restart opens a fresh sequence at round 1.
 
 ### Critical (User-Visible)
 

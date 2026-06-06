@@ -10,18 +10,19 @@
 
 ---
 
-## Resume (2026-06-03)
+## Resume (2026-06-06)
 
-MT-REAL-02 **dormant since R91 (2026-05-09)**, ~3.5 weeks no new rounds;
-paused awaiting an authorized fresh-sample intake (any live run must
-clear the R81 subset-schema dry-run gate). Continue: read this +
-`mt_real_02_baseline.md`. Build PASS; boundary exit 1 (known drift).
+REALITY local deterministic gate committed (A1/A2): fixture +
+`make verify-reality-local` (opt-in merge-precheck). Public fresh-cohort
+is now the external healthy-cohort observation tier (pre-release,
+non-gating; golden_spec S4 3-tier model). Build PASS; boundary exit 1.
 
 ## Strategic State
 
-Phase: MT-REAL-02 stage-2 closed (R45-R60); stage-3 path A active on
-demand, gated by fresh sample intake. Parity 52/56 BHV (92.9%);
-ARCH-LIMIT-REALITY label.
+Phase: MT-REAL-02 stage-2 closed (R45-R60); public fresh-cohort rounds
+are now pre-release observation (non-gating). Parity 52/56 BHV (92.9%)
+unchanged. DEV-REALITY-01 = ARCH-LIMIT (residual): local client parity
+validated, ClientHello fingerprint parity open (golden_spec S4).
 
 ## MT-REAL-02 Stage-2 Closure Summary
 
@@ -51,24 +52,19 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
   trojan_integration: **17 PASS, 2 ignored**.
 - live_rollup.json/md after R91: **33 rounds, 264 runs, 117 all_ok**.
 
-## Next Steps
+## REALITY Acceptance (3-tier; golden_spec S4)
 
-- MT-REAL-02 R91 fresh13 round-3 closure attempt DONE (2026-05-09).
-  Authorized fresh13 ×3 only. Pre-gate passed (selected_count=1,
-  planned_total_runs=3, target=example.com:80,
-  subset_schema_gate_passed=true, violations=[]). Live: 3/3
-  run_all_ok, matrix_status=0, no phase labels.
-  **A.fresh13_per_rep_recovery_closure**; fresh13
-  recovery_consecutive_rounds=3 (R73+R90+R91); **fresh13 per-rep
-  recovery closure achieved**. **original cohort C closure NOT claimed**;
-  BHV 52/56 unchanged.
-- R90 fresh13 round2 banked (3/3 run_all_ok, recovery=2; closure NOT
-  declared). R89 fresh12 D.matrix_error_inconclusive (NOT banked). R88
-  fresh09 recheck: R85 timeout 5/5, recovery=0, fresh09 NOT recovered.
-- R87 fresh10 round-3 closure DONE; R86 rotation-bank DONE; R85
-  recovery-watch round 2 DONE; R84-R73 prior fresh rounds DONE.
-  Rotated active set fresh01/fresh15/fresh10 is per-rep closed
-  (observation-tier under the two-tier model; not a merge gate).
+1. Local deterministic gate — opt-in merge-precheck
+   `make verify-reality-local` (A1/A2 committed).
+2. External healthy-cohort observation — pre-release, NON-gating:
+   MT-REAL-02 fresh-cohort; PASS/DEGRADED/INCONCLUSIVE; health-gate +
+   R81 dry-run + intake_counts; dead nodes replaced+recorded; no single
+   node (incl. dead fresh09) is a closure identity; outage ≠ regression.
+3. ClientHello byte-level fingerprint parity — residual OPEN.
+
+Retired non-goal: original cohort-C closure (was bound to fresh09).
+History (mt_real_02_baseline.md): fresh13 per-rep closure R73+R90+R91;
+fresh09 steady-state broken R85/R88.
 
 ## Still-Valid Constraints
 
@@ -87,9 +83,10 @@ phase_no_dominance, bi_modal, phase_shifting). Planner filters:
   consecutive sequence.
 - Rotated-replacement per-rep closure is not original-cohort closure.
 - Public-node (cohort C / fresh09) closure is external-healthy-cohort
-  observation, not a merge gate; no single public node is mandatory
-  (golden_spec DEV-REALITY-01 two-tier; merge-block = local fixture
-  `labs/interop-lab/reality_local_fixture/`).
+  observation, not a merge gate; no single public node is mandatory and
+  original cohort-C closure is a retired non-goal. Merge-precheck
+  (opt-in, not yet auto-enforced) = local gate `make verify-reality-local`
+  (golden_spec S4 3-tier model).
 - A single-node recheck of a broken rep is not a closure attempt;
   even a hypothetical clean recheck only opens a new chain at round 1.
 
