@@ -398,6 +398,28 @@ pub async fn run(cfg: HttpProxyConfig, stop_rx: mpsc::Receiver<()>) -> Result<()
     serve_http(cfg, stop_rx, None).await
 }
 
+/// Health-fallback policy for the HTTP inbound (W55-02 / W55-03 boundary; MIG-02
+/// no-implicit-direct-fallback): when a `Proxy` decision faces an unhealthy
+/// upstream, emit explicit diagnostics but NEVER rewrite the decision to
+/// `Direct`. The decision is returned unchanged so an unhealthy proxy fails
+/// closed (Proxy -> downstream connect error) rather than silently leaking
+/// traffic directly. `proxy_health_up` is `None` when no global health status is
+/// installed, `Some(true)` when up, `Some(false)` when down.
+fn apply_health_fallback_policy(decision: RDecision, proxy_health_up: Option<bool>) -> RDecision {
+    if matches!(decision, RDecision::Proxy(_)) && proxy_health_up == Some(false) {
+        tracing::warn!("router: proxy unhealthy; direct fallback is disabled (http inbound)");
+        #[cfg(feature = "metrics")]
+        metrics::counter!(
+            "router_route_fallback_total",
+            "from" => "proxy",
+            "to" => "blocked",
+            "inbound" => "http"
+        )
+        .increment(1);
+    }
+    decision
+}
+
 pub async fn serve_conn<S>(mut cli: S, peer: SocketAddr, cfg: &HttpProxyConfig) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
@@ -608,23 +630,8 @@ where
         "proxy_kind"=>match &decision { RDecision::Direct=>"direct", RDecision::Proxy(Some(_))=>"named", RDecision::Proxy(None)=>"unnamed", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }
     ).increment(1);
 
-    if matches!(decision, RDecision::Proxy(_)) {
-        if let Some(st) = ob_health::global_status() {
-            if !st.is_up() {
-                tracing::warn!(
-                    "router: proxy unhealthy; direct fallback is disabled (http inbound)"
-                );
-                #[cfg(feature = "metrics")]
-                metrics::counter!(
-                    "router_route_fallback_total",
-                    "from" => "proxy",
-                    "to" => "blocked",
-                    "inbound" => "http"
-                )
-                .increment(1);
-            }
-        }
-    }
+    decision =
+        apply_health_fallback_policy(decision, ob_health::global_status().map(|st| st.is_up()));
 
     let opts = ConnectOpts::default();
 
@@ -1116,5 +1123,60 @@ fn sticky_env_usize(name: &str, default: usize) -> usize {
             );
             default
         }
+    }
+}
+
+#[cfg(test)]
+mod health_fallback_policy_tests {
+    use super::apply_health_fallback_policy;
+    use sb_core::router::rules::Decision as RDecision;
+
+    // W55-02 boundary: the HTTP inbound health path must NOT silently rewrite a
+    // Proxy decision to Direct when the upstream proxy is unhealthy. It fails
+    // closed (stays Proxy) instead, complementing the W55-03 "direct fallback is
+    // disabled (http inbound)" require. This is the precise, source-level guard
+    // the line-based check-boundaries matcher cannot express (D2-1cB).
+    #[test]
+    fn unhealthy_proxy_never_falls_back_to_direct() {
+        let out = apply_health_fallback_policy(RDecision::Proxy(None), Some(false));
+        assert!(
+            !matches!(out, RDecision::Direct),
+            "unhealthy proxy must not silently fall back to Direct"
+        );
+        assert!(
+            matches!(out, RDecision::Proxy(_)),
+            "decision stays Proxy => fails closed against an unhealthy upstream"
+        );
+
+        let named =
+            apply_health_fallback_policy(RDecision::Proxy(Some("pool".to_string())), Some(false));
+        assert!(matches!(named, RDecision::Proxy(Some(_))));
+    }
+
+    // A healthy upstream, and any legitimate explicit/sniff-resolved Direct, are
+    // preserved unchanged: the policy must neither block a healthy proxy nor
+    // perturb a non-fallback Direct decision (so it never breaks sniff behavior).
+    #[test]
+    fn healthy_proxy_and_legitimate_direct_are_preserved() {
+        assert!(matches!(
+            apply_health_fallback_policy(RDecision::Proxy(None), Some(true)),
+            RDecision::Proxy(_)
+        ));
+        // No global health status installed -> decision unchanged.
+        assert!(matches!(
+            apply_health_fallback_policy(RDecision::Proxy(None), None),
+            RDecision::Proxy(_)
+        ));
+        // A legitimate Direct (explicit route, or the resolved/unresolved-sniff
+        // default set earlier in serve_conn) is never touched, regardless of
+        // upstream health.
+        assert!(matches!(
+            apply_health_fallback_policy(RDecision::Direct, Some(false)),
+            RDecision::Direct
+        ));
+        assert!(matches!(
+            apply_health_fallback_policy(RDecision::Direct, Some(true)),
+            RDecision::Direct
+        ));
     }
 }
