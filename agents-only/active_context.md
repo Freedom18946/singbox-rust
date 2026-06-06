@@ -35,7 +35,6 @@ live_rollup.json, mt_real_02_baseline.md.
   (lint relaxed 2026-06-03: warnings/dead_code deny→warn, safety kept deny).
 - python3 unittest (reality_probe_tools / clienthello_family /
   dual_kernel_verification): **PASS**. trojan_integration: **17 PASS, 2 ign**.
-- live_rollup after R91: **33 rounds, 264 runs, 117 all_ok**.
 
 ## REALITY Acceptance (3-tier; golden_spec S4)
 
@@ -53,22 +52,24 @@ fresh09 steady-state broken R85/R88.
 
 ## A4 Projection Track — CLOSED through A4.4 (2026-06-06)
 
-- A4.1 mapping + A4.2A prototype + A4.3 disposition (route C, `a5b7a41f`) + A4.4
-  contract (`b042a683`, reference/reality_historical_projection_contract.md) all DONE.
-- Inventory (a43 + a42/outputs/batch_inventory.json): 34/34 projected; 0 promotable;
-  31 PARTIAL; 3 UNSUPPORTED; canonical_candidate null; adversarially verified (0 refuted).
-- Route C: canonical schema stays STRICT; historical projection TERMINAL (universal-four
-  floor + R80/82/83/84 ⊥ R85-91 ceiling); prototype stays agents-only. Deferred G1/G2/G3.
+- A4.1/A4.2A/A4.3 (route C, `a5b7a41f`)/A4.4 contract (`b042a683`) DONE. Inventory:
+  34/34 projected, 0 promotable, 31 PARTIAL, 3 UNSUPPORTED, candidate null (0 refuted).
+  Route C: canonical STRICT; projection TERMINAL (universal-four + R80/82/83/84 ⊥
+  R85-91); prototype stays agents-only; deferred G1/G2/G3. Detail: a43 + reference/
+  reality_historical_projection_contract.md.
 
 ## A2 REALITY-Gate Wiring (2026-06-06)
 
-- A2.1 DONE (a21_reality_local_gate_wiring_evaluation.md). Route B adopted for
-  implementation = an L18 local capstone gate, NOT server-side merge enforcement
-  (GitHub Actions permanently disabled; no required-check layer).
-- A2.2 next: wire `make verify-reality-local` into scripts/l18/l18_capstone.sh after
-  ORACLE. Fixed-port single-instance preflight REQUIRED (18443/18444/18445/11180/11181
-  free before fixture); NO exit-77 skip by default (missing dep → reviewer-readable FAIL).
-- tier-2 (public fresh-cohort) remains pre-release only; tier-3 ClientHello remains OPEN.
+- A2.1 eval (`c46fb60f`) + A2.2 (`71e51669`) DONE: L18 REALITY_LOCAL local-capstone gate
+  landed in scripts/l18/l18_capstone.sh (after ORACLE, before BOUNDARIES). It is an L18
+  LOCAL capstone gate, NOT server-side merge enforcement (GitHub Actions disabled).
+- wrapper run_reality_local_gate: requires go/cargo/python3/curl/make; lsof-independent
+  5-fixed-port preflight (18443/18444/18445/11180/11181); NO exit-77 skip; single-instance.
+  Verified: standalone fixture + wrapper happy-path PASS; occupied-port/missing-make/
+  missing-lsof fail-fast. Detail: a22_reality_local_capstone_wiring.md.
+- A2.3 (full-capstone runtime status-JSON) DEFERRED to the next real capstone rehearsal.
+- Next active card: tier-3 ClientHello fingerprint scoping eval. tier-2 = pre-release
+  only; tier-3 OPEN. No public network.
 - agents-only/a0_reality_spike/ stays pre-existing untracked; do not commit/delete.
 
 ## Still-Valid Constraints
