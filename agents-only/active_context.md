@@ -52,24 +52,25 @@ fresh09 steady-state broken R85/R88.
 
 ## A4 Projection Track — CLOSED through A4.4 (2026-06-06)
 
-- A4.1/A4.2A/A4.3 (route C, `a5b7a41f`)/A4.4 contract (`b042a683`) DONE. Inventory:
-  34/34 projected, 0 promotable, 31 PARTIAL, 3 UNSUPPORTED, candidate null (0 refuted).
-  Route C: canonical STRICT; projection TERMINAL (universal-four + R80/82/83/84 ⊥
-  R85-91); prototype stays agents-only; deferred G1/G2/G3. Detail: a43 + reference/
-  reality_historical_projection_contract.md.
+- A4.1/A4.2A/A4.3 (route C, `a5b7a41f`) + A4.4 contract (`b042a683`) DONE. Inventory 34/34
+  projected, 0 promotable, 31 PARTIAL, 3 UNSUPPORTED, candidate null. Route C: canonical
+  STRICT; projection TERMINAL (universal-four + R80/82/83/84⊥R85-91); deferred G1/G2/G3.
 
-## A2 REALITY-Gate Wiring (2026-06-06)
+## A2 REALITY-Gate Wiring — DONE (2026-06-06)
 
-- A2.1 eval (`c46fb60f`) + A2.2 (`71e51669`) DONE: L18 REALITY_LOCAL local-capstone gate
-  landed in scripts/l18/l18_capstone.sh (after ORACLE, before BOUNDARIES). It is an L18
-  LOCAL capstone gate, NOT server-side merge enforcement (GitHub Actions disabled).
-- wrapper run_reality_local_gate: requires go/cargo/python3/curl/make; lsof-independent
-  5-fixed-port preflight (18443/18444/18445/11180/11181); NO exit-77 skip; single-instance.
-  Verified: standalone fixture + wrapper happy-path PASS; occupied-port/missing-make/
-  missing-lsof fail-fast. Detail: a22_reality_local_capstone_wiring.md.
-- A2.3 (full-capstone runtime status-JSON) DEFERRED to the next real capstone rehearsal.
-- Next active card: tier-3 ClientHello fingerprint scoping eval. tier-2 = pre-release
-  only; tier-3 OPEN. No public network.
+- A2.1 `c46fb60f` + A2.2 `71e51669` + checkpoint `e44c67d3`: L18 REALITY_LOCAL gate in
+  l18_capstone.sh after ORACLE (go/cargo/python3/curl/make + lsof-independent 5-port
+  preflight; no exit-77; single-instance). A2.3 runtime status-JSON DEFERRED. Detail: a22.
+
+## T3 ClientHello Fingerprint Parity (2026-06-06)
+
+- T3-0 DONE (t30 report + sanitized summary): Rust is NOT naive rustls — patched-rustls
+  Chrome shaping (handshake.rs, FIX-04/05). Local capture 10+10 vs Go HelloChrome_Auto:
+  all static profile fields match; JA4-EQUIVALENT structural parity, NOT yet
+  official-JA4-verified. No uTLS-equivalent large port justified.
+- Residuals: GREASE cipher fixed-value (0xfafa vs Go random, trivially fixable);
+  extension-order distribution OPEN/UNKNOWN. L4 byte-identity not a goal. Next: T3-1A
+  measurement hardening (official-JA4 cross-check + GREASE correlation + harness design).
 - agents-only/a0_reality_spike/ stays pre-existing untracked; do not commit/delete.
 
 ## Still-Valid Constraints
