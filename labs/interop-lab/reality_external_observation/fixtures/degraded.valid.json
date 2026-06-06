@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "observation_id": "obs-20260606-ext-degraded-001",
+  "cohort_id": "cohort-A-divergence-carrier",
+  "round_id": "R-ext-002",
+  "timestamp": "2026-06-06T12:10:00Z",
+  "config_fingerprint": "sha256:0000000000000000000000000000000000000000000000000000000000000002",
+  "run_plan": {
+    "subset_schema_gate_passed": true,
+    "violations": [],
+    "planned_node_ids": ["freshA", "freshB"],
+    "no_silent_expansion": true
+  },
+  "intake_counts": { "fresh_ready": 2, "covered_existing": 0, "duplicate": 0, "not_ready": 0 },
+  "nodes": [
+    { "node_id": "freshA", "replacement_for": null, "replacement_reason": null, "credential_present": true, "config_parse_ok": true, "tcp_reachable": true, "reality_dest_usable": true, "direct_reality": true, "transport_reality": true, "vless_dial": true, "vless_probe_io": false, "infra_health": "healthy", "phase_class": "app_pre_post_diverged", "exclusion_reason": null, "included_in_client_verdict": true },
+    { "node_id": "freshB", "replacement_for": null, "replacement_reason": null, "credential_present": true, "config_parse_ok": true, "tcp_reachable": true, "reality_dest_usable": true, "direct_reality": true, "transport_reality": true, "vless_dial": true, "vless_probe_io": true, "infra_health": "healthy", "phase_class": null, "exclusion_reason": null, "included_in_client_verdict": true }
+  ],
+  "summary": {
+    "healthy_node_count": 2,
+    "excluded_infra_dead_count": 0,
+    "run_all_ok": false,
+    "run_same_failure": 0,
+    "run_divergence": 1,
+    "matrix_status": 0,
+    "matrix_timeout": false,
+    "banked": false,
+    "consecutive_all_ok_rounds": 0,
+    "source_threshold_note": "DEGRADED = reproducible client divergence on a healthy, included node (golden_spec S4 section D); cross-round is_phase_shifting confirmation still required before any action."
+  },
+  "verdict": "DEGRADED",
+  "notes": "freshA (healthy, included in client verdict) shows an app-phase divergence; this is a client-attributed anomaly, not infra. Not banked; needs cross-round reproduction."
+}

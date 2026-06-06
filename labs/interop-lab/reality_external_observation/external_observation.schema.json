@@ -1,0 +1,96 @@
+{
+  "$schema": "http://json-schema.org/draft-07/schema#",
+  "$id": "https://singbox-rust/labs/interop-lab/reality_external_observation/external_observation.schema.json",
+  "title": "REALITY External Healthy-Cohort Observation Record",
+  "description": "One pre-release real-network observation round of the MT-REAL-02 public fresh-cohort, structured per the External Healthy-Cohort Observation Protocol in labs/interop-lab/docs/dual_kernel_golden_spec.md S4. This tier is OBSERVATIONAL and NEVER a merge gate; no single public node identity is mandatory. Structure is described here; cross-field semantics are enforced by validate_external_observation.py (stdlib-only; see README). NOTE: full JSON-Schema cross-field constraints are NOT expressible in draft-07, so the .py validator is authoritative for the semantic rules.",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "observation_id", "cohort_id", "round_id", "timestamp",
+    "config_fingerprint", "run_plan", "intake_counts", "nodes", "summary",
+    "verdict", "notes"
+  ],
+  "properties": {
+    "schema_version": { "const": 1 },
+    "observation_id": { "type": "string", "minLength": 1 },
+    "cohort_id": { "type": "string", "minLength": 1 },
+    "round_id": { "type": "string", "minLength": 1 },
+    "timestamp": { "type": "string", "minLength": 1 },
+    "config_fingerprint": { "type": "string", "minLength": 1 },
+    "run_plan": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["subset_schema_gate_passed", "violations", "planned_node_ids", "no_silent_expansion"],
+      "properties": {
+        "subset_schema_gate_passed": { "type": "boolean" },
+        "violations": { "type": "array", "items": { "type": "string" } },
+        "planned_node_ids": { "type": "array", "items": { "type": "string" } },
+        "no_silent_expansion": { "type": "boolean" }
+      }
+    },
+    "intake_counts": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["fresh_ready", "covered_existing", "duplicate", "not_ready"],
+      "properties": {
+        "fresh_ready": { "type": "integer", "minimum": 0 },
+        "covered_existing": { "type": "integer", "minimum": 0 },
+        "duplicate": { "type": "integer", "minimum": 0 },
+        "not_ready": { "type": "integer", "minimum": 0 }
+      }
+    },
+    "nodes": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "node_id", "replacement_for", "replacement_reason", "credential_present",
+          "config_parse_ok", "tcp_reachable", "reality_dest_usable", "direct_reality",
+          "transport_reality", "vless_dial", "vless_probe_io", "infra_health",
+          "phase_class", "exclusion_reason", "included_in_client_verdict"
+        ],
+        "properties": {
+          "node_id": { "type": "string", "minLength": 1 },
+          "replacement_for": { "type": ["string", "null"] },
+          "replacement_reason": { "type": ["string", "null"] },
+          "credential_present": { "type": "boolean" },
+          "config_parse_ok": { "type": "boolean" },
+          "tcp_reachable": { "type": "boolean" },
+          "reality_dest_usable": { "type": "boolean" },
+          "direct_reality": { "type": "boolean" },
+          "transport_reality": { "type": "boolean" },
+          "vless_dial": { "type": "boolean" },
+          "vless_probe_io": { "type": "boolean" },
+          "infra_health": { "enum": ["healthy", "infrastructure-dead", "unknown"] },
+          "phase_class": { "type": ["string", "null"] },
+          "exclusion_reason": { "type": ["string", "null"] },
+          "included_in_client_verdict": { "type": "boolean" }
+        }
+      }
+    },
+    "summary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "healthy_node_count", "excluded_infra_dead_count", "run_all_ok",
+        "run_same_failure", "run_divergence", "matrix_status", "matrix_timeout",
+        "banked", "consecutive_all_ok_rounds", "source_threshold_note"
+      ],
+      "properties": {
+        "healthy_node_count": { "type": "integer", "minimum": 0 },
+        "excluded_infra_dead_count": { "type": "integer", "minimum": 0 },
+        "run_all_ok": { "type": "boolean" },
+        "run_same_failure": { "type": "integer", "minimum": 0 },
+        "run_divergence": { "type": "integer", "minimum": 0 },
+        "matrix_status": { "type": "integer" },
+        "matrix_timeout": { "type": "boolean" },
+        "banked": { "type": "boolean" },
+        "consecutive_all_ok_rounds": { "type": "integer", "minimum": 0 },
+        "source_threshold_note": { "type": "string" }
+      }
+    },
+    "verdict": { "enum": ["PASS", "DEGRADED", "INCONCLUSIVE"] },
+    "notes": { "type": "string" }
+  }
+}

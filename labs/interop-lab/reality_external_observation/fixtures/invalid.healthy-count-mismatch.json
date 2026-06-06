@@ -1,0 +1,34 @@
+{
+  "schema_version": 1,
+  "observation_id": "obs-invalid-healthy-count-mismatch",
+  "cohort_id": "cohort-C-recovery-watch",
+  "round_id": "R-ext-inv-hcm",
+  "timestamp": "2026-06-06T12:30:00Z",
+  "config_fingerprint": "sha256:00000000000000000000000000000000000000000000000000000000000000aa",
+  "run_plan": {
+    "subset_schema_gate_passed": true,
+    "violations": [],
+    "planned_node_ids": ["freshA", "freshB", "freshDeadOriginal"],
+    "no_silent_expansion": true
+  },
+  "intake_counts": { "fresh_ready": 3, "covered_existing": 0, "duplicate": 0, "not_ready": 0 },
+  "nodes": [
+    { "node_id": "freshA", "replacement_for": null, "replacement_reason": null, "credential_present": true, "config_parse_ok": true, "tcp_reachable": true, "reality_dest_usable": true, "direct_reality": true, "transport_reality": true, "vless_dial": true, "vless_probe_io": true, "infra_health": "healthy", "phase_class": null, "exclusion_reason": null, "included_in_client_verdict": true },
+    { "node_id": "freshB", "replacement_for": null, "replacement_reason": null, "credential_present": true, "config_parse_ok": true, "tcp_reachable": true, "reality_dest_usable": true, "direct_reality": true, "transport_reality": true, "vless_dial": true, "vless_probe_io": true, "infra_health": "healthy", "phase_class": null, "exclusion_reason": null, "included_in_client_verdict": true },
+    { "node_id": "freshC", "replacement_for": "freshDeadOriginal", "replacement_reason": "freshDeadOriginal steady-state same-class timeout; replaced per protocol §E", "credential_present": true, "config_parse_ok": true, "tcp_reachable": true, "reality_dest_usable": true, "direct_reality": true, "transport_reality": true, "vless_dial": true, "vless_probe_io": true, "infra_health": "healthy", "phase_class": null, "exclusion_reason": null, "included_in_client_verdict": true }
+  ],
+  "summary": {
+    "healthy_node_count": 2,
+    "excluded_infra_dead_count": 0,
+    "run_all_ok": true,
+    "run_same_failure": 0,
+    "run_divergence": 0,
+    "matrix_status": 0,
+    "matrix_timeout": false,
+    "banked": false,
+    "consecutive_all_ok_rounds": 0,
+    "source_threshold_note": "recovery closure = 3 consecutive all_ok rounds (golden_spec S4 §F; MT-REAL-02)."
+  },
+  "verdict": "PASS",
+  "notes": "INVALID: healthy_node_count=2 but three nodes are healthy (rule 1: healthy-count consistency)."
+}

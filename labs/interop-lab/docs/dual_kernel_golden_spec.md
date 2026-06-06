@@ -330,6 +330,12 @@ synthesis label set for this tier; it maps onto the pre-existing run-health labe
    B `fresh03,fresh04,fresh05,fresh07` ×3; C 3 reps ×3). A broken chain cannot be
    patched — restart opens a fresh sequence at round 1.
 
+**Machine-readable form.** A record schema + read-only validator + pass/fail
+fixtures for this protocol live at `labs/interop-lab/reality_external_observation/`
+(`external_observation.schema.json`, `validate_external_observation.py`); they
+structure §A–§F without inventing thresholds, and are observational (not a merge
+gate).
+
 ### Critical (User-Visible)
 
 | DIV ID | Tag | Description | Affected BHV | Oracle Action |

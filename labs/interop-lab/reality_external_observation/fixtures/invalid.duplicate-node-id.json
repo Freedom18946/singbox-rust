@@ -1,0 +1,33 @@
+{
+  "schema_version": 1,
+  "observation_id": "obs-invalid-duplicate-node-id",
+  "cohort_id": "cohort-A-divergence-carrier",
+  "round_id": "R-ext-inv-dup",
+  "timestamp": "2026-06-06T12:34:00Z",
+  "config_fingerprint": "sha256:00000000000000000000000000000000000000000000000000000000000000ee",
+  "run_plan": {
+    "subset_schema_gate_passed": true,
+    "violations": [],
+    "planned_node_ids": ["freshA"],
+    "no_silent_expansion": true
+  },
+  "intake_counts": { "fresh_ready": 1, "covered_existing": 1, "duplicate": 0, "not_ready": 0 },
+  "nodes": [
+    { "node_id": "freshA", "replacement_for": null, "replacement_reason": null, "credential_present": true, "config_parse_ok": true, "tcp_reachable": true, "reality_dest_usable": true, "direct_reality": true, "transport_reality": true, "vless_dial": true, "vless_probe_io": false, "infra_health": "healthy", "phase_class": "app_pre_post_diverged", "exclusion_reason": null, "included_in_client_verdict": true },
+    { "node_id": "freshA", "replacement_for": null, "replacement_reason": null, "credential_present": true, "config_parse_ok": true, "tcp_reachable": true, "reality_dest_usable": true, "direct_reality": true, "transport_reality": true, "vless_dial": true, "vless_probe_io": true, "infra_health": "healthy", "phase_class": null, "exclusion_reason": null, "included_in_client_verdict": true }
+  ],
+  "summary": {
+    "healthy_node_count": 2,
+    "excluded_infra_dead_count": 0,
+    "run_all_ok": false,
+    "run_same_failure": 0,
+    "run_divergence": 1,
+    "matrix_status": 0,
+    "matrix_timeout": false,
+    "banked": false,
+    "consecutive_all_ok_rounds": 0,
+    "source_threshold_note": "DEGRADED = reproducible client divergence on a healthy included node (golden_spec S4 §D)."
+  },
+  "verdict": "DEGRADED",
+  "notes": "INVALID: two nodes share node_id 'freshA' (rule 10: node_id uniqueness)."
+}
