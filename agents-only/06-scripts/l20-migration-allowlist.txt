@@ -5,6 +5,13 @@ VERSION|l21.250-wave202-v1|||L21 wave#200-202 — MIG-02 inbound handler + tails
 # kind:
 #   - forbid: pattern must NOT exist in file
 #   - require: pattern must exist in file
+# DELIMITER SAFETY (enforced by the registry-lint in check-boundaries.sh):
+#   - '|' is the field separator; every assertion row MUST have exactly 5 fields.
+#   - the <regex_pattern> field MUST NOT contain a literal '|'. Even written as
+#     '\|' it is split by the IFS='|' parser FIRST, truncating the pattern and
+#     producing a silent vacuous-pass forbid. For regex alternation, rewrite to a
+#     delimiter-safe form (char classes / optional groups) or split into multiple
+#     assertions.
 
 
 forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector

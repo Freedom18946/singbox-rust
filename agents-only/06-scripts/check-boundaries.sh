@@ -578,6 +578,28 @@ else
 
     V7_FAILS=0
     V7_CHECKS=0
+
+    # Registry field-integrity lint (D2-1cA): every assertion row must have
+    # exactly 5 '|'-separated fields. A literal '|' in the regex pattern (e.g. a
+    # Rust closure '|x|') is silently truncated by the IFS='|' parser below,
+    # yielding a vacuous-pass forbid. Catch it here with a readable diagnostic
+    # BEFORE the assertion loop so a malformed row fails the gate instead of
+    # passing silently.
+    if ! V7_LINT=$(awk -F'|' '
+        /^[[:space:]]*$/ { next }
+        /^[[:space:]]*#/ { next }
+        $1 == "VERSION" { next }
+        NF != 5 {
+            printf "  FAIL: [registry-lint] line %d: assertion %s has %d fields (expected 5) -- a pattern must NOT contain a literal | (it is the field separator and truncates the pattern into a silent vacuous pass). Rewrite delimiter-safe.\n", NR, ($2 == "" ? "?" : $2), NF
+            bad++
+        }
+        END { exit (bad > 0 ? 1 : 0) }
+    ' "$MIGRATION_ASSERT_FILE"); then
+        echo "$V7_LINT"
+        echo "  FAIL: registry field-integrity lint failed (literal | in a pattern field)"
+        V7_FAILS=$((V7_FAILS + 1))
+    fi
+
     while IFS='|' read -r kind check_id rel_path pattern note; do
         # Skip comments/empty/version lines
         case "${kind:-}" in
