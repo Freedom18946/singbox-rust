@@ -10,11 +10,11 @@
 
 ---
 
-## Resume (2026-06-06)
+## Resume (2026-06-07)
 
-REALITY local deterministic gate committed (A1/A2; `make verify-reality-local`,
-opt-in merge-precheck). Public fresh-cohort = external healthy-cohort observation
-(pre-release, non-gating). A4 projection track CLOSED through A4.4 (see below).
+T3 ClientHello-parity harness committed (T3-1B, `052d4392`); T3-1C coordinated GREASE
+selector next. REALITY local gate (A1/A2) + L18 wiring done; A4 projection CLOSED (A4.4).
+Public fresh-cohort = external healthy-cohort observation (pre-release, non-gating).
 
 ## Strategic State
 
@@ -60,17 +60,17 @@ fresh09 steady-state broken R85/R88.
   l18_capstone.sh after ORACLE (go/cargo/python3/curl/make + lsof-independent 5-port
   preflight; no exit-77; single-instance). A2.3 runtime status-JSON DEFERRED. Detail: a22.
 
-## T3 ClientHello Fingerprint Parity — T3-0 + T3-1A DONE (2026-06-07)
+## T3 ClientHello Fingerprint Parity — T3-0/T3-1A/T3-1B DONE (2026-06-07)
 
-- Rust is NOT naive rustls — patched-rustls Chrome shaping (handshake.rs, FIX-04/05). Local
-  capture 10+10 vs Go HelloChrome_Auto (t30+t31a reports + sanitized summaries): all static
-  fields + from-spec JA4 (`t13d1516h2_…`) + normalized digest match Go==Rust. No uTLS port.
-- official-JA4 = from-spec match only; FoxIO-tool cross-check PENDING (do NOT claim official
-  JA4 closed). GREASE: Go randomizes ALL slots/hello under 2 invariants (groups==key_share;
-  two distinct ext-type); Rust reproduces STRUCTURE but pins values → cipher-only fix
-  INSUFFICIENT, needs coordinated GREASE selector. L4 not a goal.
-- OPEN: GREASE-value randomization, ext-order distribution, camouflage sufficiency, Chrome
-  drift. Next: T3-1B formal harness; T3-1C GREASE selector + golden_spec amend.
+- Rust is NOT naive rustls — patched-rustls Chrome shaping (handshake.rs, FIX-04/05): static
+  fields + from-spec JA4 (`t13d1516h2_…`) + normalized digest match Go==Rust. No uTLS /
+  uTLS-equivalent port. (t30/t31a/t31b reports + sanitized summaries.)
+- T3-1B committed local harness `labs/interop-lab/reality_clienthello_parity/` (`052d4392`).
+  Blocking: token-match, normalized-profile + required field-set parity, redaction guard.
+  Advisory: from-spec JA4 (PENDING FoxIO; NOT official-JA4), GREASE entropy, ext-order, drift.
+- GREASE: Go randomizes ALL slots/hello (invariants groups==key_share; 2 distinct ext-type);
+  Rust pins values (advisory FIXED) → cipher-only INSUFFICIENT. T3-1C next: coordinated
+  per-ClientHello GREASE selector (golden_spec amend deferred T3-2). L4 not a goal.
 - agents-only/a0_reality_spike/ stays pre-existing untracked; do not commit/delete.
 
 ## Still-Valid Constraints
