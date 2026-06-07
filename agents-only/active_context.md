@@ -12,9 +12,9 @@
 
 ## Resume (2026-06-07)
 
-T3 ClientHello-parity harness committed (T3-1B, `052d4392`); T3-1C coordinated GREASE
-selector next. REALITY local gate (A1/A2) + L18 wiring done; A4 projection CLOSED (A4.4).
-Public fresh-cohort = external healthy-cohort observation (pre-release, non-gating).
+T3 ClientHello parity: T3-1B harness (`052d4392`) + T3-1C per-ClientHello GREASE selector
+(`6f8ae63a`, independent OsRng) committed; next T3-2 golden_spec governance. REALITY local
+gate (A1/A2) + L18 wiring done; A4 projection CLOSED (A4.4). Public fresh-cohort = non-gating.
 
 ## Strategic State
 
@@ -60,17 +60,17 @@ fresh09 steady-state broken R85/R88.
   l18_capstone.sh after ORACLE (go/cargo/python3/curl/make + lsof-independent 5-port
   preflight; no exit-77; single-instance). A2.3 runtime status-JSON DEFERRED. Detail: a22.
 
-## T3 ClientHello Fingerprint Parity — T3-0/T3-1A/T3-1B DONE (2026-06-07)
+## T3 ClientHello Fingerprint Parity — T3-0/T3-1A/T3-1B/T3-1C DONE (2026-06-07)
 
-- Rust is NOT naive rustls — patched-rustls Chrome shaping (handshake.rs, FIX-04/05): static
-  fields + from-spec JA4 (`t13d1516h2_…`) + normalized digest match Go==Rust. No uTLS /
-  uTLS-equivalent port. (t30/t31a/t31b reports + sanitized summaries.)
-- T3-1B committed local harness `labs/interop-lab/reality_clienthello_parity/` (`052d4392`).
-  Blocking: token-match, normalized-profile + required field-set parity, redaction guard.
-  Advisory: from-spec JA4 (PENDING FoxIO; NOT official-JA4), GREASE entropy, ext-order, drift.
-- GREASE: Go randomizes ALL slots/hello (invariants groups==key_share; 2 distinct ext-type);
-  Rust pins values (advisory FIXED) → cipher-only INSUFFICIENT. T3-1C next: coordinated
-  per-ClientHello GREASE selector (golden_spec amend deferred T3-2). L4 not a goal.
+- Rust is NOT naive rustls — patched-rustls Chrome shaping: static fields + from-spec JA4
+  (`t13d1516h2_…`) + normalized digest match Go==Rust. No uTLS-equivalent port.
+- T3-1B harness `labs/interop-lab/reality_clienthello_parity/` (`052d4392`): blocking =
+  token-match + normalized-profile + field-set parity + redaction guard; advisory diagnostics.
+- T3-1C (`6f8ae63a`): coordinated per-ClientHello GREASE selector — INDEPENDENT OsRng per slot
+  (NOT the ext-order seed; T3-1C.1 audit: seed-derive collapsed to 16 affine profiles).
+  groups==key_share + ext_head!=ext_tail enforced; harness blocking PASS; GREASE FIXED→RANDOMIZED.
+- OPEN: official FoxIO JA4 PENDING; ext-order distribution + tier-2 camouflage OPEN. Next: T3-2
+  golden_spec S4 governance update (no golden_spec edit yet).
 - agents-only/a0_reality_spike/ stays pre-existing untracked; do not commit/delete.
 
 ## Still-Valid Constraints
