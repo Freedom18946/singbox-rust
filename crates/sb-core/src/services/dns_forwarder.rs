@@ -40,17 +40,11 @@ impl DnsForwarderService {
         }
     }
 
-    async fn run_server(addr: SocketAddr, running: Arc<Notify>) {
-        let socket = match UdpSocket::bind(addr).await {
-            Ok(s) => Arc::new(s),
-            Err(e) => {
-                tracing::error!("Failed to bind resolved service at {}: {}", addr, e);
-                return;
-            }
-        };
-
-        tracing::info!("Resolved service listening on {}", addr);
-
+    /// Receive loop over an **already-bound** socket. Binding is performed
+    /// synchronously in `start()` so that a bind failure propagates to the
+    /// `ServiceManager` (→ `ServiceStatus::Failed`) instead of a detached task
+    /// logging-and-exiting while the service is still reported healthy.
+    async fn run_loop(socket: Arc<UdpSocket>, running: Arc<Notify>) {
         let mut buf = [0u8; 4096];
 
         loop {
@@ -207,10 +201,38 @@ impl Service for DnsForwarderService {
 
     fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         if stage == StartStage::Start {
+            // Bind AND register the socket with the runtime reactor synchronously here so
+            // any failure — address already in use, permission denied, or reactor
+            // registration — is returned to the caller; `ServiceManager` then records
+            // `ServiceStatus::Failed` instead of a detached task logging-and-exiting while
+            // the service still reads as healthy. Mirrors the DERP server's std-bind ->
+            // `from_std` pattern (a listener must not report Running when its socket never
+            // bound). `start()` already runs inside the Tokio runtime (it `tokio::spawn`s
+            // below), so `from_std` has a reactor available.
+            let std_socket = std::net::UdpSocket::bind(self.listen_addr).map_err(|e| {
+                format!(
+                    "resolved (DNS forwarder) failed to bind {}: {}",
+                    self.listen_addr, e
+                )
+            })?;
+            std_socket.set_nonblocking(true).map_err(|e| {
+                format!(
+                    "resolved (DNS forwarder) failed to set non-blocking on {}: {}",
+                    self.listen_addr, e
+                )
+            })?;
+            let socket = Arc::new(UdpSocket::from_std(std_socket).map_err(|e| {
+                format!(
+                    "resolved (DNS forwarder) failed to register bound socket {}: {}",
+                    self.listen_addr, e
+                )
+            })?);
+
             let addr = self.listen_addr;
             let running = self.running.clone();
             tokio::spawn(async move {
-                Self::run_server(addr, running).await;
+                tracing::info!("Resolved service listening on {}", addr);
+                Self::run_loop(socket, running).await;
             });
         }
         Ok(())
@@ -236,6 +258,8 @@ mod tests {
     use async_trait::async_trait;
     use std::io;
     use std::time::Duration;
+
+    use crate::service::{ServiceManager, ServiceStatus};
 
     struct MockResolver;
 
@@ -355,5 +379,143 @@ mod tests {
         assert_eq!(ancount, 1);
 
         service.close().unwrap();
+    }
+
+    // ── SVC-DNS-01: bind-failure propagation regression tests ──────────────
+    //
+    // These assert the fault-isolation honesty contract: a `resolved` (DNS
+    // forwarder) service whose UDP bind fails must surface as
+    // `ServiceStatus::Failed` (never Running/Starting), and a later restart on a
+    // freed port must recover. They use the real `DnsForwarderService` driven
+    // through the real `ServiceManager` (the `/services/health` projection path),
+    // with no public network.
+
+    fn build_resolved_service(port: u16) -> Arc<DnsForwarderService> {
+        let ir_json = serde_json::json!({
+            "type": "resolved",
+            "tag": "resolved-bind-test",
+            "listen": "127.0.0.1",
+            "listen_port": port
+        });
+        let ir: ServiceIR = serde_json::from_value(ir_json).unwrap();
+        Arc::new(DnsForwarderService::new(&ir))
+    }
+
+    #[tokio::test]
+    async fn bind_conflict_marks_dns_forwarder_failed() {
+        // Occupy a UDP port so the service's synchronous bind must fail.
+        let occupier = match std::net::UdpSocket::bind("127.0.0.1:0") {
+            Ok(s) => s,
+            Err(err) => {
+                eprintln!("Skipping bind_conflict test (cannot bind): {}", err);
+                return;
+            }
+        };
+        let addr = occupier.local_addr().unwrap();
+
+        let mgr = ServiceManager::new();
+        mgr.add_service("resolved".into(), build_resolved_service(addr.port()))
+            .await;
+        mgr.start_stage(StartStage::Initialize);
+        mgr.start_stage(StartStage::Start);
+
+        let health: std::collections::HashMap<_, _> =
+            mgr.health_status().await.into_iter().collect();
+
+        match health.get("resolved") {
+            Some(ServiceStatus::Failed(msg)) => {
+                let m = msg.to_lowercase();
+                assert!(
+                    m.contains("bind")
+                        || m.contains("address")
+                        || m.contains("in use")
+                        || m.contains("addrinuse"),
+                    "Failed message must carry bind/address-in-use semantics, got: {}",
+                    msg
+                );
+            }
+            other => panic!(
+                "bind conflict must mark the service Failed, got: {:?}",
+                other
+            ),
+        }
+        // A listener whose bind failed must NOT read as Running/Starting.
+        assert!(
+            !matches!(
+                health.get("resolved"),
+                Some(ServiceStatus::Running) | Some(ServiceStatus::Starting)
+            ),
+            "service with a failed bind must not be Running/Starting"
+        );
+
+        drop(occupier);
+    }
+
+    #[tokio::test]
+    async fn successful_bind_reaches_running() {
+        // Reserve then release an ephemeral port so the service can bind it.
+        let port = match std::net::UdpSocket::bind("127.0.0.1:0") {
+            Ok(probe) => probe.local_addr().unwrap().port(),
+            Err(err) => {
+                eprintln!("Skipping successful_bind test (cannot bind): {}", err);
+                return;
+            }
+        };
+
+        let mgr = ServiceManager::new();
+        let svc = build_resolved_service(port);
+        mgr.add_service("resolved".into(), svc.clone()).await;
+
+        let health: std::collections::HashMap<_, _> = mgr.start_all().await.into_iter().collect();
+
+        assert_eq!(
+            health.get("resolved"),
+            Some(&ServiceStatus::Running),
+            "a successful bind must reach Running, got: {:?}",
+            health.get("resolved")
+        );
+
+        svc.close().unwrap();
+    }
+
+    #[tokio::test]
+    async fn restart_after_failed_bind() {
+        let occupier = match std::net::UdpSocket::bind("127.0.0.1:0") {
+            Ok(s) => s,
+            Err(err) => {
+                eprintln!("Skipping restart test (cannot bind): {}", err);
+                return;
+            }
+        };
+        let addr = occupier.local_addr().unwrap();
+
+        let mgr = ServiceManager::new();
+        let svc = build_resolved_service(addr.port());
+        mgr.add_service("resolved".into(), svc.clone()).await;
+
+        // First attempt: port occupied → Failed.
+        mgr.start_stage(StartStage::Initialize);
+        mgr.start_stage(StartStage::Start);
+        let first: std::collections::HashMap<_, _> =
+            mgr.health_status().await.into_iter().collect();
+        assert!(
+            matches!(first.get("resolved"), Some(ServiceStatus::Failed(_))),
+            "first attempt must Fail while the port is occupied, got: {:?}",
+            first.get("resolved")
+        );
+
+        // Release the port and restart from a fresh stage sequence: the Failed
+        // status must not stick.
+        drop(occupier);
+        let second: std::collections::HashMap<_, _> = mgr.start_all().await.into_iter().collect();
+        assert_eq!(
+            second.get("resolved"),
+            Some(&ServiceStatus::Running),
+            "after releasing the port a restart must recover to Running (failure must \
+             not permanently stick), got: {:?}",
+            second.get("resolved")
+        );
+
+        svc.close().unwrap();
     }
 }
