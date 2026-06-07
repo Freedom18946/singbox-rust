@@ -14,8 +14,11 @@
 
 T3-2 DONE: REALITY tier-3 golden_spec governance update committed. Stale ARCH-LIMIT
 narrative (`0/21` / needs-uTLS / lacks-Chrome-shaping) **retired**; local ClientHello
-profile parity validated by committed harness. REALITY local main line boxed; next card =
-roadmap prioritization, **not** more REALITY implementation.
+profile parity validated by committed harness. REALITY local main line boxed.
+Roadmap prioritization DONE (`roadmap_prioritization_after_reality_closure.md`): recommended
+next = **DRIFT-01** governance reconciliation (boundary-gate/clippy/R91/S6 doc-drift +
+verify-consistency.sh clean-tree red-light); queue #2 = **SVC-DNS-01** (dns_forwarder
+bind-failure → ServiceStatus::Failed). 52/56 = structural ceiling (4 uncovered BHV all Go-fork).
 
 ## Strategic State
 
