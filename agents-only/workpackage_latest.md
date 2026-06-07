@@ -22,15 +22,15 @@
 
 ---
 
-## 当前状态：维护基线 + MT-REAL-02 实验前沿（活跃但休眠）
+## 当前状态：维护基线 + REALITY 本地主线已封箱（T3 收口）
 
-**L1-L25 + 全部 MT-* 维护/验收线已关闭**。但项目**不是纯维护态**：在用户显式要求继续追求
+**L1-L25 + 全部 MT-* 维护/验收线已关闭**。项目**不是纯维护态**：在用户显式要求继续追求
 "可直接替换 Go sing-box 的 Rust 二进制"后，**`MT-REAL-02`（REALITY ClientHello / `uTLS`
-对齐）已于 2026-04-16 作为实验线重开**，目标是建立 Go `uTLS` ↔ Rust REALITY `ClientHello`
-基线并据此突破 REALITY live dataplane。
+对齐）于 2026-04-16 作为实验线重开**；其目标（Go `uTLS` ↔ Rust REALITY `ClientHello` 基线、
+推进 REALITY live dataplane）已由 T3 track 在本地达成并**封箱**（详见 `active_context.md`）。
 
 > **MT-REAL-02 实时状态（轮次/结论/下一步）一律见 `active_context.md`**。
-> 截至 2026-06-03：该线在 **R91 (2026-05-09) 后休眠**，待授权的 fresh 样本 intake 续推。
+> REALITY 本地主线已封箱（T3-0..T3-2，2026-06-08）；当前状态与下一步一律以 `active_context.md` 为准。
 > 长报告：`mt_real_02_baseline.md`；证据：`mt_real_02_evidence/`。
 > dual-kernel BHV 数字以 `active_context.md` + golden_spec 为准（勿在此抄）。
 
@@ -54,7 +54,7 @@
 
 ### 下一阶段默认路线
 
-- **最高目标线（默认优先）**：MT-REAL-02 REALITY 突破，baseline-driven。续推前读 `active_context.md`。
+- **最高目标线**：REALITY 本地主线已封箱（T3 收口）；当前推荐下一卡与优先级以 `active_context.md` 为准。
 - **维护基线**：声明完成能力已逐项验收闭环；不再拆细维护卡，不重开旧 maintenance 线名。
 - **后续 agents 先看**：
   - `agents-only/active_context.md`（当前状态唯一权威）

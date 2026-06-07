@@ -7,8 +7,8 @@
 > - 表内 `crates/sb-config/src/validator/v2.rs#Lnnn` 路径**已过期**：`v2.rs` 已拆成
 >   `validator/v2/` 目录（`outbound.rs`/`route.rs`/`dns.rs`/`inbound.rs`/`endpoint.rs` 等），
 >   旧行号锚点不再有效，按子模块查找即可。
-> - `ARCH-LIMIT-REALITY`（下文"不再继续 fingerprint 增量打磨"的口径）**正被 MT-REAL-02
->   主动重新挑战**——最新进展以 `agents-only/active_context.md` + `agents-only/mt_real_02_baseline.md` 为准。
+> - `ARCH-LIMIT-REALITY`（下文"不再继续 fingerprint 增量打磨"的口径）已由 MT-REAL-02 T3 track
+>   在本地重新挑战并**封箱**——最新状态以 `agents-only/active_context.md` 为准。
 
 Objective: compare `singbox-rust` against Go reference `go_fork_source/sing-box-1.12.14` for functional, type, API, comment, and directory parity.
 

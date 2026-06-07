@@ -5,7 +5,7 @@
 
 ## 当前仓库形态
 
-- 仓库状态：L1-L25 + MT-* 维护/验收线已关闭；但**不是纯维护态**——MT-REAL-02（REALITY ClientHello）实验前沿活跃（截至 2026-06-03 在 R91 后休眠待续）。前沿工作集见 `agents-only/active_context.md` + `agents-only/mt_real_02_baseline.md` + `agents-only/mt_real_02_evidence/`
+- 仓库状态：L1-L25 + MT-* 维护/验收线已关闭；MT-REAL-02 REALITY 本地主线已封箱（T3 收口）。当前状态与下一步以 `agents-only/active_context.md` 为准；REALITY 历史长报告见 `agents-only/mt_real_02_baseline.md` + `agents-only/mt_real_02_evidence/`
 - `.github/` 目录仍存在，但 workflow automation 已永久停用；不能再把 workflow 文件或 CI 叙事当作当前结构的一部分
 - 根 `GO_PARITY_MATRIX.md` 是跳转入口；权威正文在 `agents-only/reference/GO_PARITY_MATRIX.md`
 

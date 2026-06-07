@@ -557,13 +557,12 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 ### Projected Coverage by Tier
 
-| After Tier | Both Cases | BHV Coverage | Strict BHV Coverage |
-|------------|-----------|--------------|---------------------|
-| Current | 31 | 75.0% (45/60) | 61.7% (37/60) |
-| T1 | 11 | ~50.0% (30/60) | ~18.3% (11/60) |
-| T2 | 15 | ~58.3% (35/60) | ~25.0% (15/60) |
-| T3 | 32 | ~65.0% (39/60) | ~51.7% (31/60) |
-| T4 | 36 | ~73.3% (44/60) | ~60.0% (36/60) |
+> **Retired (2026-06-08).** This forward-projection table used the pre-2026-03-16 `/60`
+> denominator (the old 56 + 4 SV.1 basis); its "Current 45/60 (75.0%)" row is superseded and
+> contradicts the authoritative Current Metrics above. All S5 tiers are delivered/closed (see
+> S5), so a per-tier projection is obsolete and no mechanical per-tier recompute is meaningful
+> for closed tiers. **Authoritative current coverage = `92.9% (52/56)`** (Current Metrics
+> above; S1). No REALITY tier-3 BHV is added to the denominator.
 
 ---
 

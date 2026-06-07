@@ -2,10 +2,10 @@
 
 > **用途**：将 Rust 规范、维护复盘结论和当前仓库事实固化为后续 agents 的长期开发准则。
 > **适用阶段**：2026-04 maintenance close-out 之后。**注意：本文写于 MT-REAL-02 重开（2026-04-16）之前**，
-> 故下文"默认目标=部署验收准备 / 不开新线"的口径已被取代——当前最高目标线是 MT-REAL-02
-> （REALITY ClientHello 突破，见 `active_context.md` + `mt_real_02_baseline.md`）。
+> 故下文"默认目标=部署验收准备 / 不开新线"的旧口径已被 MT-REAL-02 REALITY 线取代；该线现已
+> T3 收口、本地主线封箱。当前最高目标与下一步以 `active_context.md` 为准。
 > **§3.1 的 Rust 长期规则仍全部有效**，是本文的核心持久价值。
-> **口径**：maintenance / structural-quality 准则 + 一条活跃实验前沿。**不是 dual-kernel parity completion。**
+> **口径**：maintenance / structural-quality 准则；REALITY 实验前沿已封箱（T3）。**不是 dual-kernel parity completion。**
 
 ---
 
@@ -16,7 +16,7 @@
 1. `AGENTS.md`
 2. `agents-only/active_context.md`
 3. `agents-only/workpackage_latest.md`
-4. `agents-only/mt_real_02_baseline.md`（活跃前沿，续推实验线时）
+4. `agents-only/mt_real_02_baseline.md`（REALITY 基线长报告，已封箱/历史参考）
 5. 本文档
 6. `agents-only/reference/Rust_spec_v2.md`
 7. `agents-only/reference/ACCEPTANCE-CRITERIA.md`
@@ -35,9 +35,9 @@
 
 ## 2. 当前阶段默认目标
 
-> ⚠️ **已更新（2026-06）**：MT-REAL-02 重开后，"默认目标=部署验收准备、不开新线"不再成立。
-> 当前**默认优先线是 MT-REAL-02 REALITY 突破**（最高目标，baseline-driven）；维护基线则保持稳定。
-> 下文保留作历史口径参考。
+> ⚠️ **已更新（2026-06）**：MT-REAL-02 重开后，"默认目标=部署验收准备、不开新线"不再成立；
+> 该 REALITY 线随后已 T3 收口、**本地主线封箱**。当前默认优先线与下一卡以 `active_context.md`
+> 为准（维护基线保持稳定）。下文保留作历史口径参考。
 
 维护基线侧的默认目标不是继续拆 maintenance 细卡，而是：
 
@@ -176,7 +176,7 @@
 
 - 仓库已经完成一轮大规模 maintenance close-out
 - 维护基线侧当前没有新的最前置 blocker
-- **但项目不是纯维护态**：最高目标线 MT-REAL-02（REALITY 突破）已重开并优先于维护卡
+- **但项目不是纯维护态**：MT-REAL-02（REALITY）最高目标线已 T3 收口、本地主线封箱；当前优先级以 `active_context.md` 为准
 - 维护基线侧的后续改动仍应先问一句：
   - 这件事是否真的阻塞部署/运行？
   - 如果不阻塞，是否值得作为高层 regroup 主题推进？

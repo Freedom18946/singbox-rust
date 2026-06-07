@@ -82,11 +82,10 @@
 - exit 0 才算 `PASS-STRICT`
 - `--report` 可作为预检，但不能代替严格门禁
 
-> ⚠️ **当前现状（2026-06 复核）**：`check-boundaries.sh` 当前 **exit 1**（约 22/541 V7 迁移断言失败，
-> 集中在 `app/src/bootstrap.rs` / `app/src/run_engine.rs` 显式迁移提示模式 + 对已拆分文件
-> `crates/sb-config/src/validator/v2.rs`（现为 `validator/v2/` 目录）的 W87/W88 失配）。这是
-> **登记在案的脚本陈旧目标漂移、非阻塞、非回归**，故 boundary 维度当前暂不满足 `PASS-STRICT`。
-> 实时失败计数以 `agents-only/active_context.md` 为准。
+> ✅ **当前现状（2026-06-06 起）**：`check-boundaries.sh`（严格）**exit 0**（V7 537 断言，0 违规）；
+> 此前登记的脚本陈旧目标漂移（`app/src/bootstrap.rs` / `app/src/run_engine.rs` 迁移提示模式、
+> 已拆分文件 `crates/sb-config/src/validator/v2.rs`→`validator/v2/` 的 W87/W88 失配）已修复，
+> boundary 维度满足 `PASS-STRICT`。实时门禁状态以 `agents-only/active_context.md` 为准。
 
 ### 2.2 当前架构归属规则
 
@@ -135,7 +134,7 @@ cargo test -p app --features net_e2e --test dns_outbound_e2e
 
 ```bash
 cargo fmt --check
-cargo clippy --workspace --all-features -- -D warnings
+cargo clippy --workspace --all-features        # safety lint 仍 deny；warnings/dead_code 自 2026-06-03 起非阻塞(非 blanket -D warnings)
 cargo test --workspace
 ```
 
@@ -181,7 +180,7 @@ cargo deny check licenses
 ```bash
 ./agents-only/06-scripts/check-boundaries.sh
 cargo fmt --check
-cargo clippy --workspace --all-features -- -D warnings
+cargo clippy --workspace --all-features        # safety lint 仍 deny；warnings/dead_code 自 2026-06-03 起非阻塞(非 blanket -D warnings)
 cargo test --workspace
 cargo build -p app --features parity --release
 ./target/release/app version

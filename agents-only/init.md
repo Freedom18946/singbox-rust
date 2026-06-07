@@ -14,7 +14,7 @@
 3. CLAUDE.md  +  AGENTS.md                 # 稳定约定 / 硬规则 / 单一真相源
 ```
 
-**当前前沿（若续推实验线）**：
+**REALITY 历史参考（本地主线已封箱，T3 收口）**：
 ```
 agents-only/mt_real_02_baseline.md         # REALITY ClientHello 基线长报告
 agents-only/mt_real_02_evidence/           # 轮次证据
@@ -73,7 +73,7 @@ agents-only/reference/SCRIPTS-MAP.md       # scripts/ 与 06-scripts/ 全景
 | 1️⃣ | `active_context.md` | 当前状态唯一权威 |
 | 2️⃣ | `workpackage_latest.md` | 阶段与全局位置 |
 | 3️⃣ | `CLAUDE.md` / `AGENTS.md` | 稳定约定 / 硬规则 |
-| 4️⃣ | `mt_real_02_baseline.md` | 活跃前沿（实验线续推时） |
+| 4️⃣ | `mt_real_02_baseline.md` | REALITY 基线长报告（已封箱，历史参考） |
 | 5️⃣ | `reference/AGENT-DEVELOPMENT-GUIDELINES.md` | 长期开发准则 |
 | 6️⃣ | `memory/*.md` | 经验积累 |
 | 7️⃣ | `log.md` | 历史流水（C-tier，按需） |
