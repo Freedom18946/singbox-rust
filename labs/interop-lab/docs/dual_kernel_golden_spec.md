@@ -220,7 +220,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Decision ID | Tag | Scope | Disposition | Evidence |
 |-------------|-----|-------|-------------|----------|
-| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): functional **client** dataplane = validated by local gate; ClientHello uTLS fingerprint + real-network camouflage = open | **Functional local REALITY client dataplane parity is reproducibly validated against a controlled Go REALITY server fixture** (`labs/interop-lab/reality_local_fixture/`, A1, 2026-06-06). Topology is Go=`with_utls` REALITY server, {Go,Rust}=clients dialing it through a local concurrent Go `tls.Listener` dest to a local HTTP token target. The Go client and the Rust client each pass a consecutive end-to-end token matrix; the Rust phase probe passes all four phases (`direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io`); and four negative controls distinguish REALITY-auth rejection (`bad_public_key` → `direct_reality` fails) from VLESS-data-stage rejection (`bad_uuid` → REALITY phases pass, `vless_probe_io` fails), plus fail-fast `dead_dest` and diagnosable `occupied_port`. The per-run matrix lives in the fixture's `round-summary.json` — **do not copy counts here**. **ClientHello byte-level uTLS fingerprint parity and real-network camouflage validation remain open**: Rust `rustls` still lacks a `uTLS`-equivalent browser-TLS mimic. FIX-03 aligned cryptography/session_id, FIX-04 top-level ClientHello fingerprinting, FIX-05 typed substructure GREASE/versions/groups/key_share/sigalgs; the live public-cohort handshake result historically remained `0/21`, and Go treats `uTLS` as a hard dependency in [`reality_client.go`](../../../go_fork_source/sing-box-1.12.14/common/tls/reality_client.go). This entry is **client-only / Rust-only functional evidence — NOT a `52/56` BHV behavior-parity increment and NOT a claim of REALITY *server* bidirectional interop**. Acceptance is governed by the three-tier model below. | A1 fixture `labs/interop-lab/reality_local_fixture/` (+ its `round-summary.json` per run); fingerprint history `agents-only/archive/MT-REAL-01/mt_real_01_fix_03.md`, `..._fix_04.md`, `..._fix_05.md`, `..._env_01.md` |
+| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): functional **client** dataplane = validated by local gate; local ClientHello profile parity (normalized-profile digest + required field-set + coordinated GREASE structure + from-spec JA4) = validated by committed local harness; official-JA4 (FoxIO tool) + extension-order distribution + real-network camouflage = open | **Functional local REALITY client dataplane parity is reproducibly validated against a controlled Go REALITY server fixture** (`labs/interop-lab/reality_local_fixture/`, A1, 2026-06-06). Topology is Go=`with_utls` REALITY server, {Go,Rust}=clients dialing it through a local concurrent Go `tls.Listener` dest to a local HTTP token target. The Go client and the Rust client each pass a consecutive end-to-end token matrix; the Rust phase probe passes all four phases (`direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io`); and four negative controls distinguish REALITY-auth rejection (`bad_public_key` → `direct_reality` fails) from VLESS-data-stage rejection (`bad_uuid` → REALITY phases pass, `vless_probe_io` fails), plus fail-fast `dead_dest` and diagnosable `occupied_port`. The per-run matrix lives in the fixture's `round-summary.json` — **do not copy counts here**. **Local ClientHello profile parity is now validated by a committed local harness** (T3 track, 2026-06-07): Rust is **not** naive `rustls` — it carries a patched-rustls Chrome shaping layer (`build_chrome_client_hello_fingerprint`, the FIX-04/FIX-05 lineage; FIX-03 aligned cryptography/session_id) whose normalized-profile digest, required field-set, and coordinated per-ClientHello GREASE structure match the Go `utls.HelloChrome_Auto` reference, with from-spec JA4 observed equal locally. The earlier "`0/21` / rustls lacks a uTLS-equivalent / rustls lacks Chrome shaping" framing is **retired** — it predated the FIX-04/FIX-05 shaping layer and is superseded by the three-tier model below (tier 3); a uTLS-equivalent port is **not** required and is **not** planned. **Still open**: official FoxIO-tool JA4 cross-check (PENDING — offline-blocked, from-spec agreement is weak independent confirmation), extension-order statistical-distribution equivalence, `HelloChrome_Auto` upstream drift, and real-network camouflage / active-probing sufficiency (tier-2, pre-release observation). Go still treats `uTLS` as a hard dependency in [`reality_client.go`](../../../go_fork_source/sing-box-1.12.14/common/tls/reality_client.go); Rust reaches the equivalent ClientHello shape through the patched-rustls layer rather than a uTLS port. This entry is **client-only / Rust-only functional evidence — NOT a `52/56` BHV behavior-parity increment and NOT a claim of REALITY *server* bidirectional interop**. Acceptance is governed by the three-tier model below. | A1 fixture `labs/interop-lab/reality_local_fixture/` (+ its `round-summary.json` per run); fingerprint history `agents-only/archive/MT-REAL-01/mt_real_01_fix_03.md`, `..._fix_04.md`, `..._fix_05.md`, `..._env_01.md` |
 
 #### REALITY Acceptance: Three-Tier Model
 
@@ -247,12 +247,64 @@ not let one substitute for another, and do not claim closure of one from another
    - Node-infrastructure failure (outage / timeout / reset) must NOT be recorded as a
      Rust functional regression.
    - Governed by the External Healthy-Cohort Observation Protocol below.
-3. **ClientHello fingerprint parity — residual open item.**
-   - Scope: byte-level / classification-level difference between the Rust ClientHello
-     and the target uTLS fingerprint family.
-   - Independent and OPEN. NOT closed by a passing local gate, and NOT closed by
-     occasional external-cohort success. (Standing constraint: do not return to a
-     static ClientHello template.)
+3. **ClientHello fingerprint parity — tier-3 (T3 track, 2026-06-07).**
+   Re-scoped from a single "residual open item" into layered, individually-tracked
+   facts. The blanket "`0/21` / needs a uTLS-equivalent / rustls lacks Chrome shaping"
+   narrative is **retired**: Rust carries a patched-rustls Chrome shaping layer
+   (`build_chrome_client_hello_fingerprint`) and the items below are validated by a
+   committed local harness, not deferred to a future uTLS port. (Naming note: this
+   "T3" is the REALITY ClientHello track T3-0…T3-2; it is unrelated to the S5 "T3"
+   promotion tier, which is the closed SV.1 subscription reclassification.)
+
+   **Closed (local):**
+   - *Functional dataplane* — the controlled local REALITY client functional-parity
+     fixture (tier 1 above) gives reproducible Go/Rust token-match;
+     `direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io` are
+     repeatably verified and the L18 capstone is wired to the `REALITY_LOCAL` gate.
+     This is a local gate, **not** server-side automatic merge enforcement.
+   - *Normalized ClientHello profile* — committed harness
+     `labs/interop-lab/reality_clienthello_parity/` (T3-1B, `052d4392`) with blocking
+     gates: functional token-match, normalized-profile digest parity
+     (Go == Rust == `bc002612a968fae0`), required field-set parity, and a redaction
+     guard. No uTLS-equivalent port is needed.
+   - *Coordinated GREASE structure* — T3-1C (`6f8ae63a`): each ClientHello constructs a
+     `ChromeGreaseProfile` from an **independent `OsRng`** (it does **not** reuse the
+     extension-order seed). cipher / supported_versions / group / ext_head / ext_tail
+     are drawn independently; `supported_groups` GREASE == `key_share` GREASE;
+     `ext_head != ext_tail`; unrelated slots may collide naturally. The GREASE advisory
+     flipped **FIXED → RANDOMIZED**. Sampled observation: 230,242 unique profiles in
+     262,144 Rust draws (a *sampled* observation, **not** a full state-space proof); a
+     256-draw sanitized Go sample shows the same structural constraints. This is **not**
+     a claim of full probability-distribution equivalence.
+
+   **Achieved but local-diagnostic (not closed):**
+   - *from-spec JA4* — Go == Rust == `t13d1516h2_8daaf6152771_d8a2da3f94cd` (with the
+     normalized digest Go == Rust == `bc002612a968fae0`). This is **from-spec JA4 parity
+     observed locally**; the **official FoxIO-tool cross-check remains PENDING**. Do
+     **not** record "official JA4 parity closed."
+
+   **Still OPEN (must not be faked closed):**
+   1. FoxIO official-tool JA4 cross-check (offline-blocked).
+   2. extension-order statistical-distribution equivalence (both shuffle per-hello; the
+      *distribution* shape is not asserted equal).
+   3. `HelloChrome_Auto` upstream profile drift.
+   4. real-network camouflage sufficiency.
+   5. active-probing resistance.
+   6. tier-2 external healthy-cohort observation (pre-release, non-gating).
+   7. A2.3 full L18-capstone runtime status-JSON rehearsal (deferred).
+
+   **Explicit non-goals:**
+   - L4 raw-byte identity / byte-for-byte ClientHello equality (two real Chrome
+     instances also differ byte-for-byte).
+   - forcing the per-hello randomized fields into alignment.
+   - freezing `HelloChrome_Auto` via a historical snapshot.
+   - reinstating the retired `fresh09` fixed-node obligation.
+
+   Independent and not fully closed by a passing local gate, nor by occasional
+   external-cohort success. (Standing constraint: do not return to a static ClientHello
+   template, and do not hard-code precedence or position-to-mode behavior.) **No `52/56`
+   BHV increment**: REALITY has no BHV-ID in the S3 registry and is not in the S1/S6
+   denominator, so this tier-3 closure does not move the coverage dashboard (see S6).
 
 #### External Healthy-Cohort Observation Protocol
 
