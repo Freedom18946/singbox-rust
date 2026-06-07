@@ -1,7 +1,9 @@
 #!/bin/bash
 # 一致性验证脚本 (Verify Consistency)
-# 用途：检查 active_context 与 workpackage 的一致性
-# 兼容性：macOS（date -j 为 macOS 专用语法）
+# 用途：检查 active_context 与 workpackage 的一致性（启动门，init.md Step 2）。
+#   硬失败 (exit 1)：基础文件缺失/为空、active_context 指针指向不存在的文件、日期记录无法解析。
+#   advisory (不失败)：遗留 WP-NNN id 不一致（格式已退役）、active_context 过期>7天、DRP 标记。
+# 兼容性：macOS（date -j 为 macOS 专用语法）。
 
 set -e
 
@@ -54,40 +56,73 @@ else
     echo -e "${GREEN}✓ active_context.md 有内容 ($LINES 行)${NC}"
 fi
 
-# 3. 检查 WP ID 一致性
-echo -e "\n检查工作包 ID 一致性..."
+# 3. 工作包标识（advisory）+ active_context 指针完整性（hard）
+# WP-NNN 微卡 id 格式已退役（workpackage_latest.md：不再继续 WP-30k 风格微卡化排程）。
+# 当前工作以 phase/track 名（active_context "Resume" 段）标识，两文件间无单一 cross-check
+# token，故 WP-NNN 比对降级为 reviewer 可读 advisory，不作为硬失败；当前权威的硬一致性
+# invariant 改为 active_context 单一真相源指针的可解析性（见下）。
+echo -e "\n检查工作包标识（advisory，WP-NNN 已退役）..."
 
 WP_ID_CONTEXT=$(grep -oE "WP-[A-Z0-9.]+" "$ACTIVE_CONTEXT" | head -1 || echo "")
 WP_ID_PACKAGE=$(grep -oE "WP-[A-Z0-9.]+" "$WORKPACKAGE" | head -1 || echo "")
-
-if [[ -z "$WP_ID_CONTEXT" ]]; then
-    echo -e "${YELLOW}⚠️  active_context.md 中未找到工作包 ID${NC}"
-    ERRORS=$((ERRORS + 1))
-elif [[ -z "$WP_ID_PACKAGE" ]]; then
-    echo -e "${YELLOW}⚠️  workpackage_latest.md 中未找到工作包 ID${NC}"
-    ERRORS=$((ERRORS + 1))
-elif [[ "$WP_ID_CONTEXT" != "$WP_ID_PACKAGE" ]]; then
-    echo -e "${RED}❌ 工作包 ID 不一致:${NC}"
-    echo -e "   active_context: $WP_ID_CONTEXT"
-    echo -e "   workpackage:    $WP_ID_PACKAGE"
-    ERRORS=$((ERRORS + 1))
+if [[ -n "$WP_ID_CONTEXT" && -n "$WP_ID_PACKAGE" && "$WP_ID_CONTEXT" != "$WP_ID_PACKAGE" ]]; then
+    echo -e "${YELLOW}⚠️  advisory: 遗留 WP-NNN id 不一致 (active_context=$WP_ID_CONTEXT, workpackage=$WP_ID_PACKAGE)${NC}"
+    echo -e "   提示: WP-NNN 格式已退役；对齐或移除遗留 id（非硬失败）。"
 else
-    echo -e "${GREEN}✓ 工作包 ID 一致: $WP_ID_CONTEXT${NC}"
+    echo -e "${GREEN}✓ WP-NNN id 已退役且无遗留不一致（当前以 phase/track 名标识工作）${NC}"
 fi
 
-# 4. 检查日期合理性
+# 指针完整性（hard）：active_context 引用的每个 .md 单一真相源指针必须可解析。
+# 解析顺序：含 '/' 的按 repo-root 相对；裸文件名先 agents-only 再 repo-root。
+echo -e "\n检查 active_context 指针完整性..."
+REPO_ROOT="$(cd "$AGENTS_DIR/.." && pwd)"
+BROKEN_PTRS=""
+PTR_TOKENS=$(grep -oE "[A-Za-z0-9_./-]+\.md" "$ACTIVE_CONTEXT" | sort -u || true)
+while IFS= read -r ptr; do
+    if [[ -z "$ptr" ]]; then continue; fi
+    if [[ "$ptr" == */* ]]; then
+        candidates=("$REPO_ROOT/$ptr" "$AGENTS_DIR/$ptr")
+    else
+        candidates=("$AGENTS_DIR/$ptr" "$REPO_ROOT/$ptr")
+    fi
+    found=0
+    for c in "${candidates[@]}"; do
+        if [[ -f "$c" ]]; then found=1; break; fi
+    done
+    if [[ $found -eq 0 ]]; then BROKEN_PTRS="$BROKEN_PTRS $ptr"; fi
+done <<< "$PTR_TOKENS"
+if [[ -n "$BROKEN_PTRS" ]]; then
+    echo -e "${RED}❌ active_context 指针指向不存在的文件:${NC}"
+    echo -e "   检查名: active_context pointer integrity"
+    for p in $BROKEN_PTRS; do echo -e "   实际:   缺失引用 → $p"; done
+    echo -e "   期望:   每个 .md 指针可解析；提示: 修正路径或补建被引用文件。"
+    ERRORS=$((ERRORS + 1))
+else
+    echo -e "${GREEN}✓ active_context 指针均可解析${NC}"
+fi
+
+# 4. 检查日期合理性（最新日期 = filter→sort→max，不依赖文件尾部恰好是目标记录）
 echo -e "\n检查日期合理性..."
 
-LAST_UPDATE=$(grep -oE "[0-9]{4}-[0-9]{2}-[0-9]{2}" "$ACTIVE_CONTEXT" | tail -1 || echo "")
-if [[ -n "$LAST_UPDATE" ]]; then
-    DAYS_AGO=$(( ($(date +%s) - $(date -j -f "%Y-%m-%d" "$LAST_UPDATE" +%s 2>/dev/null || echo 0)) / 86400 ))
-    if [[ $DAYS_AGO -gt 7 ]]; then
-        echo -e "${YELLOW}⚠️  active_context 可能过期 (最后更新: $LAST_UPDATE, $DAYS_AGO 天前)${NC}"
-    else
-        echo -e "${GREEN}✓ 日期合理: $LAST_UPDATE${NC}"
-    fi
+LAST_UPDATE=$(grep -oE "[0-9]{4}-[0-9]{2}-[0-9]{2}" "$ACTIVE_CONTEXT" | sort | tail -1 || echo "")
+if [[ -z "$LAST_UPDATE" ]]; then
+    echo -e "${YELLOW}⚠️  未找到日期信息 (期望 active_context 含 YYYY-MM-DD)${NC}"
 else
-    echo -e "${YELLOW}⚠️  未找到日期信息${NC}"
+    UPDATE_EPOCH=$(date -j -f "%Y-%m-%d" "$LAST_UPDATE" +%s 2>/dev/null || echo 0)
+    if [[ "$UPDATE_EPOCH" -eq 0 ]]; then
+        echo -e "${RED}❌ 日期记录异常（无法解析）:${NC}"
+        echo -e "   检查名: active_context 日期记录有效性"
+        echo -e "   实际:   最新日期 token = $LAST_UPDATE"
+        echo -e "   期望:   合法 YYYY-MM-DD；提示: 修正 active_context 中的日期记录。"
+        ERRORS=$((ERRORS + 1))
+    else
+        DAYS_AGO=$(( ($(date +%s) - UPDATE_EPOCH) / 86400 ))
+        if [[ $DAYS_AGO -gt 7 ]]; then
+            echo -e "${YELLOW}⚠️  advisory: active_context 可能过期 (最新 $LAST_UPDATE, $DAYS_AGO 天前)${NC}"
+        else
+            echo -e "${GREEN}✓ 日期合理: 最新 $LAST_UPDATE ($DAYS_AGO 天前)${NC}"
+        fi
+    fi
 fi
 
 # 5. 检查 DRP 标记
