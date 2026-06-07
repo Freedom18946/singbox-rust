@@ -12,13 +12,18 @@
 
 ## Resume (2026-06-08)
 
-T3-2 DONE: REALITY tier-3 golden_spec governance update committed. Stale ARCH-LIMIT
-narrative (`0/21` / needs-uTLS / lacks-Chrome-shaping) **retired**; local ClientHello
-profile parity validated by committed harness. REALITY local main line boxed.
-Roadmap prioritization DONE (`roadmap_prioritization_after_reality_closure.md`): recommended
-next = **DRIFT-01** governance reconciliation (boundary-gate/clippy/R91/S6 doc-drift +
-verify-consistency.sh clean-tree red-light); queue #2 = **SVC-DNS-01** (dns_forwarder
-bind-failure → ServiceStatus::Failed). 52/56 = structural ceiling (4 uncovered BHV all Go-fork).
+T3-2 + DRIFT-01 + SVC-DNS-01 DONE. REALITY local main line boxed (T3 closure).
+- **DRIFT-01** (`92eab1a8`+`c7af15cb`): verify-consistency clean-tree startup gate restored +
+  active governance docs reconciled (boundary exit-0/537, clippy `-D warnings` relaxation,
+  R91/前沿 framing, golden_spec S6 `/60` table all retired).
+- **SVC-DNS-01** (`e6560ce3`): resolved/DNS-forwarder bind failure now propagates **before**
+  Running (sync bind+set_nonblocking+from_std in `start()` → ServiceManager `Failed`); 3
+  regression tests (`svc_dns_01_bind_failure_propagation.md`).
+- sb-core full-suite **pre-existing** flakes (NOT SVC-DNS-01; fail on clean HEAD too):
+  `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
+- Next card = **SVC-LISTENER-AUDIT-01** (read-only audit: listener services for the same
+  spawn-then-log-return bind antipattern). 52/56 = structural ceiling (4 uncovered BHV all Go-fork).
+  agents-only/a0_reality_spike/ untouched untracked.
 
 ## Strategic State
 
