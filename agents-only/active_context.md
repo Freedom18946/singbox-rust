@@ -25,9 +25,8 @@ validated, ClientHello fingerprint parity open (golden_spec S4).
 
 ## MT-REAL-02 Stage-2 + Evidence Framework
 
-Stage-2 closed (5 non-all_ok candidates falsified as noise); per-outbound rollup
-capability + planner --latest-* filters. Detail: archive/mt_real_02/,
-live_rollup.json, mt_real_02_baseline.md.
+Stage-2 closed (5 non-all_ok falsified as noise); per-outbound rollup + planner
+--latest-* filters. Detail: archive/mt_real_02/, live_rollup.json, mt_real_02_baseline.md.
 
 ## Current Build And Gate
 
@@ -40,11 +39,10 @@ live_rollup.json, mt_real_02_baseline.md.
 
 1. Local deterministic gate — opt-in merge-precheck
    `make verify-reality-local` (A1/A2 committed).
-2. External healthy-cohort observation — pre-release, NON-gating:
-   MT-REAL-02 fresh-cohort; PASS/DEGRADED/INCONCLUSIVE; health-gate +
-   R81 dry-run + intake_counts; dead nodes replaced+recorded; no single
-   node (incl. dead fresh09) is a closure identity; outage ≠ regression.
-3. ClientHello byte-level fingerprint parity — residual OPEN.
+2. External healthy-cohort observation — pre-release, NON-gating (MT-REAL-02
+   fresh-cohort; tri-state; no single node is a closure identity; outage ≠ regression).
+3. ClientHello fingerprint parity — see T3 track (normalized + from-spec-JA4 parity;
+   official-JA4 + GREASE randomization OPEN).
 
 Retired non-goal: original cohort-C closure (was bound to fresh09).
 History (mt_real_02_baseline.md): fresh13 per-rep closure R73+R90+R91;
@@ -62,15 +60,17 @@ fresh09 steady-state broken R85/R88.
   l18_capstone.sh after ORACLE (go/cargo/python3/curl/make + lsof-independent 5-port
   preflight; no exit-77; single-instance). A2.3 runtime status-JSON DEFERRED. Detail: a22.
 
-## T3 ClientHello Fingerprint Parity (2026-06-06)
+## T3 ClientHello Fingerprint Parity — T3-0 + T3-1A DONE (2026-06-07)
 
-- T3-0 DONE (t30 report + sanitized summary): Rust is NOT naive rustls — patched-rustls
-  Chrome shaping (handshake.rs, FIX-04/05). Local capture 10+10 vs Go HelloChrome_Auto:
-  all static profile fields match; JA4-EQUIVALENT structural parity, NOT yet
-  official-JA4-verified. No uTLS-equivalent large port justified.
-- Residuals: GREASE cipher fixed-value (0xfafa vs Go random, trivially fixable);
-  extension-order distribution OPEN/UNKNOWN. L4 byte-identity not a goal. Next: T3-1A
-  measurement hardening (official-JA4 cross-check + GREASE correlation + harness design).
+- Rust is NOT naive rustls — patched-rustls Chrome shaping (handshake.rs, FIX-04/05). Local
+  capture 10+10 vs Go HelloChrome_Auto (t30+t31a reports + sanitized summaries): all static
+  fields + from-spec JA4 (`t13d1516h2_…`) + normalized digest match Go==Rust. No uTLS port.
+- official-JA4 = from-spec match only; FoxIO-tool cross-check PENDING (do NOT claim official
+  JA4 closed). GREASE: Go randomizes ALL slots/hello under 2 invariants (groups==key_share;
+  two distinct ext-type); Rust reproduces STRUCTURE but pins values → cipher-only fix
+  INSUFFICIENT, needs coordinated GREASE selector. L4 not a goal.
+- OPEN: GREASE-value randomization, ext-order distribution, camouflage sufficiency, Chrome
+  drift. Next: T3-1B formal harness; T3-1C GREASE selector + golden_spec amend.
 - agents-only/a0_reality_spike/ stays pre-existing untracked; do not commit/delete.
 
 ## Still-Valid Constraints

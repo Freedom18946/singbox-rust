@@ -1,0 +1,577 @@
+{
+  "_meta": {
+    "purpose": "T3-1A measurement-caliber hardening: official-JA4 cross-check + GREASE cross-field correlation over the T3-0 local captures (Go utls.HelloChrome_Auto vs Rust).",
+    "method": "Temporary stdlib parsers over 10+10 captured ClientHellos (ephemeral, NOT committed). No public network. GREASE values are public RFC-8701 markers (not secrets); no raw bytes / random / key_share key / session_id / token are included.",
+    "samples_per_kernel": 10
+  },
+  "ja4_crosscheck": {
+    "from_spec_ja4": {
+      "go": [
+        "t13d1516h2_8daaf6152771_d8a2da3f94cd"
+      ],
+      "rust": [
+        "t13d1516h2_8daaf6152771_d8a2da3f94cd"
+      ],
+      "go_eq_rust": true
+    },
+    "t30_local_ja4_equiv_actual": {
+      "go": [
+        "t13d1516h2_8daaf6152771_d8a2da3f94cd"
+      ],
+      "rust": [
+        "t13d1516h2_8daaf6152771_d8a2da3f94cd"
+      ],
+      "go_eq_rust": true
+    },
+    "t30_local_equiv_EQUALS_from_spec": true,
+    "normalized_profile_digest": {
+      "go": [
+        "d298fdbe2430bd76"
+      ],
+      "rust": [
+        "d298fdbe2430bd76"
+      ],
+      "go_eq_rust": true
+    },
+    "sigalgs_sort_sensitivity": {
+      "would_change_ja4_c": true,
+      "sorted_variant_go": [
+        "t13d1516h2_8daaf6152771_9a55b862dad6"
+      ]
+    },
+    "OFFICIAL_TOOL_STATUS": "NOT cross-checked against the FoxIO reference tool (no network / no deps allowed). 'official JA4 parity' is NOT declared closed — from-spec JA4 matches go==rust; FoxIO-tool verification is the remaining open step."
+  },
+  "grease_correlation": {
+    "go_analysis": {
+      "kernel": "go",
+      "uses_single_grease_value_per_hello": false,
+      "n_distinct_grease_values_per_hello": [
+        4,
+        5
+      ],
+      "slot_stability_across_10": {
+        "cipher": "VARIES(7)",
+        "ext_types": "VARIES(10)",
+        "supported_groups": "VARIES(6)",
+        "supported_versions": "VARIES(7)",
+        "key_share_groups": "VARIES(6)"
+      },
+      "ech_payload_lens": [
+        186,
+        218,
+        250,
+        282
+      ],
+      "any_duplicate_extension_type": false
+    },
+    "rust_analysis": {
+      "kernel": "rust",
+      "uses_single_grease_value_per_hello": false,
+      "n_distinct_grease_values_per_hello": [
+        5
+      ],
+      "slot_stability_across_10": {
+        "cipher": "STABLE(('0xfafa',))",
+        "ext_types": "STABLE(('0xcaca', '0xaaaa'))",
+        "supported_groups": "STABLE(('0x4a4a',))",
+        "supported_versions": "STABLE(('0x6a6a',))",
+        "key_share_groups": "STABLE(('0x4a4a',))"
+      },
+      "ech_payload_lens": [
+        186,
+        218,
+        250,
+        282
+      ],
+      "any_duplicate_extension_type": false
+    },
+    "invariants_verified_10_of_10_both_kernels": {
+      "supported_groups_GREASE_equals_key_share_GREASE": true,
+      "two_extension_type_GREASE_always_distinct_no_duplicate": true
+    },
+    "go_cipher_grease_independent_of_groups": "0/10 overlap (cipher GREASE drawn independently)",
+    "rust_current_fixed_grease_values": {
+      "cipher": "0xfafa",
+      "supported_groups": "0x4a4a",
+      "supported_versions": "0x6a6a",
+      "key_share": "0x4a4a",
+      "extension_head": "0xcaca",
+      "extension_tail": "0xaaaa",
+      "note": "STRUCTURE matches Go (groups==key_share; two distinct ext-type GREASE) but every VALUE is fixed; Go randomizes all of them per-hello."
+    },
+    "per_run_go": [
+      {
+        "kernel": "go",
+        "run_index": 1,
+        "grease_cipher": [
+          "0x1a1a"
+        ],
+        "grease_extension_types": [
+          "0x7a7a",
+          "0x5a5a"
+        ],
+        "grease_supported_groups": [
+          "0x5a5a"
+        ],
+        "grease_supported_versions": [
+          "0x8a8a"
+        ],
+        "grease_key_share_groups": [
+          "0x5a5a"
+        ],
+        "ech_outer_payload_len": 282,
+        "n_distinct_grease_values": 4,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "go",
+        "run_index": 2,
+        "grease_cipher": [
+          "0x6a6a"
+        ],
+        "grease_extension_types": [
+          "0x4a4a",
+          "0x6a6a"
+        ],
+        "grease_supported_groups": [
+          "0x1a1a"
+        ],
+        "grease_supported_versions": [
+          "0x8a8a"
+        ],
+        "grease_key_share_groups": [
+          "0x1a1a"
+        ],
+        "ech_outer_payload_len": 282,
+        "n_distinct_grease_values": 4,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "go",
+        "run_index": 3,
+        "grease_cipher": [
+          "0xdada"
+        ],
+        "grease_extension_types": [
+          "0x5a5a",
+          "0xeaea"
+        ],
+        "grease_supported_groups": [
+          "0xcaca"
+        ],
+        "grease_supported_versions": [
+          "0x9a9a"
+        ],
+        "grease_key_share_groups": [
+          "0xcaca"
+        ],
+        "ech_outer_payload_len": 282,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "go",
+        "run_index": 4,
+        "grease_cipher": [
+          "0x8a8a"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0x0a0a"
+        ],
+        "grease_supported_groups": [
+          "0x5a5a"
+        ],
+        "grease_supported_versions": [
+          "0xdada"
+        ],
+        "grease_key_share_groups": [
+          "0x5a5a"
+        ],
+        "ech_outer_payload_len": 186,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "go",
+        "run_index": 5,
+        "grease_cipher": [
+          "0xbaba"
+        ],
+        "grease_extension_types": [
+          "0xeaea",
+          "0x4a4a"
+        ],
+        "grease_supported_groups": [
+          "0x9a9a"
+        ],
+        "grease_supported_versions": [
+          "0xcaca"
+        ],
+        "grease_key_share_groups": [
+          "0x9a9a"
+        ],
+        "ech_outer_payload_len": 218,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "go",
+        "run_index": 6,
+        "grease_cipher": [
+          "0x4a4a"
+        ],
+        "grease_extension_types": [
+          "0xaaaa",
+          "0x9a9a"
+        ],
+        "grease_supported_groups": [
+          "0xcaca"
+        ],
+        "grease_supported_versions": [
+          "0x8a8a"
+        ],
+        "grease_key_share_groups": [
+          "0xcaca"
+        ],
+        "ech_outer_payload_len": 186,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "go",
+        "run_index": 7,
+        "grease_cipher": [
+          "0x8a8a"
+        ],
+        "grease_extension_types": [
+          "0x1a1a",
+          "0x8a8a"
+        ],
+        "grease_supported_groups": [
+          "0x9a9a"
+        ],
+        "grease_supported_versions": [
+          "0xfafa"
+        ],
+        "grease_key_share_groups": [
+          "0x9a9a"
+        ],
+        "ech_outer_payload_len": 186,
+        "n_distinct_grease_values": 4,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "go",
+        "run_index": 8,
+        "grease_cipher": [
+          "0xdada"
+        ],
+        "grease_extension_types": [
+          "0x3a3a",
+          "0x2a2a"
+        ],
+        "grease_supported_groups": [
+          "0x2a2a"
+        ],
+        "grease_supported_versions": [
+          "0xaaaa"
+        ],
+        "grease_key_share_groups": [
+          "0x2a2a"
+        ],
+        "ech_outer_payload_len": 282,
+        "n_distinct_grease_values": 4,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "go",
+        "run_index": 9,
+        "grease_cipher": [
+          "0x1a1a"
+        ],
+        "grease_extension_types": [
+          "0x5a5a",
+          "0x4a4a"
+        ],
+        "grease_supported_groups": [
+          "0xbaba"
+        ],
+        "grease_supported_versions": [
+          "0xfafa"
+        ],
+        "grease_key_share_groups": [
+          "0xbaba"
+        ],
+        "ech_outer_payload_len": 250,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "go",
+        "run_index": 10,
+        "grease_cipher": [
+          "0xcaca"
+        ],
+        "grease_extension_types": [
+          "0xbaba",
+          "0xdada"
+        ],
+        "grease_supported_groups": [
+          "0x2a2a"
+        ],
+        "grease_supported_versions": [
+          "0x1a1a"
+        ],
+        "grease_key_share_groups": [
+          "0x2a2a"
+        ],
+        "ech_outer_payload_len": 218,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      }
+    ],
+    "per_run_rust": [
+      {
+        "kernel": "rust",
+        "run_index": 1,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 282,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "rust",
+        "run_index": 2,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 282,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "rust",
+        "run_index": 3,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 250,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "rust",
+        "run_index": 4,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 282,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "rust",
+        "run_index": 5,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 282,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "rust",
+        "run_index": 6,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 186,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "rust",
+        "run_index": 7,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 186,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "rust",
+        "run_index": 8,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 218,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "rust",
+        "run_index": 9,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 282,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      },
+      {
+        "kernel": "rust",
+        "run_index": 10,
+        "grease_cipher": [
+          "0xfafa"
+        ],
+        "grease_extension_types": [
+          "0xcaca",
+          "0xaaaa"
+        ],
+        "grease_supported_groups": [
+          "0x4a4a"
+        ],
+        "grease_supported_versions": [
+          "0x6a6a"
+        ],
+        "grease_key_share_groups": [
+          "0x4a4a"
+        ],
+        "ech_outer_payload_len": 218,
+        "n_distinct_grease_values": 5,
+        "duplicate_extension_type_detected": false
+      }
+    ]
+  },
+  "answers": {
+    "1_go_reuses_one_grease_value_per_hello": "NO — 4-5 distinct GREASE values per hello",
+    "2_go_uses_two_or_more_grease_values": "YES — 4-5 per hello",
+    "3_fixed_cross_slot_correlation": "YES — supported_groups GREASE == key_share GREASE (10/10); two distinct extension-type GREASE (head/tail); cipher & supported_versions independent draws",
+    "4_rust_fixed_slots": "ALL GREASE values fixed (cipher/groups/versions/key_share/ext-head/ext-tail)",
+    "5_rust_randomized_slots": "NONE of the GREASE VALUES (ECH payload length and extension ORDER do randomize, but GREASE values do not)",
+    "6_randomizing_cipher_alone_enough": "NO — Go randomizes ALL GREASE slots; fixing only cipher leaves 5 other fixed GREASE values, still distinguishable to a GREASE-value-entropy analyzer",
+    "7_shared_selector_needed": "YES — a coordinated per-hello GREASE selector is required to preserve groups==key_share and to keep the two ext-type GREASE distinct; independent per-slot random would break the correlation and risk a duplicate extension type",
+    "8_duplicate_extension_type_risk": "REAL if a naive selector picks the same GREASE value for both ext-type slots; current code keeps them distinct (10/10). The selector MUST guarantee ext-head != ext-tail"
+  }
+}
