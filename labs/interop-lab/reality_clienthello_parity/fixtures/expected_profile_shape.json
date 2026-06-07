@@ -1,0 +1,94 @@
+{
+  "snapshot_version": 1,
+  "generated_from": {
+    "go_reference_profile": "utls.HelloChrome_Auto",
+    "note": "ADVISORY-ONLY upstream-drift snapshot. HelloChrome_Auto drifts with upstream Chrome; this hash is NOT a permanent browser-fingerprint commitment. The blocking gate is the live Go-vs-Rust relative comparison, not equality to this snapshot."
+  },
+  "required_field_shape": {
+    "cipher_tail_no_grease": [
+      "0x1301",
+      "0x1302",
+      "0x1303",
+      "0xc02b",
+      "0xc02f",
+      "0xc02c",
+      "0xc030",
+      "0xcca9",
+      "0xcca8",
+      "0xc013",
+      "0xc014",
+      "0x009c",
+      "0x009d",
+      "0x002f",
+      "0x0035"
+    ],
+    "supported_groups": [
+      "GREASE",
+      "0x001d",
+      "0x0017",
+      "0x0018"
+    ],
+    "signature_algorithms_in_order": [
+      "0x0403",
+      "0x0804",
+      "0x0401",
+      "0x0503",
+      "0x0805",
+      "0x0501",
+      "0x0806",
+      "0x0601"
+    ],
+    "supported_versions": [
+      "GREASE",
+      "0x0304",
+      "0x0303"
+    ],
+    "alpn": [
+      "h2",
+      "http/1.1"
+    ],
+    "key_share_groups": [
+      {
+        "group": "GREASE",
+        "key_length": 1
+      },
+      {
+        "group": "0x001d",
+        "key_length": 32
+      }
+    ],
+    "extension_set_sorted_grease_as_category": [
+      "alpn",
+      "application_settings",
+      "compress_certificate",
+      "ec_point_formats",
+      "ech_outer",
+      "extended_master_secret",
+      "key_share",
+      "psk_key_exchange_modes",
+      "renegotiation_info",
+      "server_name",
+      "session_ticket",
+      "signature_algorithms",
+      "signed_cert_timestamp",
+      "status_request",
+      "supported_groups",
+      "supported_versions"
+    ],
+    "compression_methods": [
+      0
+    ],
+    "session_id_length": 32,
+    "session_id_role": "reality-auth-redacted"
+  },
+  "normalized_profile_digest": "bc002612a968fae0",
+  "from_spec_ja4": "t13d1516h2_8daaf6152771_d8a2da3f94cd",
+  "from_spec_ja4_status": "DIAGNOSTIC_PENDING_FOXIO_REFERENCE",
+  "record_length_buckets_observed": [
+    505,
+    537,
+    569,
+    601
+  ],
+  "record_length_ladder_spacing": 32
+}
