@@ -53,11 +53,14 @@ const EXT_KEY_SHARE: u16 = 0x0033;
 const EXT_APPLICATION_SETTINGS: u16 = 0x44cd;
 const EXT_ECH_OUTER: u16 = 0xfe0d;
 const EXT_RENEGOTIATION_INFO: u16 = 0xff01;
-const GREASE_EXT_HEAD: u16 = 0xcaca;
-const GREASE_CIPHER_SUITE: u16 = 0xfafa;
-const GREASE_EXT_TAIL: u16 = 0xaaaa;
-const GREASE_SUPPORTED_VERSIONS: u16 = 0x6a6a;
-const GREASE_NAMED_GROUP: u16 = 0x4a4a;
+/// RFC 8701 GREASE reserved values (the sixteen `0x?a?a` code points). Chrome
+/// draws fresh GREASE values for every ClientHello; the per-handshake selector
+/// (`ChromeGreaseProfile`) picks from this table so REALITY reproduces that
+/// behaviour instead of pinning one value per slot.
+const GREASE_VALUES: [u16; 16] = [
+    0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a, 0x6a6a, 0x7a7a, 0x8a8a, 0x9a9a, 0xaaaa, 0xbaba,
+    0xcaca, 0xdada, 0xeaea, 0xfafa,
+];
 const UTLS_GREASE_ECH_OUTER_CLIENT_HELLO: u8 = 0x00;
 const UTLS_GREASE_ECH_KDF_ID: u16 = 0x0001;
 const UTLS_GREASE_ECH_AEAD_ID: u16 = 0x0001;
@@ -577,9 +580,24 @@ fn build_chrome_client_hello_fingerprint(
 fn build_chrome_client_hello_fingerprint_with_seed(
     randomization_seed: u16,
 ) -> ClientHelloFingerprint {
+    // GREASE values are drawn from an INDEPENDENT per-ClientHello OsRng source, NOT from
+    // randomization_seed (which drives extension order / ECH bucket / padding). Reusing the
+    // seed would make all five GREASE slots an affine function of one 16-bit value: the
+    // exhaustive T3-1C.1 audit showed that collapsed to only 16 distinct profiles with every
+    // slot predictable from any other. Independent entropy restores Chrome-like behaviour.
+    build_chrome_client_hello_fingerprint_with_seed_and_grease(
+        randomization_seed,
+        ChromeGreaseProfile::random(&mut OsRng),
+    )
+}
+
+fn build_chrome_client_hello_fingerprint_with_seed_and_grease(
+    randomization_seed: u16,
+    grease: ChromeGreaseProfile,
+) -> ClientHelloFingerprint {
     ClientHelloFingerprint {
         opaque_extensions: vec![
-            (GREASE_EXT_HEAD, Vec::new()),
+            (grease.ext_head, Vec::new()),
             (EXT_SCT, Vec::new()),
             (EXT_COMPRESS_CERTIFICATE, vec![0x02, 0x00, 0x02]),
             (EXT_APPLICATION_SETTINGS, vec![0x00, 0x03, 0x02, b'h', b'2']),
@@ -587,24 +605,94 @@ fn build_chrome_client_hello_fingerprint_with_seed(
                 EXT_ECH_OUTER,
                 build_utls_boring_grease_ech_extension(randomization_seed),
             ),
-            (GREASE_EXT_TAIL, vec![0x00]),
+            (grease.ext_tail, vec![0x00]),
         ],
         randomization_seed: Some(randomization_seed),
-        extension_order: build_chrome_extension_order(randomization_seed),
+        extension_order: build_chrome_extension_order(
+            randomization_seed,
+            grease.ext_head,
+            grease.ext_tail,
+        ),
         prefix_extension_order: vec![],
         suffix_extension_order: vec![],
-        grease_ciphersuite: Some(GREASE_CIPHER_SUITE),
+        grease_ciphersuite: Some(grease.cipher),
         extra_cipher_suites: vec![
             0xcca9, 0xcca8, 0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035,
         ],
         include_empty_session_ticket: true,
         include_renegotiation_info: true,
-        supported_versions_override: Some(vec![GREASE_SUPPORTED_VERSIONS, 0x0304, 0x0303]),
-        supported_groups_override: Some(vec![GREASE_NAMED_GROUP, 0x001d, 0x0017, 0x0018]),
-        key_share_grease: Some((GREASE_NAMED_GROUP, vec![0x00])),
+        supported_versions_override: Some(vec![grease.supported_versions, 0x0304, 0x0303]),
+        supported_groups_override: Some(vec![grease.group, 0x001d, 0x0017, 0x0018]),
+        key_share_grease: Some((grease.group, vec![0x00])),
         signature_algorithms_override: Some(vec![
             0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
         ]),
+    }
+}
+
+/// Per-ClientHello GREASE value selection (RFC 8701).
+///
+/// Chrome (via uTLS `HelloChrome_Auto`) draws fresh GREASE values for every
+/// ClientHello. The logical slots — cipher, supported_versions, group, ext_head,
+/// ext_tail — are drawn **independently** from [`GREASE_VALUES`]; `group` is shared by
+/// supported_groups and key_share so the two stay correlated (as Chrome emits them), and
+/// `ext_tail` is re-drawn until it differs from `ext_head` so the two GREASE extension
+/// types never collide. Every other slot may collide naturally, matching Chrome's 4–5
+/// distinct-value behaviour. The production entropy is an **independent per-ClientHello
+/// `OsRng` draw** — deliberately NOT the `randomization_seed` (which drives extension
+/// order / ECH bucket): deriving all slots from one 16-bit seed via the GF(2)-linear
+/// mixer made them affinely dependent (only 16 distinct profiles; see the T3-1C.1 audit).
+/// No global mutable state, no timestamp seed, no static counter.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+struct ChromeGreaseProfile {
+    cipher: u16,
+    supported_versions: u16,
+    group: u16,
+    ext_head: u16,
+    ext_tail: u16,
+}
+
+impl ChromeGreaseProfile {
+    /// Build a profile by pulling indices from `next_index`; each call must yield
+    /// a fresh index into [`GREASE_VALUES`]. `ext_tail` re-draws while it collides
+    /// with `ext_head`, bounded by the table length so a degenerate (always
+    /// colliding) source still terminates with a guaranteed-distinct fallback.
+    /// The injectable source makes the correlation rules deterministically
+    /// testable without probabilistic assertions.
+    fn from_index_source(mut next_index: impl FnMut() -> usize) -> Self {
+        let n = GREASE_VALUES.len();
+        let cipher = GREASE_VALUES[next_index() % n];
+        let supported_versions = GREASE_VALUES[next_index() % n];
+        let group = GREASE_VALUES[next_index() % n];
+        let head_idx = next_index() % n;
+        let mut tail_idx = next_index() % n;
+        let mut guard = 0;
+        while tail_idx == head_idx && guard < n {
+            tail_idx = next_index() % n;
+            guard += 1;
+        }
+        if tail_idx == head_idx {
+            tail_idx = (head_idx + 1) % n;
+        }
+        Self {
+            cipher,
+            supported_versions,
+            group,
+            ext_head: GREASE_VALUES[head_idx],
+            ext_tail: GREASE_VALUES[tail_idx],
+        }
+    }
+
+    /// Draw a fresh per-ClientHello profile from an independent RNG. Each logical slot
+    /// pulls its own uniform nibble — `GREASE_VALUES` has 16 entries and 16 divides 2^32,
+    /// so `next_u32() & 0x0f` is unbiased — making the slots mutually independent (unlike a
+    /// single-seed derivation, whose GF(2)-linear mixing forced an affine cross-slot
+    /// relationship; T3-1C.1). Production passes `&mut OsRng`; tests inject a deterministic
+    /// RNG. The bounded ext_tail re-draw is plain rejection sampling here, so ext_tail is
+    /// uniform over the fifteen non-`ext_head` values; the deterministic fallback only ever
+    /// fires for a degenerate injected source, never on the OsRng path.
+    fn random(rng: &mut impl RngCore) -> Self {
+        Self::from_index_source(|| (rng.next_u32() & 0x0f) as usize)
     }
 }
 
@@ -695,7 +783,11 @@ fn chrome_bucket_pairwise_bias(randomization_seed: u16, payload_len: usize, ext_
         )
 }
 
-fn build_chrome_extension_order(randomization_seed: u16) -> Vec<u16> {
+fn build_chrome_extension_order(
+    randomization_seed: u16,
+    grease_head: u16,
+    grease_tail: u16,
+) -> Vec<u16> {
     let payload_len = chrome_ech_payload_len_from_seed(randomization_seed);
     let fe0d_full_position = select_fe0d_full_position(randomization_seed, payload_len);
     let fe0d_band = chrome_classify_fe0d_position_band(payload_len, fe0d_full_position);
@@ -730,9 +822,9 @@ fn build_chrome_extension_order(randomization_seed: u16) -> Vec<u16> {
     ranked_extensions.sort_by_key(|(score, ext_type)| (*score, *ext_type));
 
     let mut extension_order = Vec::with_capacity(ranked_extensions.len() + 2);
-    extension_order.push(GREASE_EXT_HEAD);
+    extension_order.push(grease_head);
     extension_order.extend(ranked_extensions.into_iter().map(|(_, ext_type)| ext_type));
-    extension_order.push(GREASE_EXT_TAIL);
+    extension_order.push(grease_tail);
     extension_order
 }
 
@@ -1556,6 +1648,13 @@ mod tests {
     use super::*;
     use base64::Engine as _;
 
+    /// True iff `value` is one of the sixteen RFC 8701 GREASE code points.
+    /// Used in place of the old fixed-value assertions now that the per-handshake
+    /// `ChromeGreaseProfile` draws GREASE values fresh for each ClientHello.
+    fn is_grease(value: u16) -> bool {
+        GREASE_VALUES.contains(&value)
+    }
+
     fn test_config() -> RealityClientConfig {
         RealityClientConfig {
             target: "www.apple.com".to_string(),
@@ -1651,7 +1750,7 @@ mod tests {
         assert_eq!(flattened.len(), 5 + record_len);
         let parsed = ClientHello::parse(&flattened[5..]).expect("parse client hello");
         assert_eq!(parsed.session_id.len(), REALITY_SESSION_ID_LEN);
-        assert_eq!(parsed.cipher_suites[0], GREASE_CIPHER_SUITE);
+        assert!(is_grease(parsed.cipher_suites[0]));
     }
 
     #[test]
@@ -1784,6 +1883,7 @@ mod tests {
     }
 
     #[test]
+    #[allow(clippy::too_many_lines)] // one cohesive wire-format assertion over every injected extension
     fn test_chrome_baseline_extensions_are_injected() {
         let config = Arc::new(test_config());
         let handshake = RealityHandshake::new(config).unwrap();
@@ -1797,12 +1897,15 @@ mod tests {
             .map(|ext| ext.extension_type)
             .collect::<Vec<_>>();
 
-        assert_eq!(parsed.cipher_suites[0], GREASE_CIPHER_SUITE);
+        assert!(is_grease(parsed.cipher_suites[0]));
         assert!(parsed.cipher_suites.ends_with(&[
             0xcca9, 0xcca8, 0xc013, 0xc014, 0x009c, 0x009d, 0x002f, 0x0035,
         ]));
-        assert_eq!(extension_types.first().copied(), Some(GREASE_EXT_HEAD));
-        assert_eq!(extension_types.last().copied(), Some(GREASE_EXT_TAIL));
+        let grease_head = extension_types.first().copied().unwrap();
+        let grease_tail = extension_types.last().copied().unwrap();
+        assert!(is_grease(grease_head));
+        assert!(is_grease(grease_tail));
+        assert_ne!(grease_head, grease_tail);
         let mut sorted_extension_types = extension_types;
         sorted_extension_types.sort_unstable();
         let mut expected_extension_types = vec![
@@ -1820,10 +1923,10 @@ mod tests {
             EXT_PSK_KEY_EXCHANGE_MODES,
             EXT_KEY_SHARE,
             EXT_APPLICATION_SETTINGS,
-            GREASE_EXT_HEAD,
+            grease_head,
             EXT_ECH_OUTER,
             EXT_RENEGOTIATION_INFO,
-            GREASE_EXT_TAIL,
+            grease_tail,
         ];
         expected_extension_types.sort_unstable();
         assert_eq!(sorted_extension_types, expected_extension_types);
@@ -1863,13 +1966,20 @@ mod tests {
                 .len(),
             0
         );
+        let supported_versions = &parsed.find_extension(EXT_SUPPORTED_VERSIONS).unwrap().data;
+        assert_eq!(supported_versions[0], 0x06);
+        assert!(is_grease(u16::from_be_bytes([
+            supported_versions[1],
+            supported_versions[2],
+        ])));
+        assert_eq!(&supported_versions[3..], &[0x03, 0x04, 0x03, 0x03]);
+        let supported_groups = &parsed.find_extension(EXT_SUPPORTED_GROUPS).unwrap().data;
+        assert_eq!(&supported_groups[..2], &[0x00, 0x08]);
+        let groups_grease = u16::from_be_bytes([supported_groups[2], supported_groups[3]]);
+        assert!(is_grease(groups_grease));
         assert_eq!(
-            parsed.find_extension(EXT_SUPPORTED_VERSIONS).unwrap().data,
-            vec![0x06, 0x6a, 0x6a, 0x03, 0x04, 0x03, 0x03]
-        );
-        assert_eq!(
-            parsed.find_extension(EXT_SUPPORTED_GROUPS).unwrap().data,
-            vec![0x00, 0x08, 0x4a, 0x4a, 0x00, 0x1d, 0x00, 0x17, 0x00, 0x18]
+            &supported_groups[4..],
+            &[0x00, 0x1d, 0x00, 0x17, 0x00, 0x18]
         );
         assert_eq!(
             parsed
@@ -1881,9 +1991,14 @@ mod tests {
                 0x08, 0x06, 0x06, 0x01,
             ]
         );
+        let key_share = &parsed.find_extension(EXT_KEY_SHARE).unwrap().data;
+        assert_eq!(&key_share[..2], &[0x00, 0x29]);
+        let key_share_grease = u16::from_be_bytes([key_share[2], key_share[3]]);
+        assert!(is_grease(key_share_grease));
+        assert_eq!(&key_share[4..7], &[0x00, 0x01, 0x00]);
         assert_eq!(
-            &parsed.find_extension(EXT_KEY_SHARE).unwrap().data[..7],
-            &[0x00, 0x29, 0x4a, 0x4a, 0x00, 0x01, 0x00]
+            key_share_grease, groups_grease,
+            "key_share GREASE must equal supported_groups GREASE"
         );
     }
 
@@ -1926,14 +2041,11 @@ mod tests {
         assert_eq!(fingerprint.randomization_seed, Some(0x1234));
         assert!(fingerprint.prefix_extension_order.is_empty());
         assert!(fingerprint.suffix_extension_order.is_empty());
-        assert_eq!(
-            fingerprint.extension_order.first().copied(),
-            Some(GREASE_EXT_HEAD)
-        );
-        assert_eq!(
-            fingerprint.extension_order.last().copied(),
-            Some(GREASE_EXT_TAIL)
-        );
+        let head = fingerprint.extension_order.first().copied().unwrap();
+        let tail = fingerprint.extension_order.last().copied().unwrap();
+        assert!(is_grease(head));
+        assert!(is_grease(tail));
+        assert_ne!(head, tail);
         assert_eq!(
             fingerprint.extension_order.len(),
             CHROME_BASELINE_MIDDLE_EXTENSIONS.len() + 2
@@ -2129,8 +2241,11 @@ mod tests {
                 .map(|ext| ext.extension_type)
                 .collect::<Vec<_>>();
 
-            assert_eq!(extension_types.first().copied(), Some(GREASE_EXT_HEAD));
-            assert_eq!(extension_types.last().copied(), Some(GREASE_EXT_TAIL));
+            let head = extension_types.first().copied().unwrap();
+            let tail = extension_types.last().copied().unwrap();
+            assert!(is_grease(head));
+            assert!(is_grease(tail));
+            assert_ne!(head, tail);
             orders.insert(extension_types);
         }
 
@@ -2252,5 +2367,265 @@ mod tests {
             ech_payload_lens.len() > 1,
             "expected dynamic GREASE ECH payload family"
         );
+    }
+
+    // --- T3-1C coordinated per-ClientHello GREASE selector (deterministic) ---
+    // T3-1C.1: GREASE uses an INDEPENDENT per-ClientHello OsRng draw, NOT the
+    // randomization_seed. Tests inject a deterministic RNG / index source — no probabilistic gate.
+
+    /// Deterministic `RngCore` yielding a fixed u32 sequence (cycled) so the OsRng-backed
+    /// `ChromeGreaseProfile::random` path is exercised reproducibly. `random` consumes the
+    /// low nibble of each draw.
+    struct SeqRng {
+        vals: Vec<u32>,
+        i: usize,
+    }
+    impl rand::RngCore for SeqRng {
+        fn next_u32(&mut self) -> u32 {
+            let v = self.vals[self.i % self.vals.len()];
+            self.i += 1;
+            v
+        }
+        fn next_u64(&mut self) -> u64 {
+            u64::from(self.next_u32())
+        }
+        fn fill_bytes(&mut self, dest: &mut [u8]) {
+            for b in dest.iter_mut() {
+                *b = self.next_u32() as u8;
+            }
+        }
+        fn try_fill_bytes(&mut self, dest: &mut [u8]) -> Result<(), rand::Error> {
+            self.fill_bytes(dest);
+            Ok(())
+        }
+    }
+
+    #[test]
+    fn exhaustive_or_table_driven_slot_membership() {
+        // Every table entry is a GREASE code point.
+        for v in GREASE_VALUES {
+            assert!(is_grease(v));
+        }
+        // Table-driven: every constant index source yields an all-GREASE profile.
+        for idx in 0..GREASE_VALUES.len() {
+            let g = ChromeGreaseProfile::from_index_source(|| idx);
+            for value in [
+                g.cipher,
+                g.supported_versions,
+                g.group,
+                g.ext_head,
+                g.ext_tail,
+            ] {
+                assert!(
+                    is_grease(value),
+                    "idx {idx} produced non-GREASE {value:#06x}"
+                );
+            }
+        }
+        // Production RNG path (deterministic SeqRng) stays in-table for every draw.
+        let mut rng = SeqRng {
+            vals: vec![0, 3, 6, 9, 12, 15, 1, 4],
+            i: 0,
+        };
+        for _ in 0..64 {
+            let g = ChromeGreaseProfile::random(&mut rng);
+            for value in [
+                g.cipher,
+                g.supported_versions,
+                g.group,
+                g.ext_head,
+                g.ext_tail,
+            ] {
+                assert!(is_grease(value));
+            }
+        }
+    }
+
+    #[test]
+    fn group_and_key_share_share_exactly_one_draw() {
+        // The selector draws `group` with exactly one index pull (the 3rd), and that single
+        // value feeds BOTH supported_groups[0] and the key_share group.
+        let mut pulls = 0usize;
+        let seq = [1usize, 4, 7, 10, 13];
+        let g = ChromeGreaseProfile::from_index_source(|| {
+            let v = seq[pulls.min(seq.len() - 1)];
+            pulls += 1;
+            v
+        });
+        assert_eq!(g.group, GREASE_VALUES[7], "group is the single 3rd draw");
+        let fp = build_chrome_client_hello_fingerprint_with_seed_and_grease(0x1234, g);
+        let supported_groups = fp.supported_groups_override.expect("supported_groups");
+        let (key_share_group, _) = fp.key_share_grease.expect("key_share_grease");
+        assert!(is_grease(supported_groups[0]));
+        assert_eq!(supported_groups[0], g.group);
+        assert_eq!(key_share_group, g.group);
+    }
+
+    #[test]
+    fn ext_tail_collision_path_is_bounded_and_distinct() {
+        // Draw order: cipher, supported_versions, group, ext_head, ext_tail(, retries).
+        // Force the first ext_tail candidate (5th draw) to collide with ext_head
+        // (4th draw, index 5); the retry then yields a distinct index (9).
+        let mut it = [0usize, 1, 2, 5, 5, 9].into_iter();
+        let g = ChromeGreaseProfile::from_index_source(|| it.next().unwrap());
+        assert_eq!(g.ext_head, GREASE_VALUES[5]);
+        assert_eq!(g.ext_tail, GREASE_VALUES[9]);
+        assert_ne!(g.ext_head, g.ext_tail);
+
+        // A degenerate source that always collides must still terminate with a
+        // guaranteed-distinct fallback of (head_idx + 1) % 16.
+        let g2 = ChromeGreaseProfile::from_index_source(|| 3);
+        assert_eq!(g2.ext_head, GREASE_VALUES[3]);
+        assert_eq!(g2.ext_tail, GREASE_VALUES[4]);
+        assert_ne!(g2.ext_head, g2.ext_tail);
+    }
+
+    #[test]
+    fn unrelated_slots_can_collide() {
+        // cipher, supported_versions and group all draw index 7 → identical values.
+        // This is permitted; only ext_head != ext_tail is enforced (no six-slot dedup).
+        let mut it = [7usize, 7, 7, 0, 1].into_iter();
+        let g = ChromeGreaseProfile::from_index_source(|| it.next().unwrap());
+        assert_eq!(g.cipher, GREASE_VALUES[7]);
+        assert_eq!(g.supported_versions, GREASE_VALUES[7]);
+        assert_eq!(g.group, GREASE_VALUES[7]);
+        assert_eq!(g.cipher, g.group);
+        assert_ne!(g.ext_head, g.ext_tail);
+    }
+
+    #[test]
+    fn deterministic_sequences_produce_expected_profiles() {
+        let mut a = [0usize, 2, 4, 6, 8].into_iter();
+        let ga = ChromeGreaseProfile::from_index_source(|| a.next().unwrap());
+        assert_eq!(
+            ga,
+            ChromeGreaseProfile {
+                cipher: GREASE_VALUES[0],
+                supported_versions: GREASE_VALUES[2],
+                group: GREASE_VALUES[4],
+                ext_head: GREASE_VALUES[6],
+                ext_tail: GREASE_VALUES[8],
+            }
+        );
+        let mut b = [1usize, 3, 5, 7, 9].into_iter();
+        let gb = ChromeGreaseProfile::from_index_source(|| b.next().unwrap());
+        assert_eq!(
+            gb,
+            ChromeGreaseProfile {
+                cipher: GREASE_VALUES[1],
+                supported_versions: GREASE_VALUES[3],
+                group: GREASE_VALUES[5],
+                ext_head: GREASE_VALUES[7],
+                ext_tail: GREASE_VALUES[9],
+            }
+        );
+        assert_ne!(ga, gb);
+    }
+
+    #[test]
+    fn no_duplicate_grease_extension_type() {
+        for seed in [0u16, 5, 0x1234, 0xbeef, 0xffff] {
+            let fp = build_chrome_client_hello_fingerprint_with_seed(seed);
+            let grease_exts: Vec<u16> = fp
+                .extension_order
+                .iter()
+                .copied()
+                .filter(|t| is_grease(*t))
+                .collect();
+            assert_eq!(grease_exts.len(), 2, "exactly two GREASE extension types");
+            assert_ne!(grease_exts[0], grease_exts[1], "GREASE ext types distinct");
+            // The opaque head/tail GREASE extensions match the order's head/tail.
+            assert_eq!(fp.extension_order.first().copied(), Some(grease_exts[0]));
+            assert_eq!(fp.extension_order.last().copied(), Some(grease_exts[1]));
+            assert_eq!(
+                fp.opaque_extensions.first().map(|(t, _)| *t),
+                Some(grease_exts[0])
+            );
+            assert_eq!(
+                fp.opaque_extensions.last().map(|(t, _)| *t),
+                Some(grease_exts[1])
+            );
+        }
+    }
+
+    #[test]
+    fn production_selector_does_not_reuse_extension_order_seed() {
+        // Structural proof that GREASE is independent of the extension-order seed. `random`
+        // takes only an RNG (no seed parameter), so it CANNOT reuse the seed; this pins the
+        // consequence at the fingerprint-builder level.
+        let mut a = [0usize, 1, 2, 3, 4].into_iter();
+        let grease_a = ChromeGreaseProfile::from_index_source(|| a.next().unwrap());
+        let mut b = [8usize, 9, 10, 11, 12].into_iter();
+        let grease_b = ChromeGreaseProfile::from_index_source(|| b.next().unwrap());
+        assert_ne!(grease_a, grease_b);
+
+        let middle = |fp: &ClientHelloFingerprint| -> Vec<u16> {
+            fp.extension_order
+                .iter()
+                .copied()
+                .filter(|t| !is_grease(*t))
+                .collect()
+        };
+        let markers = |fp: &ClientHelloFingerprint| -> (Option<u16>, Vec<u16>) {
+            (
+                fp.grease_ciphersuite,
+                fp.extension_order
+                    .iter()
+                    .copied()
+                    .filter(|t| is_grease(*t))
+                    .collect(),
+            )
+        };
+
+        // Same seed, different GREASE → identical (seed-driven) middle order, different GREASE.
+        let fp_seed_a =
+            build_chrome_client_hello_fingerprint_with_seed_and_grease(0x1234, grease_a);
+        let fp_seed_b =
+            build_chrome_client_hello_fingerprint_with_seed_and_grease(0x1234, grease_b);
+        assert_eq!(
+            middle(&fp_seed_a),
+            middle(&fp_seed_b),
+            "seed drives the middle order"
+        );
+        assert_ne!(
+            markers(&fp_seed_a),
+            markers(&fp_seed_b),
+            "GREASE is a separate input"
+        );
+
+        // Different seed, same GREASE → different middle order, identical GREASE markers.
+        let fp_other = build_chrome_client_hello_fingerprint_with_seed_and_grease(0x9999, grease_a);
+        assert_ne!(
+            middle(&fp_seed_a),
+            middle(&fp_other),
+            "seed drives the order"
+        );
+        assert_eq!(
+            markers(&fp_seed_a),
+            markers(&fp_other),
+            "seed does NOT touch GREASE"
+        );
+    }
+
+    #[test]
+    fn selector_is_rebuilt_per_clienthello() {
+        // The builder is a pure function of (seed, grease) with no cached/global selector
+        // state: identical inputs → identical output, and two different injected sequences
+        // give two different profiles, so each construction consumes a fresh draw.
+        // Per-handshake invocation is guaranteed by perform_stream rebuilding
+        // build_client_config per connection (module audit), and `random` is called inside
+        // the builder, never stored on RealityHandshake / ClientConfig.
+        let mut s = [2usize, 4, 6, 8, 10].into_iter();
+        let g = ChromeGreaseProfile::from_index_source(|| s.next().unwrap());
+        let fp1 = build_chrome_client_hello_fingerprint_with_seed_and_grease(0x55aa, g);
+        let fp2 = build_chrome_client_hello_fingerprint_with_seed_and_grease(0x55aa, g);
+        assert_eq!(fp1.extension_order, fp2.extension_order);
+        assert_eq!(fp1.grease_ciphersuite, fp2.grease_ciphersuite);
+
+        let mut first = [0usize, 1, 2, 3, 4].into_iter();
+        let g1 = ChromeGreaseProfile::from_index_source(|| first.next().unwrap());
+        let mut second = [9usize, 10, 11, 12, 13].into_iter();
+        let g2 = ChromeGreaseProfile::from_index_source(|| second.next().unwrap());
+        assert_ne!(g1, g2);
     }
 }
