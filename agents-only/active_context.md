@@ -12,7 +12,7 @@
 
 ## Resume (2026-06-08)
 
-T3-2 + DRIFT-01 + SVC-DNS-01 DONE. REALITY local main line boxed (T3 closure).
+T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 DONE. REALITY local main line boxed (T3 closure).
 - **DRIFT-01** (`92eab1a8`+`c7af15cb`): verify-consistency clean-tree startup gate restored +
   active governance docs reconciled (boundary exit-0/537, clippy `-D warnings` relaxation,
   R91/前沿 framing, golden_spec S6 `/60` table all retired).
@@ -21,8 +21,11 @@ T3-2 + DRIFT-01 + SVC-DNS-01 DONE. REALITY local main line boxed (T3 closure).
   regression tests (`svc_dns_01_bind_failure_propagation.md`).
 - sb-core full-suite **pre-existing** flakes (NOT SVC-DNS-01; fail on clean HEAD too):
   `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
-- Next card = **SVC-LISTENER-AUDIT-01** (read-only audit: listener services for the same
-  spawn-then-log-return bind antipattern). 52/56 = structural ceiling (4 uncovered BHV all Go-fork).
+- **SVC-LISTENER-AUDIT-01** DONE (`svc_listener_bind_audit.md`): ServiceManager lifecycle
+  listeners (dns_forwarder/derp/ssmapi/resolved) all **class-A** (no C bug remains); **v2ray_api**
+  is the lone bug-shaped instance (tonic binds inside spawn; off `/services/health`, V2RayServer trait).
+- Next card = **SVC-V2RAY-API-01** (pre-bind v2ray gRPC listener so bind failure propagates from
+  start(); NOT yet implemented). 52/56 = structural ceiling (4 uncovered BHV all Go-fork).
   agents-only/a0_reality_spike/ untouched untracked.
 
 ## Strategic State
