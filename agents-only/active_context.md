@@ -13,21 +13,24 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01 CLOSED (01A–01H-C)**; REALITY boxed.
-- **APP-SIDECAR-LIVENESS-01 CLOSED** (01H-C policy: **A/LOG_ONLY_CONTINUE_POLICY_ACCEPTED**; docs
-  `app_sidecar_liveness_01h_*`). Full line delivered+accepted: sb-core generation-aware V2Ray snapshot
-  (01E/E-R1, in-lock `publish_snapshot_locked`) → app `SidecarRuntimeSnapshot` adapter (01F) → Clash
-  task-owner projection + `ClashShutdownHandle` + outer monitor (01G-B) → run-engine **log-only** event
-  bridge `SidecarRuntimeEvent{Exited,ProjectionClosed}` owned by `RuntimeLifecycle`, action always
-  `Continue` (01H-B). Policy rationale: both Clash & V2Ray APIs are auxiliary management/observability
-  sidecars (NOT forwarding dataplane); startup bind-fail already visible-but-nonfatal → runtime death
-  stays non-fatal; source outer monitor = per-severity terminal logger, consumer = debug breadcrumb +
-  `ProjectionClosed` warn (no dup, no escalation). `ProjectionClosed`≠CleanShutdown≠confirmed-death.
-  Stricter behavior deferred → registered **APP-SIDECAR-POLICY-02A** (optional strict/degraded, DEFER/
-  FUTURE; needs a shutdown-phase marker — normal-shutdown `CleanShutdown` else mis-read as fault; pairs
-  with SVC-V2RAY-API-01B). No restart proposal (no demand; reload ordering = H6). **Recommended next
-  independent card: H6** (supervisor reload same-addr start-before-close: new sidecar `pre_bind`
-  EADDRINUSE silently dropped — real correctness defect).
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01 CLOSED** + **APP-RELOAD-SIDECAR-ORDER-01A DONE**; REALITY boxed.
+- **APP-RELOAD-SIDECAR-ORDER-01A DONE** (H6 audit, `app_reload_sidecar_order_01a_audit.md`):
+  **B/V2RAY_SAME_ADDRESS_RELOAD_CONTINUITY_BUG** (control-flow confirmed). sb-core `handle_reload`
+  builds new context (`build_context_from_ir`→new `V2RayApiServer::start()`→`pre_bind` same addr, sup.rs:599)
+  **before** `shutdown_context(old)` (:689); old V2Ray still alive (Step-0 grace stops only bridge inbounds)
+  → EADDRINUSE swallowed (:1171 warn, not attached) → new context has no V2Ray → swap → old closed →
+  **reload reports SUCCESS while V2Ray listener silently vanishes** (flip-flops back next reload). V2Ray-only
+  (Clash=AdminServices once, not rebuilt; bootstrap no reload). `enabled(A)→enabled(A)` + unrelated reloads
+  drop V2Ray. Preferred **Route 3** = reuse unchanged `Arc<dyn V2RayServer>` w/ ownership transfer (so
+  `shutdown_context(old)` won't close reused server); close-old-first breaks rollback. Next=**01B** (fix
+  proposal, design-only; **fix lands in sb-core** — scope flag).
+- **APP-SIDECAR-LIVENESS-01 CLOSED** (01H-C: **A/LOG_ONLY_CONTINUE_POLICY_ACCEPTED**; docs
+  `app_sidecar_liveness_*`). Line: sb-core gen-aware V2Ray snapshot (01E/E-R1) → app adapter (01F) →
+  Clash task-owner projection+`ClashShutdownHandle`+outer monitor (01G-B) → run-engine **log-only**
+  bridge `SidecarRuntimeEvent{Exited,ProjectionClosed}` owned by `RuntimeLifecycle`, action `Continue`
+  (01H-B). Policy: Clash/V2Ray auxiliary (NOT dataplane); startup nonfatal→runtime nonfatal; source=
+  per-severity logger, consumer=debug breadcrumb. Registered **APP-SIDECAR-POLICY-02A** (optional
+  strict/degraded, DEFER/FUTURE; needs shutdown-phase marker; pairs SVC-V2RAY-API-01B).
 - **APP-V2RAY-SURFACE-02D DONE** (`60b88414`): deprecated generic `sb_api::(v2ray::)?V2RayApiServer` via aliases; `GrpcV2RayApiServer`+Simple clean. **V2Ray API state**: bootstrap/run-engine use sb-core real listener; breaking cleanup=DEFER/FUTURE MAJOR. **rustdoc -D warnings BASELINE-RED** (14 unrelated) → **TIDY-RUSTDOC-LINKS**.
 - **SVC-V2RAY-API-01B**=DEFER/POLICY REVIEW. **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash shares `spawn_prebound_clash_api_server`. sb-core **pre-existing** flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
 
