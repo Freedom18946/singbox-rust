@@ -12,26 +12,26 @@
 
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
-**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** + **APP-V2RAY-SURFACE-02A/B DONE**;
-REALITY remains boxed.
-- **APP-V2RAY-SURFACE-02B DONE** (`d4191964`; `app_v2ray_surface_02b_additive_bridge.md`): added
-  feature-gated explicit gRPC aliases `sb_api::v2ray::GrpcV2RayApiServer` and
-  `sb_api::GrpcV2RayApiServer`; direct re-export under `v2ray-api`, no wrapper/listener/Cargo/proto
-  /stats/app/sb-core/fuzz/old-path removal.
-- **APP-V2RAY-SURFACE-02A POLICY** (`ecbe3ffd`; `app_v2ray_surface_02a_redesign_proposal.md`):
-  **A/ADDITIVE_BRIDGE_READY**; old compatibility paths stay during migration.
+**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
+**APP-V2RAY-SURFACE-02A/B/C DONE**; REALITY remains boxed.
+- **APP-V2RAY-SURFACE-02C POLICY** (`app_v2ray_surface_02c_deprecation_audit.md`):
+  **B/GENERIC_ALIAS_SET_DEPRECATION_READY**. Next: **APP-V2RAY-SURFACE-02D** should deprecate
+  generic `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer`, keep `GrpcV2RayApiServer`
+  clean, and leave Simple helper/request structs non-deprecated.
+- **02C probe finding**: `#[deprecated] pub use ... as ...` did not warn external users on current
+  rustc; next implementation should use deprecated type aliases, never the underlying tonic struct.
+- **APP-V2RAY-SURFACE-02B DONE** (`d4191964`/`28106de7`): added feature-gated explicit gRPC aliases
+  `sb_api::v2ray::GrpcV2RayApiServer` and `sb_api::GrpcV2RayApiServer`; no wrapper/listener/Cargo/
+  proto/stats/app/sb-core/fuzz/old-path removal.
 - **V2Ray API state**: bootstrap/run-engine use sb-core real listener (`a80a0916`, `4141724b`);
-  workspace runtime no longer calls `SimpleV2RayApiServer`. `sb-api::v2ray::V2RayApiServer` remains
-  public compat surface with feature-conditioned Simple-vs-gRPC drift; tests/fuzz cover Simple
-  legacy/request contracts.
+  workspace runtime no longer calls `SimpleV2RayApiServer`; tests/fuzz cover Simple legacy/request
+  contracts.
 - **SVC-V2RAY-API-01B** remains DEFER / POLICY REVIEW; ServiceManager health/liveness projection
   remains absent by boundary.
 - **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash API shares `spawn_prebound_clash_api_server`;
   listener binds before handle; caller policy unchanged.
-- Recent validation: `cargo fmt -p app --check`, `cargo test -p app --all-features v2ray` (7/7),
-  app clippy `-D warnings`, workspace check, consistency, boundaries, `git diff --check` all PASS.
-- sb-core full-suite **pre-existing** flakes (NOT SVC-DNS-01/01A; fail on clean HEAD too):
-  `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
+- sb-core full-suite **pre-existing** flakes: `cache_file::test_fakeip_persistence_sled`,
+  `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
 
 ## Strategic State
 
@@ -96,5 +96,4 @@ DEV-REALITY-01 = ARCH-LIMIT (residual): local profile parity CLOSED, official-JA
 
 ## Historical Detail
 
-- R33-R60 + early ClientHello/Vision/REALITY: `mt_real_02_baseline.md`; L01-L25:
-  `archive/L*/`; closed MT-* tracks: `archive/MT-*/`; golden spec: `labs/interop-lab/docs/dual_kernel_golden_spec.md`.
+- R33-R60 + early ClientHello/Vision/REALITY: `mt_real_02_baseline.md`; L01-L25: `archive/L*/`; closed MT-* tracks: `archive/MT-*/`; golden spec: `labs/interop-lab/docs/dual_kernel_golden_spec.md`.
