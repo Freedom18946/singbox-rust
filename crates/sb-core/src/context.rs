@@ -757,10 +757,84 @@ pub trait CacheFile: Send + Sync + std::fmt::Debug {
     fn set_expand(&self, group: &str, expand: bool);
 }
 
+/// Runtime liveness snapshot for a repeatedly-startable V2Ray server.
+///
+/// This is the **state truth source** for "which generation is live and what is the most recent
+/// terminal outcome" — it is deliberately NOT a full terminal-event history, a supervisor event
+/// stream, a health status, or a stats payload. A late subscriber reading the latest value can
+/// always observe the current generation plus the highest-generation terminal seen so far.
+///
+/// Semantics (see `app_sidecar_liveness_01d_generation_snapshot_proposal.md`):
+/// - `current` tracks the newest *active* generation; an older generation's late exit updates only
+///   `last_exit` and never disturbs a newer `current`.
+/// - `last_exit` is the terminal outcome of the **highest generation id** seen so far; it is
+///   monotonic and never regresses to an older generation.
+#[derive(Clone, Debug, Default, PartialEq, Eq)]
+pub struct V2RayServerRuntimeSnapshot {
+    /// The newest active generation, if any is currently running or shutting down.
+    pub current: Option<V2RayServerActiveGeneration>,
+    /// The terminal outcome of the highest generation that has exited so far.
+    pub last_exit: Option<V2RayServerExitRecord>,
+}
+
+/// An active (running or shutting-down) V2Ray server generation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct V2RayServerActiveGeneration {
+    /// Monotonic generation id; the first successful start is generation `1`.
+    pub generation: u64,
+    /// Whether the generation is serving or has been asked to stop.
+    pub phase: V2RayServerActivePhase,
+}
+
+/// Active-phase of a V2Ray server generation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum V2RayServerActivePhase {
+    /// Serving; the listener is bound and the gRPC server is accepting connections.
+    Running,
+    /// A shutdown has been requested for this generation; it is draining.
+    ShutdownRequested,
+}
+
+/// A terminal outcome bound to the generation that produced it.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub struct V2RayServerExitRecord {
+    /// The generation that terminated.
+    pub generation: u64,
+    /// How that generation terminated.
+    pub exit: V2RayServerExit,
+}
+
+/// Terminal outcome of a V2Ray server generation.
+#[derive(Clone, Debug, PartialEq, Eq)]
+#[non_exhaustive]
+pub enum V2RayServerExit {
+    /// Serve future returned `Ok` after a shutdown had been requested for this generation.
+    CleanShutdown,
+    /// Serve future returned `Ok` without any shutdown being requested for this generation.
+    UnexpectedCompletion,
+    /// Serve future returned an error.
+    ServeError(String),
+    /// The serve task panicked.
+    Panicked(String),
+    /// The serve task was cancelled/aborted.
+    Cancelled,
+}
+
 pub trait V2RayServer: Send + Sync + std::fmt::Debug {
     fn start(&self) -> anyhow::Result<()>;
     fn close(&self) -> anyhow::Result<()>;
     fn stats(&self) -> Option<Arc<StatsManager>> {
+        None
+    }
+    /// Subscribe to the server's runtime liveness snapshot.
+    ///
+    /// Additive default returns `None` so existing/external implementors compile unchanged. The
+    /// real `V2RayApiServer` overrides this to expose a cloneable `watch::Receiver` whose latest
+    /// value is always readable by late subscribers.
+    fn subscribe_runtime_state(
+        &self,
+    ) -> Option<tokio::sync::watch::Receiver<V2RayServerRuntimeSnapshot>> {
         None
     }
 }

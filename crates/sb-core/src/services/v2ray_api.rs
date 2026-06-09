@@ -9,8 +9,11 @@
 //! ## Endpoints
 //! Exposed via gRPC on the configured listen address.
 
-use crate::context::V2RayServer;
-use parking_lot::RwLock;
+use crate::context::{
+    V2RayServer, V2RayServerActiveGeneration, V2RayServerActivePhase, V2RayServerExit,
+    V2RayServerExitRecord, V2RayServerRuntimeSnapshot,
+};
+use parking_lot::{Mutex, RwLock};
 use sb_config::ir::{StatsIR, V2RayApiIR};
 use std::collections::{HashMap, HashSet};
 #[cfg(any(feature = "service_v2ray_api", test))]
@@ -18,9 +21,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-
-#[cfg(feature = "service_v2ray_api")]
-use tokio::sync::oneshot;
+use tokio::sync::{oneshot, watch};
 
 #[cfg(feature = "service_v2ray_api")]
 use tonic::{transport::Server, Request, Response, Status};
@@ -327,27 +328,67 @@ impl std::fmt::Debug for V2RayApiState {
     }
 }
 
+/// One active (running or draining) V2Ray server generation.
+///
+/// The shutdown sender and the generation-local `shutdown_requested` marker are bound to *this*
+/// generation, so `close()` can only stop the generation it read and a monitor can only classify
+/// its own generation's terminal — no generation-blind shared flag.
+#[derive(Debug)]
+struct RunningGeneration {
+    generation: u64,
+    phase: V2RayServerActivePhase,
+    /// Set by `close()` when a shutdown is requested for this generation; read by this
+    /// generation's monitor to distinguish `CleanShutdown` from `UnexpectedCompletion`.
+    shutdown_requested: Arc<AtomicBool>,
+    /// This generation's shutdown signal sender (always `None` in the no-feature stub build).
+    shutdown_tx: Option<oneshot::Sender<()>>,
+}
+
+/// The single arbiter of V2Ray server lifecycle state, guarded by one mutex.
+///
+/// `next_generation`, `current`, and `last_exit` are all mutated only under that mutex; the
+/// `watch` sender publishes the resulting snapshot. No `.await` is ever held across the mutex.
+#[derive(Debug)]
+struct V2RayLifecycle {
+    /// Next generation id to hand out; the first successful start consumes `1`.
+    next_generation: u64,
+    /// The newest active generation, if any.
+    current: Option<RunningGeneration>,
+    /// Highest-generation terminal outcome seen so far (monotonic, never regresses).
+    last_exit: Option<V2RayServerExitRecord>,
+}
+
+impl V2RayLifecycle {
+    fn new() -> Self {
+        Self {
+            next_generation: 1,
+            current: None,
+            last_exit: None,
+        }
+    }
+
+    /// Build the public snapshot from the current control state.
+    fn snapshot(&self) -> V2RayServerRuntimeSnapshot {
+        V2RayServerRuntimeSnapshot {
+            current: self.current.as_ref().map(|g| V2RayServerActiveGeneration {
+                generation: g.generation,
+                phase: g.phase.clone(),
+            }),
+            last_exit: self.last_exit.clone(),
+        }
+    }
+}
+
 /// V2Ray API server
 #[derive(Debug)]
 pub struct V2RayApiServer {
     cfg: V2RayApiIR,
-    started: Arc<AtomicBool>,
     state: V2RayApiState,
-    #[cfg(feature = "service_v2ray_api")]
-    shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
-}
-
-#[cfg(feature = "service_v2ray_api")]
-#[derive(Debug)]
-struct ResetStartedOnDrop {
-    started: Arc<AtomicBool>,
-}
-
-#[cfg(feature = "service_v2ray_api")]
-impl Drop for ResetStartedOnDrop {
-    fn drop(&mut self) {
-        self.started.store(false, Ordering::Release);
-    }
+    /// The single lifecycle arbiter; shared with each generation's monitor task so it can commit
+    /// its terminal under the same mutex.
+    lifecycle: Arc<Mutex<V2RayLifecycle>>,
+    /// Publishes the latest runtime snapshot to late subscribers. Outlives every serve task.
+    runtime_tx: watch::Sender<V2RayServerRuntimeSnapshot>,
 }
 
 impl V2RayApiServer {
@@ -355,14 +396,91 @@ impl V2RayApiServer {
     pub fn new(cfg: V2RayApiIR) -> Self {
         let stats = Arc::new(StatsManager::new(cfg.stats.clone()));
         let enabled = stats.enabled();
+        let (runtime_tx, _) = watch::channel(V2RayServerRuntimeSnapshot::default());
 
         Self {
             cfg,
-            started: Arc::new(AtomicBool::new(false)),
             state: V2RayApiState { stats, enabled },
-            #[cfg(feature = "service_v2ray_api")]
-            shutdown_tx: parking_lot::Mutex::new(None),
+            lifecycle: Arc::new(Mutex::new(V2RayLifecycle::new())),
+            runtime_tx,
         }
+    }
+
+    /// Hand out the next monotonic generation id under the lifecycle mutex.
+    ///
+    /// Advances `next_generation` only on success; never wraps. Returns `Err` (consuming no
+    /// generation) when the counter would overflow `u64`.
+    fn allocate_generation(lifecycle: &mut V2RayLifecycle) -> anyhow::Result<u64> {
+        let generation = lifecycle.next_generation;
+        let advanced = generation
+            .checked_add(1)
+            .ok_or_else(|| anyhow::anyhow!("V2Ray API generation counter overflow"))?;
+        lifecycle.next_generation = advanced;
+        Ok(generation)
+    }
+
+    /// Map a monitored serve task's join outcome to a terminal exit.
+    ///
+    /// Generic over the serve error type so tests can synthesize outcomes without a tonic error.
+    fn classify_exit<E: std::fmt::Display>(
+        outcome: Result<Result<(), E>, tokio::task::JoinError>,
+        shutdown_requested: bool,
+    ) -> V2RayServerExit {
+        match outcome {
+            Ok(Ok(())) => {
+                if shutdown_requested {
+                    V2RayServerExit::CleanShutdown
+                } else {
+                    V2RayServerExit::UnexpectedCompletion
+                }
+            }
+            Ok(Err(e)) => V2RayServerExit::ServeError(e.to_string()),
+            Err(join_err) => {
+                if join_err.is_panic() {
+                    let payload = join_err.into_panic();
+                    let msg = payload
+                        .downcast_ref::<&str>()
+                        .map(|s| (*s).to_string())
+                        .or_else(|| payload.downcast_ref::<String>().cloned())
+                        .unwrap_or_else(|| "panic with non-string payload".to_string());
+                    V2RayServerExit::Panicked(msg)
+                } else if join_err.is_cancelled() {
+                    V2RayServerExit::Cancelled
+                } else {
+                    // No other JoinError kind exists today; map to the nearest defined terminal.
+                    V2RayServerExit::Cancelled
+                }
+            }
+        }
+    }
+
+    /// Commit a generation's terminal outcome under the lifecycle mutex, then publish.
+    ///
+    /// Generation-checked so an older generation's late exit can never clear a newer `current`
+    /// nor regress `last_exit`:
+    /// - clears `current` only if it still owns this generation;
+    /// - updates `last_exit` only if this generation id is the highest terminal seen so far.
+    fn commit_terminal(
+        lifecycle: &Arc<Mutex<V2RayLifecycle>>,
+        runtime_tx: &watch::Sender<V2RayServerRuntimeSnapshot>,
+        generation: u64,
+        exit: V2RayServerExit,
+    ) {
+        let snapshot = {
+            let mut lc = lifecycle.lock();
+            if lc.current.as_ref().map(|g| g.generation) == Some(generation) {
+                lc.current = None;
+            }
+            let replace = match &lc.last_exit {
+                None => true,
+                Some(rec) => generation > rec.generation,
+            };
+            if replace {
+                lc.last_exit = Some(V2RayServerExitRecord { generation, exit });
+            }
+            lc.snapshot()
+        };
+        let _ = runtime_tx.send_replace(snapshot);
     }
 
     /// Get reference to stats manager
@@ -400,127 +518,236 @@ impl V2RayApiServer {
 }
 
 impl V2RayServer for V2RayApiServer {
+    #[cfg(not(feature = "service_v2ray_api"))]
     fn start(&self) -> anyhow::Result<()> {
-        #[cfg(not(feature = "service_v2ray_api"))]
-        {
-            self.started.store(true, Ordering::SeqCst);
-            tracing::info!(
-                target: "sb_core::services::v2ray",
-                listen = ?self.cfg.listen,
-                stats_enabled = self.state.enabled,
-                "V2Ray API server start requested (stub - enable 'service_v2ray_api' feature)"
-            );
-            Ok(())
-        }
-
-        #[cfg(feature = "service_v2ray_api")]
-        {
-            let listen_addr = match self.listen_addr() {
-                Some(addr) => addr,
-                None => {
-                    tracing::warn!(
-                        target: "sb_core::services::v2ray",
-                        "V2Ray API listen address not configured, server not started"
-                    );
+        // Stub build: no real serve task. The lifecycle is purely synchronous — a successful
+        // start publishes Running(g); there is no monitor, so close() commits the terminal.
+        let snapshot = {
+            let mut lc = self.lifecycle.lock();
+            if let Some(cur) = &lc.current {
+                if cur.phase == V2RayServerActivePhase::Running {
                     return Ok(());
                 }
-            };
+            }
+            let generation = Self::allocate_generation(&mut lc)?;
+            lc.current = Some(RunningGeneration {
+                generation,
+                phase: V2RayServerActivePhase::Running,
+                shutdown_requested: Arc::new(AtomicBool::new(false)),
+                shutdown_tx: None,
+            });
+            lc.snapshot()
+        };
+        let _ = self.runtime_tx.send_replace(snapshot);
+        tracing::info!(
+            target: "sb_core::services::v2ray",
+            listen = ?self.cfg.listen,
+            stats_enabled = self.state.enabled,
+            "V2Ray API server start requested (stub - enable 'service_v2ray_api' feature)"
+        );
+        Ok(())
+    }
 
-            // Claim the single-start slot. A second start() while already running is
-            // an idempotent no-op and must NOT spawn a second listener.
-            if self
-                .started
-                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
-                .is_err()
-            {
-                tracing::debug!(
+    #[cfg(feature = "service_v2ray_api")]
+    fn start(&self) -> anyhow::Result<()> {
+        let listen_addr = match self.listen_addr() {
+            Some(addr) => addr,
+            None => {
+                tracing::warn!(
                     target: "sb_core::services::v2ray",
-                    "V2Ray API server already started; ignoring duplicate start"
+                    "V2Ray API listen address not configured, server not started"
                 );
                 return Ok(());
             }
+        };
 
-            // Pre-bind the gRPC TCP listener synchronously so a bind failure
-            // propagates as Err BEFORE returning Ok; roll back the start claim so a
-            // later retry (after the conflict clears) can re-bind.
-            let listener = match Self::pre_bind(listen_addr) {
-                Ok(l) => l,
+        // Single critical section: admission + synchronous pre-bind + generation allocation +
+        // shutdown-sender install + snapshot publish. Because `pre_bind` is synchronous (no
+        // `.await`), holding the lifecycle mutex across it is safe and closes the
+        // close-during-start window: `close()` can never observe `current == None` between a
+        // start's admission and its Running publish. The serve task is spawned AFTER the lock is
+        // released.
+        let (listener, shutdown_rx, shutdown_requested, generation) = {
+            let mut lc = self.lifecycle.lock();
+
+            // A second start() while already Running is an idempotent no-op; it must NOT bind a
+            // second listener nor consume a generation.
+            if let Some(cur) = &lc.current {
+                if cur.phase == V2RayServerActivePhase::Running {
+                    tracing::debug!(
+                        target: "sb_core::services::v2ray",
+                        "V2Ray API server already started; ignoring duplicate start"
+                    );
+                    return Ok(());
+                }
+                // ShutdownRequested: the previous generation is draining; a fresh generation may
+                // start once its listener frees (transient EADDRINUSE rolls back below).
+            }
+
+            // Pre-bind synchronously so a bind failure surfaces as Err here, before any
+            // generation is allocated or any Running snapshot is published.
+            let listener = Self::pre_bind(listen_addr)?;
+
+            // Allocate the generation only after a successful bind. On overflow, release the
+            // listener and fail without consuming a generation.
+            let generation = match Self::allocate_generation(&mut lc) {
+                Ok(g) => g,
                 Err(e) => {
-                    self.started.store(false, Ordering::SeqCst);
+                    drop(listener);
                     return Err(e);
                 }
             };
 
-            // Initialize standard counters
-            let stats_manager = self.state.stats.clone();
-            tokio::spawn(async move {
-                stats_manager.init_standard_counters();
-            });
-
-            tracing::info!(
-                target: "sb_core::services::v2ray",
-                listen = %listen_addr,
-                stats_enabled = self.state.enabled,
-                "Starting V2Ray API gRPC server"
-            );
-
+            let shutdown_requested = Arc::new(AtomicBool::new(false));
             let (shutdown_tx, shutdown_rx) = oneshot::channel::<()>();
-            *self.shutdown_tx.lock() = Some(shutdown_tx);
+            lc.current = Some(RunningGeneration {
+                generation,
+                phase: V2RayServerActivePhase::Running,
+                shutdown_requested: shutdown_requested.clone(),
+                shutdown_tx: Some(shutdown_tx),
+            });
+            let snapshot = lc.snapshot();
+            let _ = self.runtime_tx.send_replace(snapshot);
 
-            // Create service implementation
-            let stats_service = StatsServiceImpl {
-                stats: self.state.stats.clone(),
-            };
-            let reset_started = ResetStartedOnDrop {
-                started: self.started.clone(),
-            };
+            (listener, shutdown_rx, shutdown_requested, generation)
+        };
 
-            // Serve over the already-bound listener. The incoming stream is built
-            // dep-free from the pre-bound TcpListener (futures::stream::unfold; no
-            // tokio-stream dependency) and fed to tonic's serve_with_incoming_shutdown.
-            tokio::spawn(async move {
-                let _reset_started = reset_started;
+        // Initialize standard counters (unchanged; stats identity stays instance-scoped — see H5).
+        let stats_manager = self.state.stats.clone();
+        tokio::spawn(async move {
+            stats_manager.init_standard_counters();
+        });
+
+        tracing::info!(
+            target: "sb_core::services::v2ray",
+            listen = %listen_addr,
+            generation,
+            stats_enabled = self.state.enabled,
+            "Starting V2Ray API gRPC server"
+        );
+
+        let stats_service = StatsServiceImpl {
+            stats: self.state.stats.clone(),
+        };
+        let lifecycle = self.lifecycle.clone();
+        let runtime_tx = self.runtime_tx.clone();
+
+        // Outer monitor is the SOLE terminal writer for this generation. It owns the inner tonic
+        // serve task's JoinHandle, maps its outcome, and commits the generation-scoped terminal.
+        tokio::spawn(async move {
+            let inner = tokio::spawn(async move {
+                // The incoming stream is built dep-free from the pre-bound TcpListener
+                // (futures::stream::unfold; no tokio-stream dependency).
                 let incoming = Box::pin(futures::stream::unfold(listener, |listener| async move {
                     let conn = listener.accept().await.map(|(stream, _)| stream);
                     Some((conn, listener))
                 }));
-                let serve = Server::builder()
+                Server::builder()
                     .add_service(StatsServiceServer::new(stats_service))
                     .serve_with_incoming_shutdown(incoming, async {
                         let _ = shutdown_rx.await;
                         tracing::info!(target: "sb_core::services::v2ray", "Received shutdown signal");
-                    });
-
-                if let Err(e) = serve.await {
-                    tracing::error!(
-                        target: "sb_core::services::v2ray",
-                        error = %e,
-                        "V2Ray API server error"
-                    );
-                } else {
-                    tracing::info!(target: "sb_core::services::v2ray", "V2Ray API server stopped");
-                }
+                    })
+                    .await
             });
 
-            Ok(())
-        }
+            let outcome = inner.await;
+            let exit = Self::classify_exit(outcome, shutdown_requested.load(Ordering::SeqCst));
+
+            // The monitor is the single terminal logger for this generation. A stale terminal
+            // that does not enter the snapshot (lower generation) is still logged once here.
+            match &exit {
+                V2RayServerExit::CleanShutdown => tracing::info!(
+                    target: "sb_core::services::v2ray", generation,
+                    "V2Ray API server generation stopped (clean shutdown)"
+                ),
+                V2RayServerExit::UnexpectedCompletion => tracing::warn!(
+                    target: "sb_core::services::v2ray", generation,
+                    "V2Ray API server generation completed without a shutdown request"
+                ),
+                V2RayServerExit::ServeError(e) => tracing::error!(
+                    target: "sb_core::services::v2ray", generation, error = %e,
+                    "V2Ray API server generation serve error"
+                ),
+                V2RayServerExit::Panicked(p) => tracing::error!(
+                    target: "sb_core::services::v2ray", generation, panic = %p,
+                    "V2Ray API server generation panicked"
+                ),
+                V2RayServerExit::Cancelled => tracing::warn!(
+                    target: "sb_core::services::v2ray", generation,
+                    "V2Ray API server generation cancelled"
+                ),
+            }
+
+            Self::commit_terminal(&lifecycle, &runtime_tx, generation, exit);
+        });
+
+        Ok(())
     }
 
+    #[cfg(not(feature = "service_v2ray_api"))]
     fn close(&self) -> anyhow::Result<()> {
-        self.started.store(false, Ordering::SeqCst);
-
-        #[cfg(feature = "service_v2ray_api")]
-        {
-            if let Some(tx) = self.shutdown_tx.lock().take() {
-                let _ = tx.send(());
+        // Stub build: shutdown is synchronous and clean; there is no monitor, so close() itself
+        // commits the terminal (generation-checked, mirroring commit_terminal).
+        let snapshot = {
+            let mut lc = self.lifecycle.lock();
+            let generation = match lc.current.as_ref() {
+                None => return Ok(()),
+                Some(cur) => cur.generation,
+            };
+            lc.current = None;
+            let replace = match &lc.last_exit {
+                None => true,
+                Some(rec) => generation > rec.generation,
+            };
+            if replace {
+                lc.last_exit = Some(V2RayServerExitRecord {
+                    generation,
+                    exit: V2RayServerExit::CleanShutdown,
+                });
             }
-        }
+            lc.snapshot()
+        };
+        let _ = self.runtime_tx.send_replace(snapshot);
+        Ok(())
+    }
 
+    #[cfg(feature = "service_v2ray_api")]
+    fn close(&self) -> anyhow::Result<()> {
+        // Synchronous, idempotent, non-blocking. Only marks the target generation as
+        // ShutdownRequested and signals it; the terminal is committed later by that generation's
+        // monitor. Never waits, never fabricates CleanShutdown, never clears current/last_exit.
+        let snapshot;
+        let shutdown_tx;
+        {
+            let mut lc = self.lifecycle.lock();
+            match lc.current.as_mut() {
+                None => return Ok(()),
+                Some(cur) => {
+                    if cur.phase == V2RayServerActivePhase::ShutdownRequested {
+                        // Already requested for this generation; do not resend.
+                        return Ok(());
+                    }
+                    cur.phase = V2RayServerActivePhase::ShutdownRequested;
+                    cur.shutdown_requested.store(true, Ordering::SeqCst);
+                    shutdown_tx = cur.shutdown_tx.take();
+                }
+            }
+            snapshot = lc.snapshot();
+        }
+        let _ = self.runtime_tx.send_replace(snapshot);
+        if let Some(tx) = shutdown_tx {
+            let _ = tx.send(());
+        }
         Ok(())
     }
 
     fn stats(&self) -> Option<Arc<StatsManager>> {
         Some(self.state.stats.clone())
+    }
+
+    fn subscribe_runtime_state(&self) -> Option<watch::Receiver<V2RayServerRuntimeSnapshot>> {
+        Some(self.runtime_tx.subscribe())
     }
 }
 
@@ -713,17 +940,17 @@ mod tests {
         }
     }
 
-    // ── SVC-V2RAY-API-01A: gRPC sidecar bind-failure honesty regression tests ──
-    // The V2Ray gRPC sidecar must return Err (and keep started=false) when its
-    // listener does not bind, so the supervisor never reports it "wired" for a dead
-    // port. Driven directly on V2RayApiServer (it is NOT a ServiceManager service).
-    // Feature-gated: only the service_v2ray_api build pre-binds a real listener.
+    // ── SVC-V2RAY-API-01A + APP-SIDECAR-LIVENESS-01E lifecycle regression tests ──
+    // The V2Ray gRPC sidecar must return Err (and publish NO running generation) when its
+    // listener does not bind, and must expose a generation-aware runtime snapshot across
+    // repeated start/close/start. Driven directly on V2RayApiServer (it is NOT a ServiceManager
+    // service). Tests that need a real bound listener are feature-gated; pure snapshot-contract
+    // tests run in both builds.
 
-    #[cfg(feature = "service_v2ray_api")]
-    fn build_v2ray_server(port: u16) -> V2RayApiServer {
+    fn test_server(port: u16) -> V2RayApiServer {
         V2RayApiServer::new(V2RayApiIR {
             listen: Some(format!("127.0.0.1:{port}")),
-            stats: Some(sb_config::ir::StatsIR {
+            stats: Some(StatsIR {
                 enabled: true,
                 inbounds: vec![],
                 outbounds: vec![],
@@ -734,10 +961,30 @@ mod tests {
         })
     }
 
+    /// Read the latest published runtime snapshot via the public trait surface.
+    fn snap(server: &V2RayApiServer) -> V2RayServerRuntimeSnapshot {
+        server
+            .subscribe_runtime_state()
+            .expect("real V2RayApiServer exposes a runtime snapshot")
+            .borrow()
+            .clone()
+    }
+
+    fn current_generation(server: &V2RayApiServer) -> Option<u64> {
+        snap(server).current.map(|g| g.generation)
+    }
+
     #[cfg(feature = "service_v2ray_api")]
-    async fn wait_until_not_started(server: &V2RayApiServer) -> bool {
+    fn reserve_port() -> Option<u16> {
+        std::net::TcpListener::bind("127.0.0.1:0")
+            .ok()
+            .map(|l| l.local_addr().unwrap().port())
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    async fn wait_until_no_current(server: &V2RayApiServer) -> bool {
         for _ in 0..80 {
-            if !server.started.load(Ordering::SeqCst) {
+            if snap(server).current.is_none() {
                 return true;
             }
             tokio::time::sleep(std::time::Duration::from_millis(25)).await;
@@ -748,7 +995,7 @@ mod tests {
     #[cfg(feature = "service_v2ray_api")]
     async fn restart_with_retry(server: &V2RayApiServer) -> bool {
         for _ in 0..80 {
-            if server.start().is_ok() {
+            if server.start().is_ok() && snap(server).current.is_some() {
                 return true;
             }
             tokio::time::sleep(std::time::Duration::from_millis(25)).await;
@@ -756,16 +1003,224 @@ mod tests {
         false
     }
 
+    /// Simulate the serve task ending WITHOUT a `close()` (no shutdown requested) by taking the
+    /// current generation's shutdown sender directly and firing it. The monitor then sees the
+    /// serve future return `Ok` with `shutdown_requested == false` → `UnexpectedCompletion`.
     #[cfg(feature = "service_v2ray_api")]
     fn signal_shutdown_without_close(server: &V2RayApiServer) {
-        if let Some(tx) = server.shutdown_tx.lock().take() {
+        let tx = server
+            .lifecycle
+            .lock()
+            .current
+            .as_mut()
+            .and_then(|c| c.shutdown_tx.take());
+        if let Some(tx) = tx {
             let _ = tx.send(());
         }
     }
 
+    // ── A. Initial snapshot is empty (both builds) ──
+    #[test]
+    fn initial_snapshot_is_empty() {
+        let server = test_server(0);
+        let s = snap(&server);
+        assert!(
+            s.current.is_none(),
+            "fresh server has no current generation"
+        );
+        assert!(s.last_exit.is_none(), "fresh server has no terminal");
+    }
+
+    // ── N. Trait default returns None for a non-overriding implementor ──
+    #[test]
+    fn trait_default_subscribe_returns_none() {
+        #[derive(Debug)]
+        struct MockV2Ray;
+        impl V2RayServer for MockV2Ray {
+            fn start(&self) -> anyhow::Result<()> {
+                Ok(())
+            }
+            fn close(&self) -> anyhow::Result<()> {
+                Ok(())
+            }
+        }
+        let m = MockV2Ray;
+        assert!(
+            m.subscribe_runtime_state().is_none(),
+            "additive default must return None"
+        );
+    }
+
+    // ── O. Generation counter must not wrap on overflow ──
+    #[test]
+    fn generation_overflow_does_not_wrap() {
+        let mut lc = V2RayLifecycle::new();
+        lc.next_generation = u64::MAX;
+        let res = V2RayApiServer::allocate_generation(&mut lc);
+        assert!(res.is_err(), "allocation at u64::MAX must fail, not wrap");
+        assert_eq!(
+            lc.next_generation,
+            u64::MAX,
+            "failed allocation must not advance/wrap the counter"
+        );
+    }
+
+    // ── G. A stale (older) terminal must not clear a newer current ──
+    #[test]
+    fn stale_terminal_does_not_clear_newer_current() {
+        let server = test_server(0);
+        server.lifecycle.lock().current = Some(RunningGeneration {
+            generation: 2,
+            phase: V2RayServerActivePhase::Running,
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+            shutdown_tx: None,
+        });
+
+        V2RayApiServer::commit_terminal(
+            &server.lifecycle,
+            &server.runtime_tx,
+            1,
+            V2RayServerExit::UnexpectedCompletion,
+        );
+
+        let s = snap(&server);
+        assert_eq!(
+            s.current.map(|g| g.generation),
+            Some(2),
+            "current generation 2 must survive a generation-1 terminal"
+        );
+        assert_eq!(s.last_exit.map(|r| r.generation), Some(1));
+    }
+
+    // ── H. last_exit only advances by generation (monotonic, no regression) ──
+    #[test]
+    fn last_exit_only_advances_by_generation() {
+        let server = test_server(0);
+        V2RayApiServer::commit_terminal(
+            &server.lifecycle,
+            &server.runtime_tx,
+            2,
+            V2RayServerExit::CleanShutdown,
+        );
+        V2RayApiServer::commit_terminal(
+            &server.lifecycle,
+            &server.runtime_tx,
+            1,
+            V2RayServerExit::ServeError("late".into()),
+        );
+
+        let s = snap(&server);
+        assert_eq!(
+            s.last_exit,
+            Some(V2RayServerExitRecord {
+                generation: 2,
+                exit: V2RayServerExit::CleanShutdown,
+            }),
+            "an older generation's terminal must never overwrite a newer one"
+        );
+    }
+
+    // ── I. Arbitrary stale monitor order still preserves current + highest last_exit ──
+    #[test]
+    fn arbitrary_stale_monitor_order_preserves_state() {
+        let server = test_server(0);
+        server.lifecycle.lock().current = Some(RunningGeneration {
+            generation: 3,
+            phase: V2RayServerActivePhase::Running,
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+            shutdown_tx: None,
+        });
+
+        // terminal(2) then terminal(1) arrive after generation 3 is already running.
+        V2RayApiServer::commit_terminal(
+            &server.lifecycle,
+            &server.runtime_tx,
+            2,
+            V2RayServerExit::CleanShutdown,
+        );
+        V2RayApiServer::commit_terminal(
+            &server.lifecycle,
+            &server.runtime_tx,
+            1,
+            V2RayServerExit::Cancelled,
+        );
+
+        let s = snap(&server);
+        assert_eq!(s.current.map(|g| g.generation), Some(3));
+        assert_eq!(s.last_exit.map(|r| r.generation), Some(2));
+    }
+
+    // ── M. Late subscriber reads the latest terminal ──
+    #[test]
+    fn late_subscriber_reads_terminal() {
+        let server = test_server(0);
+        V2RayApiServer::commit_terminal(
+            &server.lifecycle,
+            &server.runtime_tx,
+            1,
+            V2RayServerExit::CleanShutdown,
+        );
+        // Subscribe AFTER the terminal was committed.
+        let late = server.subscribe_runtime_state().expect("snapshot exposed");
+        assert_eq!(
+            late.borrow().last_exit,
+            Some(V2RayServerExitRecord {
+                generation: 1,
+                exit: V2RayServerExit::CleanShutdown,
+            })
+        );
+    }
+
+    // ── J. classify_exit: completion + serve error ──
+    #[test]
+    fn classify_exit_maps_completion_and_error() {
+        assert_eq!(
+            V2RayApiServer::classify_exit::<String>(Ok(Ok(())), true),
+            V2RayServerExit::CleanShutdown
+        );
+        assert_eq!(
+            V2RayApiServer::classify_exit::<String>(Ok(Ok(())), false),
+            V2RayServerExit::UnexpectedCompletion
+        );
+        assert_eq!(
+            V2RayApiServer::classify_exit(Ok(Err("boom".to_string())), false),
+            V2RayServerExit::ServeError("boom".to_string())
+        );
+    }
+
+    // ── K. classify_exit: panic ──
+    #[tokio::test]
+    async fn classify_exit_maps_panic() {
+        let handle = tokio::spawn(async {
+            panic!("kaboom");
+        });
+        let outcome = handle.await.map(|()| Ok::<(), String>(()));
+        match V2RayApiServer::classify_exit(outcome, false) {
+            V2RayServerExit::Panicked(msg) => {
+                assert!(msg.contains("kaboom"), "panic payload preserved: {msg}");
+            }
+            other => panic!("expected Panicked, got {other:?}"),
+        }
+    }
+
+    // ── L. classify_exit: cancellation ──
+    #[tokio::test]
+    async fn classify_exit_maps_cancelled() {
+        let handle = tokio::spawn(async {
+            tokio::time::sleep(std::time::Duration::from_secs(60)).await;
+        });
+        handle.abort();
+        let outcome = handle.await.map(|()| Ok::<(), String>(()));
+        assert_eq!(
+            V2RayApiServer::classify_exit(outcome, false),
+            V2RayServerExit::Cancelled
+        );
+    }
+
+    // ── D. Bind failure returns Err and publishes no phantom generation ──
     #[cfg(feature = "service_v2ray_api")]
     #[tokio::test]
-    async fn bind_conflict_returns_error_and_keeps_not_started() {
+    async fn bind_conflict_returns_error_and_no_phantom_generation() {
         // Occupy a TCP port so the sidecar's synchronous pre-bind must fail.
         let occupier = match std::net::TcpListener::bind("127.0.0.1:0") {
             Ok(l) => l,
@@ -775,7 +1230,7 @@ mod tests {
             }
         };
         let addr = occupier.local_addr().unwrap();
-        let server = build_v2ray_server(addr.port());
+        let server = test_server(addr.port());
 
         let res = server.start();
         assert!(res.is_err(), "bind conflict must return Err, got Ok");
@@ -788,33 +1243,47 @@ mod tests {
             "err must carry bind/address-in-use semantics, got: {msg}"
         );
         assert!(
-            !server.started.load(Ordering::SeqCst),
-            "started must remain false after a failed bind (no false 'wired')"
+            snap(&server).current.is_none(),
+            "a failed bind must publish no running generation"
+        );
+        assert_eq!(
+            server.lifecycle.lock().next_generation,
+            1,
+            "a failed bind must consume no generation (reservation recoverable)"
         );
         drop(occupier);
     }
 
+    // ── B + M. Successful bind publishes Running(1); late subscriber observes it ──
     #[cfg(feature = "service_v2ray_api")]
     #[tokio::test]
-    async fn successful_bind_marks_started() {
-        // Reserve then release an ephemeral port so the sidecar can bind it.
-        let port = match std::net::TcpListener::bind("127.0.0.1:0") {
-            Ok(probe) => probe.local_addr().unwrap().port(),
-            Err(e) => {
-                eprintln!("Skipping successful_bind test (cannot bind): {e}");
+    async fn successful_bind_publishes_running() {
+        let port = match reserve_port() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping successful_bind test (cannot bind)");
                 return;
             }
         };
-        let server = build_v2ray_server(port);
+        let server = test_server(port);
 
         assert!(server.start().is_ok(), "successful bind must return Ok");
-        assert!(
-            server.started.load(Ordering::SeqCst),
-            "started must be true after a successful bind"
+        let s = snap(&server);
+        assert_eq!(s.current.as_ref().map(|g| g.generation), Some(1));
+        assert_eq!(
+            s.current.as_ref().map(|g| g.phase.clone()),
+            Some(V2RayServerActivePhase::Running)
+        );
+        // Late subscriber sees the live generation.
+        let late = server.subscribe_runtime_state().expect("snapshot exposed");
+        assert_eq!(
+            late.borrow().current.as_ref().map(|g| g.generation),
+            Some(1)
         );
         server.close().unwrap();
     }
 
+    // ── (regression) restart after a failed bind; first success is generation 1 ──
     #[cfg(feature = "service_v2ray_api")]
     #[tokio::test]
     async fn restart_after_failed_bind() {
@@ -826,16 +1295,16 @@ mod tests {
             }
         };
         let addr = occupier.local_addr().unwrap();
-        let server = build_v2ray_server(addr.port());
+        let server = test_server(addr.port());
 
-        // First attempt: port occupied → Err, started rolled back to false.
+        // First attempt: port occupied → Err, no generation consumed.
         assert!(
             server.start().is_err(),
             "first start must fail (port occupied)"
         );
         assert!(
-            !server.started.load(Ordering::SeqCst),
-            "started must not stick after a failed bind"
+            snap(&server).current.is_none(),
+            "no running generation after a failed bind"
         );
 
         // Release the port; a retry must recover (failure must not be permanent).
@@ -844,113 +1313,186 @@ mod tests {
             server.start().is_ok(),
             "restart after releasing the port must succeed"
         );
-        assert!(server.started.load(Ordering::SeqCst));
+        assert_eq!(
+            current_generation(&server),
+            Some(1),
+            "the first successful start is generation 1 (failed bind consumed none)"
+        );
         server.close().unwrap();
     }
 
+    // ── C. Duplicate running start keeps the same generation, no second listener ──
     #[cfg(feature = "service_v2ray_api")]
     #[tokio::test]
-    async fn duplicate_start_does_not_create_second_listener() {
-        let port = match std::net::TcpListener::bind("127.0.0.1:0") {
-            Ok(probe) => probe.local_addr().unwrap().port(),
-            Err(e) => {
-                eprintln!("Skipping duplicate_start test (cannot bind): {e}");
+    async fn duplicate_start_keeps_same_generation() {
+        let port = match reserve_port() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping duplicate_start test (cannot bind)");
                 return;
             }
         };
-        let server = build_v2ray_server(port);
+        let server = test_server(port);
 
         assert!(server.start().is_ok(), "first start must bind");
-        assert!(server.started.load(Ordering::SeqCst));
+        assert_eq!(current_generation(&server), Some(1));
 
-        // A second start() is an idempotent no-op: it returns Ok WITHOUT attempting a
-        // second bind. (A second bind on the held port would Err — so Ok here proves no
-        // second listener was created.)
+        // A second start() is an idempotent no-op: Ok WITHOUT a second bind and WITHOUT a new
+        // generation. (A second bind on the held port would Err — Ok here proves no new listener.)
         assert!(
             server.start().is_ok(),
-            "duplicate start must be an idempotent Ok, not a second bind"
+            "duplicate start must be an idempotent Ok"
         );
-        assert!(server.started.load(Ordering::SeqCst));
+        assert_eq!(
+            current_generation(&server),
+            Some(1),
+            "duplicate start must not mint a new generation"
+        );
+        assert_eq!(
+            server.lifecycle.lock().next_generation,
+            2,
+            "only one generation consumed across duplicate starts"
+        );
         server.close().unwrap();
     }
 
+    // ── E. Normal close: ShutdownRequested(1) then clean terminal ──
     #[cfg(feature = "service_v2ray_api")]
     #[tokio::test]
-    async fn shutdown_allows_restart() {
-        let port = match std::net::TcpListener::bind("127.0.0.1:0") {
-            Ok(probe) => probe.local_addr().unwrap().port(),
-            Err(e) => {
-                eprintln!("Skipping shutdown_allows_restart test (cannot bind): {e}");
+    async fn normal_close_publishes_shutdown_then_clean_exit() {
+        let port = match reserve_port() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping normal_close test (cannot bind)");
                 return;
             }
         };
-        let server = build_v2ray_server(port);
+        let server = test_server(port);
 
         assert!(server.start().is_ok(), "first start must bind");
         server.close().unwrap();
-        assert!(
-            !server.started.load(Ordering::SeqCst),
-            "close must reset started to false"
+
+        // close() publishes ShutdownRequested synchronously (before the monitor commits).
+        let s = snap(&server);
+        assert_eq!(
+            s.current.map(|g| (g.generation, g.phase)),
+            Some((1, V2RayServerActivePhase::ShutdownRequested))
         );
 
-        // After shutdown the serve task releases the port asynchronously; a bounded
-        // retry confirms a restart is allowed (started is not sticky after shutdown).
-        let restarted = restart_with_retry(&server).await;
+        // The monitor eventually commits the clean terminal.
         assert!(
-            restarted,
-            "shutdown must allow a later restart on the same port"
+            wait_until_no_current(&server).await,
+            "serve task must terminate after close"
         );
-        assert!(server.started.load(Ordering::SeqCst));
-        server.close().unwrap();
+        let s2 = snap(&server);
+        assert!(s2.current.is_none());
+        assert_eq!(
+            s2.last_exit,
+            Some(V2RayServerExitRecord {
+                generation: 1,
+                exit: V2RayServerExit::CleanShutdown,
+            })
+        );
     }
 
+    // ── F. Bounded-retry restart reaches generation 2 ──
     #[cfg(feature = "service_v2ray_api")]
     #[tokio::test]
-    async fn task_exit_resets_started() {
-        let port = match std::net::TcpListener::bind("127.0.0.1:0") {
-            Ok(probe) => probe.local_addr().unwrap().port(),
-            Err(e) => {
-                eprintln!("Skipping task_exit_resets_started test (cannot bind): {e}");
+    async fn bounded_retry_restart_reaches_generation_two() {
+        let port = match reserve_port() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping bounded_retry_restart test (cannot bind)");
                 return;
             }
         };
-        let server = build_v2ray_server(port);
+        let server = test_server(port);
+
+        assert!(server.start().is_ok(), "first start must bind");
+        assert_eq!(current_generation(&server), Some(1));
+        server.close().unwrap();
+
+        // After shutdown the serve task releases the port asynchronously; a bounded retry
+        // confirms a restart is allowed and mints generation 2.
+        assert!(
+            restart_with_retry(&server).await,
+            "shutdown must allow a later restart on the same port"
+        );
+        assert_eq!(
+            current_generation(&server),
+            Some(2),
+            "the restart must be a new generation"
+        );
+        server.close().unwrap();
+    }
+
+    // ── Task exit WITHOUT close() → UnexpectedCompletion; restart still works ──
+    #[cfg(feature = "service_v2ray_api")]
+    #[tokio::test]
+    async fn task_exit_without_close_is_unexpected_completion() {
+        let port = match reserve_port() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping task_exit test (cannot bind)");
+                return;
+            }
+        };
+        let server = test_server(port);
 
         assert!(
             server.start().is_ok(),
             "server must bind before task-exit test"
         );
-        assert!(server.started.load(Ordering::SeqCst));
+        assert_eq!(current_generation(&server), Some(1));
 
-        // Do not call close(): this test sends the shutdown signal directly so
-        // started can only become false when the spawned serve task drops its guard.
+        // Fire the shutdown signal directly (no close → no shutdown request recorded).
         signal_shutdown_without_close(&server);
         assert!(
-            wait_until_not_started(&server).await,
-            "serve task exit must reset started to false"
+            wait_until_no_current(&server).await,
+            "serve task exit must clear the current generation"
+        );
+        assert_eq!(
+            snap(&server).last_exit.map(|r| (r.generation, r.exit)),
+            Some((1, V2RayServerExit::UnexpectedCompletion)),
+            "an exit with no shutdown request is UnexpectedCompletion"
         );
 
-        let restarted = restart_with_retry(&server).await;
-        assert!(
-            restarted,
-            "task-exit cleanup must allow a later restart on the same port"
-        );
-        assert!(server.started.load(Ordering::SeqCst));
+        // A later restart still works and mints generation 2.
+        assert!(restart_with_retry(&server).await);
+        assert_eq!(current_generation(&server), Some(2));
         server.close().unwrap();
     }
 
+    // ── P. start() publishes Running synchronously; no sneaky start-after-close window ──
     #[cfg(feature = "service_v2ray_api")]
-    #[test]
-    fn reset_started_guard_drop_resets_state() {
-        let started = Arc::new(AtomicBool::new(true));
-        {
-            let _guard = ResetStartedOnDrop {
-                started: started.clone(),
-            };
-        }
-        assert!(
-            !started.load(Ordering::SeqCst),
-            "guard Drop must reset started to false"
+    #[tokio::test]
+    async fn start_publishes_running_synchronously() {
+        let port = match reserve_port() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping start_publishes_running test (cannot bind)");
+                return;
+            }
+        };
+        let server = test_server(port);
+
+        // Running is published WITHIN start()'s critical section, observable immediately with no
+        // await — so close(), taking the same lifecycle mutex, can never miss it (no
+        // close-observes-None-then-start-publishes-Running window).
+        assert!(server.start().is_ok());
+        assert_eq!(
+            snap(&server).current.map(|g| (g.generation, g.phase)),
+            Some((1, V2RayServerActivePhase::Running))
         );
+        server.close().unwrap();
+        assert_eq!(
+            snap(&server).current.map(|g| g.phase),
+            Some(V2RayServerActivePhase::ShutdownRequested)
+        );
+
+        // close() with genuinely no current is a clean Ok and publishes no Running.
+        let fresh = test_server(0);
+        assert!(fresh.close().is_ok());
+        assert!(snap(&fresh).current.is_none());
     }
 }
