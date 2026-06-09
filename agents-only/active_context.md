@@ -13,26 +13,25 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B DONE, 01C STOPPED, 01D PROPOSED**; REALITY boxed.
-- **APP-SIDECAR-LIVENESS-01D PROPOSED** (`app_sidecar_liveness_01d_generation_snapshot_proposal.md`):
-  **B/GENERATION_AWARE_SNAPSHOT_READY**. Adversarially-verified: binding serializes serving
-  (listener=OS mutex, no SO_REUSEADDR) → ≤1 active + ≤1 draining-tail; `close()` sync/non-blocking;
-  same-addr restart transiently `EADDRINUSE`-retries. Design = Model B `current + last_exit` (highest-gen,
-  no regression) + single per-gen monitor (sole terminal writer) + one lifecycle mutex (no lock-across-await,
-  replaces gen-blind `started`/guard) + additive object-safe `subscribe_runtime_state()`. Next = **01E**
-  (sb-core impl). Out-of-scope flagged: H5 (shared StatsManager not gen-scoped→liveness-only), H6 (reload
-  start-before-close same-addr conflict). 01B/01C superseded.
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B/D, 01E DONE**; REALITY boxed.
+- **APP-SIDECAR-LIVENESS-01E DONE** (`feat(sb-core): expose generation-aware v2ray runtime snapshot`;
+  doc `app_sidecar_liveness_01e_v2ray_generation_snapshot.md`): `V2RayApiServer` generation-aware.
+  Removed `started:AtomicBool`+`ResetStartedOnDrop`; one `Arc<Mutex<V2RayLifecycle>>` (next_generation+
+  current+last_exit) + `watch::Sender<V2RayServerRuntimeSnapshot>`. start()=admission+sync pre_bind+
+  alloc(checked_add)+install+Running-publish in one critical section (closes close-during-start, no
+  lock-across-await); close() sync/idempotent (ShutdownRequested+signal, never commits terminal);
+  per-gen outer monitor=sole terminal writer; `commit_terminal` generation-checked (highest-gen
+  last_exit). Additive object-safe `subscribe_runtime_state()` default None. 21 v2ray_api + full
+  sb-core suite PASS, clippy/fmt/workspace clean; **rustdoc -D warnings pre-existing-RED** (14 unrelated
+  broken links, identical on clean HEAD; 01E adds 0). NOT pushed. Next=01F. Out-of-scope: H5/H6/H7.
 - **APP-V2RAY-SURFACE-02D DONE** (`60b88414`, `app_v2ray_surface_02d_generic_alias_deprecation.md`):
   deprecated generic `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer` via type aliases (old
   paths still compile w/ warnings); `GrpcV2RayApiServer` + Simple helper/request contracts stay clean.
 - **V2Ray API state**: bootstrap/run-engine use sb-core real listener (`a80a0916`,`4141724b`); workspace
   no longer calls `SimpleV2RayApiServer` (tests/fuzz cover legacy/request); breaking cleanup = DEFER/FUTURE MAJOR.
-- **SVC-V2RAY-API-01B** remains DEFER / POLICY REVIEW; ServiceManager health/liveness projection
-  remains absent by boundary.
-- **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash API shares `spawn_prebound_clash_api_server`;
-  listener binds before handle; caller policy unchanged.
-- sb-core full-suite **pre-existing** flakes: `cache_file::test_fakeip_persistence_sled`,
-  `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
+- **SVC-V2RAY-API-01B** remains DEFER / POLICY REVIEW (ServiceManager health/liveness projection absent by boundary).
+- **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash API shares `spawn_prebound_clash_api_server`; listener binds before handle.
+- sb-core full-suite **pre-existing** flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
 
 ## Strategic State
 
