@@ -13,17 +13,17 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D DONE**; REALITY remains boxed.
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A DONE**; REALITY remains boxed.
+- **APP-SIDECAR-LIVENESS-01A DONE** (`app_sidecar_liveness_01a_runtime_audit.md`):
+  **C/MISSING_RUNTIME_LIVENESS_PROJECTION**. Startup honesty is closed; runtime task exit is not
+  actively projected to bootstrap/run-engine callers. Next: **APP-SIDECAR-LIVENESS-01B** proposal.
 - **APP-V2RAY-SURFACE-02D DONE** (`60b88414`, doc:
   `app_v2ray_surface_02d_generic_alias_deprecation.md`): deprecated generic
   `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer` via effective type aliases; old paths
   still compile with warnings; `GrpcV2RayApiServer` and Simple helper/request contracts stay clean.
-- **APP-V2RAY-SURFACE-02B DONE** (`d4191964`/`28106de7`): added feature-gated explicit gRPC aliases
-  `sb_api::v2ray::GrpcV2RayApiServer` and `sb_api::GrpcV2RayApiServer`; no wrapper/listener/Cargo/
-  proto/stats/app/sb-core/fuzz/old-path removal.
 - **V2Ray API state**: bootstrap/run-engine use sb-core real listener (`a80a0916`, `4141724b`);
   workspace runtime no longer calls `SimpleV2RayApiServer`; tests/fuzz cover Simple legacy/request
-  contracts.
+  contracts. breaking cleanup = DEFER / FUTURE MAJOR WINDOW.
 - **SVC-V2RAY-API-01B** remains DEFER / POLICY REVIEW; ServiceManager health/liveness projection
   remains absent by boundary.
 - **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash API shares `spawn_prebound_clash_api_server`;
