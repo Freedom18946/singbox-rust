@@ -13,13 +13,11 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C DONE**; REALITY remains boxed.
-- **APP-V2RAY-SURFACE-02C POLICY** (`app_v2ray_surface_02c_deprecation_audit.md`):
-  **B/GENERIC_ALIAS_SET_DEPRECATION_READY**. Next: **APP-V2RAY-SURFACE-02D** should deprecate
-  generic `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer`, keep `GrpcV2RayApiServer`
-  clean, and leave Simple helper/request structs non-deprecated.
-- **02C probe finding**: `#[deprecated] pub use ... as ...` did not warn external users on current
-  rustc; next implementation should use deprecated type aliases, never the underlying tonic struct.
+**APP-V2RAY-SURFACE-02A/B/C/D DONE**; REALITY remains boxed.
+- **APP-V2RAY-SURFACE-02D DONE** (`60b88414`, doc:
+  `app_v2ray_surface_02d_generic_alias_deprecation.md`): deprecated generic
+  `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer` via effective type aliases; old paths
+  still compile with warnings; `GrpcV2RayApiServer` and Simple helper/request contracts stay clean.
 - **APP-V2RAY-SURFACE-02B DONE** (`d4191964`/`28106de7`): added feature-gated explicit gRPC aliases
   `sb_api::v2ray::GrpcV2RayApiServer` and `sb_api::GrpcV2RayApiServer`; no wrapper/listener/Cargo/
   proto/stats/app/sb-core/fuzz/old-path removal.
