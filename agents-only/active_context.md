@@ -10,23 +10,26 @@
 
 ---
 
-## Resume (2026-06-08)
+## Resume (2026-06-09)
 
-T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 DONE. REALITY local main line boxed (T3 closure).
-- **DRIFT-01** (`92eab1a8`+`c7af15cb`): verify-consistency clean-tree startup gate restored +
-  active governance docs reconciled (boundary exit-0/537, clippy `-D warnings` relaxation,
-  R91/前沿 framing, golden_spec S6 `/60` table all retired).
-- **SVC-DNS-01** (`e6560ce3`): resolved/DNS-forwarder bind failure now propagates **before**
-  Running (sync bind+set_nonblocking+from_std in `start()` → ServiceManager `Failed`); 3
-  regression tests (`svc_dns_01_bind_failure_propagation.md`).
-- sb-core full-suite **pre-existing** flakes (NOT SVC-DNS-01; fail on clean HEAD too):
+T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A DONE**.
+REALITY local main line remains boxed (T3 closure).
+- **SVC-V2RAY-API-01A** (`4141724b`; detail:
+  `svc_v2ray_api_01a_bind_failure_propagation.md`): V2Ray gRPC sidecar now pre-binds the
+  TCP listener before `start()` returns `Ok`; `started` claim uses `compare_exchange` with
+  rollback on bind/register failure; task-scoped RAII cleanup resets `started` on task exit
+  (normal shutdown, serve failure, cancellation/drop).
+- Supervisor policy unchanged: visible-but-nonfatal log-and-continue; no false "wired" message
+  on start `Err`. ServiceManager registration / hard-fail policy deferred to
+  **SVC-V2RAY-API-01B = DEFER / POLICY REVIEW**.
+- Next card = **APP-SIDECAR-AUDIT-01** (read-only audit; do not change app sidecar, do not run
+  public network). `agents-only/a0_reality_spike/` remains untouched untracked.
+- Recent validation: `cargo fmt -p sb-core --check`, `cargo test -p sb-core --all-features --lib
+  v2ray_api` (10/10), `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`,
+  `cargo check --workspace --all-features`, `verify-consistency.sh`, `check-boundaries.sh`,
+  `git diff --check` all PASS.
+- sb-core full-suite **pre-existing** flakes (NOT SVC-DNS-01/01A; fail on clean HEAD too):
   `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
-- **SVC-LISTENER-AUDIT-01** DONE (`svc_listener_bind_audit.md`): ServiceManager lifecycle
-  listeners (dns_forwarder/derp/ssmapi/resolved) all **class-A** (no C bug remains); **v2ray_api**
-  is the lone bug-shaped instance (tonic binds inside spawn; off `/services/health`, V2RayServer trait).
-- Next card = **SVC-V2RAY-API-01** (pre-bind v2ray gRPC listener so bind failure propagates from
-  start(); NOT yet implemented). 52/56 = structural ceiling (4 uncovered BHV all Go-fork).
-  agents-only/a0_reality_spike/ untouched untracked.
 
 ## Strategic State
 
