@@ -12,20 +12,20 @@
 
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
-**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C DONE**; REALITY remains boxed.
-- **APP-V2RAY-SIMPLE-01C POLICY** (`app_v2ray_simple_01c_compat_policy.md`): classify
-  **C/FEATURE_SURFACE_REDESIGN_REQUIRED**. `SimpleV2RayApiServer` is always public, tests/fuzz
-  depend on it, and `sb_api::v2ray::V2RayApiServer` changes from simple no-network wrapper to
-  tonic gRPC server under `v2ray-api`; next card: **APP-V2RAY-SURFACE-02A** redesign proposal.
-- **APP-V2RAY-SIMPLE-01A/B** (`a80a0916`, `9f847f3d`): bootstrap now uses sb-core real listener;
-  workspace runtime no longer calls Simple, but `sb-api::v2ray` remains public compat surface.
-- **APP-V2RAY-SIMPLE-01 AUDIT** (`ec0d38ca`; `app_v2ray_simple_01_policy_audit.md`):
-  classified **B/MISSING_REAL_LISTENER_BUG**. **SVC-V2RAY-API-01B** remains DEFER /
-  POLICY REVIEW; ServiceManager health/liveness projection remains absent by boundary.
-- **SVC-V2RAY-API-01A** (`4141724b`; `svc_v2ray_api_01a_bind_failure_propagation.md`): sb-core
-  V2Ray gRPC sidecar pre-binds before `start()` returns `Ok`; supervisor policy unchanged.
-- **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`; `app_sidecar_bind_01_clash_api_honesty.md`): Clash API
-  shares `spawn_prebound_clash_api_server`; listener binds before handle; caller policy unchanged.
+**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** + **APP-V2RAY-SURFACE-02A DONE**;
+REALITY remains boxed.
+- **APP-V2RAY-SURFACE-02A PROPOSAL** (`app_v2ray_surface_02a_redesign_proposal.md`): classify
+  **A/ADDITIVE_BRIDGE_READY**. Future invariant: same public type path must not silently switch
+  capability models by feature flag. Next card: **APP-V2RAY-SURFACE-02B** nonbreaking explicit
+  naming bridge; keep old paths during migration.
+- **V2Ray API state**: bootstrap/run-engine use sb-core real listener (`a80a0916`, `4141724b`);
+  workspace runtime no longer calls `SimpleV2RayApiServer`. `sb-api::v2ray::V2RayApiServer` remains
+  public compat surface with feature-conditioned Simple-vs-gRPC drift; tests/fuzz cover Simple
+  legacy/request contracts.
+- **SVC-V2RAY-API-01B** remains DEFER / POLICY REVIEW; ServiceManager health/liveness projection
+  remains absent by boundary.
+- **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash API shares `spawn_prebound_clash_api_server`;
+  listener binds before handle; caller policy unchanged.
 - Recent validation: `cargo fmt -p app --check`, `cargo test -p app --all-features v2ray` (7/7),
   app clippy `-D warnings`, workspace check, consistency, boundaries, `git diff --check` all PASS.
 - sb-core full-suite **pre-existing** flakes (NOT SVC-DNS-01/01A; fail on clean HEAD too):
