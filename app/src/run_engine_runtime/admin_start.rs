@@ -55,6 +55,13 @@ struct ClashApiHandle {
 }
 
 #[cfg(all(feature = "router", feature = "clash_api"))]
+pub struct PreboundClashApiHandle {
+    pub listen_addr: std::net::SocketAddr,
+    pub shutdown: oneshot::Sender<()>,
+    pub join: JoinHandle<()>,
+}
+
+#[cfg(all(feature = "router", feature = "clash_api"))]
 impl ClashApiHandle {
     async fn shutdown(self) {
         if self.shutdown.send(()).is_err() {
@@ -78,6 +85,48 @@ fn build_outbound_registry_handle(
         );
     }
     Arc::new(sb_core::outbound::OutboundRegistryHandle::new(registry))
+}
+
+#[cfg(all(feature = "router", feature = "clash_api"))]
+fn pre_bind_clash_api_listener(
+    listen_addr: std::net::SocketAddr,
+) -> Result<tokio::net::TcpListener> {
+    let std_listener = std::net::TcpListener::bind(listen_addr)
+        .map_err(|error| anyhow!("failed to bind Clash API listener on {listen_addr}: {error}",))?;
+    std_listener.set_nonblocking(true).map_err(|error| {
+        anyhow!("failed to set Clash API listener nonblocking on {listen_addr}: {error}",)
+    })?;
+    tokio::net::TcpListener::from_std(std_listener).map_err(|error| {
+        anyhow!("failed to register Clash API listener on {listen_addr}: {error}",)
+    })
+}
+
+#[cfg(all(feature = "router", feature = "clash_api"))]
+pub fn spawn_prebound_clash_api_server(
+    listen_addr: std::net::SocketAddr,
+    server: sb_api::clash::ClashApiServer,
+) -> Result<PreboundClashApiHandle> {
+    let listener = pre_bind_clash_api_listener(listen_addr)?;
+    let actual_addr = listener.local_addr().map_err(|error| {
+        anyhow!("failed to read Clash API listener address for {listen_addr}: {error}",)
+    })?;
+
+    info!(listen = %actual_addr, "Starting Clash API server");
+    let (shutdown_tx, shutdown_rx) = oneshot::channel();
+    let join = tokio::spawn(async move {
+        if let Err(error) = server
+            .serve_with_listener_and_shutdown(listener, shutdown_rx)
+            .await
+        {
+            error!(error = %error, "Clash API server error");
+        }
+    });
+
+    Ok(PreboundClashApiHandle {
+        listen_addr: actual_addr,
+        shutdown: shutdown_tx,
+        join,
+    })
 }
 
 #[cfg(all(feature = "router", feature = "clash_api"))]
@@ -161,18 +210,19 @@ async fn start_clash_api_from_supervisor(
 
     drop(state_guard);
 
-    let (shutdown_tx, shutdown_rx) = oneshot::channel();
-    let join = tokio::spawn(async move {
-        if let Err(error) = server.start_with_shutdown(shutdown_rx).await {
-            error!(error = %error, "clash api server exited with error");
+    let handle = match spawn_prebound_clash_api_server(listen_addr, server) {
+        Ok(handle) => handle,
+        Err(error) => {
+            error!(error = %error, listen = %listen_addr, "failed to start clash api server");
+            return None;
         }
-    });
+    };
 
-    info!(listen = %listen_addr, "started clash api server from run_engine");
+    info!(listen = %handle.listen_addr, "started clash api server from run_engine");
     Some(ClashApiHandle {
-        listen_addr,
-        shutdown: shutdown_tx,
-        join,
+        listen_addr: handle.listen_addr,
+        shutdown: handle.shutdown,
+        join: handle.join,
     })
 }
 
@@ -296,6 +346,39 @@ mod tests {
         assert!(clash_api_listen_addr(&clash_ir(Some("invalid"))).is_none());
         assert!(clash_api_listen_addr(&clash_ir(Some("   "))).is_none());
         assert!(clash_api_listen_addr(&clash_ir(None)).is_none());
+    }
+
+    #[cfg(feature = "clash_api")]
+    #[test]
+    fn run_engine_clash_callsite_does_not_report_started_on_bind_error() {
+        let source = include_str!("admin_start.rs");
+        let implementation = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("implementation section exists before tests");
+        let err_branch = implementation
+            .find("\"failed to start clash api server\"")
+            .expect("run_engine clash api bind failure log is present");
+        let started_log = implementation
+            .find("\"started clash api server from run_engine\"")
+            .expect("run_engine clash api started log is present");
+
+        assert!(
+            implementation.contains("spawn_prebound_clash_api_server(listen_addr, server)"),
+            "run_engine Clash API must use the shared pre-bound startup helper"
+        );
+        assert!(
+            !implementation.contains("server.start_with_shutdown(shutdown_rx).await"),
+            "run_engine Clash API must not bind inside the spawned task"
+        );
+        assert!(
+            err_branch < started_log,
+            "bind/start failure handling must precede the started log"
+        );
+        assert!(
+            implementation[err_branch..started_log].contains("return None"),
+            "bind/start failure must return without creating a live-looking handle"
+        );
     }
 
     #[test]

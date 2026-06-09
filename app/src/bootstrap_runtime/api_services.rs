@@ -70,18 +70,20 @@ pub(crate) fn start_clash_api_server(
 
             let server = server.with_router(router);
 
-            info!(listen = %listen_addr, "Starting Clash API server");
-            let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
-            let join = tokio::spawn(async move {
-                if let Err(error) = server.start_with_shutdown(shutdown_rx).await {
-                    error!(error = %error, "Clash API server error");
+            match crate::run_engine_runtime::admin_start::spawn_prebound_clash_api_server(
+                listen_addr,
+                server,
+            ) {
+                Ok(handle) => Some(ServiceHandle {
+                    name: "clash_api",
+                    shutdown: handle.shutdown,
+                    join: handle.join,
+                }),
+                Err(error) => {
+                    warn!(error = %error, listen = %listen_addr, "Failed to start Clash API server, skipping");
+                    None
                 }
-            });
-            Some(ServiceHandle {
-                name: "clash_api",
-                shutdown: shutdown_tx,
-                join,
-            })
+            }
         }
         Err(error) => {
             error!(error = %error, "Failed to create Clash API server");
@@ -138,6 +140,8 @@ pub(crate) fn start_v2ray_api_server(listen: &str) -> Option<ServiceHandle> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[cfg(feature = "clash_api")]
+    use crate::run_engine_runtime::admin_start::spawn_prebound_clash_api_server;
     use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
     use std::collections::HashMap;
     use std::sync::{
@@ -145,9 +149,55 @@ mod tests {
         Arc,
     };
 
+    #[cfg(feature = "clash_api")]
+    fn build_clash_api_server(listen_addr: std::net::SocketAddr) -> sb_api::clash::ClashApiServer {
+        let config = sb_api::types::ApiConfig {
+            listen_addr,
+            enable_cors: true,
+            cors_origins: None,
+            auth_token: None,
+            enable_traffic_ws: true,
+            enable_logs_ws: true,
+            traffic_broadcast_interval_ms: 1000,
+            log_buffer_size: 100,
+        };
+        sb_api::clash::ClashApiServer::new(config).expect("create Clash API server")
+    }
+
     fn empty_outbound_handle() -> Arc<OutboundRegistryHandle> {
         let registry = OutboundRegistry::new(HashMap::<String, OutboundImpl>::new());
         Arc::new(OutboundRegistryHandle::new(registry))
+    }
+
+    #[cfg(feature = "clash_api")]
+    async fn wait_for_tcp_connect(addr: std::net::SocketAddr) -> bool {
+        for _ in 0..80 {
+            if tokio::net::TcpStream::connect(addr).await.is_ok() {
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        false
+    }
+
+    #[cfg(feature = "clash_api")]
+    async fn wait_for_bind_release(addr: std::net::SocketAddr) -> bool {
+        for _ in 0..80 {
+            if let Ok(listener) = std::net::TcpListener::bind(addr) {
+                drop(listener);
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        false
+    }
+
+    #[cfg(feature = "clash_api")]
+    async fn shutdown_prebound_handle(
+        handle: crate::run_engine_runtime::admin_start::PreboundClashApiHandle,
+    ) {
+        let _ = handle.shutdown.send(());
+        let _ = handle.join.await;
     }
 
     #[tokio::test]
@@ -187,6 +237,124 @@ mod tests {
         );
 
         assert!(handle.is_none());
+    }
+
+    #[cfg(feature = "clash_api")]
+    #[tokio::test]
+    async fn clash_bind_conflict_returns_error_before_handle() {
+        let occupier = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!("Skipping clash_bind_conflict test (cannot bind): {error}");
+                return;
+            }
+        };
+        let listen_addr = occupier.local_addr().unwrap();
+        let server = build_clash_api_server(listen_addr);
+
+        let error = match spawn_prebound_clash_api_server(listen_addr, server) {
+            Ok(_) => panic!("bind conflict must return Err before handle"),
+            Err(error) => error,
+        };
+        let message = error.to_string().to_lowercase();
+        assert!(
+            message.contains("bind")
+                || message.contains("address")
+                || message.contains("in use")
+                || message.contains("addrinuse"),
+            "error must contain bind/address-in-use semantics, got: {message}"
+        );
+    }
+
+    #[cfg(feature = "clash_api")]
+    #[tokio::test]
+    async fn clash_successful_bind_returns_handle() {
+        let probe = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!("Skipping clash_successful_bind test (cannot bind): {error}");
+                return;
+            }
+        };
+        let listen_addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let server = build_clash_api_server(listen_addr);
+        let handle = spawn_prebound_clash_api_server(listen_addr, server)
+            .expect("pre-bound Clash API server must return a handle");
+
+        assert_eq!(handle.listen_addr, listen_addr);
+        assert!(
+            wait_for_tcp_connect(handle.listen_addr).await,
+            "pre-bound Clash API server must accept local TCP connections"
+        );
+        let bound_addr = handle.listen_addr;
+        shutdown_prebound_handle(handle).await;
+        assert!(
+            wait_for_bind_release(bound_addr).await,
+            "shutdown must release the Clash API listen port"
+        );
+    }
+
+    #[cfg(feature = "clash_api")]
+    #[tokio::test]
+    async fn clash_restart_after_failed_bind() {
+        let occupier = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!("Skipping clash_restart_after_failed_bind test (cannot bind): {error}");
+                return;
+            }
+        };
+        let listen_addr = occupier.local_addr().unwrap();
+        let first = build_clash_api_server(listen_addr);
+
+        assert!(
+            spawn_prebound_clash_api_server(listen_addr, first).is_err(),
+            "occupied port must fail before handle creation"
+        );
+
+        drop(occupier);
+        let second = build_clash_api_server(listen_addr);
+        let handle = spawn_prebound_clash_api_server(listen_addr, second)
+            .expect("retry after releasing occupied port must succeed");
+        assert!(
+            wait_for_tcp_connect(handle.listen_addr).await,
+            "retry server must accept local TCP connections"
+        );
+        shutdown_prebound_handle(handle).await;
+    }
+
+    #[cfg(feature = "clash_api")]
+    #[tokio::test]
+    async fn bootstrap_clash_callsite_does_not_return_handle_on_bind_error() {
+        let occupier = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!(
+                    "Skipping bootstrap_callsite_does_not_return_handle_on_bind_error test: {error}"
+                );
+                return;
+            }
+        };
+        let listen_addr = occupier.local_addr().unwrap();
+
+        let handle = start_clash_api_server(
+            &listen_addr.to_string(),
+            None,
+            Arc::new(sb_core::router::dns_integration::setup_dns_routing()),
+            empty_outbound_handle(),
+            Arc::new(sb_config::ir::ConfigIR::default()),
+            None,
+            Some(Arc::new(
+                sb_core::services::urltest_history::URLTestHistoryService::new(),
+            )),
+        );
+
+        assert!(
+            handle.is_none(),
+            "bootstrap Clash API bind failure must not return a live-looking handle"
+        );
     }
 
     #[cfg(feature = "v2ray_api")]
