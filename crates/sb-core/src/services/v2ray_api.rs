@@ -331,10 +331,23 @@ impl std::fmt::Debug for V2RayApiState {
 #[derive(Debug)]
 pub struct V2RayApiServer {
     cfg: V2RayApiIR,
-    started: AtomicBool,
+    started: Arc<AtomicBool>,
     state: V2RayApiState,
     #[cfg(feature = "service_v2ray_api")]
     shutdown_tx: parking_lot::Mutex<Option<oneshot::Sender<()>>>,
+}
+
+#[cfg(feature = "service_v2ray_api")]
+#[derive(Debug)]
+struct ResetStartedOnDrop {
+    started: Arc<AtomicBool>,
+}
+
+#[cfg(feature = "service_v2ray_api")]
+impl Drop for ResetStartedOnDrop {
+    fn drop(&mut self) {
+        self.started.store(false, Ordering::Release);
+    }
 }
 
 impl V2RayApiServer {
@@ -345,7 +358,7 @@ impl V2RayApiServer {
 
         Self {
             cfg,
-            started: AtomicBool::new(false),
+            started: Arc::new(AtomicBool::new(false)),
             state: V2RayApiState { stats, enabled },
             #[cfg(feature = "service_v2ray_api")]
             shutdown_tx: parking_lot::Mutex::new(None),
@@ -366,6 +379,23 @@ impl V2RayApiServer {
     #[cfg(any(feature = "service_v2ray_api", test))]
     fn listen_addr(&self) -> Option<SocketAddr> {
         self.cfg.listen.as_ref().and_then(|addr| addr.parse().ok())
+    }
+
+    /// Synchronously bind the gRPC TCP listener so a bind failure (e.g. address
+    /// already in use) surfaces as `Err` from `start()` — instead of a detached
+    /// tonic task logging-and-exiting while the sidecar still reports started.
+    /// Mirrors the dns_forwarder / DERP / SSM-API std-bind -> `from_std` pattern;
+    /// tonic then serves over the pre-bound listener via `serve_with_incoming_shutdown`.
+    #[cfg(feature = "service_v2ray_api")]
+    fn pre_bind(addr: SocketAddr) -> anyhow::Result<tokio::net::TcpListener> {
+        let std_listener = std::net::TcpListener::bind(addr)
+            .map_err(|e| anyhow::anyhow!("V2Ray API failed to bind {}: {}", addr, e))?;
+        std_listener.set_nonblocking(true).map_err(|e| {
+            anyhow::anyhow!("V2Ray API failed to set non-blocking on {}: {}", addr, e)
+        })?;
+        tokio::net::TcpListener::from_std(std_listener).map_err(|e| {
+            anyhow::anyhow!("V2Ray API failed to register listener on {}: {}", addr, e)
+        })
     }
 }
 
@@ -396,7 +426,30 @@ impl V2RayServer for V2RayApiServer {
                 }
             };
 
-            self.started.store(true, Ordering::SeqCst);
+            // Claim the single-start slot. A second start() while already running is
+            // an idempotent no-op and must NOT spawn a second listener.
+            if self
+                .started
+                .compare_exchange(false, true, Ordering::SeqCst, Ordering::SeqCst)
+                .is_err()
+            {
+                tracing::debug!(
+                    target: "sb_core::services::v2ray",
+                    "V2Ray API server already started; ignoring duplicate start"
+                );
+                return Ok(());
+            }
+
+            // Pre-bind the gRPC TCP listener synchronously so a bind failure
+            // propagates as Err BEFORE returning Ok; roll back the start claim so a
+            // later retry (after the conflict clears) can re-bind.
+            let listener = match Self::pre_bind(listen_addr) {
+                Ok(l) => l,
+                Err(e) => {
+                    self.started.store(false, Ordering::SeqCst);
+                    return Err(e);
+                }
+            };
 
             // Initialize standard counters
             let stats_manager = self.state.stats.clone();
@@ -418,11 +471,22 @@ impl V2RayServer for V2RayApiServer {
             let stats_service = StatsServiceImpl {
                 stats: self.state.stats.clone(),
             };
+            let reset_started = ResetStartedOnDrop {
+                started: self.started.clone(),
+            };
 
+            // Serve over the already-bound listener. The incoming stream is built
+            // dep-free from the pre-bound TcpListener (futures::stream::unfold; no
+            // tokio-stream dependency) and fed to tonic's serve_with_incoming_shutdown.
             tokio::spawn(async move {
+                let _reset_started = reset_started;
+                let incoming = Box::pin(futures::stream::unfold(listener, |listener| async move {
+                    let conn = listener.accept().await.map(|(stream, _)| stream);
+                    Some((conn, listener))
+                }));
                 let serve = Server::builder()
                     .add_service(StatsServiceServer::new(stats_service))
-                    .serve_with_shutdown(listen_addr, async {
+                    .serve_with_incoming_shutdown(incoming, async {
                         let _ = shutdown_rx.await;
                         tracing::info!(target: "sb_core::services::v2ray", "Received shutdown signal");
                     });
@@ -647,5 +711,246 @@ mod tests {
             let value = manager.get_stat(name).unwrap_or(0);
             assert_eq!(value, expected, "stat mismatch for {name}");
         }
+    }
+
+    // ── SVC-V2RAY-API-01A: gRPC sidecar bind-failure honesty regression tests ──
+    // The V2Ray gRPC sidecar must return Err (and keep started=false) when its
+    // listener does not bind, so the supervisor never reports it "wired" for a dead
+    // port. Driven directly on V2RayApiServer (it is NOT a ServiceManager service).
+    // Feature-gated: only the service_v2ray_api build pre-binds a real listener.
+
+    #[cfg(feature = "service_v2ray_api")]
+    fn build_v2ray_server(port: u16) -> V2RayApiServer {
+        V2RayApiServer::new(V2RayApiIR {
+            listen: Some(format!("127.0.0.1:{port}")),
+            stats: Some(sb_config::ir::StatsIR {
+                enabled: true,
+                inbounds: vec![],
+                outbounds: vec![],
+                users: vec![],
+                inbound: Some(true),
+                outbound: Some(true),
+            }),
+        })
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    async fn wait_until_not_started(server: &V2RayApiServer) -> bool {
+        for _ in 0..80 {
+            if !server.started.load(Ordering::SeqCst) {
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        false
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    async fn restart_with_retry(server: &V2RayApiServer) -> bool {
+        for _ in 0..80 {
+            if server.start().is_ok() {
+                return true;
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        false
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    fn signal_shutdown_without_close(server: &V2RayApiServer) {
+        if let Some(tx) = server.shutdown_tx.lock().take() {
+            let _ = tx.send(());
+        }
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    #[tokio::test]
+    async fn bind_conflict_returns_error_and_keeps_not_started() {
+        // Occupy a TCP port so the sidecar's synchronous pre-bind must fail.
+        let occupier = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("Skipping bind_conflict test (cannot bind): {e}");
+                return;
+            }
+        };
+        let addr = occupier.local_addr().unwrap();
+        let server = build_v2ray_server(addr.port());
+
+        let res = server.start();
+        assert!(res.is_err(), "bind conflict must return Err, got Ok");
+        let msg = format!("{}", res.unwrap_err()).to_lowercase();
+        assert!(
+            msg.contains("bind")
+                || msg.contains("address")
+                || msg.contains("in use")
+                || msg.contains("addrinuse"),
+            "err must carry bind/address-in-use semantics, got: {msg}"
+        );
+        assert!(
+            !server.started.load(Ordering::SeqCst),
+            "started must remain false after a failed bind (no false 'wired')"
+        );
+        drop(occupier);
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    #[tokio::test]
+    async fn successful_bind_marks_started() {
+        // Reserve then release an ephemeral port so the sidecar can bind it.
+        let port = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(probe) => probe.local_addr().unwrap().port(),
+            Err(e) => {
+                eprintln!("Skipping successful_bind test (cannot bind): {e}");
+                return;
+            }
+        };
+        let server = build_v2ray_server(port);
+
+        assert!(server.start().is_ok(), "successful bind must return Ok");
+        assert!(
+            server.started.load(Ordering::SeqCst),
+            "started must be true after a successful bind"
+        );
+        server.close().unwrap();
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    #[tokio::test]
+    async fn restart_after_failed_bind() {
+        let occupier = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(l) => l,
+            Err(e) => {
+                eprintln!("Skipping restart test (cannot bind): {e}");
+                return;
+            }
+        };
+        let addr = occupier.local_addr().unwrap();
+        let server = build_v2ray_server(addr.port());
+
+        // First attempt: port occupied → Err, started rolled back to false.
+        assert!(
+            server.start().is_err(),
+            "first start must fail (port occupied)"
+        );
+        assert!(
+            !server.started.load(Ordering::SeqCst),
+            "started must not stick after a failed bind"
+        );
+
+        // Release the port; a retry must recover (failure must not be permanent).
+        drop(occupier);
+        assert!(
+            server.start().is_ok(),
+            "restart after releasing the port must succeed"
+        );
+        assert!(server.started.load(Ordering::SeqCst));
+        server.close().unwrap();
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    #[tokio::test]
+    async fn duplicate_start_does_not_create_second_listener() {
+        let port = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(probe) => probe.local_addr().unwrap().port(),
+            Err(e) => {
+                eprintln!("Skipping duplicate_start test (cannot bind): {e}");
+                return;
+            }
+        };
+        let server = build_v2ray_server(port);
+
+        assert!(server.start().is_ok(), "first start must bind");
+        assert!(server.started.load(Ordering::SeqCst));
+
+        // A second start() is an idempotent no-op: it returns Ok WITHOUT attempting a
+        // second bind. (A second bind on the held port would Err — so Ok here proves no
+        // second listener was created.)
+        assert!(
+            server.start().is_ok(),
+            "duplicate start must be an idempotent Ok, not a second bind"
+        );
+        assert!(server.started.load(Ordering::SeqCst));
+        server.close().unwrap();
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    #[tokio::test]
+    async fn shutdown_allows_restart() {
+        let port = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(probe) => probe.local_addr().unwrap().port(),
+            Err(e) => {
+                eprintln!("Skipping shutdown_allows_restart test (cannot bind): {e}");
+                return;
+            }
+        };
+        let server = build_v2ray_server(port);
+
+        assert!(server.start().is_ok(), "first start must bind");
+        server.close().unwrap();
+        assert!(
+            !server.started.load(Ordering::SeqCst),
+            "close must reset started to false"
+        );
+
+        // After shutdown the serve task releases the port asynchronously; a bounded
+        // retry confirms a restart is allowed (started is not sticky after shutdown).
+        let restarted = restart_with_retry(&server).await;
+        assert!(
+            restarted,
+            "shutdown must allow a later restart on the same port"
+        );
+        assert!(server.started.load(Ordering::SeqCst));
+        server.close().unwrap();
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    #[tokio::test]
+    async fn task_exit_resets_started() {
+        let port = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(probe) => probe.local_addr().unwrap().port(),
+            Err(e) => {
+                eprintln!("Skipping task_exit_resets_started test (cannot bind): {e}");
+                return;
+            }
+        };
+        let server = build_v2ray_server(port);
+
+        assert!(
+            server.start().is_ok(),
+            "server must bind before task-exit test"
+        );
+        assert!(server.started.load(Ordering::SeqCst));
+
+        // Do not call close(): this test sends the shutdown signal directly so
+        // started can only become false when the spawned serve task drops its guard.
+        signal_shutdown_without_close(&server);
+        assert!(
+            wait_until_not_started(&server).await,
+            "serve task exit must reset started to false"
+        );
+
+        let restarted = restart_with_retry(&server).await;
+        assert!(
+            restarted,
+            "task-exit cleanup must allow a later restart on the same port"
+        );
+        assert!(server.started.load(Ordering::SeqCst));
+        server.close().unwrap();
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    #[test]
+    fn reset_started_guard_drop_resets_state() {
+        let started = Arc::new(AtomicBool::new(true));
+        {
+            let _guard = ResetStartedOnDrop {
+                started: started.clone(),
+            };
+        }
+        assert!(
+            !started.load(Ordering::SeqCst),
+            "guard Drop must reset started to false"
+        );
     }
 }
