@@ -11,25 +11,25 @@
 ---
 
 ## Resume (2026-06-09)
-
-T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A DONE**.
-REALITY local main line remains boxed (T3 closure).
+T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
+**APP-SIDECAR-BIND-01 DONE**; REALITY remains boxed.
 - **SVC-V2RAY-API-01A** (`4141724b`; detail:
   `svc_v2ray_api_01a_bind_failure_propagation.md`): V2Ray gRPC sidecar now pre-binds the
   TCP listener before `start()` returns `Ok`; `started` claim uses `compare_exchange` with
   rollback on bind/register failure; task-scoped RAII cleanup resets `started` on task exit
   (normal shutdown, serve failure, cancellation/drop).
-- Supervisor policy unchanged: visible-but-nonfatal log-and-continue; no false "wired" message
-  on start `Err`. ServiceManager registration / hard-fail policy deferred to
-  **SVC-V2RAY-API-01B = DEFER / POLICY REVIEW**.
-- **APP-SIDECAR-AUDIT-01 DONE** (`app_sidecar_bind_audit.md`, uncommitted): two app Clash API
-  entries are class-C spawn-then-live-handle bugs; app bootstrap V2Ray simple helper is class-E
-  policy gap (no actual listener). Unique next card = **APP-SIDECAR-BIND-01** (pre-bind app
-  Clash sidecars only). `agents-only/a0_reality_spike/` remains untouched untracked.
-- Recent validation: `cargo fmt -p sb-core --check`, `cargo test -p sb-core --all-features --lib
-  v2ray_api` (10/10), `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`,
-  `cargo check --workspace --all-features`, `verify-consistency.sh`, `check-boundaries.sh`,
-  `git diff --check` all PASS.
+- Supervisor policy unchanged: visible-but-nonfatal log-and-continue; no false "wired" on start
+  `Err`; ServiceManager registration / hard-fail policy deferred to **SVC-V2RAY-API-01B**.
+- **APP-SIDECAR-AUDIT-01 DONE** (`484d12f1`; `app_sidecar_bind_audit.md`): two app Clash API
+  entries class C; bootstrap SimpleV2Ray class E. **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`;
+  detail: `app_sidecar_bind_01_clash_api_honesty.md`): bootstrap + run-engine Clash API share
+  `spawn_prebound_clash_api_server`; listener binds before handle return; bind failure returns no
+  live-looking handle and no false `started`; caller policy remains visible-but-nonfatal; runtime
+  `ServiceHandle` liveness projection remains absent by design boundary.
+- Next: **APP-V2RAY-SIMPLE-01 = product-semantics audit**; SimpleV2Ray untouched;
+  **SVC-V2RAY-API-01B = DEFER / POLICY REVIEW**; `agents-only/a0_reality_spike/` untouched.
+- Recent validation: `cargo fmt -p app --check`, `cargo test -p app --all-features clash` (8/8),
+  app clippy `-D warnings`, workspace check, consistency, boundaries, `git diff --check` all PASS.
 - sb-core full-suite **pre-existing** flakes (NOT SVC-DNS-01/01A; fail on clean HEAD too):
   `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
 
