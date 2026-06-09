@@ -22,8 +22,10 @@ REALITY local main line remains boxed (T3 closure).
 - Supervisor policy unchanged: visible-but-nonfatal log-and-continue; no false "wired" message
   on start `Err`. ServiceManager registration / hard-fail policy deferred to
   **SVC-V2RAY-API-01B = DEFER / POLICY REVIEW**.
-- Next card = **APP-SIDECAR-AUDIT-01** (read-only audit; do not change app sidecar, do not run
-  public network). `agents-only/a0_reality_spike/` remains untouched untracked.
+- **APP-SIDECAR-AUDIT-01 DONE** (`app_sidecar_bind_audit.md`, uncommitted): two app Clash API
+  entries are class-C spawn-then-live-handle bugs; app bootstrap V2Ray simple helper is class-E
+  policy gap (no actual listener). Unique next card = **APP-SIDECAR-BIND-01** (pre-bind app
+  Clash sidecars only). `agents-only/a0_reality_spike/` remains untouched untracked.
 - Recent validation: `cargo fmt -p sb-core --check`, `cargo test -p sb-core --all-features --lib
   v2ray_api` (10/10), `cargo clippy -p sb-core --all-features --all-targets -- -D warnings`,
   `cargo check --workspace --all-features`, `verify-consistency.sh`, `check-boundaries.sh`,
@@ -94,6 +96,5 @@ DEV-REALITY-01 = ARCH-LIMIT (residual): local profile parity CLOSED, official-JA
 
 ## Historical Detail
 
-- R33-R60 + early ClientHello/Vision/REALITY: `mt_real_02_baseline.md`.
-  L01-L25: `archive/L*/`. Closed MT-* tracks: `archive/MT-*/`.
-  Golden spec: `labs/interop-lab/docs/dual_kernel_golden_spec.md`.
+- R33-R60 + early ClientHello/Vision/REALITY: `mt_real_02_baseline.md`; L01-L25:
+  `archive/L*/`; closed MT-* tracks: `archive/MT-*/`; golden spec: `labs/interop-lab/docs/dual_kernel_golden_spec.md`.
