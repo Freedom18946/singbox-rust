@@ -47,12 +47,13 @@ pub use types::*;
 pub use clash::ClashApiServer;
 
 #[cfg(feature = "v2ray-api")]
-/// Compatibility V2Ray API server export.
+/// Deprecated compatibility V2Ray API server export.
 ///
-/// With the `v2ray-api` feature enabled this is the tonic gRPC server.
-/// New callers that specifically need a real network listener should prefer
+/// With the `v2ray-api` feature enabled this remains an additive compatibility
+/// alias for the tonic gRPC server. New root callers should migrate to
 /// `GrpcV2RayApiServer`.
-pub use v2ray::V2RayApiServer;
+#[deprecated(note = "use `sb_api::GrpcV2RayApiServer`")]
+pub type V2RayApiServer = v2ray::GrpcV2RayApiServer;
 
 #[cfg(feature = "v2ray-api")]
 /// Real tonic gRPC V2Ray API server.

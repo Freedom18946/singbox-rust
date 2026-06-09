@@ -516,11 +516,15 @@ pub mod generated {
 
 /// Compatibility V2Ray API server surface.
 ///
-/// This public name is retained for compatibility and its implementation varies
-/// by feature mode: without `v2ray-api` it is a simplified no-network wrapper;
-/// with `v2ray-api` it is the tonic gRPC server. New callers that need a real
-/// network listener should prefer `GrpcV2RayApiServer`.
-pub use server::V2RayApiServer;
+/// This deprecated public name is retained as a compatibility surface and its
+/// implementation varies by feature mode: without `v2ray-api` it resolves to a
+/// simplified no-network wrapper; with `v2ray-api` it resolves to the tonic gRPC
+/// server. Network callers should migrate to `GrpcV2RayApiServer`; legacy
+/// in-memory callers should migrate to `SimpleV2RayApiServer`.
+#[deprecated(
+    note = "compatibility alias: use `GrpcV2RayApiServer` for the network gRPC server or `SimpleV2RayApiServer` for the legacy in-memory helper"
+)]
+pub type V2RayApiServer = server::V2RayApiServer;
 
 #[cfg(feature = "v2ray-api")]
 /// Real tonic gRPC V2Ray API server.
