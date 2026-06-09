@@ -13,10 +13,12 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B DONE**; REALITY remains boxed.
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B DONE, 01C STOPPED**; REALITY remains boxed.
+- **APP-SIDECAR-LIVENESS-01C STOPPED** (`app_sidecar_liveness_01c_cross_crate_contract.md`):
+  same-instance V2Ray restart requires generation-aware runtime completion contract before implementation.
 - **APP-SIDECAR-LIVENESS-01B DONE** (`app_sidecar_liveness_01b_completion_projection_proposal.md`):
   **C/CROSS_CRATE_LIVENESS_CONTRACT_REQUIRED**. Use source-owner terminal state + app adapter;
-  next: **APP-SIDECAR-LIVENESS-01C** cross-crate runtime completion contract.
+  01C proved the V2Ray contract needs generation identity before implementation.
 - **APP-V2RAY-SURFACE-02D DONE** (`60b88414`, doc:
   `app_v2ray_surface_02d_generic_alias_deprecation.md`): deprecated generic
   `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer` via effective type aliases; old paths
