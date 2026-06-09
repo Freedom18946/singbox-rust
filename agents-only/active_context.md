@@ -13,10 +13,10 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A DONE**; REALITY remains boxed.
-- **APP-SIDECAR-LIVENESS-01A DONE** (`app_sidecar_liveness_01a_runtime_audit.md`):
-  **C/MISSING_RUNTIME_LIVENESS_PROJECTION**. Startup honesty is closed; runtime task exit is not
-  actively projected to bootstrap/run-engine callers. Next: **APP-SIDECAR-LIVENESS-01B** proposal.
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B DONE**; REALITY remains boxed.
+- **APP-SIDECAR-LIVENESS-01B DONE** (`app_sidecar_liveness_01b_completion_projection_proposal.md`):
+  **C/CROSS_CRATE_LIVENESS_CONTRACT_REQUIRED**. Use source-owner terminal state + app adapter;
+  next: **APP-SIDECAR-LIVENESS-01C** cross-crate runtime completion contract.
 - **APP-V2RAY-SURFACE-02D DONE** (`60b88414`, doc:
   `app_v2ray_surface_02d_generic_alias_deprecation.md`): deprecated generic
   `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer` via effective type aliases; old paths
