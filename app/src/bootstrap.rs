@@ -241,7 +241,10 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         if let Some(ref v2ray) = exp.v2ray_api {
             if let Some(ref listen) = v2ray.listen {
                 if let Some(handle) =
-                    crate::bootstrap_runtime::api_services::start_v2ray_api_server(listen.as_str())
+                    crate::bootstrap_runtime::api_services::start_v2ray_api_server(
+                        listen.as_str(),
+                        v2ray.stats.clone(),
+                    )
                 {
                     service_handles.push(handle);
                 }

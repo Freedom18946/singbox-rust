@@ -93,36 +93,42 @@ pub(crate) fn start_clash_api_server(
 }
 
 #[cfg(feature = "v2ray_api")]
-pub(crate) fn start_v2ray_api_server(listen: &str) -> Option<ServiceHandle> {
-    use std::net::SocketAddr;
+pub(crate) fn start_v2ray_api_server(
+    listen: &str,
+    stats: Option<sb_config::ir::StatsIR>,
+) -> Option<ServiceHandle> {
+    use sb_core::context::V2RayServer;
 
-    let listen_addr: SocketAddr = match listen.parse() {
+    let listen = listen.trim();
+    if listen.is_empty() {
+        warn!("V2Ray API listen address is empty, skipping");
+        return None;
+    }
+    let listen_addr: std::net::SocketAddr = match listen.parse() {
         Ok(addr) => addr,
         Err(error) => {
             warn!(error = %error, listen = %listen, "Invalid V2Ray API listen address, skipping");
             return None;
         }
     };
+    let listen = listen_addr.to_string();
 
-    let config = sb_api::types::ApiConfig {
-        listen_addr,
-        enable_cors: false,
-        cors_origins: None,
-        auth_token: None,
-        enable_traffic_ws: false,
-        enable_logs_ws: false,
-        traffic_broadcast_interval_ms: 1000,
-        log_buffer_size: 100,
+    let config = sb_config::ir::V2RayApiIR {
+        listen: Some(listen.clone()),
+        stats,
     };
 
-    match sb_api::v2ray::SimpleV2RayApiServer::new(config) {
-        Ok(server) => {
-            info!(listen = %listen_addr, "Starting V2Ray API server");
+    let server = Arc::new(sb_core::services::v2ray_api::V2RayApiServer::new(config));
+    match server.start() {
+        Ok(()) => {
+            info!(listen = %listen, "Started V2Ray API server");
             let (shutdown_tx, shutdown_rx) = tokio::sync::oneshot::channel();
             let join = tokio::spawn(async move {
-                if let Err(error) = server.start_with_shutdown(shutdown_rx).await {
-                    error!(error = %error, "V2Ray API server error");
+                let _ = shutdown_rx.await;
+                if let Err(error) = server.close() {
+                    error!(error = %error, "Failed to close V2Ray API server");
                 }
+                wait_for_v2ray_api_bind_release(listen_addr).await;
             });
             Some(ServiceHandle {
                 name: "v2ray_api",
@@ -131,8 +137,23 @@ pub(crate) fn start_v2ray_api_server(listen: &str) -> Option<ServiceHandle> {
             })
         }
         Err(error) => {
-            error!(error = %error, "Failed to create V2Ray API server");
+            warn!(error = %error, listen = %listen, "Failed to start V2Ray API server, skipping");
             None
+        }
+    }
+}
+
+#[cfg(feature = "v2ray_api")]
+async fn wait_for_v2ray_api_bind_release(addr: std::net::SocketAddr) {
+    for _ in 0..80 {
+        match std::net::TcpListener::bind(addr) {
+            Ok(listener) => {
+                drop(listener);
+                return;
+            }
+            Err(_) => {
+                tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+            }
         }
     }
 }
@@ -169,7 +190,7 @@ mod tests {
         Arc::new(OutboundRegistryHandle::new(registry))
     }
 
-    #[cfg(feature = "clash_api")]
+    #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
     async fn wait_for_tcp_connect(addr: std::net::SocketAddr) -> bool {
         for _ in 0..80 {
             if tokio::net::TcpStream::connect(addr).await.is_ok() {
@@ -180,7 +201,7 @@ mod tests {
         false
     }
 
-    #[cfg(feature = "clash_api")]
+    #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
     async fn wait_for_bind_release(addr: std::net::SocketAddr) -> bool {
         for _ in 0..80 {
             if let Ok(listener) = std::net::TcpListener::bind(addr) {
@@ -360,7 +381,72 @@ mod tests {
     #[cfg(feature = "v2ray_api")]
     #[test]
     fn v2ray_api_starter_skips_invalid_listen_addresses() {
-        assert!(start_v2ray_api_server("invalid").is_none());
+        assert!(start_v2ray_api_server("invalid", None).is_none());
+    }
+
+    #[cfg(feature = "v2ray_api")]
+    #[test]
+    fn v2ray_api_starter_skips_empty_listen_addresses() {
+        assert!(start_v2ray_api_server("", None).is_none());
+        assert!(start_v2ray_api_server("   ", None).is_none());
+    }
+
+    #[cfg(feature = "v2ray_api")]
+    #[tokio::test]
+    async fn v2ray_bind_conflict_returns_no_handle() {
+        let occupier = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!("Skipping v2ray_bind_conflict test (cannot bind): {error}");
+                return;
+            }
+        };
+        let listen_addr = occupier.local_addr().unwrap();
+
+        let handle = start_v2ray_api_server(&listen_addr.to_string(), None);
+
+        assert!(
+            handle.is_none(),
+            "bootstrap V2Ray API bind failure must not return a live-looking handle"
+        );
+    }
+
+    #[cfg(feature = "v2ray_api")]
+    #[tokio::test]
+    async fn v2ray_successful_bind_accepts_tcp_and_shutdown_releases_port() {
+        let probe = match std::net::TcpListener::bind("127.0.0.1:0") {
+            Ok(listener) => listener,
+            Err(error) => {
+                eprintln!("Skipping v2ray_successful_bind test (cannot bind): {error}");
+                return;
+            }
+        };
+        let listen_addr = probe.local_addr().unwrap();
+        drop(probe);
+
+        let handle = start_v2ray_api_server(
+            &listen_addr.to_string(),
+            Some(sb_config::ir::StatsIR {
+                enabled: true,
+                inbounds: Vec::new(),
+                outbounds: Vec::new(),
+                users: Vec::new(),
+                inbound: Some(true),
+                outbound: Some(true),
+            }),
+        )
+        .expect("bootstrap V2Ray API must return handle after a successful bind");
+
+        assert!(
+            wait_for_tcp_connect(listen_addr).await,
+            "bootstrap V2Ray API must accept local TCP connections"
+        );
+
+        handle.shutdown().await;
+        assert!(
+            wait_for_bind_release(listen_addr).await,
+            "shutdown must release the V2Ray API listen port"
+        );
     }
 
     #[test]
