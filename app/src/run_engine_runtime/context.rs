@@ -146,6 +146,8 @@ pub struct RuntimeLifecycle {
     metrics_exporter: Option<crate::tracing_init::MetricsExporterHandle>,
     admin_services: crate::run_engine_runtime::admin_start::AdminServices,
     watch: Option<crate::run_engine_runtime::watch::WatchHandle>,
+    #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+    sidecar_runtime_events: Option<crate::sidecar_runtime::SidecarRuntimeEventBridge>,
 }
 
 impl RuntimeLifecycle {
@@ -159,14 +161,32 @@ impl RuntimeLifecycle {
             metrics_exporter,
             admin_services,
             watch,
+            #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+            sidecar_runtime_events: None,
         }
+    }
+
+    /// Attach the run-engine sidecar runtime event bridge (APP-SIDECAR-LIVENESS-01H-B). `None` when
+    /// no sidecar exposes a runtime snapshot — no bridge / consumer task is created in that case.
+    #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+    pub(crate) fn attach_sidecar_runtime_events(
+        &mut self,
+        bridge: Option<crate::sidecar_runtime::SidecarRuntimeEventBridge>,
+    ) {
+        self.sidecar_runtime_events = bridge;
     }
 
     pub async fn shutdown(self) {
         if let Some(watch) = self.watch {
             watch.shutdown().await;
         }
+        // Shut down sidecars first so the Clash observer can witness a clean ShutdownRequested →
+        // CleanShutdown before the bridge aborts any still-Running observers.
         self.admin_services.shutdown().await;
+        #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+        if let Some(bridge) = self.sidecar_runtime_events {
+            bridge.shutdown().await;
+        }
         if let Some(metrics_exporter) = self.metrics_exporter {
             metrics_exporter.shutdown().await;
         }

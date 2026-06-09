@@ -34,6 +34,20 @@ impl AdminServices {
             handle.shutdown().await;
         }
     }
+
+    /// Build a run-engine sidecar runtime subscription for the Clash API, if one is running.
+    /// Used by the run-engine event bridge (APP-SIDECAR-LIVENESS-01H-B).
+    #[cfg(feature = "clash_api")]
+    pub(crate) fn clash_runtime_subscription(
+        &self,
+    ) -> Option<crate::sidecar_runtime::SidecarRuntimeSubscription> {
+        self.clash_api.as_ref().map(|handle| {
+            crate::sidecar_runtime::SidecarRuntimeSubscription::from_clash(
+                "clash-api",
+                handle.shutdown.subscribe_runtime_state(),
+            )
+        })
+    }
 }
 
 pub struct AdminStartContext<'a> {
@@ -106,8 +120,7 @@ impl ClashRuntimePublisher {
         }
     }
 
-    /// Capability accessor for a future consumer (no resident observer is created in this card).
-    #[allow(dead_code)]
+    /// Capability accessor used by the run-engine event bridge to subscribe a future consumer.
     fn subscribe(&self) -> watch::Receiver<SidecarRuntimeSnapshot> {
         self.runtime_tx.subscribe()
     }
@@ -158,8 +171,7 @@ pub struct ClashShutdownHandle {
 
 #[cfg(all(feature = "router", feature = "clash_api"))]
 impl ClashShutdownHandle {
-    /// Capability accessor for a future consumer (bootstrap observer / run-engine). Unused here.
-    #[allow(dead_code)]
+    /// Subscribe to this Clash generation's runtime snapshot (used by the run-engine event bridge).
     pub(crate) fn subscribe_runtime_state(&self) -> watch::Receiver<SidecarRuntimeSnapshot> {
         self.runtime.subscribe()
     }

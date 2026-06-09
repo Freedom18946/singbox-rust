@@ -205,6 +205,46 @@ fn apply_tls_provider_and_probe(
     Ok(())
 }
 
+/// Build a run-engine sidecar runtime subscription for the `V2Ray` API, if one is wired into the
+/// supervisor context and exposes a runtime snapshot. Reads existing `State.context` only — no
+/// `sb-core` change.
+#[cfg(feature = "v2ray_api")]
+async fn v2ray_runtime_subscription(
+    supervisor: &Arc<sb_core::runtime::supervisor::Supervisor>,
+) -> Option<crate::sidecar_runtime::SidecarRuntimeSubscription> {
+    let state_lock = supervisor.handle().state().await;
+    let guard = state_lock.read().await;
+    let subscription = guard.context.v2ray_server.as_ref().and_then(|server| {
+        crate::sidecar_runtime::SidecarRuntimeSubscription::from_v2ray_server(
+            "v2ray-api",
+            server.as_ref(),
+        )
+    });
+    drop(guard);
+    subscription
+}
+
+/// Build the run-engine sidecar runtime event bridge from the live sidecar handles, or `None` when
+/// no sidecar exposes a runtime snapshot.
+#[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+async fn build_sidecar_runtime_bridge(
+    admin_services: &crate::run_engine_runtime::admin_start::AdminServices,
+    supervisor: &Arc<sb_core::runtime::supervisor::Supervisor>,
+) -> Option<crate::sidecar_runtime::SidecarRuntimeEventBridge> {
+    let mut subscriptions: Vec<crate::sidecar_runtime::SidecarRuntimeSubscription> = Vec::new();
+    #[cfg(feature = "clash_api")]
+    if let Some(subscription) = admin_services.clash_runtime_subscription() {
+        subscriptions.push(subscription);
+    }
+    #[cfg(feature = "v2ray_api")]
+    if let Some(subscription) = v2ray_runtime_subscription(supervisor).await {
+        subscriptions.push(subscription);
+    }
+    #[cfg(not(feature = "v2ray_api"))]
+    let _ = supervisor;
+    crate::sidecar_runtime::SidecarRuntimeEventBridge::spawn(subscriptions)
+}
+
 #[allow(clippy::too_many_lines)]
 pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
     if opts.health_enable {
@@ -263,11 +303,22 @@ pub async fn run_supervisor(opts: crate::run_engine::RunOptions) -> Result<()> {
     } else {
         None
     };
-    let runtime_lifecycle = crate::run_engine_runtime::context::RuntimeLifecycle::new(
+    // Build run-engine sidecar runtime subscriptions BEFORE admin_services is moved into the
+    // lifecycle. The bridge is log-only and owned by RuntimeLifecycle (APP-SIDECAR-LIVENESS-01H-B).
+    #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+    let sidecar_runtime_bridge = build_sidecar_runtime_bridge(&admin_services, &supervisor).await;
+
+    #[cfg_attr(
+        not(any(feature = "clash_api", feature = "v2ray_api")),
+        allow(unused_mut)
+    )]
+    let mut runtime_lifecycle = crate::run_engine_runtime::context::RuntimeLifecycle::new(
         metrics_exporter,
         admin_services,
         watch_handle,
     );
+    #[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
+    runtime_lifecycle.attach_sidecar_runtime_events(sidecar_runtime_bridge);
 
     loop {
         match crate::run_engine_runtime::watch::wait_for_signal().await {

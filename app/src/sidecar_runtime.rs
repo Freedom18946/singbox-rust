@@ -1,4 +1,5 @@
-//! App-level sidecar runtime snapshot adapter (APP-SIDECAR-LIVENESS-01F / 01G-B).
+//! App-level sidecar runtime snapshot adapter + run-engine event bridge
+//! (APP-SIDECAR-LIVENESS-01F / 01G-B / 01H-B).
 //!
 //! A thin, read-only projection of a sidecar's source-of-truth runtime snapshot into an
 //! app-internal liveness model. Two source kinds:
@@ -14,8 +15,8 @@
 //! - sb-core's source enums are `#[non_exhaustive]`; every mapping keeps a wildcard arm that degrades
 //!   unknown future variants to `Unknown` — never `panic!`/`unreachable!()`, never a silent collapse.
 //!
-//! The consumer (bootstrap observer / run-engine supervisor) is intentionally deferred to a later
-//! card, so this adapter surface is currently unused outside its own tests.
+//! The run-engine event bridge (bottom of this file) projects ONLY terminal / projection-closed into
+//! an app-local mpsc consumed log-only; the source outer monitors stay the sole terminal loggers.
 
 #[cfg(feature = "v2ray_api")]
 use sb_core::context::{
@@ -187,6 +188,171 @@ fn map_v2ray_exit(exit: &V2RayServerExit) -> SidecarExit {
         V2RayServerExit::Cancelled => SidecarExit::Cancelled,
         // sb-core's enum is #[non_exhaustive]: never panic, never collapse to CleanShutdown.
         _ => SidecarExit::Unknown,
+    }
+}
+
+// ─────────────────────────────────────────────────────────────────────────
+// Run-engine sidecar runtime event bridge (APP-SIDECAR-LIVENESS-01H-B)
+//
+// One observer task per subscription reads the source snapshot and projects ONLY terminal /
+// projection-closed into an app-local unbounded mpsc, consumed log-only. `Running` /
+// `ShutdownRequested` stay in the snapshot and never cross the bridge. The source outer monitors
+// remain the sole terminal loggers; the consumer adds only a low-noise breadcrumb. No product
+// policy (no hard-fail / restart / degrade / health probe).
+// ─────────────────────────────────────────────────────────────────────────
+
+use tokio::sync::mpsc;
+use tokio::task::JoinHandle;
+
+/// Minimal consumer-layer event. `generation` lives in `SidecarExitRecord`; error text lives in
+/// `SidecarExit`. No timestamp / restart counter / health / snapshot / history.
+#[derive(Clone, Debug, PartialEq, Eq)]
+pub enum SidecarRuntimeEvent {
+    /// The sidecar's current generation has terminated (carries the highest-generation terminal).
+    Exited {
+        name: String,
+        exit: SidecarExitRecord,
+    },
+    /// The source `watch` channel closed before this observer saw a terminal.
+    ProjectionClosed { name: String },
+}
+
+/// What the consumer decides after an event. Log-only today — always `Continue` (no hard-fail /
+/// restart / degrade). Kept as an explicit, testable return rather than an implicit `()`.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum SidecarRuntimeAction {
+    Continue,
+}
+
+/// Project a snapshot to a terminal event, or `None` if there is no terminal to report.
+///
+/// An active `current` (`Running` / `ShutdownRequested`) always wins: even if a historical `last_exit`
+/// is present (e.g. `V2Ray` `current = Running(2)` with `last_exit = CleanShutdown(1)`), the live
+/// generation is NOT reported as dead.
+fn terminal_event_from_snapshot(
+    name: &str,
+    snapshot: &SidecarRuntimeSnapshot,
+) -> Option<SidecarRuntimeEvent> {
+    if snapshot.current.is_some() {
+        return None;
+    }
+    snapshot
+        .last_exit
+        .as_ref()
+        .map(|exit| SidecarRuntimeEvent::Exited {
+            name: name.to_string(),
+            exit: exit.clone(),
+        })
+}
+
+/// Observe one sidecar runtime subscription, emitting AT MOST one event, then exit.
+///
+/// Reads the initial snapshot first (a sidecar may already be terminal at subscribe time and
+/// `watch` will not re-emit the seen version). A send failure (consumer gone) is not retried and is
+/// not a panic — the observer simply exits.
+async fn observe_sidecar_runtime(
+    mut subscription: SidecarRuntimeSubscription,
+    event_tx: mpsc::UnboundedSender<SidecarRuntimeEvent>,
+) {
+    let name = subscription.name().to_string();
+    let initial = subscription.snapshot_and_mark_seen();
+    if let Some(event) = terminal_event_from_snapshot(&name, &initial) {
+        let _ = event_tx.send(event);
+        return;
+    }
+    loop {
+        match subscription.changed().await {
+            Ok(snapshot) => {
+                if let Some(event) = terminal_event_from_snapshot(&name, &snapshot) {
+                    let _ = event_tx.send(event);
+                    return;
+                }
+                // Running / ShutdownRequested → keep waiting for a terminal.
+            }
+            Err(_recv_error) => {
+                // Projection channel closed (source sender dropped) — NOT a CleanShutdown.
+                let _ = event_tx.send(SidecarRuntimeEvent::ProjectionClosed { name: name.clone() });
+                return;
+            }
+        }
+    }
+}
+
+/// Log-only handling of a single event. Returns the (currently always `Continue`) action so the
+/// policy decision is explicit and testable. Does NOT re-log the terminal (the source monitor
+/// already did); only a low-noise breadcrumb / a projection-closed warning.
+fn handle_sidecar_runtime_event(event: &SidecarRuntimeEvent) -> SidecarRuntimeAction {
+    match event {
+        SidecarRuntimeEvent::Exited { name, exit } => {
+            tracing::debug!(
+                target: "app::sidecar_runtime",
+                sidecar = %name,
+                generation = exit.generation,
+                exit = ?exit.exit,
+                "run-engine observed sidecar runtime exit"
+            );
+        }
+        SidecarRuntimeEvent::ProjectionClosed { name } => {
+            tracing::warn!(
+                target: "app::sidecar_runtime",
+                sidecar = %name,
+                "sidecar runtime projection channel closed"
+            );
+        }
+    }
+    SidecarRuntimeAction::Continue
+}
+
+/// Drain events until all observers' senders drop (channel closed), handling each log-only.
+async fn consume_sidecar_runtime_events(
+    mut event_rx: mpsc::UnboundedReceiver<SidecarRuntimeEvent>,
+) {
+    while let Some(event) = event_rx.recv().await {
+        let _ = handle_sidecar_runtime_event(&event);
+    }
+}
+
+/// Owns the run-engine sidecar runtime observers + the single log-only consumer.
+pub struct SidecarRuntimeEventBridge {
+    observer_joins: Vec<JoinHandle<()>>,
+    consumer_join: JoinHandle<()>,
+}
+
+impl SidecarRuntimeEventBridge {
+    /// Spawn one observer per subscription plus a single consumer. Returns `None` for an empty set
+    /// (no empty consumer task is created). The root sender is dropped so the consumer exits
+    /// naturally once every observer has finished.
+    pub fn spawn(subscriptions: Vec<SidecarRuntimeSubscription>) -> Option<Self> {
+        if subscriptions.is_empty() {
+            return None;
+        }
+        let (event_tx, event_rx) = mpsc::unbounded_channel();
+        let observer_joins = subscriptions
+            .into_iter()
+            .map(|subscription| {
+                let event_tx = event_tx.clone();
+                tokio::spawn(observe_sidecar_runtime(subscription, event_tx))
+            })
+            .collect();
+        drop(event_tx); // only observer clones remain → consumer ends when they all finish
+        let consumer_join = tokio::spawn(consume_sidecar_runtime_events(event_rx));
+        Some(Self {
+            observer_joins,
+            consumer_join,
+        })
+    }
+
+    /// Abort any still-waiting observers and await everything. Does NOT wait for the sidecar's own
+    /// terminal (`V2Ray` close may happen later in outer context shutdown); a bounded teardown.
+    pub async fn shutdown(self) {
+        for join in &self.observer_joins {
+            join.abort();
+        }
+        for join in self.observer_joins {
+            let _ = join.await;
+        }
+        // Observer sender clones are now dropped → consumer's receiver closes → consumer exits.
+        let _ = self.consumer_join.await;
     }
 }
 
@@ -532,6 +698,237 @@ mod tests {
                 sub.changed().await.is_err(),
                 "closed source must surface RecvError, not a synthesized exit"
             );
+        }
+    }
+
+    // ── Run-engine event bridge tests (Clash-style sources; identity adapter, no sb-core) ──
+    #[cfg(feature = "clash_api")]
+    mod bridge {
+        use super::super::*;
+        use tokio::sync::{mpsc, watch};
+
+        fn running(generation: u64) -> SidecarRuntimeSnapshot {
+            SidecarRuntimeSnapshot {
+                current: Some(SidecarActiveGeneration {
+                    generation,
+                    phase: SidecarActivePhase::Running,
+                }),
+                last_exit: None,
+            }
+        }
+
+        fn clean_exit(generation: u64) -> SidecarRuntimeSnapshot {
+            SidecarRuntimeSnapshot {
+                current: None,
+                last_exit: Some(SidecarExitRecord {
+                    generation,
+                    exit: SidecarExit::CleanShutdown,
+                }),
+            }
+        }
+
+        // ── E. Active generation wins over a historical exit (pure rule) ──
+        #[test]
+        fn active_generation_outranks_historical_exit() {
+            let snapshot = SidecarRuntimeSnapshot {
+                current: Some(SidecarActiveGeneration {
+                    generation: 2,
+                    phase: SidecarActivePhase::Running,
+                }),
+                last_exit: Some(SidecarExitRecord {
+                    generation: 1,
+                    exit: SidecarExit::CleanShutdown,
+                }),
+            };
+            assert!(terminal_event_from_snapshot("v2ray", &snapshot).is_none());
+        }
+
+        // ── K. Consumer is log-only: every event returns Continue ──
+        #[test]
+        fn consumer_is_log_only() {
+            assert_eq!(
+                handle_sidecar_runtime_event(&SidecarRuntimeEvent::Exited {
+                    name: "clash".into(),
+                    exit: SidecarExitRecord {
+                        generation: 1,
+                        exit: SidecarExit::ServeError("boom".into()),
+                    },
+                }),
+                SidecarRuntimeAction::Continue
+            );
+            assert_eq!(
+                handle_sidecar_runtime_event(&SidecarRuntimeEvent::ProjectionClosed {
+                    name: "clash".into(),
+                }),
+                SidecarRuntimeAction::Continue
+            );
+        }
+
+        // ── A. Initial terminal is not missed (terminal published before observer spawns) ──
+        #[tokio::test]
+        async fn initial_terminal_is_reported() {
+            let (tx, rx) = watch::channel(clean_exit(1));
+            let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+            let observer = tokio::spawn(observe_sidecar_runtime(
+                SidecarRuntimeSubscription::from_clash("clash", rx),
+                event_tx,
+            ));
+            assert_eq!(
+                event_rx.recv().await,
+                Some(SidecarRuntimeEvent::Exited {
+                    name: "clash".into(),
+                    exit: SidecarExitRecord {
+                        generation: 1,
+                        exit: SidecarExit::CleanShutdown,
+                    },
+                })
+            );
+            let _ = observer.await;
+            let _ = tx;
+        }
+
+        // ── B/C. Running and ShutdownRequested emit no event ──
+        #[tokio::test]
+        async fn running_and_shutdown_requested_emit_no_event() {
+            let (tx, rx) = watch::channel(running(1));
+            let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+            let _observer = tokio::spawn(observe_sidecar_runtime(
+                SidecarRuntimeSubscription::from_clash("clash", rx),
+                event_tx,
+            ));
+            // Running → no event.
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(50), event_rx.recv())
+                    .await
+                    .is_err()
+            );
+            // ShutdownRequested → still no event.
+            tx.send_replace(SidecarRuntimeSnapshot {
+                current: Some(SidecarActiveGeneration {
+                    generation: 1,
+                    phase: SidecarActivePhase::ShutdownRequested,
+                }),
+                last_exit: None,
+            });
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_millis(50), event_rx.recv())
+                    .await
+                    .is_err()
+            );
+        }
+
+        // ── D. One Exited after Running → ShutdownRequested → CleanShutdown ──
+        #[tokio::test]
+        async fn terminal_after_transitions_emits_once() {
+            let (tx, rx) = watch::channel(running(1));
+            let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+            let observer = tokio::spawn(observe_sidecar_runtime(
+                SidecarRuntimeSubscription::from_clash("clash", rx),
+                event_tx,
+            ));
+            tx.send_replace(SidecarRuntimeSnapshot {
+                current: Some(SidecarActiveGeneration {
+                    generation: 1,
+                    phase: SidecarActivePhase::ShutdownRequested,
+                }),
+                last_exit: None,
+            });
+            tx.send_replace(clean_exit(1));
+            assert_eq!(
+                event_rx.recv().await,
+                Some(SidecarRuntimeEvent::Exited {
+                    name: "clash".into(),
+                    exit: SidecarExitRecord {
+                        generation: 1,
+                        exit: SidecarExit::CleanShutdown,
+                    },
+                })
+            );
+            // Observer ended after the single terminal; channel closes (all senders gone).
+            let _ = observer.await;
+            assert_eq!(event_rx.recv().await, None);
+        }
+
+        // ── F. Projection closed → ProjectionClosed (not an exit) ──
+        #[tokio::test]
+        async fn projection_closed_is_reported() {
+            let (tx, rx) = watch::channel(running(1));
+            let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+            let observer = tokio::spawn(observe_sidecar_runtime(
+                SidecarRuntimeSubscription::from_clash("clash", rx),
+                event_tx,
+            ));
+            drop(tx); // close the source projection
+            assert_eq!(
+                event_rx.recv().await,
+                Some(SidecarRuntimeEvent::ProjectionClosed {
+                    name: "clash".into(),
+                })
+            );
+            let _ = observer.await;
+        }
+
+        // ── G. A dropped receiver does not block the observer ──
+        #[tokio::test]
+        async fn dropped_receiver_does_not_block_observer() {
+            let (tx, rx) = watch::channel(running(1));
+            let (event_tx, event_rx) = mpsc::unbounded_channel();
+            drop(event_rx); // consumer gone
+            let observer = tokio::spawn(observe_sidecar_runtime(
+                SidecarRuntimeSubscription::from_clash("clash", rx),
+                event_tx,
+            ));
+            tx.send_replace(clean_exit(1));
+            // The observer's send fails silently and it exits; the join must complete.
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_secs(1), observer)
+                    .await
+                    .is_ok()
+            );
+            let _ = tx;
+        }
+
+        // ── H. Empty subscription set → no bridge ──
+        #[test]
+        fn empty_subscriptions_yield_no_bridge() {
+            assert!(SidecarRuntimeEventBridge::spawn(Vec::new()).is_none());
+        }
+
+        // ── I. Bridge shutdown does not wait for the source terminal ──
+        #[tokio::test]
+        async fn bridge_shutdown_does_not_wait_for_terminal() {
+            let (tx, rx) = watch::channel(running(1)); // stays Running forever
+            let bridge =
+                SidecarRuntimeEventBridge::spawn(vec![SidecarRuntimeSubscription::from_clash(
+                    "clash", rx,
+                )])
+                .expect("non-empty bridge");
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_secs(2), bridge.shutdown())
+                    .await
+                    .is_ok(),
+                "shutdown must abort the still-Running observer, not block on a terminal"
+            );
+            let _ = tx;
+        }
+
+        // ── J. Multiple observers each project their terminal; bridge shuts down cleanly ──
+        #[tokio::test]
+        async fn multiple_observers_then_shutdown() {
+            let (tx_a, rx_a) = watch::channel(clean_exit(1));
+            let (tx_b, rx_b) = watch::channel(running(1));
+            let bridge = SidecarRuntimeEventBridge::spawn(vec![
+                SidecarRuntimeSubscription::from_clash("clash-api", rx_a),
+                SidecarRuntimeSubscription::from_clash("v2ray-api", rx_b),
+            ])
+            .expect("non-empty bridge");
+            // tx_a already terminal; tx_b stays Running until shutdown aborts its observer.
+            assert!(
+                tokio::time::timeout(std::time::Duration::from_secs(2), bridge.shutdown())
+                    .await
+                    .is_ok()
+            );
+            let _ = (tx_a, tx_b);
         }
     }
 }

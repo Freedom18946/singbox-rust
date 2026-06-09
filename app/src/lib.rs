@@ -79,12 +79,11 @@ mod router_text;
 pub mod run_engine;
 pub(crate) mod run_engine_runtime;
 pub mod runtime_deps;
-// App-level sidecar runtime snapshot adapter (APP-SIDECAR-LIVENESS-01F/01G-B). Gated to the
-// sidecar features that supply a source (V2Ray via sb-core, Clash via the app task owner). The
-// consumer (bootstrap observer / run-engine supervisor) is intentionally deferred to a later card,
-// so the adapter surface is allowed to be unused for now.
-#[cfg(any(feature = "clash_api", feature = "v2ray_api"))]
-#[allow(dead_code)]
+// App-level sidecar runtime snapshot adapter + run-engine event bridge
+// (APP-SIDECAR-LIVENESS-01F/01G-B/01H-B). Only the run-engine consumes it, and run-engine is
+// router-gated, so the module requires `router` plus a sidecar source feature. No blanket
+// `allow(dead_code)` — every item is exercised by the run-engine bridge or its tests.
+#[cfg(all(feature = "router", any(feature = "clash_api", feature = "v2ray_api")))]
 pub(crate) mod sidecar_runtime;
 pub mod telemetry;
 pub mod tls_provider;
