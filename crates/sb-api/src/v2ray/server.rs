@@ -105,7 +105,26 @@ mod simple_impl {
 }
 
 #[cfg(feature = "v2ray-api")]
+/// Compatibility V2Ray API server name.
+///
+/// With the `v2ray-api` feature enabled this is the existing tonic gRPC server.
+/// Without that feature, `crate::v2ray::V2RayApiServer` is exported from the
+/// simplified compatibility implementation below. New network-server callers
+/// should prefer `GrpcV2RayApiServer`.
 pub use grpc_impl::V2RayApiServer;
 
+#[cfg(feature = "v2ray-api")]
+/// Real tonic gRPC V2Ray API server.
+///
+/// Requires the `v2ray-api` feature. This is a direct re-export of the existing
+/// sb-api tonic implementation, which binds and serves a network listener.
+pub use grpc_impl::V2RayApiServer as GrpcV2RayApiServer;
+
 #[cfg(not(feature = "v2ray-api"))]
+/// Compatibility V2Ray API server name.
+///
+/// Without the `v2ray-api` feature this is a simplified wrapper around
+/// `SimpleV2RayApiServer`. It does not bind a TCP listener or serve gRPC.
+/// New network-server callers should use `GrpcV2RayApiServer` with the
+/// `v2ray-api` feature enabled.
 pub use simple_impl::V2RayApiServer;

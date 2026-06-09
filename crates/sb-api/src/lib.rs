@@ -33,6 +33,7 @@ pub mod monitoring;
 pub mod types;
 
 #[cfg(feature = "clash-api")]
+#[allow(rustdoc::invalid_html_tags)]
 pub mod clash;
 
 pub mod v2ray;
@@ -46,4 +47,16 @@ pub use types::*;
 pub use clash::ClashApiServer;
 
 #[cfg(feature = "v2ray-api")]
+/// Compatibility V2Ray API server export.
+///
+/// With the `v2ray-api` feature enabled this is the tonic gRPC server.
+/// New callers that specifically need a real network listener should prefer
+/// `GrpcV2RayApiServer`.
 pub use v2ray::V2RayApiServer;
+
+#[cfg(feature = "v2ray-api")]
+/// Real tonic gRPC V2Ray API server.
+///
+/// Requires the `v2ray-api` feature. This server binds and serves a network
+/// listener using the existing sb-api tonic implementation.
+pub use v2ray::GrpcV2RayApiServer;

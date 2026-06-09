@@ -46,7 +46,10 @@ pub struct SimpleQueryStatsResponse {
     pub stats: Vec<SimpleStat>,
 }
 
-/// Simple V2Ray API server implementation
+/// Legacy-compatible in-memory V2Ray API helper.
+///
+/// This helper stores and queries synthetic stats in memory. It does not bind a
+/// TCP listener and does not serve the tonic gRPC V2Ray API.
 pub struct SimpleV2RayApiServer {
     config: ApiConfig,
     stats: Arc<Mutex<HashMap<String, i64>>>,

@@ -514,5 +514,24 @@ pub mod generated {
     }
 }
 
+/// Compatibility V2Ray API server surface.
+///
+/// This public name is retained for compatibility and its implementation varies
+/// by feature mode: without `v2ray-api` it is a simplified no-network wrapper;
+/// with `v2ray-api` it is the tonic gRPC server. New callers that need a real
+/// network listener should prefer `GrpcV2RayApiServer`.
 pub use server::V2RayApiServer;
+
+#[cfg(feature = "v2ray-api")]
+/// Real tonic gRPC V2Ray API server.
+///
+/// Requires the `v2ray-api` feature. This direct re-export points to the
+/// existing sb-api tonic implementation, which binds and serves a network
+/// listener.
+pub use server::GrpcV2RayApiServer;
+
+/// Legacy-compatible in-memory V2Ray API helper.
+///
+/// This helper does not bind a TCP listener and does not serve the tonic gRPC
+/// V2Ray API.
 pub use simple::SimpleV2RayApiServer;
