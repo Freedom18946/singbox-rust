@@ -12,14 +12,14 @@
 
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
-**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A DONE**; REALITY remains boxed.
-- **APP-V2RAY-SIMPLE-01A** (`a80a0916`; detail:
-  `app_v2ray_simple_01a_bootstrap_wiring.md`): bootstrap `experimental.v2ray_api.listen`
-  now constructs `sb_core::services::v2ray_api::V2RayApiServer`, enables
-  `sb-core/service_v2ray_api` through app `v2ray_api`, calls `V2RayServer::start()` before
-  returning a handle, returns no live-looking handle on invalid/occupied listen, and calls
-  `close()` on shutdown before waiting for port release. `SimpleV2RayApiServer` remains in
-  `sb-api` only; bootstrap no longer uses it. Caller policy stays visible-but-nonfatal.
+**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B DONE**; REALITY remains boxed.
+- **APP-V2RAY-SIMPLE-01B AUDIT** (`app_v2ray_simple_01b_orphan_audit.md`): classify
+  **C/ORPHAN_PUBLIC_COMPAT_SURFACE**. Workspace runtime no longer calls
+  `SimpleV2RayApiServer`, but `sb-api::v2ray` still public-reexports it and non-`v2ray-api`
+  `sb_api::v2ray::V2RayApiServer` wraps it; next card should be compatibility strategy, not delete.
+- **APP-V2RAY-SIMPLE-01A** (`a80a0916`; `app_v2ray_simple_01a_bootstrap_wiring.md`):
+  bootstrap now uses sb-core `V2RayApiServer` with `service_v2ray_api`, pre-bind before handle,
+  no handle on invalid/occupied listen, and `close()` on shutdown; caller policy remains visible.
 - **APP-V2RAY-SIMPLE-01 AUDIT** (`ec0d38ca`; `app_v2ray_simple_01_policy_audit.md`):
   classified **B/MISSING_REAL_LISTENER_BUG**. **SVC-V2RAY-API-01B** remains DEFER /
   POLICY REVIEW; ServiceManager health/liveness projection remains absent by boundary.
