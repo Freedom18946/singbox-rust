@@ -454,6 +454,21 @@ impl V2RayApiServer {
         }
     }
 
+    /// Publish the current lifecycle snapshot to the watch channel **while the lifecycle mutex is
+    /// held**.
+    ///
+    /// `send_replace` is synchronous (no `.await`), so it is safe — and required — to call it inside
+    /// the critical section. Capturing the snapshot under the lock but sending it after unlocking
+    /// would open a backflow window: a stale snapshot could overwrite a newer one published by a
+    /// concurrent generation (e.g. an older `commit_terminal` racing a newer `start`). Serializing
+    /// mutation → capture → send under one mutex makes watch ordering match lifecycle ordering.
+    fn publish_snapshot_locked(
+        lifecycle: &V2RayLifecycle,
+        runtime_tx: &watch::Sender<V2RayServerRuntimeSnapshot>,
+    ) {
+        let _ = runtime_tx.send_replace(lifecycle.snapshot());
+    }
+
     /// Commit a generation's terminal outcome under the lifecycle mutex, then publish.
     ///
     /// Generation-checked so an older generation's late exit can never clear a newer `current`
@@ -466,21 +481,19 @@ impl V2RayApiServer {
         generation: u64,
         exit: V2RayServerExit,
     ) {
-        let snapshot = {
-            let mut lc = lifecycle.lock();
-            if lc.current.as_ref().map(|g| g.generation) == Some(generation) {
-                lc.current = None;
-            }
-            let replace = match &lc.last_exit {
-                None => true,
-                Some(rec) => generation > rec.generation,
-            };
-            if replace {
-                lc.last_exit = Some(V2RayServerExitRecord { generation, exit });
-            }
-            lc.snapshot()
+        let mut lc = lifecycle.lock();
+        if lc.current.as_ref().map(|g| g.generation) == Some(generation) {
+            lc.current = None;
+        }
+        let replace = match &lc.last_exit {
+            None => true,
+            Some(rec) => generation > rec.generation,
         };
-        let _ = runtime_tx.send_replace(snapshot);
+        if replace {
+            lc.last_exit = Some(V2RayServerExitRecord { generation, exit });
+        }
+        // Capture + send under the lock (see publish_snapshot_locked).
+        Self::publish_snapshot_locked(&lc, runtime_tx);
     }
 
     /// Get reference to stats manager
@@ -522,7 +535,7 @@ impl V2RayServer for V2RayApiServer {
     fn start(&self) -> anyhow::Result<()> {
         // Stub build: no real serve task. The lifecycle is purely synchronous — a successful
         // start publishes Running(g); there is no monitor, so close() commits the terminal.
-        let snapshot = {
+        {
             let mut lc = self.lifecycle.lock();
             if let Some(cur) = &lc.current {
                 if cur.phase == V2RayServerActivePhase::Running {
@@ -536,9 +549,9 @@ impl V2RayServer for V2RayApiServer {
                 shutdown_requested: Arc::new(AtomicBool::new(false)),
                 shutdown_tx: None,
             });
-            lc.snapshot()
-        };
-        let _ = self.runtime_tx.send_replace(snapshot);
+            // Publish under the lock (see publish_snapshot_locked).
+            Self::publish_snapshot_locked(&lc, &self.runtime_tx);
+        }
         tracing::info!(
             target: "sb_core::services::v2ray",
             listen = ?self.cfg.listen,
@@ -606,8 +619,8 @@ impl V2RayServer for V2RayApiServer {
                 shutdown_requested: shutdown_requested.clone(),
                 shutdown_tx: Some(shutdown_tx),
             });
-            let snapshot = lc.snapshot();
-            let _ = self.runtime_tx.send_replace(snapshot);
+            // Publish Running under the lock (see publish_snapshot_locked).
+            Self::publish_snapshot_locked(&lc, &self.runtime_tx);
 
             (listener, shutdown_rx, shutdown_requested, generation)
         };
@@ -689,7 +702,7 @@ impl V2RayServer for V2RayApiServer {
     fn close(&self) -> anyhow::Result<()> {
         // Stub build: shutdown is synchronous and clean; there is no monitor, so close() itself
         // commits the terminal (generation-checked, mirroring commit_terminal).
-        let snapshot = {
+        {
             let mut lc = self.lifecycle.lock();
             let generation = match lc.current.as_ref() {
                 None => return Ok(()),
@@ -706,9 +719,9 @@ impl V2RayServer for V2RayApiServer {
                     exit: V2RayServerExit::CleanShutdown,
                 });
             }
-            lc.snapshot()
-        };
-        let _ = self.runtime_tx.send_replace(snapshot);
+            // Publish under the lock (see publish_snapshot_locked).
+            Self::publish_snapshot_locked(&lc, &self.runtime_tx);
+        }
         Ok(())
     }
 
@@ -717,7 +730,6 @@ impl V2RayServer for V2RayApiServer {
         // Synchronous, idempotent, non-blocking. Only marks the target generation as
         // ShutdownRequested and signals it; the terminal is committed later by that generation's
         // monitor. Never waits, never fabricates CleanShutdown, never clears current/last_exit.
-        let snapshot;
         let shutdown_tx;
         {
             let mut lc = self.lifecycle.lock();
@@ -733,9 +745,11 @@ impl V2RayServer for V2RayApiServer {
                     shutdown_tx = cur.shutdown_tx.take();
                 }
             }
-            snapshot = lc.snapshot();
+            // Publish ShutdownRequested under the lock (see publish_snapshot_locked).
+            Self::publish_snapshot_locked(&lc, &self.runtime_tx);
         }
-        let _ = self.runtime_tx.send_replace(snapshot);
+        // The shutdown signal is sent outside the lock — only the snapshot publication must be
+        // serialized; the oneshot send is generation-bound and cannot reorder snapshots.
         if let Some(tx) = shutdown_tx {
             let _ = tx.send(());
         }
@@ -1169,6 +1183,87 @@ mod tests {
                 exit: V2RayServerExit::CleanShutdown,
             })
         );
+    }
+
+    // ── R1-A/B. Publication helper sends the CURRENT (post-mutation) state, in-lock ──
+    // Guards against the "capture-under-lock, send-after-unlock" backflow shape: the single
+    // publish site is publish_snapshot_locked, which captures + sends while the mutex is held, so
+    // the published snapshot always reflects the lifecycle state at send time.
+    #[test]
+    fn publish_snapshot_locked_sends_current_state() {
+        let server = test_server(0);
+        {
+            let mut lc = server.lifecycle.lock();
+            lc.next_generation = 3;
+            lc.current = Some(RunningGeneration {
+                generation: 2,
+                phase: V2RayServerActivePhase::Running,
+                shutdown_requested: Arc::new(AtomicBool::new(false)),
+                shutdown_tx: None,
+            });
+            V2RayApiServer::publish_snapshot_locked(&lc, &server.runtime_tx);
+        }
+        let s = snap(&server);
+        assert_eq!(
+            s.current.map(|g| (g.generation, g.phase)),
+            Some((2, V2RayServerActivePhase::Running)),
+            "helper must publish the state present at send time"
+        );
+    }
+
+    // ── R1-B. A stale terminal arriving AFTER a newer generation is Running must not backflow ──
+    // current must stay on the newer generation and last_exit must not regress.
+    #[test]
+    fn stale_terminal_after_newer_running_does_not_backflow() {
+        let server = test_server(0);
+
+        // gen 1 runs then exits cleanly (current cleared, last_exit = 1).
+        {
+            let mut lc = server.lifecycle.lock();
+            lc.next_generation = 2;
+            lc.current = Some(RunningGeneration {
+                generation: 1,
+                phase: V2RayServerActivePhase::Running,
+                shutdown_requested: Arc::new(AtomicBool::new(true)),
+                shutdown_tx: None,
+            });
+            V2RayApiServer::publish_snapshot_locked(&lc, &server.runtime_tx);
+        }
+        V2RayApiServer::commit_terminal(
+            &server.lifecycle,
+            &server.runtime_tx,
+            1,
+            V2RayServerExit::CleanShutdown,
+        );
+
+        // gen 2 starts running.
+        {
+            let mut lc = server.lifecycle.lock();
+            lc.next_generation = 3;
+            lc.current = Some(RunningGeneration {
+                generation: 2,
+                phase: V2RayServerActivePhase::Running,
+                shutdown_requested: Arc::new(AtomicBool::new(false)),
+                shutdown_tx: None,
+            });
+            V2RayApiServer::publish_snapshot_locked(&lc, &server.runtime_tx);
+        }
+
+        // A late, stale terminal for gen 1 arrives — it must not clear current(2) nor regress.
+        V2RayApiServer::commit_terminal(
+            &server.lifecycle,
+            &server.runtime_tx,
+            1,
+            V2RayServerExit::CleanShutdown,
+        );
+
+        let s = snap(&server);
+        assert_eq!(
+            s.current.map(|g| g.generation),
+            Some(2),
+            "a stale gen-1 terminal must not clear the running gen-2"
+        );
+        assert_eq!(s.last_exit.map(|r| r.generation), Some(1));
     }
 
     // ── J. classify_exit: completion + serve error ──
