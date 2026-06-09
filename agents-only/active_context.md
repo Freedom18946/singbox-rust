@@ -12,23 +12,22 @@
 
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
-**APP-SIDECAR-BIND-01 DONE**; REALITY remains boxed.
-- **SVC-V2RAY-API-01A** (`4141724b`; detail:
-  `svc_v2ray_api_01a_bind_failure_propagation.md`): V2Ray gRPC sidecar now pre-binds the
-  TCP listener before `start()` returns `Ok`; `started` claim uses `compare_exchange` with
-  rollback on bind/register failure; task-scoped RAII cleanup resets `started` on task exit
-  (normal shutdown, serve failure, cancellation/drop).
-- Supervisor policy unchanged: visible-but-nonfatal log-and-continue; no false "wired" on start
-  `Err`; ServiceManager registration / hard-fail policy deferred to **SVC-V2RAY-API-01B**.
-- **APP-SIDECAR-AUDIT-01 DONE** (`484d12f1`; `app_sidecar_bind_audit.md`): two app Clash API
-  entries class C; bootstrap SimpleV2Ray class E. **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`;
-  detail: `app_sidecar_bind_01_clash_api_honesty.md`): bootstrap + run-engine Clash API share
-  `spawn_prebound_clash_api_server`; listener binds before handle return; bind failure returns no
-  live-looking handle and no false `started`; caller policy remains visible-but-nonfatal; runtime
-  `ServiceHandle` liveness projection remains absent by design boundary.
-- **APP-V2RAY-SIMPLE-01 AUDIT PROPOSED** (`app_v2ray_simple_01_policy_audit.md`): classify
-  **B/MISSING_REAL_LISTENER_BUG**; next 01A real-listener wiring; SimpleV2Ray untouched; SVC-01B defer.
-- Recent validation: `cargo fmt -p app --check`, `cargo test -p app --all-features clash` (8/8),
+**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A DONE**; REALITY remains boxed.
+- **APP-V2RAY-SIMPLE-01A** (`a80a0916`; detail:
+  `app_v2ray_simple_01a_bootstrap_wiring.md`): bootstrap `experimental.v2ray_api.listen`
+  now constructs `sb_core::services::v2ray_api::V2RayApiServer`, enables
+  `sb-core/service_v2ray_api` through app `v2ray_api`, calls `V2RayServer::start()` before
+  returning a handle, returns no live-looking handle on invalid/occupied listen, and calls
+  `close()` on shutdown before waiting for port release. `SimpleV2RayApiServer` remains in
+  `sb-api` only; bootstrap no longer uses it. Caller policy stays visible-but-nonfatal.
+- **APP-V2RAY-SIMPLE-01 AUDIT** (`ec0d38ca`; `app_v2ray_simple_01_policy_audit.md`):
+  classified **B/MISSING_REAL_LISTENER_BUG**. **SVC-V2RAY-API-01B** remains DEFER /
+  POLICY REVIEW; ServiceManager health/liveness projection remains absent by boundary.
+- **SVC-V2RAY-API-01A** (`4141724b`; `svc_v2ray_api_01a_bind_failure_propagation.md`): sb-core
+  V2Ray gRPC sidecar pre-binds before `start()` returns `Ok`; supervisor policy unchanged.
+- **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`; `app_sidecar_bind_01_clash_api_honesty.md`): Clash API
+  shares `spawn_prebound_clash_api_server`; listener binds before handle; caller policy unchanged.
+- Recent validation: `cargo fmt -p app --check`, `cargo test -p app --all-features v2ray` (7/7),
   app clippy `-D warnings`, workspace check, consistency, boundaries, `git diff --check` all PASS.
 - sb-core full-suite **pre-existing** flakes (NOT SVC-DNS-01/01A; fail on clean HEAD too):
   `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
