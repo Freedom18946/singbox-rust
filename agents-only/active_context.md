@@ -12,12 +12,14 @@
 
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
-**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** + **APP-V2RAY-SURFACE-02A DONE**;
+**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** + **APP-V2RAY-SURFACE-02A/B DONE**;
 REALITY remains boxed.
-- **APP-V2RAY-SURFACE-02A PROPOSAL** (`app_v2ray_surface_02a_redesign_proposal.md`): classify
-  **A/ADDITIVE_BRIDGE_READY**. Future invariant: same public type path must not silently switch
-  capability models by feature flag. Next card: **APP-V2RAY-SURFACE-02B** nonbreaking explicit
-  naming bridge; keep old paths during migration.
+- **APP-V2RAY-SURFACE-02B DONE** (`d4191964`; `app_v2ray_surface_02b_additive_bridge.md`): added
+  feature-gated explicit gRPC aliases `sb_api::v2ray::GrpcV2RayApiServer` and
+  `sb_api::GrpcV2RayApiServer`; direct re-export under `v2ray-api`, no wrapper/listener/Cargo/proto
+  /stats/app/sb-core/fuzz/old-path removal.
+- **APP-V2RAY-SURFACE-02A POLICY** (`ecbe3ffd`; `app_v2ray_surface_02a_redesign_proposal.md`):
+  **A/ADDITIVE_BRIDGE_READY**; old compatibility paths stay during migration.
 - **V2Ray API state**: bootstrap/run-engine use sb-core real listener (`a80a0916`, `4141724b`);
   workspace runtime no longer calls `SimpleV2RayApiServer`. `sb-api::v2ray::V2RayApiServer` remains
   public compat surface with feature-conditioned Simple-vs-gRPC drift; tests/fuzz cover Simple
