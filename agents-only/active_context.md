@@ -13,23 +13,23 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B/D, 01E + 01E-R1 DONE**; REALITY boxed.
-- **APP-SIDECAR-LIVENESS-01E + 01E-R1 DONE** (`140d2d25`+`fix(sb-core): serialize v2ray runtime snapshot publication`;
-  docs `app_sidecar_liveness_01e_*.md`): `V2RayApiServer` generation-aware. Removed
-  `started:AtomicBool`+`ResetStartedOnDrop`; one `Arc<Mutex<V2RayLifecycle>>` (next_generation+current+
-  last_exit) + `watch::Sender<V2RayServerRuntimeSnapshot>`. start()=admission+sync pre_bind+
-  alloc(checked_add)+install+Running-publish in one critical section (closes close-during-start, no
-  lock-across-await); close() sync/idempotent (ShutdownRequested+signal, never commits terminal);
-  per-gen outer monitor=sole terminal writer; `commit_terminal` generation-checked (highest-gen last_exit).
-  **R1**: all 5 publish paths now route through single in-lock `publish_snapshot_locked` helper (was
-  capture-in-lock/send-after-unlock → backflow). Additive object-safe `subscribe_runtime_state()` default
-  None. 23 v2ray_api + full sb-core suite PASS, clippy/fmt/workspace clean. NOT pushed [ahead 4]. Next=01F;
-  out-of-scope H5/H6/H7. **rustdoc -D warnings BASELINE-RED** (14 unrelated broken intra-doc links, identical on clean HEAD, 01E/R1 add 0) → debt **TIDY-RUSTDOC-LINKS**.
-- **APP-V2RAY-SURFACE-02D DONE** (`60b88414`, `app_v2ray_surface_02d_generic_alias_deprecation.md`):
-  deprecated generic `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer` via type aliases (old
-  paths still compile w/ warnings); `GrpcV2RayApiServer` + Simple helper/request contracts stay clean.
-- **V2Ray API state**: bootstrap/run-engine use sb-core real listener (`a80a0916`,`4141724b`); workspace
-  no longer calls `SimpleV2RayApiServer` (tests/fuzz cover legacy/request); breaking cleanup = DEFER/FUTURE MAJOR.
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B/D/E/E-R1, 01F DONE**; REALITY boxed.
+- **APP-SIDECAR-LIVENESS-01F DONE** (`feat(app): add v2ray sidecar runtime snapshot adapter`; doc
+  `app_sidecar_liveness_01f_v2ray_app_adapter.md`): new `app/src/sidecar_runtime.rs` — thin read-only adapter
+  mapping sb-core `V2RayServerRuntimeSnapshot` → app `SidecarRuntimeSnapshot`. Holds the single source
+  `watch::Receiver` (NO forwarding task, NO 2nd channel); `from_v2ray_server`→`Option` (None=capability-absent,
+  not exit); `snapshot_and_mark_seen` via `borrow_and_update`; `changed()` propagates `RecvError` (not faked
+  as exit); pure map, no timestamp, `#[non_exhaustive]`→`Unknown`. Gated `v2ray_api`, `allow(dead_code)`
+  (consumer deferred). No Cargo/sb-core changes. 10 adapter + sb-core v2ray 23 PASS, clippy/fmt/workspace
+  clean; app suite 1 pre-existing parallel flake (`breaker::…legacy_mark_failure`, unrelated, 01F adds 0). NOT pushed.
+- **APP-SIDECAR-LIVENESS-01E + 01E-R1 DONE** (pushed `ae5898d9`): `V2RayApiServer` generation-aware —
+  `Arc<Mutex<V2RayLifecycle>>`(next_generation+current+last_exit) + `watch::Sender`; start()=admission+
+  sync pre_bind+alloc(checked_add)+Running-publish in one critical section; close() sync/idempotent (never
+  commits terminal); per-gen outer monitor=sole terminal writer; `commit_terminal` gen-checked; R1: all 5
+  publish paths via single in-lock `publish_snapshot_locked`; additive object-safe
+  `subscribe_runtime_state()`. **rustdoc -D warnings BASELINE-RED** (14 unrelated links) → **TIDY-RUSTDOC-LINKS**.
+- **APP-V2RAY-SURFACE-02D DONE** (`60b88414`): deprecated generic `sb_api::(v2ray::)?V2RayApiServer` via type aliases (old paths compile w/ warnings); `GrpcV2RayApiServer` + Simple contracts clean.
+- **V2Ray API state**: bootstrap/run-engine use sb-core real listener (`a80a0916`,`4141724b`); workspace no longer calls `SimpleV2RayApiServer` (tests/fuzz cover legacy/request); breaking cleanup = DEFER/FUTURE MAJOR.
 - **SVC-V2RAY-API-01B** remains DEFER / POLICY REVIEW (ServiceManager health/liveness projection absent by boundary).
 - **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash API shares `spawn_prebound_clash_api_server`; listener binds before handle.
 - sb-core full-suite **pre-existing** flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
