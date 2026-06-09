@@ -26,8 +26,8 @@ T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
   `spawn_prebound_clash_api_server`; listener binds before handle return; bind failure returns no
   live-looking handle and no false `started`; caller policy remains visible-but-nonfatal; runtime
   `ServiceHandle` liveness projection remains absent by design boundary.
-- Next: **APP-V2RAY-SIMPLE-01 = product-semantics audit**; SimpleV2Ray untouched;
-  **SVC-V2RAY-API-01B = DEFER / POLICY REVIEW**; `agents-only/a0_reality_spike/` untouched.
+- **APP-V2RAY-SIMPLE-01 AUDIT PROPOSED** (`app_v2ray_simple_01_policy_audit.md`): classify
+  **B/MISSING_REAL_LISTENER_BUG**; next 01A real-listener wiring; SimpleV2Ray untouched; SVC-01B defer.
 - Recent validation: `cargo fmt -p app --check`, `cargo test -p app --all-features clash` (8/8),
   app clippy `-D warnings`, workspace check, consistency, boundaries, `git diff --check` all PASS.
 - sb-core full-suite **pre-existing** flakes (NOT SVC-DNS-01/01A; fail on clean HEAD too):
