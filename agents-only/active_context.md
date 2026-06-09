@@ -13,24 +13,24 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B/D/E/E-R1/F/G-A, 01G-B DONE**; REALITY boxed.
-- **APP-SIDECAR-LIVENESS-01G-B DONE** (`feat(app): expose clash runtime completion state`; doc
-  `app_sidecar_liveness_01g_b_clash_projection.md`): Clash serve task (bootstrap+run-engine shared) gains
-  app-local runtime completion projection. `spawn_prebound_clash_api_server` owns `ClashRuntimePublisher`
-  (watch+marker, Running(1) before spawn, mutate+publish via `send_if_modified` — no backflow) + outer
-  monitor (inner returns `ApiResult<()>`, sole terminal writer/logger, gen=1 once, monotonic).
-  `ClashShutdownHandle` replaces bare sender+join (mark+publish ShutdownRequested→send outside lock→await
-  monitor; bare-drop→UnexpectedCompletion, no custom Drop). Reshaped `PreboundClashApiHandle`/`ClashApiHandle`/
-  `ServiceHandle`(new `ServiceShutdown` Task|Clash). Adapter `SidecarRuntimeSource::Clash`+`from_clash`
-  (identity). Module gated `any(clash_api,v2ray_api)`; 5 feature modes compile; 15 sidecar_runtime+10
-  clash_runtime PASS; clippy/fmt/workspace/sb-core-23 clean; app suite TIDY-APP-BREAKER-FLAKE recurs
-  (intermittent, unrelated, 01G-B adds 0). No Cargo/sb-api/sb-core changes. NOT pushed. (01G-A audit pushed: B/HANDLE_RESHAPE_REQUIRED, Route 4.)
-- **APP-SIDECAR-LIVENESS-01F DONE** (`24323c02`): `app/src/sidecar_runtime.rs` thin read-only adapter
-  sb-core `V2RayServerRuntimeSnapshot`→app `SidecarRuntimeSnapshot`; `from_v2ray_server`→`Option`, `changed()`→`RecvError`, `#[non_exhaustive]`→`Unknown`.
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B/D/E/E-R1/F/G-A/G-B, 01H-A DONE**; REALITY boxed.
+- **APP-SIDECAR-LIVENESS-01H-A DONE** (consumer policy audit, `app_sidecar_liveness_01h_a_consumer_policy_audit.md`):
+  **A/RUN_ENGINE_EVENT_BRIDGE_READY**. bootstrap needs NO observer (source outer-monitor already logs
+  terminal = visible-but-nonfatal); run-engine adds app-local structured event bridge. 4 receivers all
+  extractable app-locally (bootstrap-V2Ray pre-Arc-move; bootstrap/run-engine Clash via
+  `ClashShutdownHandle::subscribe_runtime_state`; run-engine V2Ray via `supervisor.state().context.v2ray_server`).
+  Observer: `snapshot_and_mark_seen` first (terminal may precede subscribe), branch `current` before
+  `last_exit`, RecvError=ProjectionClosed (≠CleanShutdown); source=sole terminal logger, consumer=structured
+  event only. Recommend `SidecarRuntimeEvent{Exited{name,SidecarExitRecord}, ProjectionClosed{name}}`,
+  observer owned by `RuntimeLifecycle`. (Top loop signal-only; sb-core supervisor=ReloadMsg-only off-limits;
+  `State` struct, no Degraded/Stopped/Fatal.) Next=**01H-B** (run-engine bridge, app only, log-only); then narrow module `allow(dead_code)`.
+- **APP-SIDECAR-LIVENESS-01G-B DONE** (`bf7304fd`): Clash serve task (bootstrap+run-engine shared) gains
+  app-local completion projection — `ClashRuntimePublisher` (watch+marker, Running(1) pre-spawn,
+  `send_if_modified`) + outer monitor (sole terminal writer, gen=1); `ClashShutdownHandle` (bare-drop→UnexpectedCompletion); reshaped handles + `ServiceShutdown` Task|Clash; adapter `Source::Clash`+`from_clash`. 5 modes, 25 tests PASS.
+- **APP-SIDECAR-LIVENESS-01F DONE** (`24323c02`): `app/src/sidecar_runtime.rs` thin read-only adapter sb-core `V2RayServerRuntimeSnapshot`→app `SidecarRuntimeSnapshot`; `from_v2ray_server`→`Option`, `changed()`→`RecvError`, `#[non_exhaustive]`→`Unknown`.
 - **APP-SIDECAR-LIVENESS-01E + 01E-R1 DONE** (pushed `ae5898d9`): `V2RayApiServer` generation-aware —
   `Arc<Mutex<V2RayLifecycle>>`+`watch::Sender`; start() admission+sync pre_bind+alloc in one critical
-  section; close() sync/idempotent; per-gen outer monitor=sole terminal writer; R1: in-lock
-  `publish_snapshot_locked`. **rustdoc -D warnings BASELINE-RED** (14) → **TIDY-RUSTDOC-LINKS**.
+  section; close() sync/idempotent; per-gen outer monitor=sole writer; R1: in-lock `publish_snapshot_locked`. **rustdoc -D warnings BASELINE-RED** (14) → **TIDY-RUSTDOC-LINKS**.
 - **APP-V2RAY-SURFACE-02D DONE** (`60b88414`): deprecated generic `sb_api::(v2ray::)?V2RayApiServer` via aliases; `GrpcV2RayApiServer`+Simple clean. **V2Ray API state**: bootstrap/run-engine use sb-core real listener; breaking cleanup=DEFER/FUTURE MAJOR.
 - **SVC-V2RAY-API-01B**=DEFER/POLICY REVIEW. **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash shares `spawn_prebound_clash_api_server`. sb-core **pre-existing** flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
 
