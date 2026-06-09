@@ -93,11 +93,7 @@ mod tests {
             Arc::new(sb_core::router::dns_integration::setup_dns_routing()),
             empty_outbound_handle(),
             Vec::new(),
-            vec![ServiceHandle {
-                name: "hung",
-                shutdown: shutdown_tx,
-                join,
-            }],
+            vec![ServiceHandle::from_task("hung", shutdown_tx, join)],
         );
 
         let error = runtime

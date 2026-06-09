@@ -9,14 +9,44 @@ use tracing::{error, info, warn};
 pub(crate) struct ServiceHandle {
     #[allow(dead_code)]
     pub(crate) name: &'static str,
-    pub(crate) shutdown: tokio::sync::oneshot::Sender<()>,
-    pub(crate) join: tokio::task::JoinHandle<()>,
+    shutdown: ServiceShutdown,
+}
+
+/// How a service is shut down. The `Task` variant is the bare oneshot+join path (used by the
+/// bootstrap V2Ray sidecar); the `Clash` variant carries the unified runtime-completion controller
+/// so a deliberate shutdown publishes `ShutdownRequested` before signalling and awaits the monitor.
+enum ServiceShutdown {
+    Task {
+        shutdown: tokio::sync::oneshot::Sender<()>,
+        join: tokio::task::JoinHandle<()>,
+    },
+    #[cfg(all(feature = "router", feature = "clash_api"))]
+    Clash(crate::run_engine_runtime::admin_start::ClashShutdownHandle),
 }
 
 impl ServiceHandle {
+    /// Construct a bare task-backed service handle (oneshot shutdown + join). Used by the bootstrap
+    /// V2Ray sidecar and by callers in sibling modules that own a plain serve task.
+    pub(crate) fn from_task(
+        name: &'static str,
+        shutdown: tokio::sync::oneshot::Sender<()>,
+        join: tokio::task::JoinHandle<()>,
+    ) -> Self {
+        Self {
+            name,
+            shutdown: ServiceShutdown::Task { shutdown, join },
+        }
+    }
+
     pub(crate) async fn shutdown(self) {
-        let _ = self.shutdown.send(());
-        let _ = self.join.await;
+        match self.shutdown {
+            ServiceShutdown::Task { shutdown, join } => {
+                let _ = shutdown.send(());
+                let _ = join.await;
+            }
+            #[cfg(all(feature = "router", feature = "clash_api"))]
+            ServiceShutdown::Clash(mut handle) => handle.shutdown().await,
+        }
     }
 }
 
@@ -76,8 +106,7 @@ pub(crate) fn start_clash_api_server(
             ) {
                 Ok(handle) => Some(ServiceHandle {
                     name: "clash_api",
-                    shutdown: handle.shutdown,
-                    join: handle.join,
+                    shutdown: ServiceShutdown::Clash(handle.shutdown),
                 }),
                 Err(error) => {
                     warn!(error = %error, listen = %listen_addr, "Failed to start Clash API server, skipping");
@@ -130,11 +159,7 @@ pub(crate) fn start_v2ray_api_server(
                 }
                 wait_for_v2ray_api_bind_release(listen_addr).await;
             });
-            Some(ServiceHandle {
-                name: "v2ray_api",
-                shutdown: shutdown_tx,
-                join,
-            })
+            Some(ServiceHandle::from_task("v2ray_api", shutdown_tx, join))
         }
         Err(error) => {
             warn!(error = %error, listen = %listen, "Failed to start V2Ray API server, skipping");
@@ -215,10 +240,9 @@ mod tests {
 
     #[cfg(feature = "clash_api")]
     async fn shutdown_prebound_handle(
-        handle: crate::run_engine_runtime::admin_start::PreboundClashApiHandle,
+        mut handle: crate::run_engine_runtime::admin_start::PreboundClashApiHandle,
     ) {
-        let _ = handle.shutdown.send(());
-        let _ = handle.join.await;
+        handle.shutdown.shutdown().await;
     }
 
     #[tokio::test]
@@ -231,13 +255,9 @@ mod tests {
             observed_clone.store(true, Ordering::SeqCst);
         });
 
-        ServiceHandle {
-            name: "test",
-            shutdown: shutdown_tx,
-            join,
-        }
-        .shutdown()
-        .await;
+        ServiceHandle::from_task("test", shutdown_tx, join)
+            .shutdown()
+            .await;
 
         assert!(observed.load(Ordering::SeqCst));
     }
