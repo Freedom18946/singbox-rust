@@ -13,17 +13,18 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B/D, 01E DONE**; REALITY boxed.
-- **APP-SIDECAR-LIVENESS-01E DONE** (`feat(sb-core): expose generation-aware v2ray runtime snapshot`;
-  doc `app_sidecar_liveness_01e_v2ray_generation_snapshot.md`): `V2RayApiServer` generation-aware.
-  Removed `started:AtomicBool`+`ResetStartedOnDrop`; one `Arc<Mutex<V2RayLifecycle>>` (next_generation+
-  current+last_exit) + `watch::Sender<V2RayServerRuntimeSnapshot>`. start()=admission+sync pre_bind+
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B/D, 01E + 01E-R1 DONE**; REALITY boxed.
+- **APP-SIDECAR-LIVENESS-01E + 01E-R1 DONE** (`140d2d25`+`fix(sb-core): serialize v2ray runtime snapshot publication`;
+  docs `app_sidecar_liveness_01e_*.md`): `V2RayApiServer` generation-aware. Removed
+  `started:AtomicBool`+`ResetStartedOnDrop`; one `Arc<Mutex<V2RayLifecycle>>` (next_generation+current+
+  last_exit) + `watch::Sender<V2RayServerRuntimeSnapshot>`. start()=admission+sync pre_bind+
   alloc(checked_add)+install+Running-publish in one critical section (closes close-during-start, no
   lock-across-await); close() sync/idempotent (ShutdownRequested+signal, never commits terminal);
-  per-gen outer monitor=sole terminal writer; `commit_terminal` generation-checked (highest-gen
-  last_exit). Additive object-safe `subscribe_runtime_state()` default None. 21 v2ray_api + full
-  sb-core suite PASS, clippy/fmt/workspace clean; **rustdoc -D warnings pre-existing-RED** (14 unrelated
-  broken links, identical on clean HEAD; 01E adds 0). NOT pushed. Next=01F. Out-of-scope: H5/H6/H7.
+  per-gen outer monitor=sole terminal writer; `commit_terminal` generation-checked (highest-gen last_exit).
+  **R1**: all 5 publish paths now route through single in-lock `publish_snapshot_locked` helper (was
+  capture-in-lock/send-after-unlock → backflow). Additive object-safe `subscribe_runtime_state()` default
+  None. 23 v2ray_api + full sb-core suite PASS, clippy/fmt/workspace clean. NOT pushed [ahead 4]. Next=01F;
+  out-of-scope H5/H6/H7. **rustdoc -D warnings BASELINE-RED** (14 unrelated broken intra-doc links, identical on clean HEAD, 01E/R1 add 0) → debt **TIDY-RUSTDOC-LINKS**.
 - **APP-V2RAY-SURFACE-02D DONE** (`60b88414`, `app_v2ray_surface_02d_generic_alias_deprecation.md`):
   deprecated generic `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer` via type aliases (old
   paths still compile w/ warnings); `GrpcV2RayApiServer` + Simple helper/request contracts stay clean.
