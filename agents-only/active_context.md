@@ -13,19 +13,20 @@
 ## Resume (2026-06-09)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B DONE, 01C STOPPED**; REALITY remains boxed.
-- **APP-SIDECAR-LIVENESS-01C STOPPED** (`app_sidecar_liveness_01c_cross_crate_contract.md`):
-  same-instance V2Ray restart requires generation-aware runtime completion contract before implementation.
-- **APP-SIDECAR-LIVENESS-01B DONE** (`app_sidecar_liveness_01b_completion_projection_proposal.md`):
-  **C/CROSS_CRATE_LIVENESS_CONTRACT_REQUIRED**. Use source-owner terminal state + app adapter;
-  01C proved the V2Ray contract needs generation identity before implementation.
-- **APP-V2RAY-SURFACE-02D DONE** (`60b88414`, doc:
-  `app_v2ray_surface_02d_generic_alias_deprecation.md`): deprecated generic
-  `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer` via effective type aliases; old paths
-  still compile with warnings; `GrpcV2RayApiServer` and Simple helper/request contracts stay clean.
-- **V2Ray API state**: bootstrap/run-engine use sb-core real listener (`a80a0916`, `4141724b`);
-  workspace runtime no longer calls `SimpleV2RayApiServer`; tests/fuzz cover Simple legacy/request
-  contracts. breaking cleanup = DEFER / FUTURE MAJOR WINDOW.
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01A/B DONE, 01C STOPPED, 01D PROPOSED**; REALITY boxed.
+- **APP-SIDECAR-LIVENESS-01D PROPOSED** (`app_sidecar_liveness_01d_generation_snapshot_proposal.md`):
+  **B/GENERATION_AWARE_SNAPSHOT_READY**. Adversarially-verified: binding serializes serving
+  (listener=OS mutex, no SO_REUSEADDR) → ≤1 active + ≤1 draining-tail; `close()` sync/non-blocking;
+  same-addr restart transiently `EADDRINUSE`-retries. Design = Model B `current + last_exit` (highest-gen,
+  no regression) + single per-gen monitor (sole terminal writer) + one lifecycle mutex (no lock-across-await,
+  replaces gen-blind `started`/guard) + additive object-safe `subscribe_runtime_state()`. Next = **01E**
+  (sb-core impl). Out-of-scope flagged: H5 (shared StatsManager not gen-scoped→liveness-only), H6 (reload
+  start-before-close same-addr conflict). 01B/01C superseded.
+- **APP-V2RAY-SURFACE-02D DONE** (`60b88414`, `app_v2ray_surface_02d_generic_alias_deprecation.md`):
+  deprecated generic `sb_api::v2ray::V2RayApiServer` + `sb_api::V2RayApiServer` via type aliases (old
+  paths still compile w/ warnings); `GrpcV2RayApiServer` + Simple helper/request contracts stay clean.
+- **V2Ray API state**: bootstrap/run-engine use sb-core real listener (`a80a0916`,`4141724b`); workspace
+  no longer calls `SimpleV2RayApiServer` (tests/fuzz cover legacy/request); breaking cleanup = DEFER/FUTURE MAJOR.
 - **SVC-V2RAY-API-01B** remains DEFER / POLICY REVIEW; ServiceManager health/liveness projection
   remains absent by boundary.
 - **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash API shares `spawn_prebound_clash_api_server`;
