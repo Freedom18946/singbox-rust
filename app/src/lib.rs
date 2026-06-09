@@ -79,6 +79,13 @@ mod router_text;
 pub mod run_engine;
 pub(crate) mod run_engine_runtime;
 pub mod runtime_deps;
+// App-level sidecar runtime snapshot adapter (APP-SIDECAR-LIVENESS-01F). Gated to the V2Ray
+// sidecar feature (which guarantees sb-core + service_v2ray_api). The consumer (bootstrap observer
+// / run-engine supervisor) is intentionally deferred to a later card, so the adapter surface is
+// allowed to be unused for now.
+#[cfg(feature = "v2ray_api")]
+#[allow(dead_code)]
+pub(crate) mod sidecar_runtime;
 pub mod telemetry;
 pub mod tls_provider;
 pub mod tracing_init;
