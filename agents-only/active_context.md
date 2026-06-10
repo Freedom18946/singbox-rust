@@ -11,27 +11,28 @@
 ---
 
 ## Resume (2026-06-10)
-T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
-**APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01 CLOSED** + **APP-RELOAD-SIDECAR-ORDER-01A/01B/01C DONE** + **APP-RELOAD-CONTEXT-CLEANUP-01A audit DONE**; REALITY boxed.
-- **APP-RELOAD-CONTEXT-CLEANUP-01A audit DONE** (`app_reload_context_cleanup_01a_audit.md`; 3-agent verify CONFIRMED):
-  **B/GENERAL_CONTEXT_ROLLBACK_GUARD_REQUIRED**. reload pre-swap path has **no** new-construction cleanup (bare `?`); on
-  failure **fresh V2Ray + new inbounds + bound endpoints/services (resolved/DERP/ssm-api/wireguard) leak** (cache_file
-  self-cleans via Drop; only V2Ray starts at build-time). Indep defect: `ServiceManager::close()` no-op. Fix=Route 4 (txn
-  block + shared `shutdown_failed_reload_context`: request_shutdown(inbounds)+stop_endpoints/services+`shutdown_context_inner(!inherited)`;
-  preserve orig error). Next=**01B** (implement pre-swap rollback guard, sb-core). Out-of-scope note: old-inbound continuity on failed reload.
-- **APP-RELOAD-SIDECAR-ORDER-01C DONE** (`7dc853ef`, `app_reload_sidecar_order_01c_reuse_handoff.md`): same-config V2Ray reuse
-  handoff in sb-core (supervisor.rs) — `reusable_v2ray_server`→thread inherited `Arc`→skip new+start; pre-swap `same_v2ray_server`
-  ptr_eq→`shutdown_replaced_context`/`shutdown_context_inner`; 11 tests pass; clippy/workspace/boundaries(0)/rustdoc(14) clean.
-- **APP-SIDECAR-LIVENESS-01 CLOSED** (01H-C: **A/LOG_ONLY_CONTINUE_POLICY_ACCEPTED**; docs
-  `app_sidecar_liveness_*`). Line: sb-core gen-aware V2Ray snapshot (01E/E-R1) → app adapter (01F) →
-  Clash task-owner projection+`ClashShutdownHandle`+outer monitor (01G-B) → run-engine **log-only**
-  bridge `SidecarRuntimeEvent{Exited,ProjectionClosed}` owned by `RuntimeLifecycle`, action `Continue`
-  (01H-B). Policy: Clash/V2Ray auxiliary (NOT dataplane); startup nonfatal→runtime nonfatal; source=
-  per-severity logger, consumer=debug breadcrumb. Registered **APP-SIDECAR-POLICY-02A** (optional
-  strict/degraded, DEFER/FUTURE; needs shutdown-phase marker; pairs SVC-V2RAY-API-01B).
-- **APP-V2RAY-SURFACE-02D DONE** (`60b88414`): deprecated generic `sb_api::(v2ray::)?V2RayApiServer` via aliases; `GrpcV2RayApiServer`+Simple clean. **V2Ray API state**: bootstrap/run-engine use sb-core real listener; breaking cleanup=DEFER/FUTURE MAJOR. **rustdoc -D warnings BASELINE-RED** (14 unrelated) → **TIDY-RUSTDOC-LINKS**.
-- **SVC-V2RAY-API-01B**=DEFER/POLICY REVIEW. **APP-SIDECAR-BIND-01 DONE** (`e1f0be43`): Clash shares `spawn_prebound_clash_api_server`. sb-core **pre-existing** flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
+T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + SVC-V2RAY-API-01A + APP-SIDECAR-BIND-01 +
+APP-V2RAY-SIMPLE-01A/B/C + APP-V2RAY-SURFACE-02A/B/C/D + APP-SIDECAR-LIVENESS-01 CLOSED +
+APP-RELOAD-SIDECAR-ORDER-01 CLOSED + **APP-RELOAD-CONTEXT-CLEANUP-01A/01B DONE**; REALITY boxed.
+- **APP-RELOAD-CONTEXT-CLEANUP-01B DONE** (`47e15b0b`, doc `app_reload_context_cleanup_01b_rollback_guard.md`):
+  pre-swap rollback guard — router+no-router handle_reload wrap all fallible pre-swap stages (Init/populate/
+  Start/serve-wiring/PostStart/Started) in one txn block (`Result<Arc<Bridge>>` + `new_bridge_slot`); shared
+  `shutdown_failed_reload_context(old,new,inbounds,endpoints,services)` = request_shutdown(new inbounds) +
+  stop_endpoints + stop_services (ServiceManager::close no-op → explicit) + shutdown_context_inner(new,
+  !same_v2ray_server) → fresh V2Ray closed / inherited (shared Arc) preserved; cleanup void, original reload
+  error returned unchanged; swap-success path untouched. 9 new rollback_guard tests (real listeners, all
+  released in-test); sb-core 1109 PASS; clippy/workspace/boundaries(0)/rustdoc(14 baseline, 0 new) clean.
+  app full: TIDY-APP-BREAKER-FLAKE reproduced once → isolated + full rerun PASS (recorded, not fixed).
+  Registered **APP-RELOAD-INBOUND-CONTINUITY-01A = DEFER/FOLLOW-UP AUDIT** (step0 request_shutdown's old
+  inbounds before outcome known; continuity gap ≠ leak; separate card, not auto-claimed).
+- APP-RELOAD-CONTEXT-CLEANUP-01A audit DONE (`907f5944`): B/GENERAL_CONTEXT_ROLLBACK_GUARD_REQUIRED → fixed by 01B.
+- APP-RELOAD-SIDECAR-ORDER-01C DONE (`7dc853ef`): same-config V2Ray reuse handoff (supervisor.rs);
+  `reusable_v2ray_server`→inherited Arc, `same_v2ray_server` ptr_eq preserve; 11 tests.
+- APP-SIDECAR-LIVENESS-01 CLOSED (01H-C: A/LOG_ONLY_CONTINUE_POLICY_ACCEPTED; docs `app_sidecar_liveness_*`;
+  Clash/V2Ray auxiliary, log-only Continue). Registered APP-SIDECAR-POLICY-02A (DEFER/FUTURE).
+- APP-V2RAY-SURFACE-02D DONE (`60b88414`; breaking cleanup=DEFER/FUTURE MAJOR; rustdoc 14 BASELINE-RED →
+  TIDY-RUSTDOC-LINKS DEFER). SVC-V2RAY-API-01B=DEFER/POLICY REVIEW. APP-SIDECAR-BIND-01 DONE (`e1f0be43`).
+  sb-core pre-existing flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
 
 ## Strategic State
 
