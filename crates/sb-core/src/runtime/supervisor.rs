@@ -12,7 +12,7 @@
 //! - **Diffing**: Calculates the difference between old and new configs to minimize churn (e.g., only restarting changed inbounds).
 
 use crate::adapter::Bridge;
-use crate::context::{Context, Startable, V2RayServer};
+use crate::context::{Context, Startable, V2RayServer, V2RayServerActivePhase};
 use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 #[cfg(feature = "router")]
 use crate::routing::engine::Engine;
@@ -170,7 +170,7 @@ impl Supervisor {
         let engine_for_state = engine.clone();
 
         // Create runtime context and wire experimental sidecars from IR
-        let context = build_context_from_ir(&ir);
+        let context = build_context_from_ir(&ir, None);
         ensure_geo_assets(&ir).await;
 
         // Initialize context managers (Box Runtime Parity: Go box.go lifecycle)
@@ -359,7 +359,7 @@ impl Supervisor {
         }
 
         // Create runtime context and wire experimental sidecars from IR
-        let context = build_context_from_ir(&ir);
+        let context = build_context_from_ir(&ir, None);
         ensure_geo_assets(&ir).await;
 
         // Initialize context managers (Box Runtime Parity: Go box.go lifecycle)
@@ -570,7 +570,7 @@ impl Supervisor {
         }
 
         // Step 0: Ask old inbounds to stop accepting (best-effort)
-        let (old_endpoints, old_services, old_context) = {
+        let (old_endpoints, old_services, old_context, old_v2ray_cfg) = {
             let state_guard = state.read().await;
             for ib in &state_guard.bridge.inbounds {
                 ib.request_shutdown();
@@ -579,6 +579,11 @@ impl Supervisor {
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
                 state_guard.context.clone(),
+                state_guard
+                    .current_ir
+                    .experimental
+                    .as_ref()
+                    .and_then(|e| e.v2ray_api.clone()),
             )
         };
 
@@ -595,8 +600,19 @@ impl Supervisor {
         let new_engine = Engine::from_ir(&new_ir).context("failed to build new engine")?;
         let new_engine_for_state = new_engine.clone();
 
+        // APP-RELOAD-SIDECAR-ORDER-01C: reuse the old V2Ray server across an equivalent reload
+        // (same enabled config + currently Running) instead of rebuilding/rebinding it.
+        let inherited_v2ray = reusable_v2ray_server(
+            old_v2ray_cfg.as_ref(),
+            new_ir
+                .experimental
+                .as_ref()
+                .and_then(|e| e.v2ray_api.as_ref()),
+            old_context.v2ray_server.as_ref(),
+        );
+
         // Build new context from new IR (supports dynamic service reconfiguration)
-        let new_context = build_context_from_ir(&new_ir);
+        let new_context = build_context_from_ir(&new_ir, inherited_v2ray);
         ensure_geo_assets(&new_ir).await;
 
         // Initialize new context managers
@@ -643,6 +659,10 @@ impl Supervisor {
         run_context_stage(&new_context, ServiceStage::Started)?;
         tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload");
 
+        // APP-RELOAD-SIDECAR-ORDER-01C: compute the reuse-exclusion flag while BOTH contexts are
+        // in scope; the new context is moved into state at the swap below.
+        let preserve_v2ray = same_v2ray_server(&old_context, &new_context);
+
         // Update state atomically
         {
             let mut state_guard = state.write().await;
@@ -686,7 +706,7 @@ impl Supervisor {
 
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
-        shutdown_context(&old_context);
+        shutdown_replaced_context(&old_context, preserve_v2ray);
 
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully");
 
@@ -705,7 +725,7 @@ impl Supervisor {
         }
 
         // Step 0: Ask old inbounds to stop accepting (best-effort)
-        let (old_endpoints, old_services, old_context) = {
+        let (old_endpoints, old_services, old_context, old_v2ray_cfg) = {
             let state_guard = state.read().await;
             for ib in &state_guard.bridge.inbounds {
                 ib.request_shutdown();
@@ -714,6 +734,11 @@ impl Supervisor {
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
                 state_guard.context.clone(),
+                state_guard
+                    .current_ir
+                    .experimental
+                    .as_ref()
+                    .and_then(|e| e.v2ray_api.clone()),
             )
         };
 
@@ -726,8 +751,19 @@ impl Supervisor {
             tokio::time::sleep(Duration::from_millis(grace_ms)).await;
         }
 
+        // APP-RELOAD-SIDECAR-ORDER-01C: reuse the old V2Ray server across an equivalent reload
+        // (same enabled config + currently Running) instead of rebuilding/rebinding it.
+        let inherited_v2ray = reusable_v2ray_server(
+            old_v2ray_cfg.as_ref(),
+            new_ir
+                .experimental
+                .as_ref()
+                .and_then(|e| e.v2ray_api.as_ref()),
+            old_context.v2ray_server.as_ref(),
+        );
+
         // Build new context from new IR (supports dynamic service reconfiguration)
-        let new_context = build_context_from_ir(&new_ir);
+        let new_context = build_context_from_ir(&new_ir, inherited_v2ray);
         ensure_geo_assets(&new_ir).await;
 
         // Initialize new context managers (Box Runtime Parity)
@@ -761,6 +797,10 @@ impl Supervisor {
         run_context_stage(&new_context, ServiceStage::Started)?;
         tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload (no-router)");
 
+        // APP-RELOAD-SIDECAR-ORDER-01C: compute the reuse-exclusion flag while BOTH contexts are
+        // in scope; the new context is moved into state at the swap below.
+        let preserve_v2ray = same_v2ray_server(&old_context, &new_context);
+
         // Update state atomically
         {
             let mut state_guard = state.write().await;
@@ -793,7 +833,7 @@ impl Supervisor {
 
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
-        shutdown_context(&old_context);
+        shutdown_replaced_context(&old_context, preserve_v2ray);
 
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully (no router)");
 
@@ -1152,7 +1192,11 @@ fn run_context_stage(ctx: &Context, stage: ServiceStage) -> Result<()> {
     Ok(())
 }
 
-fn wire_experimental_sidecars(mut context: Context, ir: &sb_config::ir::ConfigIR) -> Context {
+fn wire_experimental_sidecars(
+    mut context: Context,
+    ir: &sb_config::ir::ConfigIR,
+    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+) -> Context {
     if let Some(exp) = &ir.experimental {
         if let Some(cache_cfg) = &exp.cache_file {
             if cache_cfg.enabled {
@@ -1165,14 +1209,24 @@ fn wire_experimental_sidecars(mut context: Context, ir: &sb_config::ir::ConfigIR
         }
 
         if let Some(v2ray_cfg) = &exp.v2ray_api {
-            let v2ray_server = Arc::new(crate::services::v2ray_api::V2RayApiServer::new(
-                v2ray_cfg.clone(),
-            ));
-            if let Err(e) = v2ray_server.start() {
-                tracing::warn!(target: "sb_core::runtime", error = %e, "failed to start V2Ray API server");
+            if let Some(inherited) = inherited_v2ray_server {
+                // APP-RELOAD-SIDECAR-ORDER-01C: an equivalent reload reuses the still-Running
+                // server instead of rebuilding/rebinding it. No new listener is bound (so the
+                // same-address rebind that would EADDRINUSE-collide with the still-alive old
+                // listener never happens), and the StatsManager identity is preserved. The old
+                // context's teardown excludes this shared Arc (see shutdown_replaced_context).
+                context = context.with_v2ray_server(inherited);
+                tracing::info!(target: "sb_core::runtime", listen = ?v2ray_cfg.listen, "V2Ray API server reused across equivalent reload (no rebind)");
             } else {
-                context = context.with_v2ray_server(v2ray_server);
-                tracing::info!(target: "sb_core::runtime", listen = ?v2ray_cfg.listen, "V2Ray API server wired");
+                let v2ray_server = Arc::new(crate::services::v2ray_api::V2RayApiServer::new(
+                    v2ray_cfg.clone(),
+                ));
+                if let Err(e) = v2ray_server.start() {
+                    tracing::warn!(target: "sb_core::runtime", error = %e, "failed to start V2Ray API server");
+                } else {
+                    context = context.with_v2ray_server(v2ray_server);
+                    tracing::info!(target: "sb_core::runtime", listen = ?v2ray_cfg.listen, "V2Ray API server wired");
+                }
             }
         }
     }
@@ -1180,10 +1234,63 @@ fn wire_experimental_sidecars(mut context: Context, ir: &sb_config::ir::ConfigIR
     context
 }
 
-fn build_context_from_ir(ir: &sb_config::ir::ConfigIR) -> Context {
+/// Decide whether the old V2Ray API server can be carried into the new context unchanged
+/// instead of rebuilt+rebound (APP-RELOAD-SIDECAR-ORDER-01C reuse handoff).
+///
+/// Returns `Some(Arc::clone(old))` iff ALL hold:
+/// - old config enabled (`old_v2ray` is `Some`) AND new config enabled (`new_v2ray` is `Some`);
+/// - the two `V2RayApiIR`s are structurally equal (covers `listen` AND `stats`; for `listen =
+///   ":0"` this compares the *config* string, never the resolved ephemeral port, so reuse keeps
+///   the already-bound port);
+/// - the old context actually holds a server, and that server is a real, introspectable
+///   implementation (`subscribe_runtime_state()` returns `Some` — the trait default returns
+///   `None`);
+/// - the old server's latest runtime snapshot has a `current` generation in phase `Running`
+///   (NOT `ShutdownRequested`, NOT exited/`None`).
+///
+/// Otherwise returns `None`, leaving the existing rebuild path intact. Never infers reusability
+/// from `last_exit`. Reads the snapshot via a non-blocking `watch::Receiver::borrow()` (no await).
+fn reusable_v2ray_server(
+    old_v2ray: Option<&sb_config::ir::V2RayApiIR>,
+    new_v2ray: Option<&sb_config::ir::V2RayApiIR>,
+    old_server: Option<&Arc<dyn V2RayServer>>,
+) -> Option<Arc<dyn V2RayServer>> {
+    let old_cfg = old_v2ray?;
+    let new_cfg = new_v2ray?;
+    if old_cfg != new_cfg {
+        tracing::debug!(target: "sb_core::runtime", "V2Ray reload: config changed, rebuilding (no reuse)");
+        return None;
+    }
+    let server = old_server?;
+    let rx = server.subscribe_runtime_state()?;
+    let is_running = matches!(
+        rx.borrow().current.as_ref().map(|g| &g.phase),
+        Some(V2RayServerActivePhase::Running)
+    );
+    if !is_running {
+        tracing::debug!(target: "sb_core::runtime", "V2Ray reload: old server not Running, rebuilding (no reuse)");
+        return None;
+    }
+    tracing::debug!(target: "sb_core::runtime", listen = ?new_cfg.listen, "V2Ray reload: reusing Running server across equivalent config");
+    Some(Arc::clone(server))
+}
+
+/// True iff both contexts hold the SAME `V2RayServer` instance (i.e. the server was reused across
+/// a reload). Used to decide whether the old context's teardown must skip closing it.
+fn same_v2ray_server(a: &Context, b: &Context) -> bool {
+    match (a.v2ray_server.as_ref(), b.v2ray_server.as_ref()) {
+        (Some(x), Some(y)) => Arc::ptr_eq(x, y),
+        _ => false,
+    }
+}
+
+fn build_context_from_ir(
+    ir: &sb_config::ir::ConfigIR,
+    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+) -> Context {
     let mut ctx = Context::new();
     ctx.network.apply_route_options(&ir.route);
-    ctx = wire_experimental_sidecars(ctx, ir);
+    ctx = wire_experimental_sidecars(ctx, ir, inherited_v2ray_server);
     log_geo_download_hints(ir);
     if let Some(p) = &ir.route.geoip_path {
         std::env::set_var("GEOIP_PATH", p);
@@ -1283,12 +1390,32 @@ async fn download_file(url: &str, path: &str) -> Result<()> {
     Ok(())
 }
 
+/// Reload-only teardown of the replaced (old) context after a successful swap.
+///
+/// `preserve_v2ray` is true exactly when the new (now-committed) context shares the old context's
+/// `Arc<dyn V2RayServer>` — i.e. the server was reused (APP-RELOAD-SIDECAR-ORDER-01C). In that
+/// case the new context is the close owner, so this teardown must NOT close the shared server;
+/// all other managers close as usual. The flag is computed via `same_v2ray_server` BEFORE the
+/// swap, because the new context is moved into state at commit and is no longer reachable here.
+fn shutdown_replaced_context(old_context: &Context, preserve_v2ray: bool) {
+    shutdown_context_inner(old_context, !preserve_v2ray);
+}
+
+/// Tear down a context's sidecars and managers. The public entry used by startup-rollback and
+/// graceful shutdown always closes the V2Ray server (`close_v2ray = true`); only the reload path
+/// (via `shutdown_replaced_context`) may pass `false` to skip a reused server.
 fn shutdown_context(ctx: &Context) {
+    shutdown_context_inner(ctx, true);
+}
+
+fn shutdown_context_inner(ctx: &Context, close_v2ray: bool) {
     // Close sidecars
 
-    if let Some(v2ray) = &ctx.v2ray_server {
-        if let Err(e) = v2ray.close() {
-            tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close V2Ray API server");
+    if close_v2ray {
+        if let Some(v2ray) = &ctx.v2ray_server {
+            if let Err(e) = v2ray.close() {
+                tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close V2Ray API server");
+            }
         }
     }
 
@@ -1769,5 +1896,333 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("SB_RUNTIME_DIFF"));
         assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    // ── APP-RELOAD-SIDECAR-ORDER-01C: V2Ray same-config reload reuse handoff ──
+    mod reuse_handoff {
+        use super::super::{
+            build_context_from_ir, reusable_v2ray_server, same_v2ray_server, shutdown_context,
+            shutdown_replaced_context,
+        };
+        use crate::context::{
+            Context, V2RayServer, V2RayServerActiveGeneration, V2RayServerActivePhase,
+            V2RayServerExit, V2RayServerExitRecord, V2RayServerRuntimeSnapshot,
+        };
+        use sb_config::ir::{StatsIR, V2RayApiIR};
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::Arc;
+        use tokio::sync::watch;
+
+        /// A `V2RayServer` test double that records `close()` calls and publishes a fixed runtime
+        /// snapshot (or none). It keeps the watch sender alive so the receiver stays valid.
+        #[derive(Debug)]
+        struct MockV2Ray {
+            closes: Arc<AtomicUsize>,
+            rx: Option<watch::Receiver<V2RayServerRuntimeSnapshot>>,
+            _tx: Option<watch::Sender<V2RayServerRuntimeSnapshot>>,
+        }
+
+        impl V2RayServer for MockV2Ray {
+            fn start(&self) -> anyhow::Result<()> {
+                Ok(())
+            }
+            fn close(&self) -> anyhow::Result<()> {
+                self.closes.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+            fn subscribe_runtime_state(
+                &self,
+            ) -> Option<watch::Receiver<V2RayServerRuntimeSnapshot>> {
+                self.rx.clone()
+            }
+        }
+
+        /// Build a mock server + a handle to its close counter. `snapshot = None` means the server
+        /// exposes NO runtime state (mirrors a non-introspectable / trait-default implementor).
+        fn mock(
+            snapshot: Option<V2RayServerRuntimeSnapshot>,
+        ) -> (Arc<dyn V2RayServer>, Arc<AtomicUsize>) {
+            let closes = Arc::new(AtomicUsize::new(0));
+            let (rx, _tx) = match snapshot {
+                Some(s) => {
+                    let (tx, rx) = watch::channel(s);
+                    (Some(rx), Some(tx))
+                }
+                None => (None, None),
+            };
+            let server: Arc<dyn V2RayServer> = Arc::new(MockV2Ray {
+                closes: closes.clone(),
+                rx,
+                _tx,
+            });
+            (server, closes)
+        }
+
+        fn running_snapshot(phase: V2RayServerActivePhase) -> V2RayServerRuntimeSnapshot {
+            V2RayServerRuntimeSnapshot {
+                current: Some(V2RayServerActiveGeneration {
+                    generation: 1,
+                    phase,
+                }),
+                last_exit: None,
+            }
+        }
+
+        fn mock_running() -> (Arc<dyn V2RayServer>, Arc<AtomicUsize>) {
+            mock(Some(running_snapshot(V2RayServerActivePhase::Running)))
+        }
+
+        fn cfg(listen: &str, stats_enabled: bool) -> V2RayApiIR {
+            V2RayApiIR {
+                listen: Some(listen.to_string()),
+                stats: Some(StatsIR {
+                    enabled: stats_enabled,
+                    ..Default::default()
+                }),
+            }
+        }
+
+        // ── A. Running + equivalent config → reuse the SAME Arc ──
+        #[test]
+        fn a_reuse_running_equivalent_config() {
+            let (server, _) = mock_running();
+            let a = cfg("127.0.0.1:10085", true);
+            let reused = reusable_v2ray_server(Some(&a), Some(&a), Some(&server))
+                .expect("running + equal config must be reusable");
+            assert!(
+                Arc::ptr_eq(&server, &reused),
+                "reuse must return the same server instance"
+            );
+        }
+
+        // ── B. Config change (listen or stats) → no reuse ──
+        #[test]
+        fn b_no_reuse_on_config_change() {
+            let (server, _) = mock_running();
+            let a = cfg("127.0.0.1:10085", true);
+            let b_listen = cfg("127.0.0.1:10086", true);
+            assert!(reusable_v2ray_server(Some(&a), Some(&b_listen), Some(&server)).is_none());
+            let b_stats = cfg("127.0.0.1:10085", false);
+            assert!(
+                reusable_v2ray_server(Some(&a), Some(&b_stats), Some(&server)).is_none(),
+                "a stats-only config change must NOT reuse"
+            );
+        }
+
+        // ── C. disabled variants → no reuse ──
+        #[test]
+        fn c_no_reuse_on_disabled_variants() {
+            let (server, _) = mock_running();
+            let a = cfg("127.0.0.1:10085", true);
+            assert!(reusable_v2ray_server(None, None, Some(&server)).is_none());
+            assert!(reusable_v2ray_server(None, Some(&a), Some(&server)).is_none());
+            assert!(reusable_v2ray_server(Some(&a), None, Some(&server)).is_none());
+        }
+
+        // ── D. non-Running (ShutdownRequested / exited / no-snapshot / no-server) → no reuse ──
+        #[test]
+        fn d_no_reuse_when_not_running() {
+            let a = cfg("127.0.0.1:10085", true);
+
+            let (sr, _) = mock(Some(running_snapshot(
+                V2RayServerActivePhase::ShutdownRequested,
+            )));
+            assert!(reusable_v2ray_server(Some(&a), Some(&a), Some(&sr)).is_none());
+
+            let (exited, _) = mock(Some(V2RayServerRuntimeSnapshot {
+                current: None,
+                last_exit: Some(V2RayServerExitRecord {
+                    generation: 1,
+                    exit: V2RayServerExit::CleanShutdown,
+                }),
+            }));
+            assert!(
+                reusable_v2ray_server(Some(&a), Some(&a), Some(&exited)).is_none(),
+                "an exited server (current=None) must NOT be reused via last_exit"
+            );
+
+            let (no_snap, _) = mock(None);
+            assert!(
+                reusable_v2ray_server(Some(&a), Some(&a), Some(&no_snap)).is_none(),
+                "a non-introspectable server (no snapshot) must NOT be reused"
+            );
+
+            assert!(
+                reusable_v2ray_server(Some(&a), Some(&a), None).is_none(),
+                "no old server present → no reuse"
+            );
+        }
+
+        // ── E. `:0` ephemeral config compares the IR, not the bound port → reuse ──
+        #[test]
+        fn e_reuse_ephemeral_zero_port() {
+            let (server, _) = mock_running();
+            let z = cfg("127.0.0.1:0", true);
+            let reused = reusable_v2ray_server(Some(&z), Some(&z), Some(&server))
+                .expect(":0 == :0 config must be reusable (keeps the real bound port)");
+            assert!(Arc::ptr_eq(&server, &reused));
+        }
+
+        // ── F. reload teardown skips a reused (shared) server ──
+        #[test]
+        fn f_teardown_skips_reused_server() {
+            let (server, closes) = mock_running();
+            let old = Context::new().with_v2ray_server(server.clone());
+            let new = Context::new().with_v2ray_server(server.clone());
+            let preserve = same_v2ray_server(&old, &new);
+            assert!(preserve, "shared Arc must be detected by ptr_eq");
+            shutdown_replaced_context(&old, preserve);
+            assert_eq!(
+                closes.load(Ordering::SeqCst),
+                0,
+                "a reused server must NOT be closed by the old context's teardown"
+            );
+        }
+
+        // ── G. reload teardown closes a distinct (rebuilt) server ──
+        #[test]
+        fn g_teardown_closes_distinct_server() {
+            let (x, x_closes) = mock_running();
+            let (y, _y_closes) = mock_running();
+            let old = Context::new().with_v2ray_server(x.clone());
+            let new = Context::new().with_v2ray_server(y.clone());
+            let preserve = same_v2ray_server(&old, &new);
+            assert!(!preserve, "distinct Arcs must not be treated as reused");
+            shutdown_replaced_context(&old, preserve);
+            assert_eq!(
+                x_closes.load(Ordering::SeqCst),
+                1,
+                "a non-reused old server must be closed exactly once"
+            );
+        }
+
+        // ── H. final (non-reload) shutdown still closes the reused server ──
+        #[test]
+        fn h_final_shutdown_closes_reused_server() {
+            let (x, x_closes) = mock_running();
+            let current = Context::new().with_v2ray_server(x.clone());
+            shutdown_context(&current);
+            assert_eq!(
+                x_closes.load(Ordering::SeqCst),
+                1,
+                "the owning context's final shutdown must close the server"
+            );
+        }
+
+        // ── I. None → None teardown is safe (no false preserve, no panic) ──
+        #[test]
+        fn i_none_to_none_teardown_is_safe() {
+            let old = Context::new();
+            let new = Context::new();
+            assert!(!same_v2ray_server(&old, &new));
+            shutdown_replaced_context(&old, same_v2ray_server(&old, &new));
+        }
+
+        // ── J. pre-swap borrowed rollback drops the new context without closing the server ──
+        #[test]
+        fn j_pre_swap_borrowed_rollback_does_not_close() {
+            let (x, x_closes) = mock_running();
+            let old = Context::new().with_v2ray_server(x.clone());
+            let a = cfg("127.0.0.1:10085", true);
+            let inherited = reusable_v2ray_server(Some(&a), Some(&a), old.v2ray_server.as_ref())
+                .expect("eligible for reuse");
+            {
+                let new_tmp = Context::new().with_v2ray_server(inherited);
+                assert!(same_v2ray_server(&old, &new_tmp));
+                // Simulate a pre-swap stage failure: the new context is dropped WITHOUT any
+                // teardown call (Context has no Drop). The old context keeps owning the server.
+            }
+            assert!(
+                old.v2ray_server.is_some(),
+                "old context still owns the server"
+            );
+            assert!(Arc::ptr_eq(old.v2ray_server.as_ref().unwrap(), &x));
+            assert_eq!(
+                x_closes.load(Ordering::SeqCst),
+                0,
+                "borrowed-then-dropped new context must not close the shared server"
+            );
+        }
+
+        // ── K + L. Real listener + StatsManager continuity across an equivalent reload ──
+        // (feature-gated: binds a real gRPC listener; properly closed at the end — no leak).
+        #[cfg(feature = "service_v2ray_api")]
+        #[tokio::test]
+        async fn k_equivalent_reload_reuses_real_listener_and_stats() {
+            async fn connect_ok(addr: &str) -> bool {
+                for _ in 0..40 {
+                    if tokio::net::TcpStream::connect(addr).await.is_ok() {
+                        return true;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+                false
+            }
+
+            let port = match std::net::TcpListener::bind("127.0.0.1:0") {
+                Ok(l) => {
+                    let p = l.local_addr().unwrap().port();
+                    drop(l);
+                    p
+                }
+                Err(e) => {
+                    eprintln!("skip k_equivalent_reload (cannot reserve port): {e}");
+                    return;
+                }
+            };
+            let listen = format!("127.0.0.1:{port}");
+            let ir = sb_config::ir::ConfigIR {
+                experimental: Some(sb_config::ir::ExperimentalIR {
+                    v2ray_api: Some(cfg(&listen, true)),
+                    ..Default::default()
+                }),
+                ..Default::default()
+            };
+
+            // Initial build binds + serves a real listener.
+            let ctx1 = build_context_from_ir(&ir, None);
+            let server1 = ctx1
+                .v2ray_server
+                .clone()
+                .expect("v2ray server wired on build");
+            assert!(
+                connect_ok(&listen).await,
+                "listener must be bound after the initial build"
+            );
+
+            // Equivalent reload: eligibility yields the SAME Arc; wiring skips new()+start().
+            let v2 = ir.experimental.as_ref().and_then(|e| e.v2ray_api.as_ref());
+            let inherited = reusable_v2ray_server(v2, v2, ctx1.v2ray_server.as_ref())
+                .expect("a Running equivalent server must be reusable");
+            let ctx2 = build_context_from_ir(&ir, Some(inherited));
+            let server2 = ctx2
+                .v2ray_server
+                .clone()
+                .expect("v2ray server present after reuse");
+            assert!(
+                Arc::ptr_eq(&server1, &server2),
+                "equivalent reload must reuse the same server (no rebind)"
+            );
+
+            // Stats continuity: the same StatsManager instance (no new one created).
+            let s1 = server1.stats().expect("real server exposes stats");
+            let s2 = server2.stats().expect("real server exposes stats");
+            assert!(
+                Arc::ptr_eq(&s1, &s2),
+                "reuse must preserve StatsManager identity"
+            );
+
+            // The old context's reload teardown must NOT close the shared listener.
+            let preserve = same_v2ray_server(&ctx1, &ctx2);
+            assert!(preserve);
+            shutdown_replaced_context(&ctx1, preserve);
+            assert!(
+                connect_ok(&listen).await,
+                "listener must survive the reuse-reload old-context teardown"
+            );
+
+            // Final shutdown of the owning context releases the listener (no leak).
+            shutdown_context(&ctx2);
+        }
     }
 }
