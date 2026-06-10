@@ -11,7 +11,7 @@
 //! - **Graceful Shutdown**: Waits for active connections to drain before terminating, ensuring zero data loss.
 //! - **Diffing**: Calculates the difference between old and new configs to minimize churn (e.g., only restarting changed inbounds).
 
-use crate::adapter::Bridge;
+use crate::adapter::{Bridge, InboundService};
 use crate::context::{Context, Startable, V2RayServer, V2RayServerActivePhase};
 use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 #[cfg(feature = "router")]
@@ -615,49 +615,84 @@ impl Supervisor {
         let new_context = build_context_from_ir(&new_ir, inherited_v2ray);
         ensure_geo_assets(&new_ir).await;
 
-        // Initialize new context managers
-        run_context_stage(&new_context, ServiceStage::Initialize)?;
-        tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload");
+        // APP-RELOAD-CONTEXT-CLEANUP-01B: every fallible pre-swap activation stage runs inside
+        // this single transaction block so that ANY failure (current or future-added) funnels
+        // into the one rollback branch below instead of leaking the new construction through a
+        // bare `?` (fresh V2Ray listener, new inbound listeners, started endpoints/services —
+        // see the 01A audit). The bridge is exported via `new_bridge_slot` so a failure after
+        // bridge construction can still stop bridge-owned resources.
+        let mut new_bridge_slot: Option<Arc<Bridge>> = None;
+        let activation_result: Result<Arc<Bridge>> = async {
+            // Initialize new context managers
+            run_context_stage(&new_context, ServiceStage::Initialize)?;
+            tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload");
 
-        // Build new bridge via adapter bridge
-        let new_bridge =
-            crate::adapter::bridge::build_bridge(&new_ir, new_engine.clone(), new_context.clone());
+            // Build new bridge via adapter bridge
+            let new_bridge = crate::adapter::bridge::build_bridge(
+                &new_ir,
+                new_engine.clone(),
+                new_context.clone(),
+            );
 
-        // Wrap in Arc and register components BEFORE Start stage. See LC-003
-        // lifecycle fix in initial-start path for rationale.
-        let new_bridge_arc = Arc::new(new_bridge);
-        populate_bridge_managers(&new_context, &new_bridge_arc).await?;
+            // Wrap in Arc and register components BEFORE Start stage. See LC-003
+            // lifecycle fix in initial-start path for rationale.
+            let new_bridge_arc = Arc::new(new_bridge);
+            new_bridge_slot = Some(new_bridge_arc.clone());
+            populate_bridge_managers(&new_context, &new_bridge_arc).await?;
 
-        // Start new context managers (drives Start stage on registered services)
-        run_context_stage(&new_context, ServiceStage::Start)?;
-        tracing::info!(target: "sb_core::runtime", "New context managers started on reload");
+            // Start new context managers (drives Start stage on registered services)
+            run_context_stage(&new_context, ServiceStage::Start)?;
+            tracing::info!(target: "sb_core::runtime", "New context managers started on reload");
 
-        // Update DNS resolver from IR if present
-        if new_ir.dns.is_some() {
-            if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(&new_ir) {
-                crate::dns::global::set(resolver);
-            }
-        }
-        // Refresh global TLS trust configuration from IR
-        crate::tls::global::apply_from_ir(new_ir.certificate.as_ref());
-
-        // Start new inbound listeners
-        for inbound in &new_bridge_arc.inbounds {
-            let ib = inbound.clone();
-            tokio::task::spawn_blocking(move || {
-                if let Err(e) = ib.serve() {
-                    tracing::error!(target: "sb_core::runtime", error = %e, "new inbound serve failed");
+            // Update DNS resolver from IR if present
+            if new_ir.dns.is_some() {
+                if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(&new_ir) {
+                    crate::dns::global::set(resolver);
                 }
-            });
-        }
-        // Endpoints/services already driven through Start above; do not invoke
-        // start_endpoints/start_services here (would re-trigger lifecycle and
-        // bypass ServiceManager.statuses).
+            }
+            // Refresh global TLS trust configuration from IR
+            crate::tls::global::apply_from_ir(new_ir.certificate.as_ref());
 
-        // PostStart stage for new managers
-        run_context_stage(&new_context, ServiceStage::PostStart)?;
-        run_context_stage(&new_context, ServiceStage::Started)?;
-        tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload");
+            // Start new inbound listeners
+            for inbound in &new_bridge_arc.inbounds {
+                let ib = inbound.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = ib.serve() {
+                        tracing::error!(target: "sb_core::runtime", error = %e, "new inbound serve failed");
+                    }
+                });
+            }
+            // Endpoints/services already driven through Start above; do not invoke
+            // start_endpoints/start_services here (would re-trigger lifecycle and
+            // bypass ServiceManager.statuses).
+
+            // PostStart stage for new managers
+            run_context_stage(&new_context, ServiceStage::PostStart)?;
+            run_context_stage(&new_context, ServiceStage::Started)?;
+            tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload");
+
+            Ok(new_bridge_arc)
+        }
+        .await;
+
+        let new_bridge_arc = match activation_result {
+            Ok(bridge) => bridge,
+            Err(error) => {
+                tracing::error!(target: "sb_core::runtime", error = %error, "reload activation failed before swap, rolling back new construction");
+                let (new_inbounds, new_endpoints, new_services) = new_bridge_slot
+                    .as_deref()
+                    .map(|b| (&b.inbounds[..], &b.endpoints[..], &b.services[..]))
+                    .unwrap_or((&[], &[], &[]));
+                shutdown_failed_reload_context(
+                    &old_context,
+                    &new_context,
+                    new_inbounds,
+                    new_endpoints,
+                    new_services,
+                );
+                return Err(error);
+            }
+        };
 
         // APP-RELOAD-SIDECAR-ORDER-01C: compute the reuse-exclusion flag while BOTH contexts are
         // in scope; the new context is moved into state at the swap below.
@@ -766,36 +801,66 @@ impl Supervisor {
         let new_context = build_context_from_ir(&new_ir, inherited_v2ray);
         ensure_geo_assets(&new_ir).await;
 
-        // Initialize new context managers (Box Runtime Parity)
-        run_context_stage(&new_context, ServiceStage::Initialize)?;
-        tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload (no-router)");
+        // APP-RELOAD-CONTEXT-CLEANUP-01B: same single pre-swap transaction block as the router
+        // path (see handle_reload) — any activation failure funnels into the shared
+        // shutdown_failed_reload_context rollback instead of leaking the new construction.
+        let mut new_bridge_slot: Option<Arc<Bridge>> = None;
+        let activation_result: Result<Arc<Bridge>> = async {
+            // Initialize new context managers (Box Runtime Parity)
+            run_context_stage(&new_context, ServiceStage::Initialize)?;
+            tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload (no-router)");
 
-        // Build new bridge (no engine needed)
-        let new_bridge = crate::adapter::bridge::build_bridge(&new_ir, (), new_context.clone());
+            // Build new bridge (no engine needed)
+            let new_bridge =
+                crate::adapter::bridge::build_bridge(&new_ir, (), new_context.clone());
 
-        // Wrap and register BEFORE Start (LC-003 lifecycle fix).
-        let new_bridge_arc = Arc::new(new_bridge);
-        populate_bridge_managers(&new_context, &new_bridge_arc).await?;
+            // Wrap and register BEFORE Start (LC-003 lifecycle fix).
+            let new_bridge_arc = Arc::new(new_bridge);
+            new_bridge_slot = Some(new_bridge_arc.clone());
+            populate_bridge_managers(&new_context, &new_bridge_arc).await?;
 
-        // Start new context managers
-        run_context_stage(&new_context, ServiceStage::Start)?;
-        tracing::info!(target: "sb_core::runtime", "New context managers started on reload (no-router)");
+            // Start new context managers
+            run_context_stage(&new_context, ServiceStage::Start)?;
+            tracing::info!(target: "sb_core::runtime", "New context managers started on reload (no-router)");
 
-        // Start new inbound listeners
-        for inbound in &new_bridge_arc.inbounds {
-            let ib = inbound.clone();
-            tokio::task::spawn_blocking(move || {
-                if let Err(e) = ib.serve() {
-                    tracing::error!(target: "sb_core::runtime", error = %e, "new inbound serve failed");
-                }
-            });
+            // Start new inbound listeners
+            for inbound in &new_bridge_arc.inbounds {
+                let ib = inbound.clone();
+                tokio::task::spawn_blocking(move || {
+                    if let Err(e) = ib.serve() {
+                        tracing::error!(target: "sb_core::runtime", error = %e, "new inbound serve failed");
+                    }
+                });
+            }
+            // Endpoints/services already driven through Start above.
+
+            // PostStart stage for new managers (no-router)
+            run_context_stage(&new_context, ServiceStage::PostStart)?;
+            run_context_stage(&new_context, ServiceStage::Started)?;
+            tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload (no-router)");
+
+            Ok(new_bridge_arc)
         }
-        // Endpoints/services already driven through Start above.
+        .await;
 
-        // PostStart stage for new managers (no-router)
-        run_context_stage(&new_context, ServiceStage::PostStart)?;
-        run_context_stage(&new_context, ServiceStage::Started)?;
-        tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload (no-router)");
+        let new_bridge_arc = match activation_result {
+            Ok(bridge) => bridge,
+            Err(error) => {
+                tracing::error!(target: "sb_core::runtime", error = %error, "reload activation failed before swap (no-router), rolling back new construction");
+                let (new_inbounds, new_endpoints, new_services) = new_bridge_slot
+                    .as_deref()
+                    .map(|b| (&b.inbounds[..], &b.endpoints[..], &b.services[..]))
+                    .unwrap_or((&[], &[], &[]));
+                shutdown_failed_reload_context(
+                    &old_context,
+                    &new_context,
+                    new_inbounds,
+                    new_endpoints,
+                    new_services,
+                );
+                return Err(error);
+            }
+        };
 
         // APP-RELOAD-SIDECAR-ORDER-01C: compute the reuse-exclusion flag while BOTH contexts are
         // in scope; the new context is moved into state at the swap below.
@@ -1399,6 +1464,39 @@ async fn download_file(url: &str, path: &str) -> Result<()> {
 /// swap, because the new context is moved into state at commit and is no longer reachable here.
 fn shutdown_replaced_context(old_context: &Context, preserve_v2ray: bool) {
     shutdown_context_inner(old_context, !preserve_v2ray);
+}
+
+/// Pre-swap rollback for a FAILED reload (APP-RELOAD-CONTEXT-CLEANUP-01B).
+///
+/// When any activation stage of the new construction fails before the state swap, the old
+/// context/bridge stay committed and keep running; this tears down only what the failed reload
+/// freshly created:
+/// - new inbounds: `request_shutdown` (the spawned serve task holds its own Arc, so dropping the
+///   bridge alone never stops the accept loop or releases the listener);
+/// - new endpoints/services: explicit `stop_endpoints`/`stop_services` (required because
+///   `ServiceManager::close()` is a no-op and `shutdown_context_inner` alone would leave started
+///   services running — independent defect noted in the 01A audit);
+/// - the new context's sidecars/managers via `shutdown_context_inner`, closing the V2Ray server
+///   ONLY when it is a fresh instance. An inherited server is the same `Arc` the old (still
+///   active) context owns (APP-RELOAD-SIDECAR-ORDER-01C) and must keep serving, so it is
+///   discriminated by pointer identity via `same_v2ray_server`. A `None` server (disabled or
+///   bind-failed-and-skipped) makes the close flag a safe no-op.
+///
+/// Cleanup is best-effort and infallible: every stop/close helper logs failures internally and
+/// returns `()`, so the caller's original reload error is always preserved unchanged.
+fn shutdown_failed_reload_context(
+    old_context: &Context,
+    new_context: &Context,
+    new_inbounds: &[Arc<dyn InboundService>],
+    new_endpoints: &[Arc<dyn Endpoint>],
+    new_services: &[Arc<dyn Service>],
+) {
+    for ib in new_inbounds {
+        ib.request_shutdown();
+    }
+    stop_endpoints(new_endpoints);
+    stop_services(new_services);
+    shutdown_context_inner(new_context, !same_v2ray_server(old_context, new_context));
 }
 
 /// Tear down a context's sidecars and managers. The public entry used by startup-rollback and
@@ -2223,6 +2321,414 @@ mod tests {
 
             // Final shutdown of the owning context releases the listener (no leak).
             shutdown_context(&ctx2);
+        }
+    }
+
+    // ── APP-RELOAD-CONTEXT-CLEANUP-01B: pre-swap failed-reload rollback guard ──
+    mod rollback_guard {
+        use super::super::shutdown_failed_reload_context;
+        use super::{DummyEndpoint, DummyService};
+        use crate::adapter::InboundService;
+        use crate::context::{Context, V2RayServer};
+        use crate::endpoint::{Endpoint, StartStage as EndpointStage};
+        use crate::service::Service;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+        use std::sync::{Arc, Mutex};
+
+        /// An `InboundService` test double that counts `request_shutdown` calls.
+        #[derive(Debug)]
+        struct CountingInbound {
+            shutdowns: AtomicUsize,
+        }
+
+        impl InboundService for CountingInbound {
+            fn serve(&self) -> std::io::Result<()> {
+                Ok(())
+            }
+            fn request_shutdown(&self) {
+                self.shutdowns.fetch_add(1, Ordering::SeqCst);
+            }
+        }
+
+        /// An `InboundService` test double that holds a REAL bound listener until
+        /// `request_shutdown` releases it (mirrors the accept-loop-exits-on-flag contract:
+        /// dropping the Arc alone never frees the port; only request_shutdown does).
+        #[derive(Debug)]
+        struct PortHoldingInbound {
+            listener: Mutex<Option<std::net::TcpListener>>,
+        }
+
+        impl InboundService for PortHoldingInbound {
+            fn serve(&self) -> std::io::Result<()> {
+                Ok(())
+            }
+            fn request_shutdown(&self) {
+                self.listener.lock().unwrap().take();
+            }
+        }
+
+        /// An `Endpoint` whose `close()` always fails — proves cleanup is best-effort and a
+        /// cleanup error never disrupts the remaining rollback steps.
+        #[derive(Debug)]
+        struct FailingCloseEndpoint;
+
+        impl Endpoint for FailingCloseEndpoint {
+            fn endpoint_type(&self) -> &str {
+                "failing-endpoint"
+            }
+            fn tag(&self) -> &str {
+                "failing-ep"
+            }
+            fn start(
+                &self,
+                _stage: EndpointStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Err("simulated endpoint close failure".into())
+            }
+        }
+
+        /// A `V2RayServer` test double that records `close()` calls.
+        #[derive(Debug)]
+        struct CloseCountingV2Ray {
+            closes: Arc<AtomicUsize>,
+        }
+
+        impl V2RayServer for CloseCountingV2Ray {
+            fn start(&self) -> anyhow::Result<()> {
+                Ok(())
+            }
+            fn close(&self) -> anyhow::Result<()> {
+                self.closes.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+
+        fn counting_v2ray() -> (Arc<dyn V2RayServer>, Arc<AtomicUsize>) {
+            let closes = Arc::new(AtomicUsize::new(0));
+            let server: Arc<dyn V2RayServer> = Arc::new(CloseCountingV2Ray {
+                closes: closes.clone(),
+            });
+            (server, closes)
+        }
+
+        // ── G/S. inbound request_shutdown + endpoint/service stop all invoked ──
+        #[test]
+        fn g_rollback_stops_inbounds_endpoints_and_services() {
+            let inbound_impl = Arc::new(CountingInbound {
+                shutdowns: AtomicUsize::new(0),
+            });
+            let inbound: Arc<dyn InboundService> = inbound_impl.clone();
+            let ep_impl = Arc::new(DummyEndpoint::new("rollback-ep"));
+            let ep: Arc<dyn Endpoint> = ep_impl.clone();
+            let svc_impl = Arc::new(DummyService::new("rollback-svc"));
+            let svc: Arc<dyn Service> = svc_impl.clone();
+
+            shutdown_failed_reload_context(
+                &Context::new(),
+                &Context::new(),
+                std::slice::from_ref(&inbound),
+                std::slice::from_ref(&ep),
+                std::slice::from_ref(&svc),
+            );
+
+            assert_eq!(inbound_impl.shutdowns.load(Ordering::SeqCst), 1);
+            assert_eq!(ep_impl.closes.load(Ordering::SeqCst), 1);
+            assert_eq!(svc_impl.closes.load(Ordering::SeqCst), 1);
+        }
+
+        // ── F. a new inbound's REAL listener port is re-bindable after rollback ──
+        #[test]
+        fn f_rollback_releases_new_inbound_listener_port() {
+            let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind inbound port");
+            let port = listener.local_addr().expect("local addr").port();
+            let inbound: Arc<dyn InboundService> = Arc::new(PortHoldingInbound {
+                listener: Mutex::new(Some(listener)),
+            });
+
+            shutdown_failed_reload_context(
+                &Context::new(),
+                &Context::new(),
+                std::slice::from_ref(&inbound),
+                &[],
+                &[],
+            );
+
+            assert!(
+                std::net::TcpListener::bind(("127.0.0.1", port)).is_ok(),
+                "inbound listener port must be re-bindable after rollback"
+            );
+        }
+
+        // ── D (proxy). a cleanup error neither panics nor stops the remaining cleanup;
+        // all cleanup APIs return `()`, so the caller's original reload error is preserved
+        // structurally (the rollback branch returns the activation error unchanged). ──
+        #[test]
+        fn d_cleanup_error_does_not_disrupt_remaining_rollback() {
+            let failing_ep: Arc<dyn Endpoint> = Arc::new(FailingCloseEndpoint);
+            let svc_impl = Arc::new(DummyService::new("after-failing-ep"));
+            let svc: Arc<dyn Service> = svc_impl.clone();
+            let (server, closes) = counting_v2ray();
+            let new = Context::new().with_v2ray_server(server);
+
+            shutdown_failed_reload_context(
+                &Context::new(),
+                &new,
+                &[],
+                std::slice::from_ref(&failing_ep),
+                std::slice::from_ref(&svc),
+            );
+
+            assert_eq!(
+                svc_impl.closes.load(Ordering::SeqCst),
+                1,
+                "service must still be stopped after an endpoint close failure"
+            );
+            assert_eq!(
+                closes.load(Ordering::SeqCst),
+                1,
+                "fresh v2ray must still be closed after an endpoint close failure"
+            );
+        }
+
+        // ── fresh vs inherited vs none discrimination (mock-level, feature-independent) ──
+        #[test]
+        fn rollback_closes_fresh_v2ray_but_preserves_inherited() {
+            // fresh: old holds X, new holds a distinct Y → close Y, never touch X.
+            let (x, x_closes) = counting_v2ray();
+            let (y, y_closes) = counting_v2ray();
+            let old = Context::new().with_v2ray_server(x.clone());
+            let new = Context::new().with_v2ray_server(y);
+            shutdown_failed_reload_context(&old, &new, &[], &[], &[]);
+            assert_eq!(
+                y_closes.load(Ordering::SeqCst),
+                1,
+                "fresh server must close"
+            );
+            assert_eq!(
+                x_closes.load(Ordering::SeqCst),
+                0,
+                "old server must be untouched"
+            );
+
+            // inherited: old and new share the SAME Arc → rollback must NOT close it.
+            let (shared, shared_closes) = counting_v2ray();
+            let old = Context::new().with_v2ray_server(shared.clone());
+            let new = Context::new().with_v2ray_server(shared);
+            shutdown_failed_reload_context(&old, &new, &[], &[], &[]);
+            assert_eq!(
+                shared_closes.load(Ordering::SeqCst),
+                0,
+                "inherited (shared-Arc) server must NOT be closed by rollback"
+            );
+
+            // none: new context has no server (disabled or bind-skipped) → safe no-op.
+            let (z, z_closes) = counting_v2ray();
+            let old = Context::new().with_v2ray_server(z);
+            shutdown_failed_reload_context(&old, &Context::new(), &[], &[], &[]);
+            assert_eq!(z_closes.load(Ordering::SeqCst), 0);
+        }
+
+        // ── real-listener coverage (binds actual gRPC listeners; all released in-test) ──
+        #[cfg(feature = "service_v2ray_api")]
+        mod real_listener {
+            use super::super::super::{
+                build_context_from_ir, reusable_v2ray_server, same_v2ray_server, shutdown_context,
+                shutdown_failed_reload_context,
+            };
+            use super::counting_v2ray;
+            use crate::context::Context;
+            use sb_config::ir::{ConfigIR, ExperimentalIR, StatsIR, V2RayApiIR};
+            use std::sync::atomic::Ordering;
+
+            fn v2ray_ir(listen: &str) -> ConfigIR {
+                ConfigIR {
+                    experimental: Some(ExperimentalIR {
+                        v2ray_api: Some(V2RayApiIR {
+                            listen: Some(listen.to_string()),
+                            stats: Some(StatsIR {
+                                enabled: true,
+                                ..Default::default()
+                            }),
+                        }),
+                        ..Default::default()
+                    }),
+                    ..Default::default()
+                }
+            }
+
+            fn reserve_port() -> Option<u16> {
+                match std::net::TcpListener::bind("127.0.0.1:0") {
+                    Ok(l) => {
+                        let p = l.local_addr().ok()?.port();
+                        drop(l);
+                        Some(p)
+                    }
+                    Err(e) => {
+                        eprintln!("skip rollback real-listener test (cannot reserve port): {e}");
+                        None
+                    }
+                }
+            }
+
+            async fn connect_ok(addr: &str) -> bool {
+                for _ in 0..40 {
+                    if tokio::net::TcpStream::connect(addr).await.is_ok() {
+                        return true;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+                false
+            }
+
+            /// `V2RayApiServer::close()` only signals shutdown; the serve task releases the
+            /// listener asynchronously — so port-release assertions must retry.
+            async fn bindable_ok(addr: &str) -> bool {
+                for _ in 0..80 {
+                    if std::net::TcpListener::bind(addr).is_ok() {
+                        return true;
+                    }
+                    tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+                }
+                false
+            }
+
+            // ── A/Q. fresh V2Ray rollback: listener B closed, port re-bindable ──
+            #[tokio::test]
+            async fn a_rollback_closes_fresh_v2ray_and_releases_port() {
+                let Some(port) = reserve_port() else { return };
+                let listen = format!("127.0.0.1:{port}");
+
+                let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None);
+                assert!(new_ctx.v2ray_server.is_some(), "fresh v2ray must be wired");
+                assert!(connect_ok(&listen).await, "fresh listener must be bound");
+
+                // Old context has no v2ray server → same_v2ray_server == false → close fresh.
+                shutdown_failed_reload_context(&Context::new(), &new_ctx, &[], &[], &[]);
+
+                assert!(
+                    bindable_ok(&listen).await,
+                    "fresh v2ray port must be re-bindable after rollback"
+                );
+            }
+
+            // ── B/R. inherited V2Ray rollback: old listener A keeps serving; released only
+            // at the old context's final shutdown ──
+            #[tokio::test]
+            async fn b_rollback_preserves_inherited_v2ray_listener() {
+                let Some(port) = reserve_port() else { return };
+                let listen = format!("127.0.0.1:{port}");
+                let ir = v2ray_ir(&listen);
+
+                let old_ctx = build_context_from_ir(&ir, None);
+                assert!(connect_ok(&listen).await, "old listener A must be bound");
+
+                let v2 = ir.experimental.as_ref().and_then(|e| e.v2ray_api.as_ref());
+                let inherited = reusable_v2ray_server(v2, v2, old_ctx.v2ray_server.as_ref())
+                    .expect("running equivalent server must be reusable");
+                let new_ctx = build_context_from_ir(&ir, Some(inherited));
+                assert!(same_v2ray_server(&old_ctx, &new_ctx));
+
+                // Pre-swap failure → rollback must NOT close the inherited (shared) server.
+                shutdown_failed_reload_context(&old_ctx, &new_ctx, &[], &[], &[]);
+                assert!(
+                    connect_ok(&listen).await,
+                    "inherited listener A must survive rollback"
+                );
+
+                // Dropping the new context's borrowed Arc leaves the old owner serving.
+                drop(new_ctx);
+                assert!(
+                    connect_ok(&listen).await,
+                    "old context must keep serving after the new context drops"
+                );
+
+                // Final shutdown of the owning (old) context releases A.
+                shutdown_context(&old_ctx);
+                assert!(
+                    bindable_ok(&listen).await,
+                    "old final shutdown must release listener A"
+                );
+            }
+
+            // ── C. bind failure (port externally occupied) → warn+skip → rollback is a
+            // no-op for v2ray and never touches the old context's server ──
+            #[tokio::test]
+            async fn c_bind_failure_skip_rollback_is_noop_and_keeps_old() {
+                let holder = match std::net::TcpListener::bind("127.0.0.1:0") {
+                    Ok(l) => l,
+                    Err(e) => {
+                        eprintln!("skip c_bind_failure (cannot bind holder): {e}");
+                        return;
+                    }
+                };
+                let listen = format!("127.0.0.1:{}", holder.local_addr().unwrap().port());
+
+                // External occupation → fresh start fails → visible-but-nonfatal skip.
+                let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None);
+                assert!(
+                    new_ctx.v2ray_server.is_none(),
+                    "bind failure must warn+skip, leaving no v2ray in the new context"
+                );
+
+                let (old_server, old_closes) = counting_v2ray();
+                let old_ctx = Context::new().with_v2ray_server(old_server);
+                shutdown_failed_reload_context(&old_ctx, &new_ctx, &[], &[], &[]);
+
+                assert_eq!(
+                    old_closes.load(Ordering::SeqCst),
+                    0,
+                    "rollback must never close the old context's server"
+                );
+                assert!(
+                    std::net::TcpListener::bind(listen.as_str()).is_err(),
+                    "the external holder must still own the port (rollback touched nothing)"
+                );
+                drop(holder);
+            }
+
+            // ── E/T. repeated failed reloads: each rollback fully releases the fresh port ──
+            #[tokio::test]
+            async fn e_repeated_failed_reloads_do_not_accumulate_leaks() {
+                let Some(port) = reserve_port() else { return };
+                let listen = format!("127.0.0.1:{port}");
+
+                for round in 0..3 {
+                    let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None);
+                    assert!(
+                        new_ctx.v2ray_server.is_some(),
+                        "round {round}: fresh v2ray must bind (port released by prior rollback)"
+                    );
+                    assert!(
+                        connect_ok(&listen).await,
+                        "round {round}: fresh listener must serve"
+                    );
+                    shutdown_failed_reload_context(&Context::new(), &new_ctx, &[], &[], &[]);
+                    assert!(
+                        bindable_ok(&listen).await,
+                        "round {round}: port must be re-bindable after rollback"
+                    );
+                }
+            }
+
+            // ── Arc lifecycle sanity: rollback closes the fresh server exactly once ──
+            #[tokio::test]
+            async fn fresh_rollback_closes_exactly_once() {
+                let Some(port) = reserve_port() else { return };
+                let listen = format!("127.0.0.1:{port}");
+                let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None);
+                let server = new_ctx.v2ray_server.clone().expect("fresh server wired");
+
+                shutdown_failed_reload_context(&Context::new(), &new_ctx, &[], &[], &[]);
+                assert!(bindable_ok(&listen).await);
+
+                // A second close on an already-shut-down server is an idempotent no-op.
+                server.close().expect("idempotent close");
+                drop(new_ctx);
+                assert!(bindable_ok(&listen).await, "no resurrection after drop");
+            }
         }
     }
 }
