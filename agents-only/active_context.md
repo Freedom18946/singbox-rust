@@ -10,20 +10,19 @@
 
 ---
 
-## Resume (2026-06-09)
+## Resume (2026-06-10)
 T3-2 + DRIFT-01 + SVC-DNS-01 + SVC-LISTENER-AUDIT-01 + **SVC-V2RAY-API-01A** +
 **APP-SIDECAR-BIND-01** + **APP-V2RAY-SIMPLE-01A/B/C** +
-**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01 CLOSED** + **APP-RELOAD-SIDECAR-ORDER-01A DONE**; REALITY boxed.
-- **APP-RELOAD-SIDECAR-ORDER-01A DONE** (H6 audit, `app_reload_sidecar_order_01a_audit.md`):
-  **B/V2RAY_SAME_ADDRESS_RELOAD_CONTINUITY_BUG** (control-flow confirmed). sb-core `handle_reload`
-  builds new context (`build_context_from_ir`→new `V2RayApiServer::start()`→`pre_bind` same addr, sup.rs:599)
-  **before** `shutdown_context(old)` (:689); old V2Ray still alive (Step-0 grace stops only bridge inbounds)
-  → EADDRINUSE swallowed (:1171 warn, not attached) → new context has no V2Ray → swap → old closed →
-  **reload reports SUCCESS while V2Ray listener silently vanishes** (flip-flops back next reload). V2Ray-only
-  (Clash=AdminServices once, not rebuilt; bootstrap no reload). `enabled(A)→enabled(A)` + unrelated reloads
-  drop V2Ray. Preferred **Route 3** = reuse unchanged `Arc<dyn V2RayServer>` w/ ownership transfer (so
-  `shutdown_context(old)` won't close reused server); close-old-first breaks rollback. Next=**01B** (fix
-  proposal, design-only; **fix lands in sb-core** — scope flag).
+**APP-V2RAY-SURFACE-02A/B/C/D** + **APP-SIDECAR-LIVENESS-01 CLOSED** + **APP-RELOAD-SIDECAR-ORDER-01A/01B DONE**; REALITY boxed.
+- **APP-RELOAD-SIDECAR-ORDER-01B DONE** (design-only `app_reload_sidecar_order_01b_fix_proposal.md`; 5-agent
+  adversarial verify all CONFIRMED): **A/V2RAY_REUSE_HANDOFF_READY**. Fix lands in **sb-core** = same-config
+  reuse handoff — eligibility in `handle_reload` (old enabled+Running via `subscribe_runtime_state`; `V2RayApiIR ==`
+  incl. stats; `:0` compares IR not bound port) → inherited `Arc<dyn V2RayServer>` threaded `build_context_from_ir`→
+  `wire_experimental_sidecars` (skip new+start; `with_v2ray_server`); pre-swap `Arc::ptr_eq(old,new)` flag → private
+  `shutdown_context_inner(close_v2ray=false)` (generic `shutdown_context` untouched). Keeps continuity+rollback+
+  startup-honesty; reuse preserves StatsManager. **NEW independent defect (LB3): addr-change new listener leaks on
+  pre-swap `?`-fail** (Context no Drop; serve `shutdown_tx` outlives Arc via monitor lifecycle clone) → follow-up
+  **APP-RELOAD-CONTEXT-CLEANUP-01A**. Next=**01C** (implement reuse handoff). 01A H6 audit superseded.
 - **APP-SIDECAR-LIVENESS-01 CLOSED** (01H-C: **A/LOG_ONLY_CONTINUE_POLICY_ACCEPTED**; docs
   `app_sidecar_liveness_*`). Line: sb-core gen-aware V2Ray snapshot (01E/E-R1) → app adapter (01F) →
   Clash task-owner projection+`ClashShutdownHandle`+outer monitor (01G-B) → run-engine **log-only**
