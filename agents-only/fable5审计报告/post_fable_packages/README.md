@@ -1,0 +1,121 @@
+<!-- tier: B -->
+# post_fable package map
+
+> Source: `../06_全局汇报_A-K.md` (REPO-GLOBAL-CALIBRATION-01A, 2026-06-10).
+> Purpose: turn fable5 findings into executable work packages for Codex/fable
+> collaboration. This directory is planning-only; package implementation happens in
+> later tasks.
+
+## Highest Goal
+
+Deliver a Rust binary that can replace Go sing-box 1.12.14 for GUI.for SingBox
+1.19.0 users: GUI can launch it, generated configs validate, mainstream proxy
+traffic works, TUN/system-proxy flows are usable, node selection persists, and
+reload/config switching does not silently break service.
+
+## Operating Rules
+
+- `agents-only/active_context.md` remains the single source of truth for volatile
+  phase, gate, and current status.
+- This package map records fable5 follow-up work only; do not rewrite the original
+  audit report files while executing a package.
+- Do not touch `agents-only/a0_reality_spike/`.
+- Each package must close as: implement, add or adapt tests, verify locally, review,
+  update relevant `agents-only` docs, then commit and push.
+- GitHub Actions stay disabled; validation is local.
+- Do not claim GUI readiness from MT-GUI-04, 209/209, or REALITY parity alone.
+
+## Package Status
+
+| Package | Title | Priority | Covers | Status |
+|---|---|---:|---|---|
+| post_fable_package01 | GUI contract | P0 | CAL-02, CAL-17 | PLANNED |
+| post_fable_package02 | Schema parity, TUN first | P0 | CAL-01, H-4 | PLANNED |
+| post_fable_package03 | TUN dataplane | P1 | CAL-10, H-5 | PLANNED |
+| post_fable_package04 | WireGuard dataplane | P0/P1 | CAL-03, CAL-09 | PLANNED |
+| post_fable_package05 | Reload continuity and atomicity | P1 | CAL-04, CAL-05, CAL-07, CAL-12, CAL-14 | PLANNED |
+| post_fable_package06 | Inbound liveness and observability | P1/P2 | CAL-06, CAL-13, CAL-15, CAL-16 | PLANNED |
+| post_fable_package07 | GUI E2E probe | Probe | H-1, H-2, H-3, H-9 | PLANNED |
+| post_fable_package08 | Long-tail protocols and subscription | P2 | CAL-18, CAL-28, H-10 | PLANNED |
+| post_fable_package09 | Lint, test, and gate policy | P1/P2/P3 | CAL-08, CAL-19, CAL-27, CAL-29 | PLANNED |
+| post_fable_package10 | Runtime and config hygiene | P2/P3 | CAL-11, CAL-20, CAL-21, CAL-22, CAL-23, CAL-24, CAL-25 | PLANNED |
+| post_fable_package11 | Documentation calibration | P3 | CAL-26 | PLANNED |
+
+## Recommended Execution Order
+
+1. `post_fable_package01_gui_contract.md` and
+   `post_fable_package02_schema_parity_tun_first.md` in parallel. These unlock the
+   first real GUI launch attempt.
+2. `post_fable_package07_gui_e2e_probe.md` immediately after packages 01 and 02.
+   Use it to decide how exposed reload continuity is in actual GUI workflows.
+3. `post_fable_package04_wireguard_dataplane.md` can run in parallel after the
+   first GUI contract/schema tranche.
+4. `post_fable_package05_reload_continuity_atomicity.md` after GUI reload and Go
+   reload probes are documented. It is the highest-risk core-path package.
+5. `post_fable_package06_inbound_liveness_observability.md` after or together with
+   package 05 if the ready/monitor channel is shared.
+6. `post_fable_package03_tun_dataplane.md` after package 02, because the GUI TUN
+   config must first parse.
+7. Packages 08-11 are lower-risk support work and can be scheduled around the P0/P1
+   path.
+
+## CAL Coverage Matrix
+
+| Finding | Package | Note |
+|---|---|---|
+| CAL-01 | post_fable_package02 | TUN schema rejects GUI-generated Go 1.12 fields. |
+| CAL-02 | post_fable_package01 | Missing `sing-box started` launch signal. |
+| CAL-03 | post_fable_package04 | WireGuard endpoint is not in outbound namespace. |
+| CAL-04 | post_fable_package05 | Failed reload kills old inbounds and does not recover. |
+| CAL-05 | post_fable_package05 | Inbound bind/serve failures are not success criteria. |
+| CAL-06 | post_fable_package06 | Inbound serve tasks have no liveness monitor. |
+| CAL-07 | post_fable_package05 | Runtime outbound/inbound registry installs before swap and is not restored on rollback. |
+| CAL-08 | post_fable_package09 | Workspace panic/unwrap lint policy is mostly inactive. |
+| CAL-09 | post_fable_package04 | Legacy WireGuard outbound feature is not wired into app builds. |
+| CAL-10 | post_fable_package03 | TUN data path and GUI stack names are not usable. |
+| CAL-11 | post_fable_package10 | Production `eprintln!` pollution. |
+| CAL-12 | post_fable_package05 | Graceful shutdown drain can be defeated by nested runtime drop. |
+| CAL-13 | post_fable_package06 | Clash API down has no machine-readable GUI signal. |
+| CAL-14 | post_fable_package05 | Same-port reload relies on fixed grace sleep and no `SO_REUSEADDR`/handoff. |
+| CAL-15 | post_fable_package06 | Rapid V2Ray disable/enable can silently lose the API server. |
+| CAL-16 | post_fable_package06 | Bad DNS resolver from IR is silently skipped. |
+| CAL-17 | post_fable_package01 | Kernel version `0.1.0` may trigger GUI feature gating. |
+| CAL-18 | post_fable_package08 | Long-tail outbound types remain stubs in parity builds. |
+| CAL-19 | post_fable_package09 | Selector/proxy-pool tests have been ignored since API drift. |
+| CAL-20 | post_fable_package10 | `ServiceManager::close` is a structural footgun, despite current compensation. |
+| CAL-21 | post_fable_package10 | FakeIP invalid masks are silently discarded. |
+| CAL-22 | post_fable_package10 | `experimental` parse failure is silently discarded. |
+| CAL-23 | post_fable_package10 | `system_proxy` unsupported-platform behavior reports success. |
+| CAL-24 | post_fable_package10 | `serve_http` heartbeat task leaks on the shared-runtime legacy path. |
+| CAL-25 | post_fable_package10 | Three runtime entrypoints remain, including dead/legacy paths. |
+| CAL-26 | post_fable_package11 | External docs and capability ledgers are stale. |
+| CAL-27 | post_fable_package09 | Specific feature test builds still produce warnings. |
+| CAL-28 | post_fable_package08 | Deep trojan handshake tests remain ignored. |
+| CAL-29 | post_fable_package09 | Flake group root causes need hardening or clearer isolation. |
+
+## Unknowns Coverage
+
+| Unknown | Package | Probe outcome should decide |
+|---|---|---|
+| H-1 GUI has likely never launched Rust kernel | post_fable_package07 | Whether more GUI contract breaks exist. |
+| H-2 GUI reload versus process restart | post_fable_package07 | Exposure and priority of package 05. |
+| H-3 GUI behavior for kernel version `0.1.0` | post_fable_package07 and 01 | Version string/reporting policy. |
+| H-4 Other Go 1.12 fields rejected by strict schema | post_fable_package02 | Whether package 02 expands beyond TUN. |
+| H-5 TUN smoltcp quality | post_fable_package03 | Whether TUN data path can be closed or must be de-scoped. |
+| H-7 Go BoltDB cache versus Rust sled cache | Future package if needed | Migration or compatibility posture. |
+| H-9 Go reload semantic details | post_fable_package07 and 05 | Exact reload design target. |
+| H-10 Subscription format coverage | post_fable_package08 | Additional fixture set and parser backlog. |
+
+## File Index
+
+- `post_fable_package01_gui_contract.md`
+- `post_fable_package02_schema_parity_tun_first.md`
+- `post_fable_package03_tun_dataplane.md`
+- `post_fable_package04_wireguard_dataplane.md`
+- `post_fable_package05_reload_continuity_atomicity.md`
+- `post_fable_package06_inbound_liveness_observability.md`
+- `post_fable_package07_gui_e2e_probe.md`
+- `post_fable_package08_longtail_protocols_subscription.md`
+- `post_fable_package09_lint_test_gate_policy.md`
+- `post_fable_package10_runtime_config_hygiene.md`
+- `post_fable_package11_doc_calibration.md`
