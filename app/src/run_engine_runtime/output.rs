@@ -92,6 +92,20 @@ pub fn report_reload_result(
     }
 }
 
+/// GUI.for.SingBox 启动识别关键字:`stores/kernelApi.ts` 以
+/// `out.includes('sing-box started')` 判定内核启动成功(CAL-02)。
+/// 该启动行语义 = supervisor 启动完成(admin services 已启动),
+/// **不是** inbound bind-confirmed readiness(bind-ready 属 package05)。
+pub(crate) const STARTUP_KEYWORD: &str = "sing-box started";
+
+fn startup_log_line() -> String {
+    format!("{STARTUP_KEYWORD}; press Ctrl+C to quit")
+}
+
+fn startup_text_line(pid: u32, fingerprint: &str) -> String {
+    format!("{STARTUP_KEYWORD} pid={pid} fingerprint={fingerprint}")
+}
+
 pub fn emit_startup_output(
     opts: &crate::run_engine::RunOptions,
     runtime: &crate::run_engine_runtime::context::RuntimeContext,
@@ -99,14 +113,13 @@ pub fn emit_startup_output(
     match opts.startup_output {
         crate::run_engine::StartupOutputMode::LogOnly => {
             if opts.print_startup {
-                info!("singbox-rust booted; press Ctrl+C to quit");
+                info!("{}", startup_log_line());
             }
         }
         crate::run_engine::StartupOutputMode::TextStdout => {
             println!(
-                "started pid={} fingerprint={}",
-                std::process::id(),
-                env!("CARGO_PKG_VERSION")
+                "{}",
+                startup_text_line(std::process::id(), env!("CARGO_PKG_VERSION"))
             );
         }
         crate::run_engine::StartupOutputMode::JsonStdout => {
@@ -167,6 +180,22 @@ pub fn log_transport_plan(ir: &ConfigIR, print_transport: bool) {
 
 #[cfg(test)]
 mod tests {
+    use super::{startup_log_line, startup_text_line};
+
+    #[test]
+    fn startup_lines_contain_gui_launch_keyword() {
+        // CAL-02: GUI kernelApi.ts 以 includes('sing-box started') 判定启动成功
+        assert!(startup_log_line().contains("sing-box started"));
+        assert!(startup_text_line(1234, "0.1.0").contains("sing-box started"));
+    }
+
+    #[test]
+    fn emit_startup_output_logonly_uses_keyword_line() {
+        // 源码锚定:LogOnly 分支必须走 startup_log_line()(tracing 输出难以直接捕获)
+        let source = include_str!("output.rs");
+        assert!(source.contains(r#"info!("{}", startup_log_line())"#));
+    }
+
     #[test]
     fn wp30ao_pin_output_owner_moved_out_of_run_engine_rs() {
         let source = include_str!("output.rs");
