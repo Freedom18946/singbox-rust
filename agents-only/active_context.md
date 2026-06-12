@@ -10,28 +10,29 @@
 
 ---
 
-## Resume (2026-06-11)
+## Resume (2026-06-12) — POST-FABLE P0 wave
 
-**POST-FABLE package01 (GUI startup contract) DONE** (`0a4cae74`): LogOnly/TextStdout now emit
-`sing-box started` (GUI launch keyword; JsonStdout pure JSON; semantics = supervisor started, NOT
-bind-ready → package05). Version probe: GUI has no kernel-version gating → keep `0.1.0` (CAL-17/H-3
-gating closed; E2E = package07). Tests: app lib output 7 PASS; workspace all-features check PASS;
-live smoke captured keyword. Next P0: package02 ∥ package07 (map/detail: post_fable_packages/).
+- **package02 (TUN schema parity) DONE** (`e3defcdf`): strict validator accepts GUI flat TUN
+  fields (per-type TUN-only whitelist; nested `tun` now content-checked via Raw bridge);
+  `lower_inbounds` populates `InboundIR.tun` (flat-over-nested, Go omitempty normalization,
+  `interface_name`→`name` alias). H-4: GUI listen-block fields (tcp_fast_open/tcp_multi_path/
+  udp_fragment) accepted as schema no-ops (same-launch-path exception). sb-config 693 PASS;
+  GUI-shape `run --check` smoke PASS. NOT dataplane-ready → package03; diff record:
+  post_fable_packages/post_fable_package02_tun_schema_diff.md.
+- **package01 (GUI startup contract) DONE** (`0a4cae74`): `sing-box started` keyword in
+  LogOnly/TextStdout (JsonStdout pure; = supervisor started, NOT bind-ready → package05);
+  version probe: no GUI gating → keep 0.1.0 (CAL-17/H-3 closed).
+- Next: package03 (TUN dataplane) ∥ package07 (GUI E2E probe); map: post_fable_packages/README.
 
 ## Resume (2026-06-10)
-T3-2 + DRIFT-01 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-SIDECAR-ORDER-01 CLOSED +
-**APP-RELOAD-CONTEXT-CLEANUP-01A/01B DONE**; REALITY boxed.
-- **01B** (`47e15b0b`, doc `app_reload_context_cleanup_01b_rollback_guard.md`): pre-swap rollback
-  guard — handle_reload (router+no-router) wraps all fallible pre-swap stages in one txn block;
-  shared `shutdown_failed_reload_context(...)`; fresh V2Ray closed / inherited Arc preserved;
-  original reload error unchanged; swap-success untouched. 9 rollback_guard tests; sb-core 1109
-  PASS; gates clean. TIDY-APP-BREAKER-FLAKE reproduced once → isolated + rerun PASS (not fixed).
-  01A audit DONE (`907f5944`). Registered **APP-RELOAD-INBOUND-CONTINUITY-01A = DEFER/FOLLOW-UP
-  AUDIT** (continuity gap ≠ leak; separate card).
-- 01C DONE (`7dc853ef`): same-config V2Ray reuse handoff, 11 tests. APP-SIDECAR-LIVENESS-01 CLOSED
-  (log-only Continue; APP-SIDECAR-POLICY-02A DEFER). APP-V2RAY-SURFACE-02D DONE (`60b88414`;
-  TIDY-RUSTDOC-LINKS DEFER). APP-SIDECAR-BIND-01 DONE (`e1f0be43`). sb-core pre-existing flakes:
-  `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
+T3-2 + DRIFT-01 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed.
+- 01B pre-swap rollback guard (`47e15b0b`): one txn block + shared
+  `shutdown_failed_reload_context`; fresh V2Ray closed / inherited Arc preserved; 9 tests;
+  sb-core 1109 PASS; gates clean. TIDY-APP-BREAKER-FLAKE isolated+rerun PASS (not fixed).
+  01A audit (`907f5944`). APP-RELOAD-INBOUND-CONTINUITY-01A = DEFER/FOLLOW-UP AUDIT.
+- 01C V2Ray reuse (`7dc853ef`, 11 tests); LIVENESS-01 CLOSED (log-only Continue; POLICY-02A
+  DEFER); V2RAY-SURFACE-02D (`60b88414`; TIDY-RUSTDOC-LINKS DEFER); SIDECAR-BIND-01 (`e1f0be43`).
+  sb-core pre-existing flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
 
 ## Strategic State
 

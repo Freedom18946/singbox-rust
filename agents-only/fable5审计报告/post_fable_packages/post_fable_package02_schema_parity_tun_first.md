@@ -3,7 +3,9 @@
 
 ## Status
 
-PLANNED.
+DONE (2026-06-12, code commit `e3defcdf`). TUN schema/IR parity advanced; this is
+NOT dataplane-ready and NOT a GUI-ready claim (TUN runtime = package03,
+GUI E2E = package07).
 
 ## Source Findings
 
@@ -62,4 +64,53 @@ strict validation and producing a focused Go 1.12.14 option-diff record.
 
 ## Completion Notes
 
-Not started.
+Completed 2026-06-12, code commit `e3defcdf` (`fix(sb-config): accept GUI TUN schema fields`).
+Full field matrix + rules: `post_fable_package02_tun_schema_diff.md` (same directory).
+
+### What changed
+
+- **Validator** (`crates/sb-config/src/validator/v2/inbound.rs`):
+  - `TUN_ONLY_INBOUND_KEYS` per-type whitelist gated on `type: "tun"` —
+    `interface_name/address/mtu/auto_route/strict_route/route_address/
+    route_exclude_address/endpoint_independent_nat/stack/inet4_address/inet6_address`.
+    The four previously-global TUN-ish keys moved into it, so non-TUN inbounds
+    carrying TUN fields are now rejected (net-new strictness, no test fallout).
+  - Nested `tun {}` content now validated through the strict `RawTunOptionsIR`
+    bridge (deny_unknown_fields); previously accepted unvalidated.
+  - Strict unknown-field rejection preserved (`bogus_tun_field` test-locked).
+- **Lowering**: `lower_tun_options` populates `InboundIR.tun` (was hardcoded `None`,
+  silently dropping everything). Nested `tun` = base, flat fields overlay (flat wins).
+  Go omitempty normalization: flat `mtu: 0` / `interface_name: ""` = unset.
+  `interface_name` mirrors into legacy `name` (compat alias for runtime
+  `TunInboundConfig.name`) unless nested set an explicit `name`. Address/route lists
+  kept verbatim — no v4/v6 split (package03 owns dataplane interpretation).
+- **IR**: `TunOptionsIR`/`RawTunOptionsIR` gained `interface_name`, `address`,
+  `route_address`, `route_exclude_address`; all Option fields now
+  `skip_serializing_if = None` (runtime re-decode into sb-adapters
+  `TunInboundConfig` rejects explicit nulls — serde default only covers absent keys).
+- **sb-adapters one-liner**: `TunInboundConfig::dry_run` serde default aligned to
+  `true` (= its `Default` impl). With IR now actually populated, the decode path
+  replaces `Default::default()`; this keeps the dry-run runtime posture unchanged.
+  Real dataplane switching is package03 scope.
+
+### H-4 finding (same-GUI-launch-path exception exercised)
+
+GUI emits Go `ListenOptions` fields `tcp_fast_open/tcp_multi_path/udp_fragment` on
+every listen-type inbound; strict schema rejected them → blocked the same GUI launch
+path as CAL-01. Accepted as schema-valid no-ops (not lowered; GUI defaults all
+`false` = no-op in Go too). Wider H-4 surface remains record-only — revisit if
+package07 E2E surfaces more.
+
+### Tests / verification run
+
+- `cargo test -p sb-config --lib pf02` → 8 passed (GUI default validation; lowering
+  field preservation incl. mtu-0/""-normalization; alias; unknown-field rejection;
+  TUN-only gating on non-TUN; flat-over-nested precedence; nested strictness;
+  GUI listen-block acceptance).
+- `cargo test -p sb-config` → all suites green (lib 693 PASS, 0 failed).
+- `cargo test -p sb-adapters --lib` → 27 PASS.
+- `cargo check --workspace --all-features` → PASS. `git diff --check` → clean.
+- Smoke: full GUI-shape config (mixed incl. listen block + default flat TUN) passes
+  `./target/debug/app run --check` through the production strict pipeline
+  (`config_from_raw_value` → `validate_v2(strict)` → `lower_inbounds`).
+- package07 harness does not exist yet → GUI launch probe not run (conditional).
