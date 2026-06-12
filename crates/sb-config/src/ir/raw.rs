@@ -1700,6 +1700,9 @@ pub struct RawTunOptionsIR {
     pub platform: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
+    /// Go 1.12.14 `interface_name` (post_fable_package02).
+    #[serde(default)]
+    pub interface_name: Option<String>,
     #[serde(default)]
     pub mtu: Option<u32>,
     #[serde(default)]
@@ -1714,6 +1717,9 @@ pub struct RawTunOptionsIR {
     pub auto_redirect: Option<bool>,
     #[serde(default)]
     pub strict_route: Option<bool>,
+    /// Go 1.12.14 merged `address` list (post_fable_package02).
+    #[serde(default)]
+    pub address: Option<Vec<String>>,
     #[serde(default)]
     pub inet4_address: Option<String>,
     #[serde(default)]
@@ -1722,6 +1728,12 @@ pub struct RawTunOptionsIR {
     pub table_id: Option<u32>,
     #[serde(default)]
     pub fwmark: Option<u32>,
+    /// Go 1.12.14 `route_address` (post_fable_package02).
+    #[serde(default)]
+    pub route_address: Option<Vec<String>>,
+    /// Go 1.12.14 `route_exclude_address` (post_fable_package02).
+    #[serde(default)]
+    pub route_exclude_address: Option<Vec<String>>,
     #[serde(default)]
     pub exclude_routes: Option<Vec<String>>,
     #[serde(default)]
@@ -1743,6 +1755,7 @@ impl From<RawTunOptionsIR> for TunOptionsIR {
         Self {
             platform: raw.platform,
             name: raw.name,
+            interface_name: raw.interface_name,
             mtu: raw.mtu,
             dry_run: raw.dry_run,
             user_tag: raw.user_tag,
@@ -1750,10 +1763,13 @@ impl From<RawTunOptionsIR> for TunOptionsIR {
             auto_route: raw.auto_route,
             auto_redirect: raw.auto_redirect,
             strict_route: raw.strict_route,
+            address: raw.address,
             inet4_address: raw.inet4_address,
             inet6_address: raw.inet6_address,
             table_id: raw.table_id,
             fwmark: raw.fwmark,
+            route_address: raw.route_address,
+            route_exclude_address: raw.route_exclude_address,
             exclude_routes: raw.exclude_routes,
             include_routes: raw.include_routes,
             exclude_uids: raw.exclude_uids,
@@ -4248,6 +4264,42 @@ mod tests {
         assert_eq!(ir.mtu, Some(1500));
         assert_eq!(ir.auto_route, Some(true));
         let json = serde_json::to_value(&ir).unwrap();
+        let ir2: TunOptionsIR = serde_json::from_value(json).unwrap();
+        assert_eq!(ir, ir2);
+    }
+
+    /// post_fable_package02: Go 1.12.14-style fields (`interface_name`,
+    /// merged `address`, `route_address`, `route_exclude_address`) roundtrip
+    /// through the strict Raw bridge, and serialization skips `None` fields
+    /// (the runtime TunInboundConfig re-decode rejects explicit nulls).
+    #[test]
+    fn tun_options_ir_go_112_fields_roundtrip() {
+        use super::super::TunOptionsIR;
+        let data = json!({
+            "interface_name": "utun9",
+            "address": ["172.18.0.1/30", "fdfe:dcba:9876::1/126"],
+            "route_address": ["10.0.0.0/8"],
+            "route_exclude_address": ["192.168.0.0/16"],
+            "stack": "mixed"
+        });
+        let ir: TunOptionsIR = serde_json::from_value(data).unwrap();
+        assert_eq!(ir.interface_name.as_deref(), Some("utun9"));
+        assert_eq!(
+            ir.address.as_deref(),
+            Some(&["172.18.0.1/30".to_string(), "fdfe:dcba:9876::1/126".to_string()][..])
+        );
+        assert_eq!(ir.route_address.as_deref(), Some(&["10.0.0.0/8".to_string()][..]));
+        assert_eq!(
+            ir.route_exclude_address.as_deref(),
+            Some(&["192.168.0.0/16".to_string()][..])
+        );
+
+        let json = serde_json::to_value(&ir).unwrap();
+        // None fields must be absent, not null (runtime re-decode contract).
+        let obj = json.as_object().unwrap();
+        assert!(!obj.contains_key("mtu"), "None fields must be skipped, got: {json}");
+        assert!(!obj.contains_key("name"));
+
         let ir2: TunOptionsIR = serde_json::from_value(json).unwrap();
         assert_eq!(ir, ir2);
     }

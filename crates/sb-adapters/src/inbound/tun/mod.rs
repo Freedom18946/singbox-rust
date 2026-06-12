@@ -245,6 +245,10 @@ fn default_timeout_ms() -> u64 {
     10_000
 }
 
+fn default_dry_run() -> bool {
+    true
+}
+
 /// Minimal config for Phase 1; extended later when wiring real device
 #[derive(Debug, Clone, Deserialize)]
 pub struct TunInboundConfig {
@@ -255,7 +259,11 @@ pub struct TunInboundConfig {
     #[serde(default = "default_mtu")]
     pub mtu: u32,
     /// 2.3b：默认 dry-run（只路由不拨号）；置为 false 时会拨号并立即关闭以做可达性验证
-    #[serde(default)]
+    ///
+    /// serde default 与 `Default` impl 保持一致 (= true)：post_fable_package02 起
+    /// `InboundIR.tun` 会被真实填充并经 JSON round-trip 解码到这里，缺省时必须
+    /// 维持 dry-run 运行姿态；真实 dataplane 行为切换属 package03。
+    #[serde(default = "default_dry_run")]
     pub dry_run: bool,
     /// 2.3c：将 user 信息注入 RequestMeta / ConnectParams（优先匹配路由规则）
     #[serde(default)]

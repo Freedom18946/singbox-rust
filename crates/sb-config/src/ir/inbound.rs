@@ -746,47 +746,68 @@ impl<'de> Deserialize<'de> for InboundIR {
 ///
 /// Deserialization goes through [`RawTunOptionsIR`](super::raw::RawTunOptionsIR)
 /// which carries `#[serde(deny_unknown_fields)]` (WP-30h).
+///
+/// Serialization skips `None` fields: runtime consumers re-decode the
+/// serialized form into `sb-adapters` `TunInboundConfig`, whose non-Option
+/// fields (`mtu: u32`, `Vec<...>`) reject explicit `null` (serde `default`
+/// only applies to absent keys). (post_fable_package02)
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct TunOptionsIR {
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub platform: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    #[serde(default)]
+    /// Go 1.12.14 `interface_name`. Lowering also mirrors it into `name`
+    /// (compat alias for the runtime `TunInboundConfig.name` consumer).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub interface_name: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub mtu: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub dry_run: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub user_tag: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub timeout_ms: Option<u64>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_route: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub auto_redirect: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict_route: Option<bool>,
-    #[serde(default)]
+    /// Go 1.12.14 merged `address` list (supersedes the deprecated
+    /// `inet4_address`/`inet6_address` pair). Kept as-is; no v4/v6 split
+    /// at the schema/IR layer (dataplane interpretation = package03).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub address: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inet4_address: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub inet6_address: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub table_id: Option<u32>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fwmark: Option<u32>,
-    #[serde(default)]
+    /// Go 1.12.14 `route_address` (supersedes deprecated `inet4/6_route_address`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_address: Option<Vec<String>>,
+    /// Go 1.12.14 `route_exclude_address` (supersedes deprecated
+    /// `inet4/6_route_exclude_address`).
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub route_exclude_address: Option<Vec<String>>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude_routes: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub include_routes: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude_uids: Option<Vec<u32>>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub stack: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub endpoint_independent_nat: Option<bool>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub udp_timeout: Option<String>,
-    #[serde(default)]
+    #[serde(default, skip_serializing_if = "Option::is_none")]
     pub exclude_processes: Option<Vec<String>>,
 }
 

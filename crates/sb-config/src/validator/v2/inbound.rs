@@ -18,18 +18,48 @@ fn allowed_inbound_keys() -> HashSet<String> {
             "name",
             "listen_port",
             "override_address",
-            "interface_name",
-            "inet4_address",
-            "inet6_address",
-            "auto_route",
             "auth",
             "cert",
             "key",
             "up_mbps",
             "down_mbps",
             "tls",
+            // Go 1.12.14 `ListenOptions` socket tuning fields. GUI.for
+            // SingBox emits them on every listen-type inbound (mixed/http/
+            // socks), so rejecting them blocks the same GUI launch path as
+            // CAL-01. Accepted as schema-valid no-ops for now — not lowered
+            // into IR (documented in post_fable_package02_tun_schema_diff.md,
+            // H-4). (post_fable_package02)
+            "tcp_fast_open",
+            "tcp_multi_path",
+            "udp_fragment",
         ],
     );
+    set
+}
+
+/// Flat TUN-only fields (Go 1.12.14 `TunInboundOptions` subset accepted by
+/// the strict schema). Only valid on `type: "tun"` inbounds — any other
+/// inbound type carrying one of these is rejected as an unknown field.
+/// (post_fable_package02 / CAL-01)
+const TUN_ONLY_INBOUND_KEYS: &[&str] = &[
+    "interface_name",
+    "address",
+    "mtu",
+    "auto_route",
+    "strict_route",
+    "route_address",
+    "route_exclude_address",
+    "endpoint_independent_nat",
+    "stack",
+    // deprecated Go aliases of `address` (pre-1.10 style), kept accepted
+    "inet4_address",
+    "inet6_address",
+];
+
+fn allowed_tun_inbound_keys(base: &HashSet<String>) -> HashSet<String> {
+    let mut set = base.clone();
+    insert_keys(&mut set, TUN_ONLY_INBOUND_KEYS);
     set
 }
 
@@ -54,7 +84,8 @@ pub(crate) fn validate_inbounds(doc: &Value, allow_unknown: bool, issues: &mut V
         return;
     };
 
-    let allowed = allowed_inbound_keys();
+    let allowed_base = allowed_inbound_keys();
+    let allowed_tun = allowed_tun_inbound_keys(&allowed_base);
 
     for (i, ib) in arr.iter().enumerate() {
         // Each inbound must be an object
@@ -135,7 +166,30 @@ pub(crate) fn validate_inbounds(doc: &Value, allow_unknown: bool, issues: &mut V
             }
         }
 
-        // additionalProperties=false (V2 allowed fields)
+        // Nested `tun` options were historically accepted but never
+        // content-checked. Run them through the strict Raw bridge
+        // (`RawTunOptionsIR`, deny_unknown_fields) so the nested form is
+        // exactly as strict as the flat form. (post_fable_package02)
+        if is_tun {
+            if let Some(tun_val) = ib.get("tun") {
+                if let Err(err) =
+                    serde_json::from_value::<crate::ir::TunOptionsIR>(tun_val.clone())
+                {
+                    let kind = if allow_unknown { "warning" } else { "error" };
+                    issues.push(emit_issue(
+                        kind,
+                        IssueCode::UnknownField,
+                        &format!("/inbounds/{}/tun", i),
+                        &format!("invalid tun options: {err}"),
+                        "fix the nested tun object",
+                    ));
+                }
+            }
+        }
+
+        // additionalProperties=false (V2 allowed fields; TUN-only flat
+        // fields are gated on `type: "tun"`)
+        let allowed = if is_tun { &allowed_tun } else { &allowed_base };
         if let Some(map) = ib.as_object() {
             for k in map.keys() {
                 if !allowed.contains(k) {
@@ -166,6 +220,81 @@ fn parse_listen_host_port(listen: &str) -> Option<(String, u16)> {
     let (host, port_str) = listen.rsplit_once(':')?;
     let port = port_str.parse().ok()?;
     Some((host.to_string(), port))
+}
+
+fn string_list(v: Option<&Value>) -> Option<Vec<String>> {
+    v.and_then(|v| v.as_array()).map(|arr| {
+        arr.iter()
+            .filter_map(|x| x.as_str().map(|s| s.to_string()))
+            .collect()
+    })
+}
+
+/// Build `TunOptionsIR` for a `type: "tun"` inbound. (post_fable_package02 / CAL-01)
+///
+/// Precedence: the nested `tun` object (strict Raw bridge) is the base;
+/// top-level Go/GUI flat fields overlay it — a flat field always wins over
+/// its nested equivalent.
+///
+/// Normalization mirrors Go `omitempty` semantics for the GUI defaults:
+/// flat `mtu: 0` and `interface_name: ""` mean "unset" and do not override.
+/// `address`/`route_address`/`route_exclude_address` are kept verbatim as
+/// lists — no v4/v6 split here (dataplane interpretation = package03).
+fn lower_tun_options(i: &Value) -> crate::ir::TunOptionsIR {
+    // Nested base. Strict validation runs before lowering in the production
+    // pipeline (config_from_raw_value), so a deserialize failure here only
+    // happens for callers that skipped validation — fall back to defaults.
+    let mut tun = i
+        .get("tun")
+        .cloned()
+        .and_then(|v| serde_json::from_value::<crate::ir::TunOptionsIR>(v).ok())
+        .unwrap_or_default();
+
+    if let Some(name) = i.get("interface_name").and_then(|v| v.as_str()) {
+        if !name.is_empty() {
+            tun.interface_name = Some(name.to_string());
+        }
+    }
+    if let Some(mtu) = i.get("mtu").and_then(|v| v.as_u64()) {
+        if mtu > 0 {
+            tun.mtu = u32::try_from(mtu).ok();
+        }
+    }
+    if let Some(v) = i.get("auto_route").and_then(|v| v.as_bool()) {
+        tun.auto_route = Some(v);
+    }
+    if let Some(v) = i.get("strict_route").and_then(|v| v.as_bool()) {
+        tun.strict_route = Some(v);
+    }
+    if let Some(v) = i.get("endpoint_independent_nat").and_then(|v| v.as_bool()) {
+        tun.endpoint_independent_nat = Some(v);
+    }
+    if let Some(v) = i.get("stack").and_then(|v| v.as_str()) {
+        tun.stack = Some(v.to_string());
+    }
+    if let Some(v) = i.get("inet4_address").and_then(|v| v.as_str()) {
+        tun.inet4_address = Some(v.to_string());
+    }
+    if let Some(v) = i.get("inet6_address").and_then(|v| v.as_str()) {
+        tun.inet6_address = Some(v.to_string());
+    }
+    if let Some(v) = string_list(i.get("address")) {
+        tun.address = Some(v);
+    }
+    if let Some(v) = string_list(i.get("route_address")) {
+        tun.route_address = Some(v);
+    }
+    if let Some(v) = string_list(i.get("route_exclude_address")) {
+        tun.route_exclude_address = Some(v);
+    }
+
+    // Compat alias: runtime consumers (sb-adapters `TunInboundConfig`) read
+    // `name`; mirror Go's `interface_name` into it unless the nested options
+    // already set an explicit `name`.
+    if tun.name.is_none() {
+        tun.name = tun.interface_name.clone();
+    }
+    tun
 }
 
 /// Lower `/inbounds` from raw JSON into `ConfigIR.inbounds`.
@@ -255,6 +384,15 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
             (host, port)
         } else {
             (None, None)
+        };
+
+        // TUN options: nested `tun` is the base, flat Go/GUI fields overlay
+        // it. Non-TUN inbounds never carry tun options.
+        // (post_fable_package02 / CAL-01)
+        let tun = if matches!(ty, InboundType::Tun) {
+            Some(lower_tun_options(i))
+        } else {
+            None
         };
 
         ir.inbounds.push(crate::ir::InboundIR {
@@ -406,7 +544,7 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
                 .get("security")
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
-            tun: None,
+            tun,
             ssh_host_key_path: i
                 .get("ssh_host_key_path")
                 .and_then(|v| v.as_str())
@@ -1021,5 +1159,177 @@ mod tests {
         assert_eq!(ir_via_to_ir.inbounds[0].ty, ir_via_lower.inbounds[0].ty);
         assert_eq!(ir_via_to_ir.inbounds[0].port, ir_via_lower.inbounds[0].port);
         assert_eq!(ir_via_to_ir.inbounds[0].tag, ir_via_lower.inbounds[0].tag);
+    }
+
+    // ========================================================================
+    // post_fable_package02 (CAL-01): GUI/Go 1.12.14 flat TUN schema parity
+    // ========================================================================
+
+    /// GUI.for SingBox 1.19.0 default TUN inbound (generator.ts output),
+    /// verbatim including the "unset" defaults `interface_name: ""` and
+    /// `mtu: 0` and the deprecated `endpoint_independent_nat`.
+    fn gui_default_tun_inbound() -> Value {
+        json!({
+            "type": "tun",
+            "tag": "tun-in",
+            "interface_name": "",
+            "address": ["172.18.0.1/30", "fdfe:dcba:9876::1/126"],
+            "mtu": 0,
+            "auto_route": true,
+            "strict_route": true,
+            "endpoint_independent_nat": false,
+            "stack": "mixed"
+        })
+    }
+
+    #[test]
+    fn pf02_gui_default_tun_passes_strict_validation() {
+        let doc = json!({"inbounds": [gui_default_tun_inbound()]});
+        let issues = run_validate(&doc, false);
+        let errors: Vec<_> = issues.iter().filter(|i| i["kind"] == "error").collect();
+        assert!(
+            errors.is_empty(),
+            "GUI default TUN inbound must pass strict validation, got: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn pf02_gui_default_tun_lowers_into_ir() {
+        let mut inbound = gui_default_tun_inbound();
+        // Non-default route lists to also pin list preservation.
+        inbound["route_address"] = json!(["10.0.0.0/8"]);
+        inbound["route_exclude_address"] = json!(["192.168.0.0/16"]);
+        let doc = json!({"inbounds": [inbound]});
+        let ir = lower(&doc);
+        let tun = ir.inbounds[0].tun.as_ref().expect("tun options populated");
+
+        // Go omitempty normalization: "" / 0 mean unset.
+        assert_eq!(tun.interface_name, None, "empty interface_name = unset");
+        assert_eq!(tun.mtu, None, "mtu 0 = unset");
+        assert_eq!(tun.name, None, "no alias from unset interface_name");
+
+        assert_eq!(
+            tun.address.as_deref(),
+            Some(&["172.18.0.1/30".to_string(), "fdfe:dcba:9876::1/126".to_string()][..])
+        );
+        assert_eq!(tun.auto_route, Some(true));
+        assert_eq!(tun.strict_route, Some(true));
+        assert_eq!(tun.endpoint_independent_nat, Some(false));
+        assert_eq!(tun.stack.as_deref(), Some("mixed"));
+        assert_eq!(tun.route_address.as_deref(), Some(&["10.0.0.0/8".to_string()][..]));
+        assert_eq!(
+            tun.route_exclude_address.as_deref(),
+            Some(&["192.168.0.0/16".to_string()][..])
+        );
+    }
+
+    #[test]
+    fn pf02_tun_set_fields_lower_with_alias() {
+        let doc = json!({"inbounds": [{
+            "type": "tun",
+            "interface_name": "utun9",
+            "mtu": 1492,
+            "stack": "system"
+        }]});
+        let ir = lower(&doc);
+        let tun = ir.inbounds[0].tun.as_ref().expect("tun options populated");
+        assert_eq!(tun.interface_name.as_deref(), Some("utun9"));
+        // Compat alias for runtime TunInboundConfig.name consumers.
+        assert_eq!(tun.name.as_deref(), Some("utun9"));
+        assert_eq!(tun.mtu, Some(1492));
+        assert_eq!(tun.stack.as_deref(), Some("system"));
+    }
+
+    #[test]
+    fn pf02_tun_unknown_field_still_rejected() {
+        let mut inbound = gui_default_tun_inbound();
+        inbound["bogus_tun_field"] = json!(true);
+        let doc = json!({"inbounds": [inbound]});
+        let issues = run_validate(&doc, false);
+        assert!(
+            issues.iter().any(|i| i["ptr"] == "/inbounds/0/bogus_tun_field"
+                && i["code"] == "UnknownField"
+                && i["kind"] == "error"),
+            "strict unknown-field rejection must survive the TUN whitelist, got: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn pf02_tun_only_fields_rejected_on_non_tun() {
+        for key in super::TUN_ONLY_INBOUND_KEYS {
+            let mut inbound = json!({"type": "http", "listen": "0.0.0.0"});
+            inbound[*key] = json!(0); // value irrelevant; key gating is what matters
+            let doc = json!({"inbounds": [inbound]});
+            let issues = run_validate(&doc, false);
+            assert!(
+                issues.iter().any(|i| i["ptr"] == format!("/inbounds/0/{key}")
+                    && i["code"] == "UnknownField"
+                    && i["kind"] == "error"),
+                "TUN-only key `{key}` must be rejected on non-tun inbounds"
+            );
+        }
+    }
+
+    #[test]
+    fn pf02_flat_fields_override_nested_tun() {
+        let doc = json!({"inbounds": [{
+            "type": "tun",
+            "mtu": 1500,
+            "interface_name": "utun7",
+            "stack": "gvisor",
+            "tun": {
+                "mtu": 1400,
+                "name": "nested-name",
+                "stack": "system",
+                "dry_run": true
+            }
+        }]});
+        let ir = lower(&doc);
+        let tun = ir.inbounds[0].tun.as_ref().expect("tun options populated");
+        // Flat wins over nested equivalents.
+        assert_eq!(tun.mtu, Some(1500));
+        assert_eq!(tun.stack.as_deref(), Some("gvisor"));
+        assert_eq!(tun.interface_name.as_deref(), Some("utun7"));
+        // Nested explicit `name` is preserved (alias only fills a gap).
+        assert_eq!(tun.name.as_deref(), Some("nested-name"));
+        // Nested-only fields survive the overlay.
+        assert_eq!(tun.dry_run, Some(true));
+    }
+
+    #[test]
+    fn pf02_nested_tun_unknown_field_rejected() {
+        let doc = json!({"inbounds": [{
+            "type": "tun",
+            "tun": {"mtu": 1400, "bogus_nested": 1}
+        }]});
+        let issues = run_validate(&doc, false);
+        assert!(
+            issues.iter().any(|i| i["ptr"] == "/inbounds/0/tun"
+                && i["code"] == "UnknownField"
+                && i["kind"] == "error"),
+            "nested tun options must be as strict as flat ones, got: {issues:?}"
+        );
+    }
+
+    /// H-4: GUI.for SingBox emits Go 1.12.14 `ListenOptions` socket tuning
+    /// fields on every listen-type inbound — rejecting them blocks the same
+    /// GUI launch path as CAL-01. Accepted as schema-valid no-ops.
+    #[test]
+    fn pf02_gui_listen_block_fields_accepted_on_listen_inbounds() {
+        let doc = json!({"inbounds": [{
+            "type": "mixed",
+            "tag": "mixed-in",
+            "listen": "127.0.0.1",
+            "listen_port": 20808,
+            "tcp_fast_open": false,
+            "tcp_multi_path": false,
+            "udp_fragment": false
+        }]});
+        let issues = run_validate(&doc, false);
+        let errors: Vec<_> = issues.iter().filter(|i| i["kind"] == "error").collect();
+        assert!(
+            errors.is_empty(),
+            "GUI listen-block fields must pass strict validation, got: {errors:?}"
+        );
     }
 }
