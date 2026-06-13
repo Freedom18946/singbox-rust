@@ -32,7 +32,7 @@ reload/config switching does not silently break service.
 | post_fable_package01 | GUI contract | P0 | CAL-02, CAL-17 | DONE (`0a4cae74`) |
 | post_fable_package02 | Schema parity, TUN first | P0 | CAL-01, H-4 | DONE (`e3defcdf`) |
 | post_fable_package12 | DNS schema parity, GUI default | P0 | F-1 | DONE (`349eecf3`) |
-| post_fable_package03 | TUN dataplane | P1 | CAL-10, H-5 | PLANNED |
+| post_fable_package03 | TUN dataplane | P1 | CAL-10, H-5 | PARTIAL (`edf42095`; startup honesty fixed, macOS normal-user smoke permission-blocked) |
 | post_fable_package04 | WireGuard dataplane | P0/P1 | CAL-03, CAL-09 | PLANNED |
 | post_fable_package05 | Reload continuity and atomicity | P1 | CAL-04, CAL-05, CAL-07, CAL-12, CAL-14 | PLANNED |
 | post_fable_package06 | Inbound liveness and observability | P1/P2 | CAL-06, CAL-13, CAL-15, CAL-16 | PLANNED |
@@ -59,7 +59,9 @@ reload/config switching does not silently break service.
 6. `post_fable_package06_inbound_liveness_observability.md` after or together with
    package 05 if the ready/monitor channel is shared.
 7. `post_fable_package03_tun_dataplane.md` after package 02 and package12, because
-   the GUI TUN config and GUI default DNS config must first parse.
+   the GUI TUN config and GUI default DNS config must first parse. Package03 is
+   now PARTIAL: runtime wiring/loud failure are fixed, but privileged dataplane
+   traffic proof remains open.
 8. Packages 08-11 are lower-risk support work and can be scheduled around the P0/P1
    path.
 

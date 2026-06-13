@@ -10,21 +10,20 @@
 
 ---
 
-## Resume (2026-06-13) - POST-FABLE P0 wave
+## Resume (2026-06-13) - POST-FABLE wave
 
-- **package12 (DNS schema parity) DONE** (`349eecf3`): F-1 CLOSED. GUI default DNS
-  type-based fields (`domain_resolver`/`server_port`/`path`/`interface`, plus hosts
-  `path`) pass strict production load path; lowering maps `domain_resolver` to
-  `address_resolver` and canonicalizes port/path/interface into `DnsServerIR`.
-  sb-config 701 PASS; app GUI-DNS `run` + `run --check` PASS; package07 harness 14/14 PASS.
-  DNS schema parity only, NOT TUN dataplane-ready.
-- **package07 (GUI E2E probe) PARTIAL**: process-contract probe 14/14 PASS; interactive
-  Wails window E2E BLOCKED. F-2 default build needs `--features adapters`; F-3 HTTP
-  inbound is CONNECT-only. Detail: post_fable package07 probe note.
-- **package02 (TUN schema parity) DONE** (`e3defcdf`): GUI flat TUN parses/lowers; NOT
-  dataplane-ready. Diff: post_fable package02 TUN schema diff.
-- **package01 (GUI startup) DONE** (`0a4cae74`): `sing-box started`; keep 0.1.0
-  (CAL-17/H-3). Next: **package03 TUN dataplane**. Map: post_fable package README.
+- **package03 (TUN dataplane) PARTIAL** (`edf42095`): GUI `mixed`/default/`smoltcp`
+  now preopen Enhanced/smoltcp before readiness; `gvisor` compat-warns; `system` and
+  non-dry-run `manual` fail loudly; GUI `address`/routes map into runtime config.
+  macOS normal-user smoke reached real TUN startup and failed before `sing-box started`
+  with `Operation not permitted`; privileged traffic proof remains open.
+- **package12 (DNS schema parity) DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape
+  passes strict production load path. DNS schema only, not TUN dataplane.
+- **package07 (GUI E2E probe) PARTIAL**: process-contract probe PASS; interactive Wails
+  window E2E BLOCKED. F-2 default build needs `--features adapters`; F-3 HTTP inbound
+  is CONNECT-only.
+- **package02 DONE** (`e3defcdf`): GUI flat TUN parses/lowers, not dataplane-ready.
+- **package01 DONE** (`0a4cae74`): GUI startup keyword; keep 0.1.0 (CAL-17/H-3).
 
 ## Resume (2026-06-10)
 T3-2 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed.

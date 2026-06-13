@@ -3,7 +3,15 @@
 
 ## Status
 
-PLANNED.
+PARTIAL (2026-06-13, code commit `edf42095`).
+
+Runtime wiring and startup honesty are fixed for GUI-default-ish TUN configs:
+`mixed`/default/`smoltcp` enter Enhanced/smoltcp, `gvisor` enters the same backend
+with a compatibility warning, unsupported `system` and non-dry-run `manual` fail
+loudly, and TUN open/configure failure blocks startup before `sing-box started`.
+
+This is not DONE because the local macOS smoke was blocked by normal-user TUN
+permission (`Operation not permitted`) before dataplane traffic could be proven.
 
 ## Source Findings
 
@@ -61,4 +69,30 @@ remaining platform/runtime limits explicit and test-backed.
 
 ## Completion Notes
 
-Not started.
+Code commit `edf42095` implements:
+
+- stack policy for `mixed`, `gvisor`, `system`, `smoltcp`, `manual`, default, and
+  unknown values;
+- default real runtime (`dry_run: false`) with explicit `dry_run: true` reserved
+  for diagnostic manual/no-op;
+- runtime mapping for GUI `address`, `route_address`, and
+  `route_exclude_address`;
+- Enhanced/smoltcp startup preparation of TUN device plus platform hooks before
+  supervisor readiness;
+- fatal startup propagation through `Bridge.startup_errors` and
+  `Supervisor::start_with_registry`.
+
+Evidence: `post_fable_package03_tun_dataplane_evidence.md`.
+
+Verification snapshot:
+
+- `cargo test -p sb-adapters --lib tun --features "adapter-tun tun router"` PASS.
+- `cargo test -p sb-adapters --lib enhanced --features "adapter-tun tun router"` PASS.
+- `cargo test -p sb-config --lib pf02` PASS.
+- `cargo build -p app --bin app --features adapters,clash_api` PASS.
+- `cargo check --workspace --all-features` PASS.
+- package07 probe harness PASS after the TUN changes.
+
+Live smoke conclusion: normal-user macOS run with GUI-style `stack: "mixed"` TUN
+config exited before `sing-box started`; log showed
+`failed to prepare TUN runtime backend ... Operation not permitted (os error 1)`.
