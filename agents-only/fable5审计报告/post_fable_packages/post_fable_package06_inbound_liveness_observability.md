@@ -3,7 +3,8 @@
 
 ## Status
 
-PLANNED.
+DONE for package06 scope (`bbc00416`). CAL-12 remains a documented residual
+outside this observability package.
 
 ## Source Findings
 
@@ -67,4 +68,26 @@ operators can distinguish "running" from "degraded".
 
 ## Completion Notes
 
-Not started.
+- CAL-06 DONE: supervisor now owns `InboundRuntimeMonitor` handles in committed
+  `State`; startup, reload rollback, old-runtime teardown, and final shutdown
+  use bounded monitor drain. Abnormal exits classify as `unexpected_completion`,
+  `serve_error`, `panicked`, or `join_cancelled` and log stable inbound fields
+  (`component`, `tag`, `kind`, `phase`, `exit_kind`, `error`). Deliberate
+  `request_shutdown()` exits are clean and low-noise. No automatic restart was
+  added.
+- CAL-13 DONE: Clash API stays auxiliary/log-only, but a configured bind/create
+  failure now publishes a terminal `StartFailed` sidecar snapshot. The run-engine
+  sidecar event bridge emits structured breadcrumbs with `component="sidecar"`,
+  `sidecar="clash-api"`, `status`, `exit_kind`, `listen`, and `error`.
+- CAL-15 DONE: `V2RayApiServer::start()` retries same-port `AddrInUse` release
+  for up to 1s before consuming a generation or publishing `Running`; exhausted
+  retry still returns the existing start error and remains log-only to callers.
+- CAL-16 DONE: DNS resolver setup flows through `apply_dns_resolver_from_ir`;
+  resolver build failure remains non-fatal but logs `component="dns"`, `phase`,
+  and `error` in startup and reload paths.
+- CAL-12 residual PARTIAL/NO-REGRESSION: package05 atomic reload behavior is
+  preserved and failed reload keeps the old listener plus old inbound monitor.
+  This package does not add automatic inbound restart or redesign global graceful
+  drain semantics.
+
+Evidence: `post_fable_package06_liveness_observability_evidence.md`.

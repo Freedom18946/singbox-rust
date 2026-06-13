@@ -12,20 +12,18 @@
 
 ## Resume (2026-06-13) - POST-FABLE wave
 
-- **package05 (Reload continuity/atomicity) DONE** (`a9236205`): reload waits for
-  activation/readiness before commit; failed reload keeps old listeners/registries;
-  same-port in-process reload is a safe documented rejection.
-- **package04 (WireGuard dataplane) DONE** (`f70bf5ef`): endpoint tags enter outbound namespace;
-  app `adapters`/`parity` wire legacy `wireguard`; public WG peer proof remains out of scope.
-- **package03 (TUN dataplane) PARTIAL** (`edf42095`): GUI stacks map to real/loud runtime policy;
-  macOS normal-user smoke is permission-blocked before privileged traffic proof.
-- **package12 (DNS schema parity) DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape
-  passes strict production load path. DNS schema only, not TUN dataplane.
-- **package07 (GUI E2E probe) PARTIAL**: process-contract probe PASS; interactive Wails
-  window E2E BLOCKED. F-2 default build needs `--features adapters`; F-3 HTTP inbound
-  is CONNECT-only.
-- **package02 DONE** (`e3defcdf`): GUI flat TUN parses/lowers, not dataplane-ready.
-- **package01 DONE** (`0a4cae74`): GUI startup keyword; keep 0.1.0 (CAL-17/H-3).
+- **package06 (Inbound liveness/observability) DONE** (`bbc00416`): inbound monitors
+  classify exits; Clash `StartFailed` sidecar snapshots; DNS warning helper; V2Ray same-port retry.
+- **package05 DONE** (`a9236205`): reload waits for activation/readiness before commit;
+  failed reload keeps old listeners/registries; same-port in-process reload is rejected.
+- **package04 DONE** (`f70bf5ef`): endpoint tags enter outbound namespace; app
+  `adapters`/`parity` wire legacy `wireguard`; public WG peer proof remains out of scope.
+- **package03 PARTIAL** (`edf42095`): GUI stacks map to real/loud runtime policy; macOS
+  normal-user smoke is permission-blocked before privileged traffic proof.
+- **package12 DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape passes strict load path.
+- **package07 PARTIAL**: process-contract probe PASS; interactive Wails window E2E BLOCKED.
+  F-2 default build needs `--features adapters`; F-3 HTTP inbound is CONNECT-only.
+- **package01/package02 DONE**: startup keyword (`0a4cae74`); GUI flat TUN parses/lowers (`e3defcdf`).
 
 ## Resume (2026-06-10)
 T3-2 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed.
