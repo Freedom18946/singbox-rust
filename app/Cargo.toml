@@ -130,6 +130,7 @@ dns_doh3 = ["sb-core/dns_doh3"]
 dns_resolved = ["sb-core/dns_resolved"]
 dns_tailscale = ["sb-core/dns_tailscale"]
 adapter-wireguard-endpoint = ["sb-adapters/adapter-wireguard-endpoint"]
+adapter-wireguard-outbound = ["sb-adapters/adapter-wireguard-outbound"]
 vless_mux_ready = []
 tun2socks-stub = ["sb-adapters/tun2socks-stub"]
 tun2socks-real = ["sb-adapters/tun2socks-real"]
@@ -160,6 +161,7 @@ adapters = [
     "sb-adapters/adapter-ssh",
     "sb-adapters/adapter-wireguard",
     "adapter-wireguard-endpoint",
+    "adapter-wireguard-outbound",
     "sb-adapters/adapter-tun",
     "sb-adapters/tun",
     "sb-adapters/mixed",

@@ -623,20 +623,31 @@ impl std::fmt::Debug for EndpointAsOutbound {
 #[async_trait::async_trait]
 impl crate::adapter::OutboundConnector for EndpointAsOutbound {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        // Use dial_context to establish connection through the endpoint
-        let dest = Socksaddr::from_fqdn(host, port);
-        let _stream = self.endpoint.dial_context(Network::Tcp, dest).await?;
-
-        // Extract underlying TcpStream if possible, otherwise return error
-        // For now, we return an error since IoStream is not directly a TcpStream
-        // Endpoints need to be refactored to return TcpStream directly or use a different API
+        let _ = (host, port);
         Err(std::io::Error::new(
             std::io::ErrorKind::Unsupported,
             format!(
-                "endpoint {} dial_context returns IoStream, use dial_context directly",
+                "endpoint {} returns a generic IO stream; use connect_io()",
                 self.tag
             ),
         ))
+    }
+
+    #[cfg(feature = "v2ray_transport")]
+    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
+        let destination = match host.parse::<IpAddr>() {
+            Ok(ip) => Socksaddr::from_socket_addr(SocketAddr::new(ip, port)),
+            Err(_) => Socksaddr::from_fqdn(host, port),
+        };
+        self.endpoint
+            .dial_context(Network::Tcp, destination)
+            .await
+            .map_err(|error| {
+                std::io::Error::new(
+                    error.kind(),
+                    format!("endpoint {} dial_context failed: {}", self.tag, error),
+                )
+            })
     }
 }
 
@@ -658,6 +669,7 @@ fn stage_rank(stage: StartStage) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adapter::OutboundConnector;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
@@ -763,5 +775,134 @@ mod tests {
 
         mgr.shutdown().unwrap();
         assert_eq!(ep.closes.load(Ordering::SeqCst), 1);
+    }
+
+    #[derive(Clone, Debug)]
+    struct RecordedDial {
+        network: Network,
+        destination: Socksaddr,
+    }
+
+    #[derive(Debug)]
+    struct RecordingEndpoint {
+        tag: String,
+        calls: Arc<parking_lot::Mutex<Vec<RecordedDial>>>,
+    }
+
+    impl RecordingEndpoint {
+        fn new(tag: &str) -> (Self, Arc<parking_lot::Mutex<Vec<RecordedDial>>>) {
+            let calls = Arc::new(parking_lot::Mutex::new(Vec::new()));
+            (
+                Self {
+                    tag: tag.to_string(),
+                    calls: calls.clone(),
+                },
+                calls,
+            )
+        }
+    }
+
+    impl Endpoint for RecordingEndpoint {
+        fn endpoint_type(&self) -> &str {
+            "recording"
+        }
+
+        fn tag(&self) -> &str {
+            &self.tag
+        }
+
+        fn start(
+            &self,
+            _stage: StartStage,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            Ok(())
+        }
+
+        fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            Ok(())
+        }
+
+        fn dial_context(
+            &self,
+            network: Network,
+            destination: Socksaddr,
+        ) -> std::pin::Pin<
+            Box<dyn std::future::Future<Output = io::Result<EndpointStream>> + Send + '_>,
+        > {
+            let calls = self.calls.clone();
+            Box::pin(async move {
+                calls.lock().push(RecordedDial {
+                    network,
+                    destination,
+                });
+                let (stream, _peer) = tokio::io::duplex(64);
+                let stream: EndpointStream = Box::new(stream);
+                Ok(stream)
+            })
+        }
+    }
+
+    #[tokio::test]
+    async fn endpoint_as_outbound_connect_remains_explicitly_unsupported() {
+        let (endpoint, calls) = RecordingEndpoint::new("wg-ep");
+        let connector = EndpointAsOutbound::new("wg-ep".to_string(), Arc::new(endpoint));
+
+        let err = connector
+            .connect("198.51.100.10", 443)
+            .await
+            .expect_err("generic endpoint connector must not pretend to return TcpStream");
+
+        assert_eq!(err.kind(), io::ErrorKind::Unsupported);
+        assert!(
+            err.to_string().contains("use connect_io()"),
+            "error should point callers at the stream-capable API: {err}"
+        );
+        assert!(
+            calls.lock().is_empty(),
+            "connect() must not call dial_context and discard its IoStream"
+        );
+    }
+
+    #[cfg(feature = "v2ray_transport")]
+    #[tokio::test]
+    async fn endpoint_as_outbound_connect_io_delegates_ip_to_dial_context() {
+        let (endpoint, calls) = RecordingEndpoint::new("wg-ep");
+        let connector = EndpointAsOutbound::new("wg-ep".to_string(), Arc::new(endpoint));
+
+        let _stream = connector
+            .connect_io("198.51.100.10", 443)
+            .await
+            .expect("connect_io should expose endpoint dial_context streams");
+
+        let calls = calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].network, Network::Tcp);
+        assert_eq!(calls[0].destination.port, 443);
+        assert_eq!(
+            calls[0]
+                .destination
+                .addr()
+                .map(|ip| ip.to_string())
+                .as_deref(),
+            Some("198.51.100.10")
+        );
+    }
+
+    #[cfg(feature = "v2ray_transport")]
+    #[tokio::test]
+    async fn endpoint_as_outbound_connect_io_delegates_domain_to_dial_context() {
+        let (endpoint, calls) = RecordingEndpoint::new("wg-ep");
+        let connector = EndpointAsOutbound::new("wg-ep".to_string(), Arc::new(endpoint));
+
+        let _stream = connector
+            .connect_io("example.test", 8443)
+            .await
+            .expect("connect_io should pass domains through as FQDN destinations");
+
+        let calls = calls.lock();
+        assert_eq!(calls.len(), 1);
+        assert_eq!(calls[0].network, Network::Tcp);
+        assert_eq!(calls[0].destination.port, 8443);
+        assert_eq!(calls[0].destination.fqdn(), Some("example.test"));
     }
 }

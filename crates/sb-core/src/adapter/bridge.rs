@@ -11,7 +11,7 @@ use crate::adapter::{
     UdpOutboundFactory,
 };
 use crate::context::Context;
-use crate::endpoint::{endpoint_registry, EndpointContext};
+use crate::endpoint::{endpoint_registry, Endpoint, EndpointAsOutbound, EndpointContext};
 #[allow(unused_imports)]
 use crate::outbound::selector::Selector;
 #[allow(unused_imports)]
@@ -27,12 +27,69 @@ use std::sync::Arc;
 #[allow(unused_imports)]
 use std::time::Instant;
 
-fn outbound_registry_handle_from_bridge(br: &Bridge) -> Arc<OutboundRegistryHandle> {
+fn outbound_registry_from_bridge(br: &Bridge) -> OutboundRegistry {
     let mut reg = OutboundRegistry::default();
     for (name, _kind, conn) in &br.outbounds {
         reg.insert(name.clone(), OutboundImpl::Connector(conn.clone()));
     }
-    Arc::new(OutboundRegistryHandle::new(reg))
+    reg
+}
+
+fn outbound_registry_handle_from_bridge(br: &Bridge) -> Arc<OutboundRegistryHandle> {
+    Arc::new(OutboundRegistryHandle::new(outbound_registry_from_bridge(
+        br,
+    )))
+}
+
+fn refresh_outbound_registry_handle(handle: &OutboundRegistryHandle, br: &Bridge) {
+    handle.replace(outbound_registry_from_bridge(br));
+}
+
+fn add_endpoint_with_outbound(br: &mut Bridge, endpoint: Arc<dyn Endpoint>) {
+    let tag = endpoint.tag().to_string();
+    if tag.trim().is_empty() {
+        br.startup_errors.push(format!(
+            "{} endpoint has an empty tag and cannot be exposed as an outbound",
+            endpoint.endpoint_type()
+        ));
+        tracing::error!(
+            target: "sb_core::adapter",
+            endpoint_type = %endpoint.endpoint_type(),
+            "endpoint tag is empty; refusing endpoint-as-outbound registration"
+        );
+        return;
+    }
+
+    if br.endpoints.iter().any(|existing| existing.tag() == tag) {
+        br.startup_errors
+            .push(format!("duplicate endpoint tag '{tag}'"));
+        tracing::error!(
+            target: "sb_core::adapter",
+            endpoint = %tag,
+            endpoint_type = %endpoint.endpoint_type(),
+            "duplicate endpoint tag; refusing endpoint registration"
+        );
+        return;
+    }
+
+    if br.outbounds.iter().any(|(name, _, _)| name == &tag) {
+        br.startup_errors.push(format!(
+            "endpoint tag '{tag}' conflicts with an outbound tag"
+        ));
+        tracing::error!(
+            target: "sb_core::adapter",
+            endpoint = %tag,
+            endpoint_type = %endpoint.endpoint_type(),
+            "endpoint tag conflicts with existing outbound tag; refusing endpoint-as-outbound registration"
+        );
+        return;
+    }
+
+    let kind = format!("endpoint/{}", endpoint.endpoint_type());
+    let connector: Arc<dyn OutboundConnector> =
+        Arc::new(EndpointAsOutbound::new(tag.clone(), endpoint.clone()));
+    br.add_outbound(tag, kind, connector);
+    br.add_endpoint(endpoint);
 }
 
 fn install_runtime_inbound_handle(br: &Bridge) {
@@ -849,7 +906,7 @@ pub fn build_bridge(
             if let Some(handler) = endpoint_handler.as_ref() {
                 endpoint.set_connection_handler(handler.clone());
             }
-            br.add_endpoint(endpoint);
+            add_endpoint_with_outbound(&mut br, endpoint);
         } else {
             tracing::warn!(
                 target: "sb_core::adapter",
@@ -858,6 +915,8 @@ pub fn build_bridge(
             );
         }
     }
+    refresh_outbound_registry_handle(&outbound_handle, &br);
+    registry::install_runtime_outbounds(outbound_handle.clone());
 
     let endpoints_map: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>> =
         Arc::new(
@@ -960,7 +1019,7 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
     for endpoint_ir in &cfg.endpoints {
         let ctx = EndpointContext::default();
         if let Some(endpoint) = endpoint_registry().build(endpoint_ir, &ctx) {
-            br.add_endpoint(endpoint);
+            add_endpoint_with_outbound(&mut br, endpoint);
         } else {
             tracing::warn!(
                 target: "sb_core::adapter",
@@ -969,6 +1028,8 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
             );
         }
     }
+    refresh_outbound_registry_handle(&outbound_handle, &br);
+    registry::install_runtime_outbounds(outbound_handle.clone());
 
     let endpoints_map: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>> =
         Arc::new(
@@ -1000,12 +1061,140 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
 #[cfg(test)]
 mod tests {
     use super::{
+        add_endpoint_with_outbound, outbound_registry_handle_from_bridge,
         parse_optional_inbound_duration, parse_optional_outbound_duration,
         parse_optional_outbound_ipv4_addr, parse_optional_outbound_ipv6_addr, to_inbound_param,
         to_outbound_param,
     };
+    use crate::adapter::OutboundConnector;
+    use crate::endpoint::{Endpoint, StartStage};
     use sb_config::ir::{InboundIR, InboundType, OutboundIR, OutboundType};
     use std::sync::Arc;
+    use tokio::net::TcpStream;
+
+    #[derive(Debug)]
+    struct DummyConnector;
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for DummyConnector {
+        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<TcpStream> {
+            Err(std::io::Error::new(
+                std::io::ErrorKind::Unsupported,
+                "dummy connector",
+            ))
+        }
+    }
+
+    #[derive(Debug)]
+    struct DummyEndpoint {
+        tag: String,
+        endpoint_type: &'static str,
+    }
+
+    impl DummyEndpoint {
+        fn new(tag: &str) -> Arc<Self> {
+            Arc::new(Self {
+                tag: tag.to_string(),
+                endpoint_type: "wireguard",
+            })
+        }
+    }
+
+    impl Endpoint for DummyEndpoint {
+        fn endpoint_type(&self) -> &str {
+            self.endpoint_type
+        }
+
+        fn tag(&self) -> &str {
+            &self.tag
+        }
+
+        fn start(
+            &self,
+            _stage: StartStage,
+        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            Ok(())
+        }
+
+        fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn endpoint_registration_exposes_endpoint_tag_as_outbound() {
+        let mut bridge = crate::adapter::Bridge::new(crate::context::Context::default());
+        add_endpoint_with_outbound(&mut bridge, DummyEndpoint::new("wg-ep"));
+
+        assert_eq!(bridge.endpoints.len(), 1);
+        assert!(
+            bridge
+                .outbounds
+                .iter()
+                .any(|(tag, kind, _)| tag == "wg-ep" && kind == "endpoint/wireguard"),
+            "endpoint tag should enter outbound namespace"
+        );
+        assert!(bridge.startup_errors.is_empty());
+
+        let handle = outbound_registry_handle_from_bridge(&bridge);
+        assert!(
+            handle.resolve("wg-ep").is_some(),
+            "refreshed registry handles should be able to see endpoint outbounds"
+        );
+
+        assert!(
+            bridge.outbounds.iter().any(|(tag, _, _)| tag == "wg-ep"),
+            "route.final endpoint tag should be present for supervisor default resolution"
+        );
+    }
+
+    #[test]
+    fn endpoint_registration_rejects_outbound_tag_conflict() {
+        let mut bridge = crate::adapter::Bridge::new(crate::context::Context::default());
+        bridge.add_outbound(
+            "wg-ep".to_string(),
+            "direct".to_string(),
+            Arc::new(DummyConnector),
+        );
+
+        add_endpoint_with_outbound(&mut bridge, DummyEndpoint::new("wg-ep"));
+
+        assert!(bridge.endpoints.is_empty());
+        assert_eq!(bridge.outbounds.len(), 1);
+        assert!(
+            bridge
+                .startup_errors
+                .iter()
+                .any(|error| error.contains("endpoint tag 'wg-ep' conflicts with an outbound tag")),
+            "conflicts must be fatal and diagnostic: {:?}",
+            bridge.startup_errors
+        );
+    }
+
+    #[test]
+    fn endpoint_registration_rejects_duplicate_endpoint_tag() {
+        let mut bridge = crate::adapter::Bridge::new(crate::context::Context::default());
+        add_endpoint_with_outbound(&mut bridge, DummyEndpoint::new("wg-ep"));
+        add_endpoint_with_outbound(&mut bridge, DummyEndpoint::new("wg-ep"));
+
+        assert_eq!(bridge.endpoints.len(), 1);
+        assert_eq!(
+            bridge
+                .outbounds
+                .iter()
+                .filter(|(tag, _, _)| tag == "wg-ep")
+                .count(),
+            1
+        );
+        assert!(
+            bridge
+                .startup_errors
+                .iter()
+                .any(|error| error.contains("duplicate endpoint tag 'wg-ep'")),
+            "second endpoint tag should be rejected before overwriting endpoint namespace: {:?}",
+            bridge.startup_errors
+        );
+    }
 
     #[test]
     fn invalid_inbound_duration_is_rejected_explicitly() {

@@ -5,6 +5,7 @@ use super::{
 use ipnet::IpNet;
 use sb_config::ir::{EndpointIR, EndpointType, WireGuardPeerIR};
 use sb_transport::wireguard::{WireGuardConfig, WireGuardTransport};
+use std::future::Future;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
@@ -50,6 +51,32 @@ struct PeerConfig {
 struct PeerTransport {
     allowed_ips: Vec<IpNet>,
     transport: Arc<WireGuardTransport>,
+}
+
+fn block_on_wireguard_task<T, F>(future: F) -> Result<T, String>
+where
+    T: Send + 'static,
+    F: Future<Output = Result<T, String>> + Send + 'static,
+{
+    fn run<T, F>(future: F) -> Result<T, String>
+    where
+        T: Send + 'static,
+        F: Future<Output = Result<T, String>> + Send + 'static,
+    {
+        let runtime = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(|error| format!("wireguard endpoint runtime init failed: {error}"))?;
+        runtime.block_on(future)
+    }
+
+    if Handle::try_current().is_ok() {
+        std::thread::spawn(move || run(future))
+            .join()
+            .map_err(|_| "wireguard endpoint runtime worker panicked".to_string())?
+    } else {
+        run(future)
+    }
 }
 
 fn parse_peer_endpoint(peer: &WireGuardPeerIR) -> Result<PeerEndpoint, String> {
@@ -191,9 +218,6 @@ impl WireGuardEndpoint {
         &self,
         resolve: bool,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        let handle = Handle::try_current()
-            .map_err(|e| format!("WireGuard endpoint requires Tokio runtime: {e}"))?;
-
         if !self.transports.lock().is_empty() {
             return Ok(());
         }
@@ -222,11 +246,18 @@ impl WireGuardEndpoint {
                 let endpoint = match &peer.endpoint {
                     PeerEndpoint::Socket(addr) => *addr,
                     PeerEndpoint::Domain { host, port } => {
-                        let resolver = resolver.as_ref().ok_or_else(|| {
+                        let resolver = resolver.clone().ok_or_else(|| {
                             format!("wireguard endpoint '{}' requires DNS resolver", self.tag)
                         })?;
-                        let answer = handle.block_on(resolver.resolve(host)).map_err(|e| {
-                            format!("wireguard endpoint '{}' resolve {host}: {e}", self.tag)
+                        let tag = self.tag.clone();
+                        let host = host.clone();
+                        let host_for_resolve = host.clone();
+                        let answer = block_on_wireguard_task(async move {
+                            resolver.resolve(&host_for_resolve).await.map_err(|e| {
+                                format!(
+                                    "wireguard endpoint '{tag}' resolve {host_for_resolve}: {e}"
+                                )
+                            })
                         })?;
                         let ip = answer.ips.first().copied().ok_or_else(|| {
                             format!(
@@ -240,7 +271,7 @@ impl WireGuardEndpoint {
                     }
                 };
 
-                let transport = handle.block_on(WireGuardTransport::new(WireGuardConfig {
+                let config = WireGuardConfig {
                     private_key: self.private_key.clone(),
                     peer_public_key: peer.peer_public_key.clone(),
                     pre_shared_key: peer.pre_shared_key.clone(),
@@ -249,7 +280,12 @@ impl WireGuardEndpoint {
                     persistent_keepalive: peer.persistent_keepalive,
                     mtu: self.mtu,
                     connect_timeout: Duration::from_secs(10),
-                }))?;
+                };
+                let transport = block_on_wireguard_task(async move {
+                    WireGuardTransport::new(config)
+                        .await
+                        .map_err(|error| error.to_string())
+                })?;
 
                 transports.push(PeerTransport {
                     allowed_ips: peer.allowed_ips.clone(),

@@ -3260,6 +3260,41 @@ mod tests {
     }
 
     #[test]
+    #[cfg(feature = "adapter-wireguard-outbound")]
+    fn build_wireguard_outbound_feature_registers_real_builder() {
+        let ir = OutboundIR {
+            ty: OutboundType::Wireguard,
+            name: Some("wg-out".to_string()),
+            server: Some("198.51.100.1".to_string()),
+            port: Some(51820),
+            wireguard_private_key: Some("YAnz5TF+lXXJte14tji3zlbzbm+JFHYa74LLQDzOjG0=".to_string()),
+            wireguard_peer_public_key: Some(
+                "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=".to_string(),
+            ),
+            ..Default::default()
+        };
+        let param = OutboundParam {
+            kind: "wireguard".into(),
+            name: Some("wg-out".into()),
+            server: None,
+            port: None,
+            ..Default::default()
+        };
+        let context = sb_core::context::Context::new();
+        let bridge = std::sync::Arc::new(sb_core::adapter::Bridge::new(context));
+        let ctx = sb_core::registry::AdapterOutboundContext {
+            context: sb_core::context::ContextRegistry::from(&bridge.context),
+            bridge,
+        };
+
+        let built = build_wireguard_outbound(&param, &ir, &ctx);
+        assert!(
+            built.is_some(),
+            "adapter-wireguard-outbound feature must expose the real WireGuard outbound builder"
+        );
+    }
+
+    #[test]
     #[cfg(feature = "adapter-hysteria2")]
     fn test_hysteria2_inbound_fields() {
         use sb_config::ir::{Hysteria2UserIR, InboundIR, InboundType};
