@@ -190,6 +190,11 @@ pub struct ClashShutdownHandle {
 
 #[cfg(all(feature = "router", feature = "clash_api"))]
 impl ClashShutdownHandle {
+    /// Subscribe to this Clash generation's runtime snapshot.
+    pub(crate) fn subscribe_runtime_state(&self) -> watch::Receiver<SidecarRuntimeSnapshot> {
+        self.runtime.subscribe()
+    }
+
     /// Synchronous-publish then async-drain: mark + publish `ShutdownRequested` (in the watch lock),
     /// send the shutdown signal outside any lock, then await the outer monitor's terminal commit.
     /// Idempotent — a repeated call is a safe no-op (sender/join already taken).
