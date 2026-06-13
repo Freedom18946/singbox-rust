@@ -149,8 +149,6 @@ where
 
 #[tokio::test]
 async fn proxy_provider_http_update_replaces_runtime_outbounds() -> anyhow::Result<()> {
-    std::env::set_var("SB_INBOUND_RELOAD_GRACE_MS", "0");
-
     let Some(mock) = MockProviderServer::start(
         r#"[
           {"ty":"direct","name":"provider-a"}
@@ -224,8 +222,6 @@ async fn proxy_provider_http_update_replaces_runtime_outbounds() -> anyhow::Resu
 
 #[tokio::test]
 async fn rule_provider_http_update_replaces_runtime_rules() -> anyhow::Result<()> {
-    std::env::set_var("SB_INBOUND_RELOAD_GRACE_MS", "0");
-
     let Some(mock) = MockProviderServer::start("DOMAIN,alpha.example").await? else {
         return Ok(());
     };

@@ -270,13 +270,21 @@ fn macos_clear_http_proxy(services: &[String], _port: u16) {
 pub async fn serve_http(
     cfg: HttpProxyConfig,
     mut stop_rx: mpsc::Receiver<()>,
-    ready_tx: Option<oneshot::Sender<()>>,
+    ready_tx: Option<oneshot::Sender<std::io::Result<()>>>,
 ) -> Result<()> {
-    let listener = TcpListener::bind(cfg.listen).await?;
+    let listener = match TcpListener::bind(cfg.listen).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(std::io::Error::new(error.kind(), error.to_string())));
+            }
+            return Err(error.into());
+        }
+    };
     let actual = listener.local_addr().unwrap_or(cfg.listen);
     info!(addr=?cfg.listen, actual=?actual, "HTTP CONNECT bound");
     if let Some(tx) = ready_tx {
-        let _ = tx.send(());
+        let _ = tx.send(Ok(()));
     }
 
     #[cfg(target_os = "macos")]
@@ -1123,6 +1131,79 @@ fn sticky_env_usize(name: &str, default: usize) -> usize {
             );
             default
         }
+    }
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+    use std::io::ErrorKind;
+    use std::net::TcpListener as StdTcpListener;
+    use tokio::time::timeout;
+
+    fn test_cfg(listen: SocketAddr) -> HttpProxyConfig {
+        HttpProxyConfig {
+            tag: Some("http-ready-test".to_string()),
+            listen,
+            router: Arc::new(router::RouterHandle::from_env()),
+            outbounds: Arc::new(OutboundRegistryHandle::default()),
+            tls: None,
+            users: None,
+            set_system_proxy: false,
+            allow_private_network: true,
+            stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
+            active_connections: Arc::new(AtomicU64::new(0)),
+            sniff: false,
+            sniff_override_destination: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_success_after_bind() {
+        let (stop_tx, stop_rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = oneshot::channel();
+
+        let task = tokio::spawn(serve_http(
+            test_cfg("127.0.0.1:0".parse().unwrap()),
+            stop_rx,
+            Some(ready_tx),
+        ));
+
+        timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("http ready timed out")
+            .expect("http ready sender dropped")
+            .expect("http bind failed");
+        let _ = stop_tx.send(()).await;
+        task.await
+            .expect("http task panicked")
+            .expect("http stopped");
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_bind_failure_on_occupied_port() {
+        let holder = StdTcpListener::bind("127.0.0.1:0").expect("hold http port");
+        let addr = holder.local_addr().expect("held http address");
+        let (_stop_tx, stop_rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = oneshot::channel();
+
+        let err = serve_http(test_cfg(addr), stop_rx, Some(ready_tx))
+            .await
+            .expect_err("occupied http port must fail");
+        let ready_err = timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("http ready failure timed out")
+            .expect("http ready sender dropped")
+            .expect_err("http ready must report bind failure");
+
+        assert_eq!(ready_err.kind(), ErrorKind::AddrInUse);
+        assert_eq!(
+            err.downcast_ref::<std::io::Error>()
+                .map(std::io::Error::kind),
+            Some(ErrorKind::AddrInUse)
+        );
+        drop(holder);
     }
 }
 

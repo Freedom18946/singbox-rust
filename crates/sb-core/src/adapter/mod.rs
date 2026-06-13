@@ -20,6 +20,7 @@ use crate::router::RouterHandle;
 use crate::service::{service_registry, Service, ServiceContext};
 use sb_config::ir::{Credentials, MultiplexOptionsIR};
 use std::collections::HashMap;
+use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 
@@ -28,6 +29,8 @@ pub mod bridge;
 pub mod clash;
 pub mod handler;
 pub mod registry;
+
+pub type InboundReadySender = tokio::sync::oneshot::Sender<io::Result<()>>;
 
 /// Helper to parse socket address from listen and port
 #[allow(dead_code)]
@@ -73,6 +76,16 @@ pub trait InboundService: Send + Sync + std::fmt::Debug + 'static {
     /// Blocking entry point to run the service (spawns internal workers).
     /// 运行服务的阻塞入口点（生成内部工作线程）。
     fn serve(&self) -> std::io::Result<()>;
+
+    /// Whether this inbound can report bind/startup readiness.
+    fn supports_startup_readiness(&self) -> bool {
+        false
+    }
+
+    /// Blocking entry point with an optional readiness channel.
+    fn serve_with_ready(&self, _ready: Option<InboundReadySender>) -> std::io::Result<()> {
+        self.serve()
+    }
 
     /// Request a graceful shutdown if supported by the implementation.
     /// Default implementation is a no-op for servers that don't support it.

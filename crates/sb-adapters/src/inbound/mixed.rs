@@ -53,14 +53,22 @@ pub struct MixedInboundConfig {
 pub async fn serve_mixed(
     cfg: MixedInboundConfig,
     mut stop_rx: mpsc::Receiver<()>,
-    ready_tx: Option<oneshot::Sender<()>>,
+    ready_tx: Option<oneshot::Sender<io::Result<()>>>,
 ) -> io::Result<()> {
-    let listener = TcpListener::bind(cfg.listen).await?;
+    let listener = match TcpListener::bind(cfg.listen).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(io::Error::new(error.kind(), error.to_string())));
+            }
+            return Err(error);
+        }
+    };
     let actual = listener.local_addr().unwrap_or(cfg.listen);
     info!(addr=?cfg.listen, actual=?actual, "Mixed (HTTP+SOCKS5) inbound bound");
 
     if let Some(tx) = ready_tx {
-        let _ = tx.send(());
+        let _ = tx.send(Ok(()));
     }
 
     // Set system proxy if configured
@@ -422,6 +430,73 @@ impl<S: AsyncWrite + Unpin> AsyncWrite for PeekedStream<S> {
 
 #[cfg(test)]
 mod tests {
+    use super::*;
+    use std::io::ErrorKind;
+    use std::net::TcpListener as StdTcpListener;
+    use tokio::time::timeout;
+
+    fn test_cfg(listen: SocketAddr) -> MixedInboundConfig {
+        MixedInboundConfig {
+            tag: Some("mixed-ready-test".to_string()),
+            listen,
+            router: Arc::new(RouterHandle::from_env()),
+            outbounds: Arc::new(OutboundRegistryHandle::default()),
+            read_timeout: Some(Duration::from_secs(1)),
+            tls: None,
+            users: None,
+            set_system_proxy: false,
+            allow_private_network: true,
+            udp_timeout: None,
+            domain_strategy: None,
+            stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
+            sniff: false,
+            sniff_override_destination: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_success_after_bind() {
+        let (stop_tx, stop_rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = oneshot::channel();
+
+        let task = tokio::spawn(serve_mixed(
+            test_cfg("127.0.0.1:0".parse().unwrap()),
+            stop_rx,
+            Some(ready_tx),
+        ));
+
+        timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("mixed ready timed out")
+            .expect("mixed ready sender dropped")
+            .expect("mixed bind failed");
+        let _ = stop_tx.send(()).await;
+        task.await
+            .expect("mixed task panicked")
+            .expect("mixed stopped");
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_bind_failure_on_occupied_port() {
+        let holder = StdTcpListener::bind("127.0.0.1:0").expect("hold mixed port");
+        let addr = holder.local_addr().expect("held mixed address");
+        let (_stop_tx, stop_rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = oneshot::channel();
+
+        let err = serve_mixed(test_cfg(addr), stop_rx, Some(ready_tx))
+            .await
+            .expect_err("occupied mixed port must fail");
+        let ready_err = timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("mixed ready failure timed out")
+            .expect("mixed ready sender dropped")
+            .expect_err("mixed ready must report bind failure");
+
+        assert_eq!(ready_err.kind(), ErrorKind::AddrInUse);
+        assert_eq!(err.kind(), ErrorKind::AddrInUse);
+        drop(holder);
+    }
 
     #[test]
     fn test_protocol_detection_socks5() {

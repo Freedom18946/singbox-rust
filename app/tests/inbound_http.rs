@@ -71,7 +71,10 @@ async fn start_http_inbound(
     tokio::spawn(async move {
         let _ = serve_http(cfg, stop_rx, Some(ready_tx)).await;
     });
-    ready_rx.await.expect("http inbound ready signal");
+    ready_rx
+        .await
+        .expect("http inbound ready signal")
+        .expect("http inbound bind failed");
     stop_tx
 }
 

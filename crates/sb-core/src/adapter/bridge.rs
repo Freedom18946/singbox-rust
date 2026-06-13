@@ -103,6 +103,11 @@ fn install_runtime_inbound_handle(br: &Bridge) {
     registry::install_runtime_inbounds(Arc::new(registry::InboundRegistryHandle::new(tagged)));
 }
 
+pub fn publish_runtime_registries(br: &Bridge) {
+    registry::install_runtime_outbounds(outbound_registry_handle_from_bridge(br));
+    install_runtime_inbound_handle(br);
+}
+
 #[cfg(feature = "router")]
 fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
     // Use direct IR builder to support complex/logical rules (P1 parity)
@@ -822,7 +827,6 @@ pub fn build_bridge(
     // Extract dependency graph from IR (L2.9)
     br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
     let outbound_handle = outbound_registry_handle_from_bridge(&br);
-    registry::install_runtime_outbounds(outbound_handle.clone());
     #[cfg(feature = "router")]
     let router_handle = router_handle_from_ir(cfg);
 
@@ -896,7 +900,6 @@ pub fn build_bridge(
             );
         }
     }
-    install_runtime_inbound_handle(&br);
 
     // Step 4: Endpoints
     for endpoint_ir in &cfg.endpoints {
@@ -916,7 +919,6 @@ pub fn build_bridge(
         }
     }
     refresh_outbound_registry_handle(&outbound_handle, &br);
-    registry::install_runtime_outbounds(outbound_handle.clone());
 
     let endpoints_map: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>> =
         Arc::new(
@@ -971,7 +973,6 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
     // Extract dependency graph from IR (L2.9)
     br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
     let outbound_handle = outbound_registry_handle_from_bridge(&br);
-    registry::install_runtime_outbounds(outbound_handle.clone());
 
     // Step 3: Inbounds (without engine)
     for ib in &cfg.inbounds {
@@ -1013,7 +1014,6 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
             );
         }
     }
-    install_runtime_inbound_handle(&br);
 
     // Step 4: Endpoints
     for endpoint_ir in &cfg.endpoints {
@@ -1029,7 +1029,6 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
         }
     }
     refresh_outbound_registry_handle(&outbound_handle, &br);
-    registry::install_runtime_outbounds(outbound_handle.clone());
 
     let endpoints_map: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>> =
         Arc::new(

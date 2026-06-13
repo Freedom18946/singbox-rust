@@ -115,7 +115,7 @@ async fn start_mixed_server() -> std::io::Result<(SocketAddr, tokio::sync::mpsc:
 
     ready_rx
         .await
-        .map_err(|_| std::io::Error::other("mixed ready failed"))?;
+        .map_err(|_| std::io::Error::other("mixed ready failed"))??;
     tokio::time::sleep(Duration::from_millis(100)).await;
 
     Ok((mixed_addr, stop_tx))
@@ -326,7 +326,10 @@ async fn test_socks5_to_direct_chain() {
     });
 
     // Wait for server to be ready
-    ready_rx.await.expect("SOCKS5 server failed to start");
+    ready_rx
+        .await
+        .expect("SOCKS5 server failed to start")
+        .expect("SOCKS5 bind failed");
 
     // Connect via SOCKS5 client
     let mut stream = TcpStream::connect(socks_addr).await.unwrap();
@@ -448,7 +451,10 @@ async fn test_http_to_socks5_chain() {
         let _ = serve_http(http_config, stop_rx, Some(ready_tx)).await;
     });
 
-    ready_rx.await.expect("HTTP server failed to start");
+    ready_rx
+        .await
+        .expect("HTTP server failed to start")
+        .expect("HTTP bind failed");
 
     // Connect via HTTP CONNECT client
     let mut stream = TcpStream::connect(http_addr).await.unwrap();

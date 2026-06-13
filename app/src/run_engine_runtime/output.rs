@@ -94,8 +94,8 @@ pub fn report_reload_result(
 
 /// GUI.for.SingBox 启动识别关键字:`stores/kernelApi.ts` 以
 /// `out.includes('sing-box started')` 判定内核启动成功(CAL-02)。
-/// 该启动行语义 = supervisor 启动完成(admin services 已启动),
-/// **不是** inbound bind-confirmed readiness(bind-ready 属 package05)。
+/// 该启动行语义 = supervisor 已完成事务式启动；HTTP/SOCKS/MIXED 已等待 bind-ready，
+/// 其他 inbound 仍是 best-effort readiness 边界。
 pub(crate) const STARTUP_KEYWORD: &str = "sing-box started";
 
 fn startup_log_line() -> String {

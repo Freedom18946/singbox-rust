@@ -5,7 +5,6 @@ use tokio::time::sleep;
 
 #[tokio::test]
 async fn test_supervisor_lifecycle() {
-    std::env::set_var("SB_INBOUND_RELOAD_GRACE_MS", "0");
     // 1. Setup initial config
     let initial_ir = ConfigIR {
         inbounds: vec![],

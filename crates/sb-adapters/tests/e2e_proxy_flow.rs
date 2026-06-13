@@ -113,7 +113,10 @@ async fn start_socks5_inbound(
     });
 
     // Wait for server to signal it's ready
-    ready_rx.await.expect("Server failed to start");
+    ready_rx
+        .await
+        .expect("Server failed to start")
+        .expect("server bind failed");
 
     Some((addr, stop_tx))
 }
@@ -159,7 +162,10 @@ async fn start_http_inbound(
     });
 
     // Wait for server to signal it's ready
-    ready_rx.await.expect("Server failed to start");
+    ready_rx
+        .await
+        .expect("Server failed to start")
+        .expect("server bind failed");
 
     Some((addr, stop_tx))
 }

@@ -20,11 +20,14 @@ use crate::service::{Service, StartStage as ServiceStage};
 use anyhow::{Context as AnyhowContext, Result};
 use sb_config::ir::diff::Diff;
 use std::collections::HashMap;
+use std::net::IpAddr;
 use std::path::Path;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
-use tokio::sync::{mpsc, RwLock};
+use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio_util::sync::CancellationToken;
+
+const INBOUND_READY_TIMEOUT: Duration = Duration::from_secs(10);
 
 fn ensure_bridge_startup_ready(bridge: &Bridge) -> Result<()> {
     if bridge.startup_errors.is_empty() {
@@ -40,7 +43,10 @@ fn ensure_bridge_startup_ready(bridge: &Bridge) -> Result<()> {
 #[derive(Debug)]
 pub enum ReloadMsg {
     /// Apply new configuration with hot reload
-    Apply(Box<sb_config::ir::ConfigIR>),
+    Apply {
+        ir: Box<sb_config::ir::ConfigIR>,
+        result: Option<oneshot::Sender<Result<(), String>>>,
+    },
     /// Update providers: merge new outbounds and rule entries into current config.
     /// This takes the current ConfigIR, patches it with the provider data, and
     /// performs a full reload via the same path as `Apply`.
@@ -234,13 +240,13 @@ impl Supervisor {
             )
         };
 
-        for inbound in &inbounds {
-            let ib = inbound.clone();
-            tokio::task::spawn_blocking(move || {
-                if let Err(e) = ib.serve() {
-                    tracing::error!(target: "sb_core::runtime", error = %e, "inbound serve failed");
-                }
-            });
+        if let Err(e) = start_inbounds_until_ready(&inbounds, "startup").await {
+            tracing::error!(target: "sb_core::runtime", error = %e, "inbound startup failed, rolling back");
+            stop_inbounds(&inbounds);
+            stop_endpoints(&endpoints);
+            stop_services(&services);
+            shutdown_context(&state.read().await.context);
+            return Err(e);
         }
 
         // Endpoints and services have already been driven through Initialize
@@ -274,6 +280,7 @@ impl Supervisor {
                 return Err(e);
             }
             tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete");
+            crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
         }
 
         // Optional health task
@@ -298,12 +305,16 @@ impl Supervisor {
         let handle = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 match msg {
-                    ReloadMsg::Apply(new_ir) => {
-                        if let Err(e) = Self::handle_reload(&state_clone, *new_ir).await {
+                    ReloadMsg::Apply { ir: new_ir, result } => {
+                        let outcome = Self::handle_reload(&state_clone, *new_ir).await;
+                        if let Err(e) = &outcome {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
                         } else {
                             state_clone.write().await.provider_overlay =
                                 ProviderOverlayState::default();
+                        }
+                        if let Some(tx) = result {
+                            let _ = tx.send(outcome.map_err(|e| e.to_string()));
                         }
                     }
                     ReloadMsg::UpdateProviders {
@@ -409,13 +420,13 @@ impl Supervisor {
             )
         };
 
-        for inbound in &inbounds {
-            let ib = inbound.clone();
-            tokio::task::spawn_blocking(move || {
-                if let Err(e) = ib.serve() {
-                    tracing::error!(target: "sb_core::runtime", error = %e, "inbound serve failed");
-                }
-            });
+        if let Err(e) = start_inbounds_until_ready(&inbounds, "startup").await {
+            tracing::error!(target: "sb_core::runtime", error = %e, "inbound startup failed (no-router), rolling back");
+            stop_inbounds(&inbounds);
+            stop_endpoints(&endpoints);
+            stop_services(&services);
+            shutdown_context(&state.read().await.context);
+            return Err(e);
         }
 
         // Endpoints/services already driven through Initialize+Start by
@@ -451,6 +462,7 @@ impl Supervisor {
                 return Err(e);
             }
             tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete (no-router)");
+            crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
         }
 
         // Event loop (simplified for non-router case)
@@ -459,12 +471,16 @@ impl Supervisor {
         let handle = tokio::spawn(async move {
             while let Some(msg) = rx.recv().await {
                 match msg {
-                    ReloadMsg::Apply(new_ir) => {
-                        if let Err(e) = Self::handle_reload_no_router(&state_clone, *new_ir).await {
+                    ReloadMsg::Apply { ir: new_ir, result } => {
+                        let outcome = Self::handle_reload_no_router(&state_clone, *new_ir).await;
+                        if let Err(e) = &outcome {
                             tracing::error!(target: "sb_core::runtime", error = %e, "reload failed");
                         } else {
                             state_clone.write().await.provider_overlay =
                                 ProviderOverlayState::default();
+                        }
+                        if let Some(tx) = result {
+                            let _ = tx.send(outcome.map_err(|e| e.to_string()));
                         }
                     }
                     ReloadMsg::UpdateProviders {
@@ -520,15 +536,7 @@ impl Supervisor {
             state_guard.current_ir.clone()
         };
 
-        // Always apply the new IR to the runtime
-        self.tx
-            .send(ReloadMsg::Apply(Box::new(new_ir.clone())))
-            .await
-            .context("failed to send reload message")?;
-
-        // Compute diff between old and new configuration
-        if runtime_diff_from_env() {
-            // Compute actual diff for debugging/monitoring purposes
+        let diff = if runtime_diff_from_env() {
             let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
             tracing::debug!(
                 target: "sb_core::runtime",
@@ -538,12 +546,27 @@ impl Supervisor {
                 removed_outbounds = diff.outbounds.removed.len(),
                 "Configuration diff computed"
             );
-            Ok(diff)
+            diff
         } else {
-            // Fast path: skip diff computation unless explicitly requested
-            let _ = &new_ir; // mark as used in minimal path
-            Ok(Diff::default())
-        }
+            let _ = &new_ir;
+            Diff::default()
+        };
+
+        let (result_tx, result_rx) = oneshot::channel();
+        self.tx
+            .send(ReloadMsg::Apply {
+                ir: Box::new(new_ir),
+                result: Some(result_tx),
+            })
+            .await
+            .context("failed to send reload message")?;
+
+        result_rx
+            .await
+            .context("reload result channel closed before completion")?
+            .map_err(anyhow::Error::msg)?;
+
+        Ok(diff)
     }
 
     /// Begin graceful shutdown
@@ -581,13 +604,10 @@ impl Supervisor {
             crate::log::configure(log_ir);
         }
 
-        // Step 0: Ask old inbounds to stop accepting (best-effort)
-        let (old_endpoints, old_services, old_context, old_v2ray_cfg) = {
+        let (old_inbounds, old_endpoints, old_services, old_context, old_v2ray_cfg, old_ir) = {
             let state_guard = state.read().await;
-            for ib in &state_guard.bridge.inbounds {
-                ib.request_shutdown();
-            }
             (
+                state_guard.bridge.inbounds.clone(),
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
                 state_guard.context.clone(),
@@ -596,17 +616,11 @@ impl Supervisor {
                     .experimental
                     .as_ref()
                     .and_then(|e| e.v2ray_api.clone()),
+                state_guard.current_ir.clone(),
             )
         };
 
-        // Give old listeners a short grace to release ports
-        let grace_ms = std::env::var("SB_INBOUND_RELOAD_GRACE_MS")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(1200);
-        if grace_ms > 0 {
-            tokio::time::sleep(Duration::from_millis(grace_ms)).await;
-        }
+        reject_same_port_reload(&old_ir, &new_ir)?;
 
         // Build new engine and bridge
         let new_engine = Engine::from_ir(&new_ir).context("failed to build new engine")?;
@@ -666,15 +680,7 @@ impl Supervisor {
             // Refresh global TLS trust configuration from IR
             crate::tls::global::apply_from_ir(new_ir.certificate.as_ref());
 
-            // Start new inbound listeners
-            for inbound in &new_bridge_arc.inbounds {
-                let ib = inbound.clone();
-                tokio::task::spawn_blocking(move || {
-                    if let Err(e) = ib.serve() {
-                        tracing::error!(target: "sb_core::runtime", error = %e, "new inbound serve failed");
-                    }
-                });
-            }
+            start_inbounds_until_ready(&new_bridge_arc.inbounds, "reload").await?;
             // Endpoints/services already driven through Start above; do not invoke
             // start_endpoints/start_services here (would re-trigger lifecycle and
             // bypass ServiceManager.statuses).
@@ -735,6 +741,7 @@ impl Supervisor {
             state_guard.bridge = new_bridge_arc;
             state_guard.context = new_context;
             state_guard.current_ir = new_ir;
+            crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
                 let health_bridge = state_guard.bridge.clone();
@@ -752,6 +759,7 @@ impl Supervisor {
             install_ntp_task(state, ntp_cfg).await;
         }
 
+        stop_inbounds(&old_inbounds);
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
         shutdown_replaced_context(&old_context, preserve_v2ray);
@@ -772,13 +780,10 @@ impl Supervisor {
             crate::log::configure(log_ir);
         }
 
-        // Step 0: Ask old inbounds to stop accepting (best-effort)
-        let (old_endpoints, old_services, old_context, old_v2ray_cfg) = {
+        let (old_inbounds, old_endpoints, old_services, old_context, old_v2ray_cfg, old_ir) = {
             let state_guard = state.read().await;
-            for ib in &state_guard.bridge.inbounds {
-                ib.request_shutdown();
-            }
             (
+                state_guard.bridge.inbounds.clone(),
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
                 state_guard.context.clone(),
@@ -787,17 +792,11 @@ impl Supervisor {
                     .experimental
                     .as_ref()
                     .and_then(|e| e.v2ray_api.clone()),
+                state_guard.current_ir.clone(),
             )
         };
 
-        // Give old listeners a short grace to release ports
-        let grace_ms = std::env::var("SB_INBOUND_RELOAD_GRACE_MS")
-            .ok()
-            .and_then(|s| s.parse::<u64>().ok())
-            .unwrap_or(1200);
-        if grace_ms > 0 {
-            tokio::time::sleep(Duration::from_millis(grace_ms)).await;
-        }
+        reject_same_port_reload(&old_ir, &new_ir)?;
 
         // APP-RELOAD-SIDECAR-ORDER-01C: reuse the old V2Ray server across an equivalent reload
         // (same enabled config + currently Running) instead of rebuilding/rebinding it.
@@ -837,15 +836,7 @@ impl Supervisor {
             run_context_stage(&new_context, ServiceStage::Start)?;
             tracing::info!(target: "sb_core::runtime", "New context managers started on reload (no-router)");
 
-            // Start new inbound listeners
-            for inbound in &new_bridge_arc.inbounds {
-                let ib = inbound.clone();
-                tokio::task::spawn_blocking(move || {
-                    if let Err(e) = ib.serve() {
-                        tracing::error!(target: "sb_core::runtime", error = %e, "new inbound serve failed");
-                    }
-                });
-            }
+            start_inbounds_until_ready(&new_bridge_arc.inbounds, "reload").await?;
             // Endpoints/services already driven through Start above.
 
             // PostStart stage for new managers (no-router)
@@ -893,6 +884,7 @@ impl Supervisor {
             state_guard.bridge = new_bridge_arc;
             state_guard.context = new_context;
             state_guard.current_ir = new_ir;
+            crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
                 let health_bridge = state_guard.bridge.clone();
@@ -910,6 +902,7 @@ impl Supervisor {
             install_ntp_task(state, ntp_cfg).await;
         }
 
+        stop_inbounds(&old_inbounds);
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
         shutdown_replaced_context(&old_context, preserve_v2ray);
@@ -1136,19 +1129,28 @@ impl SupervisorHandle {
             state_guard.current_ir.clone()
         };
 
-        // Always forward the reload request
+        let diff = if runtime_diff_from_env() {
+            sb_config::ir::diff::diff(&old_ir, &new_ir)
+        } else {
+            let _ = &new_ir;
+            Diff::default()
+        };
+
+        let (result_tx, result_rx) = oneshot::channel();
         self.tx
-            .send(ReloadMsg::Apply(Box::new(new_ir.clone())))
+            .send(ReloadMsg::Apply {
+                ir: Box::new(new_ir),
+                result: Some(result_tx),
+            })
             .await
             .context("failed to send reload message")?;
 
-        if runtime_diff_from_env() {
-            let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
-            Ok(diff)
-        } else {
-            let _ = &new_ir;
-            Ok(Diff::default())
-        }
+        result_rx
+            .await
+            .context("reload result channel closed before completion")?
+            .map_err(anyhow::Error::msg)?;
+
+        Ok(diff)
     }
 
     /// Get read-only access to current state
@@ -1267,6 +1269,135 @@ fn run_context_stage(ctx: &Context, stage: ServiceStage) -> Result<()> {
         .start(stage)
         .map_err(|e| anyhow::anyhow!(e))
         .context(format!("failed to {label} ServiceManager"))?;
+
+    Ok(())
+}
+
+async fn start_inbounds_until_ready(
+    inbounds: &[Arc<dyn InboundService>],
+    phase: &'static str,
+) -> Result<()> {
+    for inbound in inbounds {
+        if inbound.supports_startup_readiness() {
+            let (ready_tx, ready_rx) = oneshot::channel();
+            let ib = inbound.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) = ib.serve_with_ready(Some(ready_tx)) {
+                    tracing::error!(
+                        target: "sb_core::runtime",
+                        phase,
+                        error = %e,
+                        "inbound serve failed"
+                    );
+                }
+            });
+
+            match tokio::time::timeout(INBOUND_READY_TIMEOUT, ready_rx).await {
+                Ok(Ok(Ok(()))) => {}
+                Ok(Ok(Err(error))) => {
+                    return Err(anyhow::anyhow!("{phase} inbound readiness failed: {error}"));
+                }
+                Ok(Err(_closed)) => {
+                    return Err(anyhow::anyhow!(
+                        "{phase} inbound exited before reporting readiness"
+                    ));
+                }
+                Err(_elapsed) => {
+                    return Err(anyhow::anyhow!(
+                        "{phase} inbound readiness timed out after {:?}",
+                        INBOUND_READY_TIMEOUT
+                    ));
+                }
+            }
+        } else {
+            tracing::warn!(
+                target: "sb_core::runtime",
+                phase,
+                "inbound does not expose bind readiness; starting best-effort"
+            );
+            let ib = inbound.clone();
+            tokio::task::spawn_blocking(move || {
+                if let Err(e) = ib.serve() {
+                    tracing::error!(
+                        target: "sb_core::runtime",
+                        phase,
+                        error = %e,
+                        "inbound serve failed"
+                    );
+                }
+            });
+        }
+    }
+    Ok(())
+}
+
+fn stop_inbounds(inbounds: &[Arc<dyn InboundService>]) {
+    for inbound in inbounds {
+        inbound.request_shutdown();
+    }
+}
+
+fn inbound_endpoint_key(ib: &sb_config::ir::InboundIR) -> Option<(String, u16)> {
+    if ib.port == 0 {
+        return None;
+    }
+    let listen = ib.listen.trim();
+    if listen.is_empty() {
+        return None;
+    }
+    Some((listen.to_string(), ib.port))
+}
+
+fn inbound_endpoints_overlap(left: &(String, u16), right: &(String, u16)) -> bool {
+    if left.1 != right.1 {
+        return false;
+    }
+    if left.0.eq_ignore_ascii_case(&right.0) {
+        return true;
+    }
+    match (left.0.parse::<IpAddr>(), right.0.parse::<IpAddr>()) {
+        (Ok(left_ip), Ok(right_ip)) => {
+            left_ip == right_ip || left_ip.is_unspecified() || right_ip.is_unspecified()
+        }
+        _ => false,
+    }
+}
+
+fn inbound_label(ib: &sb_config::ir::InboundIR) -> String {
+    ib.tag
+        .as_deref()
+        .filter(|tag| !tag.trim().is_empty())
+        .unwrap_or_else(|| ib.ty.ty_str())
+        .to_string()
+}
+
+fn reject_same_port_reload(
+    old_ir: &sb_config::ir::ConfigIR,
+    new_ir: &sb_config::ir::ConfigIR,
+) -> Result<()> {
+    let mut old_endpoints: Vec<((String, u16), String)> = Vec::new();
+    for inbound in &old_ir.inbounds {
+        if let Some(endpoint) = inbound_endpoint_key(inbound) {
+            old_endpoints.push((endpoint, inbound_label(inbound)));
+        }
+    }
+
+    for inbound in &new_ir.inbounds {
+        let Some(new_endpoint) = inbound_endpoint_key(inbound) else {
+            continue;
+        };
+        let (listen, port) = (&new_endpoint.0, new_endpoint.1);
+        if let Some((old_endpoint, old_label)) = old_endpoints
+            .iter()
+            .find(|(old_endpoint, _)| inbound_endpoints_overlap(old_endpoint, &new_endpoint))
+        {
+            let new_label = inbound_label(inbound);
+            let (old_listen, old_port) = old_endpoint;
+            return Err(anyhow::anyhow!(
+                "same-port in-process reload is unsupported for inbound '{new_label}' at {listen}:{port} (overlaps old inbound '{old_label}' at {old_listen}:{old_port}); use GUI/process restart or change the listen endpoint"
+            ));
+        }
+    }
 
     Ok(())
 }
@@ -2010,11 +2141,310 @@ mod tests {
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 
+    mod reload_atomicity {
+        use super::*;
+        use crate::adapter::registry::{AdapterInboundContext, RegistrySnapshot};
+        use crate::adapter::{InboundParam, InboundReadySender};
+        use once_cell::sync::Lazy;
+        use sb_config::ir::ConfigIR;
+        use serde_json::json;
+        use std::io;
+        use std::net::{SocketAddr, TcpListener};
+        use std::sync::atomic::{AtomicBool, Ordering};
+        use std::thread;
+        use std::time::Duration as StdDuration;
+
+        static RELOAD_ATOMICITY_TEST_LOCK: Lazy<tokio::sync::Mutex<()>> =
+            Lazy::new(|| tokio::sync::Mutex::new(()));
+
+        struct RuntimeRegistryGuard(crate::adapter::registry::RuntimeRegistrySnapshot);
+
+        impl RuntimeRegistryGuard {
+            fn capture() -> Self {
+                Self(crate::adapter::registry::runtime_snapshot())
+            }
+        }
+
+        impl Drop for RuntimeRegistryGuard {
+            fn drop(&mut self) {
+                crate::adapter::registry::install_runtime_snapshot(self.0.clone());
+            }
+        }
+
+        #[derive(Debug)]
+        struct ReadyTcpInbound {
+            listen: SocketAddr,
+            shutdown: AtomicBool,
+        }
+
+        impl ReadyTcpInbound {
+            const fn new(listen: SocketAddr) -> Self {
+                Self {
+                    listen,
+                    shutdown: AtomicBool::new(false),
+                }
+            }
+        }
+
+        impl InboundService for ReadyTcpInbound {
+            fn serve(&self) -> io::Result<()> {
+                self.serve_with_ready(None)
+            }
+
+            fn supports_startup_readiness(&self) -> bool {
+                true
+            }
+
+            fn serve_with_ready(&self, ready: Option<InboundReadySender>) -> io::Result<()> {
+                let listener = match TcpListener::bind(self.listen) {
+                    Ok(listener) => listener,
+                    Err(error) => {
+                        if let Some(tx) = ready {
+                            let _ = tx.send(Err(io::Error::new(error.kind(), error.to_string())));
+                        }
+                        return Err(error);
+                    }
+                };
+                listener.set_nonblocking(true)?;
+                if let Some(tx) = ready {
+                    let _ = tx.send(Ok(()));
+                }
+                while !self.shutdown.load(Ordering::SeqCst) {
+                    match listener.accept() {
+                        Ok((_stream, _peer)) => {}
+                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                            thread::sleep(StdDuration::from_millis(10));
+                        }
+                        Err(error) => return Err(error),
+                    }
+                }
+                Ok(())
+            }
+
+            fn request_shutdown(&self) {
+                self.shutdown.store(true, Ordering::SeqCst);
+            }
+        }
+
+        fn build_ready_inbound(
+            param: &InboundParam,
+            _ctx: &AdapterInboundContext,
+        ) -> Option<Arc<dyn InboundService>> {
+            let listen = format!("{}:{}", param.listen, param.port)
+                .parse::<SocketAddr>()
+                .ok()?;
+            Some(Arc::new(ReadyTcpInbound::new(listen)))
+        }
+
+        fn registry_snapshot() -> RegistrySnapshot {
+            let mut snapshot = RegistrySnapshot::new();
+            let _ = snapshot.register_inbound("http", build_ready_inbound);
+            snapshot
+        }
+
+        fn reserve_port() -> Option<u16> {
+            match TcpListener::bind("127.0.0.1:0") {
+                Ok(listener) => {
+                    let port = listener.local_addr().ok()?.port();
+                    drop(listener);
+                    Some(port)
+                }
+                Err(error) => {
+                    eprintln!("skip reload atomicity test: cannot reserve port: {error}");
+                    None
+                }
+            }
+        }
+
+        fn ir_with_http(port: u16, inbound_tag: &str, outbound_tag: &str) -> ConfigIR {
+            ir_with_http_at("127.0.0.1", port, inbound_tag, outbound_tag)
+        }
+
+        fn ir_with_http_at(
+            listen: &str,
+            port: u16,
+            inbound_tag: &str,
+            outbound_tag: &str,
+        ) -> ConfigIR {
+            let raw = json!({
+                "inbounds": [{
+                    "type": "http",
+                    "tag": inbound_tag,
+                    "listen": listen,
+                    "listen_port": port
+                }],
+                "outbounds": [{
+                    "type": "direct",
+                    "tag": outbound_tag
+                }],
+                "route": { "final": outbound_tag }
+            });
+            let (_cfg, ir) = sb_config::config_from_raw_value(raw).expect("test config parses");
+            ir
+        }
+
+        async fn connect_ok(port: u16) -> bool {
+            for _ in 0..40 {
+                if tokio::net::TcpStream::connect(("127.0.0.1", port))
+                    .await
+                    .is_ok()
+                {
+                    return true;
+                }
+                tokio::time::sleep(Duration::from_millis(25)).await;
+            }
+            false
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn startup_bind_conflict_fails_before_supervisor_ready() {
+            let _serial = RELOAD_ATOMICITY_TEST_LOCK.lock().await;
+            let _guard = RuntimeRegistryGuard::capture();
+            crate::adapter::registry::clear_runtime_registries();
+            let Some(port) = reserve_port() else { return };
+            let holder = TcpListener::bind(("127.0.0.1", port)).expect("hold startup port");
+
+            let err = match Supervisor::start_with_registry(
+                ir_with_http(port, "startup-http-conflict", "startup-direct-conflict"),
+                Some(registry_snapshot()),
+            )
+            .await
+            {
+                Ok(supervisor) => {
+                    let _ = supervisor
+                        .shutdown_graceful(Duration::from_millis(500))
+                        .await;
+                    panic!("startup bind conflict must fail");
+                }
+                Err(err) => err,
+            };
+
+            assert!(err.to_string().contains("startup inbound readiness failed"));
+            assert!(
+                crate::adapter::registry::runtime_outbounds()
+                    .and_then(|runtime| runtime.resolve("startup-direct-conflict"))
+                    .is_none(),
+                "failed startup must not publish its runtime outbound tag"
+            );
+            assert!(
+                crate::adapter::registry::runtime_inbounds()
+                    .and_then(|runtime| runtime.get("startup-http-conflict"))
+                    .is_none(),
+                "failed startup must not publish its runtime inbound tag"
+            );
+            drop(holder);
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn failed_reload_keeps_old_listener_and_registry() {
+            let _serial = RELOAD_ATOMICITY_TEST_LOCK.lock().await;
+            let _guard = RuntimeRegistryGuard::capture();
+            crate::adapter::registry::clear_runtime_registries();
+            let Some(old_port) = reserve_port() else {
+                return;
+            };
+            let Some(new_port) = reserve_port() else {
+                return;
+            };
+            let holder = TcpListener::bind(("127.0.0.1", new_port)).expect("hold new port");
+
+            let supervisor = Supervisor::start_with_registry(
+                ir_with_http(old_port, "old-http-reload", "old-direct-reload"),
+                Some(registry_snapshot()),
+            )
+            .await
+            .expect("old runtime starts");
+            assert!(
+                connect_ok(old_port).await,
+                "old listener accepts before reload"
+            );
+
+            let err = supervisor
+                .reload(ir_with_http(
+                    new_port,
+                    "new-http-reload",
+                    "new-direct-reload",
+                ))
+                .await
+                .expect_err("new bind conflict must fail reload");
+            assert!(err.to_string().contains("reload inbound readiness failed"));
+            assert!(
+                connect_ok(old_port).await,
+                "old listener must keep accepting after failed reload"
+            );
+
+            let runtime = crate::adapter::registry::runtime_outbounds()
+                .expect("old runtime outbounds remain published");
+            assert!(runtime.resolve("old-direct-reload").is_some());
+            assert!(
+                runtime.resolve("new-direct-reload").is_none(),
+                "failed reload must not leak the new outbound tag"
+            );
+            let runtime_inbounds = crate::adapter::registry::runtime_inbounds()
+                .expect("old runtime inbounds remain published");
+            assert!(runtime_inbounds.get("old-http-reload").is_some());
+            assert!(
+                runtime_inbounds.get("new-http-reload").is_none(),
+                "failed reload must not leak the new inbound tag"
+            );
+
+            drop(holder);
+            supervisor
+                .shutdown_graceful(Duration::from_millis(500))
+                .await
+                .expect("shutdown old runtime");
+        }
+
+        #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+        async fn same_port_reload_is_rejected_without_stopping_old_listener() {
+            let _serial = RELOAD_ATOMICITY_TEST_LOCK.lock().await;
+            let _guard = RuntimeRegistryGuard::capture();
+            crate::adapter::registry::clear_runtime_registries();
+            let Some(port) = reserve_port() else { return };
+
+            let supervisor = Supervisor::start_with_registry(
+                ir_with_http_at(
+                    "0.0.0.0",
+                    port,
+                    "old-http-same-port",
+                    "old-direct-same-port",
+                ),
+                Some(registry_snapshot()),
+            )
+            .await
+            .expect("old runtime starts");
+            assert!(connect_ok(port).await, "old listener accepts before reload");
+
+            let err = supervisor
+                .reload(ir_with_http(
+                    port,
+                    "new-http-same-port",
+                    "new-direct-same-port",
+                ))
+                .await
+                .expect_err("same-port reload must be rejected");
+            let msg = err.to_string();
+            assert!(msg.contains("same-port in-process reload is unsupported"));
+            assert!(msg.contains("127.0.0.1"));
+            assert!(msg.contains("0.0.0.0"));
+            assert!(
+                connect_ok(port).await,
+                "old listener must remain available after same-port rejection"
+            );
+
+            supervisor
+                .shutdown_graceful(Duration::from_millis(500))
+                .await
+                .expect("shutdown old runtime");
+        }
+    }
+
     // ── APP-RELOAD-SIDECAR-ORDER-01C: V2Ray same-config reload reuse handoff ──
     mod reuse_handoff {
+        #[cfg(feature = "service_v2ray_api")]
+        use super::super::build_context_from_ir;
         use super::super::{
-            build_context_from_ir, reusable_v2ray_server, same_v2ray_server, shutdown_context,
-            shutdown_replaced_context,
+            reusable_v2ray_server, same_v2ray_server, shutdown_context, shutdown_replaced_context,
         };
         use crate::context::{
             Context, V2RayServer, V2RayServerActiveGeneration, V2RayServerActivePhase,

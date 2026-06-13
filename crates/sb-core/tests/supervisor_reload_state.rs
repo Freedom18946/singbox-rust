@@ -6,8 +6,6 @@ use sb_core::runtime::supervisor::Supervisor;
 
 #[tokio::test]
 async fn selector_selection_survives_reload_via_cache_file() {
-    std::env::set_var("SB_INBOUND_RELOAD_GRACE_MS", "0");
-
     let temp_dir = tempfile::tempdir().expect("temp dir");
     let cache_dir = temp_dir.path().join("selector-cache");
 

@@ -83,6 +83,12 @@ static RUNTIME_INBOUNDS: Lazy<RwLock<Option<Arc<InboundRegistryHandle>>>> =
 static RUNTIME_OUTBOUNDS: Lazy<RwLock<Option<Arc<OutboundRegistryHandle>>>> =
     Lazy::new(|| RwLock::new(None));
 
+#[derive(Clone, Default)]
+pub struct RuntimeRegistrySnapshot {
+    inbounds: Option<Arc<InboundRegistryHandle>>,
+    outbounds: Option<Arc<OutboundRegistryHandle>>,
+}
+
 #[derive(Clone, Debug, Default)]
 pub struct InboundRegistryHandle {
     inner: HashMap<String, Arc<dyn InboundService>>,
@@ -143,6 +149,23 @@ pub fn install_runtime_outbounds(handle: Arc<OutboundRegistryHandle>) {
 pub fn install_runtime_inbounds(handle: Arc<InboundRegistryHandle>) {
     let mut g = RUNTIME_INBOUNDS.write().unwrap();
     *g = Some(handle);
+}
+
+pub fn runtime_snapshot() -> RuntimeRegistrySnapshot {
+    RuntimeRegistrySnapshot {
+        inbounds: RUNTIME_INBOUNDS.read().unwrap().clone(),
+        outbounds: RUNTIME_OUTBOUNDS.read().unwrap().clone(),
+    }
+}
+
+pub fn install_runtime_snapshot(snapshot: RuntimeRegistrySnapshot) {
+    *RUNTIME_INBOUNDS.write().unwrap() = snapshot.inbounds;
+    *RUNTIME_OUTBOUNDS.write().unwrap() = snapshot.outbounds;
+}
+
+pub fn clear_runtime_registries() {
+    *RUNTIME_INBOUNDS.write().unwrap() = None;
+    *RUNTIME_OUTBOUNDS.write().unwrap() = None;
 }
 
 /// Retrieve the current runtime inbound registry handle, if installed.

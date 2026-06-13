@@ -23,7 +23,7 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use once_cell::sync::OnceCell;
-use sb_core::adapter::InboundService;
+use sb_core::adapter::{InboundReadySender, InboundService};
 use sb_core::outbound::health as ob_health;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
@@ -98,7 +98,7 @@ pub enum DomainStrategy {
 pub async fn serve_socks(
     cfg: SocksInboundConfig,
     stop_rx: mpsc::Receiver<()>,
-    ready_tx: Option<oneshot::Sender<()>>,
+    ready_tx: Option<oneshot::Sender<io::Result<()>>>,
 ) -> io::Result<()> {
     serve_socks_internal(cfg, stop_rx, ready_tx, None).await
 }
@@ -106,14 +106,22 @@ pub async fn serve_socks(
 async fn serve_socks_internal(
     cfg: SocksInboundConfig,
     mut stop_rx: mpsc::Receiver<()>,
-    ready_tx: Option<oneshot::Sender<()>>,
+    ready_tx: Option<oneshot::Sender<io::Result<()>>>,
     udp_addr: Option<SocketAddr>,
 ) -> io::Result<()> {
-    let listener = TcpListener::bind(cfg.listen).await?;
+    let listener = match TcpListener::bind(cfg.listen).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            if let Some(tx) = ready_tx {
+                let _ = tx.send(Err(io::Error::new(error.kind(), error.to_string())));
+            }
+            return Err(error);
+        }
+    };
     let actual = listener.local_addr().unwrap_or(cfg.listen);
     info!(addr=?cfg.listen, actual=?actual, "SOCKS5 bound");
     if let Some(tx) = ready_tx {
-        let _ = tx.send(());
+        let _ = tx.send(Ok(()));
     }
 
     // 可通过环境变量在测试时禁止 stop 打断（与 HTTP 入站一致）
@@ -162,7 +170,11 @@ async fn serve_socks_internal(
 // 兼容旧别名
 /// Compatibility alias - run SOCKS5 proxy
 /// 兼容性别名 - 运行 SOCKS5 代理
-pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
+pub async fn run_with_ready(
+    cfg: SocksInboundConfig,
+    stop_rx: mpsc::Receiver<()>,
+    ready_tx: Option<oneshot::Sender<io::Result<()>>>,
+) -> io::Result<()> {
     // Enable UDP Associate by default (Go parity); opt-out with SB_SOCKS_UDP_ENABLE=0
     let udp_enabled = std::env::var("SB_SOCKS_UDP_ENABLE")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -196,13 +208,86 @@ pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Re
         None
     };
 
-    serve_socks_internal(cfg, stop_rx, None, udp_addr).await
+    serve_socks_internal(cfg, stop_rx, ready_tx, udp_addr).await
+}
+
+pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
+    run_with_ready(cfg, stop_rx, None).await
 }
 
 /// Compatibility alias - serve SOCKS5 proxy
 /// 兼容性别名 - 运行 SOCKS5 代理
 pub async fn serve(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
     serve_socks(cfg, stop_rx, None).await
+}
+
+#[cfg(test)]
+mod readiness_tests {
+    use super::*;
+    use std::io::ErrorKind;
+    use std::net::TcpListener as StdTcpListener;
+    use tokio::time::timeout;
+
+    fn test_cfg(listen: SocketAddr) -> SocksInboundConfig {
+        SocksInboundConfig {
+            tag: Some("socks-ready-test".to_string()),
+            listen,
+            udp_bind: None,
+            router: Arc::new(RouterHandle::from_env()),
+            outbounds: Arc::new(OutboundRegistryHandle::default()),
+            udp_nat_ttl: Duration::from_secs(60),
+            users: None,
+            udp_timeout: None,
+            domain_strategy: None,
+            stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
+            sniff: false,
+            sniff_override_destination: false,
+        }
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_success_after_bind() {
+        let (stop_tx, stop_rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = oneshot::channel();
+
+        let task = tokio::spawn(serve_socks(
+            test_cfg("127.0.0.1:0".parse().unwrap()),
+            stop_rx,
+            Some(ready_tx),
+        ));
+
+        timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("socks ready timed out")
+            .expect("socks ready sender dropped")
+            .expect("socks bind failed");
+        let _ = stop_tx.send(()).await;
+        task.await
+            .expect("socks task panicked")
+            .expect("socks stopped");
+    }
+
+    #[tokio::test]
+    async fn readiness_reports_bind_failure_on_occupied_port() {
+        let holder = StdTcpListener::bind("127.0.0.1:0").expect("hold socks port");
+        let addr = holder.local_addr().expect("held socks address");
+        let (_stop_tx, stop_rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = oneshot::channel();
+
+        let err = serve_socks(test_cfg(addr), stop_rx, Some(ready_tx))
+            .await
+            .expect_err("occupied socks port must fail");
+        let ready_err = timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("socks ready failure timed out")
+            .expect("socks ready sender dropped")
+            .expect_err("socks ready must report bind failure");
+
+        assert_eq!(ready_err.kind(), ErrorKind::AddrInUse);
+        assert_eq!(err.kind(), ErrorKind::AddrInUse);
+        drop(holder);
+    }
 }
 
 pub async fn serve_conn<S>(
@@ -1212,6 +1297,14 @@ impl SocksInboundAdapter {
 
 impl InboundService for SocksInboundAdapter {
     fn serve(&self) -> io::Result<()> {
+        self.serve_with_ready(None)
+    }
+
+    fn supports_startup_readiness(&self) -> bool {
+        true
+    }
+
+    fn serve_with_ready(&self, ready: Option<InboundReadySender>) -> io::Result<()> {
         let (tx, rx) = tokio::sync::mpsc::channel(1);
         {
             let mut guard = self.stop_tx.lock().unwrap();
@@ -1220,13 +1313,21 @@ impl InboundService for SocksInboundAdapter {
         let cfg = self.cfg.clone();
         let res = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             // Reuse existing runtime to avoid per-inbound runtime cold-start overhead.
-            handle.block_on(async { run(cfg, rx).await.map_err(io::Error::other) })
+            handle.block_on(async {
+                run_with_ready(cfg, rx, ready)
+                    .await
+                    .map_err(io::Error::other)
+            })
         } else {
             let rt = tokio::runtime::Builder::new_current_thread()
                 .enable_all()
                 .build()
                 .map_err(io::Error::other)?;
-            rt.block_on(async { run(cfg, rx).await.map_err(io::Error::other) })
+            rt.block_on(async {
+                run_with_ready(cfg, rx, ready)
+                    .await
+                    .map_err(io::Error::other)
+            })
         };
         let _ = self.stop_tx.lock().unwrap().take();
         res

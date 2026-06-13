@@ -3743,6 +3743,17 @@ impl HttpInboundAdapter {
 #[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
 impl InboundService for HttpInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
+        self.serve_with_ready(None)
+    }
+
+    fn supports_startup_readiness(&self) -> bool {
+        true
+    }
+
+    fn serve_with_ready(
+        &self,
+        ready: Option<sb_core::adapter::InboundReadySender>,
+    ) -> std::io::Result<()> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -3754,7 +3765,7 @@ impl InboundService for HttpInboundAdapter {
         }
         let cfg = self.cfg.clone();
         let res = rt.block_on(async {
-            crate::inbound::http::serve_http(cfg, rx, None)
+            crate::inbound::http::serve_http(cfg, rx, ready)
                 .await
                 .map_err(std::io::Error::other)
         });
@@ -3844,6 +3855,17 @@ impl MixedInboundAdapter {
 ))]
 impl InboundService for MixedInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
+        self.serve_with_ready(None)
+    }
+
+    fn supports_startup_readiness(&self) -> bool {
+        true
+    }
+
+    fn serve_with_ready(
+        &self,
+        ready: Option<sb_core::adapter::InboundReadySender>,
+    ) -> std::io::Result<()> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()
             .build()
@@ -3855,7 +3877,7 @@ impl InboundService for MixedInboundAdapter {
         }
         let cfg = self.cfg.clone();
         let res = rt.block_on(async {
-            crate::inbound::mixed::serve_mixed(cfg, rx, None)
+            crate::inbound::mixed::serve_mixed(cfg, rx, ready)
                 .await
                 .map_err(std::io::Error::other)
         });
