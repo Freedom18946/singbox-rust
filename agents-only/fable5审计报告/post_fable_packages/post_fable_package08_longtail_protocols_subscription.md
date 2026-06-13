@@ -3,7 +3,7 @@
 
 ## Status
 
-PLANNED.
+DONE (local verification; GitHub Actions stay disabled).
 
 ## Source Findings
 
@@ -62,4 +62,34 @@ GUI launch path.
 
 ## Completion Notes
 
-Not started.
+User decision for long-tail handling: **"Loud error + keep current state"** (no new
+aggregates, no new app features, no heavy deps pulled into parity).
+
+**CAL-18 (long-tail outbound status).** Calibrated against current main: the four
+"stub" outbounds all have real connectors; the stub only compiles when the feature is
+OFF. `dns` is already real in `adapters`/`parity` (the audit's "dns stub" was stale)
+and is now locked by a regression test. The feature-OFF branches for `tor` /
+`tailscale` / `shadowsocksr` now register an `InvalidConfigConnector` (via the new
+`unsupported_outbound_feature_reason` helper) instead of returning a silent `None`, so
+dialing fails loudly with the outbound type, the missing cargo feature, and a rebuild
+hint. No aggregate / app-feature changes.
+
+**CAL-28 (trojan ignored tests).** Both deepest ignored tests are **enabled/rewritten**
+on the existing `fresh13_tls_verifier_loopback` harness (the cited obstacles — "needs a
+TLS server", "CryptoProvider unavailable" — were already solved / a misdiagnosis).
+Added 5 pure-local `TrojanUdpSocket` encode/decode unit tests (zero prior coverage).
+`tests/trojan_integration.rs` is now 19 pass, **0 ignored**. App-level 1000-handshake /
+100-concurrent / bench tests stay manual (performance/scale class).
+
+**H-10 (subscription coverage).** Added a no-network fixture regression set under
+`crates/sb-subscribe/tests/` covering Clash YAML, sing-box JSON, and URI-line provider
+formats, with explicit unknown-type baselines: Clash/sing-box pass unknown types
+through silently; the URI text path drops unknown schemes; only the JSON-array path
+errors loudly. 4 tests pass.
+
+Evidence (inventory matrix, decision tables, fixture coverage, follow-ups —
+adapter-trojan↔shadowsocks feature gap, trojan `dial` ignores `DialOpts`, no
+caller-visible skip counter → package11): `post_fable_package08_longtail_subscription_evidence.md`.
+
+Commits: `fix(adapters): clarify long-tail outbound support` + `checkpoint: record
+long-tail subscription closure`.

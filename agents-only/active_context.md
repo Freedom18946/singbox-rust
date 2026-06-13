@@ -10,8 +10,12 @@
 
 ---
 
-## Resume (2026-06-13) - POST-FABLE wave
+## Resume (2026-06-14) - POST-FABLE wave
 
+- **package08 (long-tail outbound + subscription) DONE** (`c31e9d1d`): tor/tailscale/ssr
+  feature-OFF stubs now loud (type+feature+rebuild via InvalidConfigConnector); dns confirmed
+  real in parity (audit stale); 2 deepest trojan tests enabled → 0 ignored + UDP units;
+  sb-subscribe fixtures (Clash/sing-box/URI) pin unknown-type baselines. Follow-ups: adapter-trojan↔shadowsocks gap; trojan `dial` ignores DialOpts → pkg09.
 - **package06 (Inbound liveness/observability) DONE** (`bbc00416`): inbound monitors
   classify exits; Clash `StartFailed` sidecar snapshots; DNS warning helper; V2Ray same-port retry.
 - **package05 DONE** (`a9236205`): reload waits for activation/readiness before commit;
@@ -25,12 +29,9 @@
   F-2 default build needs `--features adapters`; F-3 HTTP inbound is CONNECT-only.
 - **package01/package02 DONE**: startup keyword (`0a4cae74`); GUI flat TUN parses/lowers (`e3defcdf`).
 
-## Resume (2026-06-10)
-T3-2 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed.
-- 01B pre-swap rollback guard (`47e15b0b`): txn block + shared `shutdown_failed_reload_context`;
-  9 tests; sb-core 1109 PASS. 01A audit (`907f5944`); INBOUND-CONTINUITY-01A=DEFER. 01C V2Ray
-  reuse (`7dc853ef`); LIVENESS-01 CLOSED; V2RAY-SURFACE-02D (`60b88414`); SIDECAR-BIND-01
-  (`e1f0be43`). flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
+## Resume (2026-06-10) — closed (detail in baseline/archive)
+T3-2 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed. Known flakes:
+`cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
 
 ## Strategic State
 
