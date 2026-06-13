@@ -3,7 +3,12 @@
 
 ## Status
 
-PLANNED.
+DONE (2026-06-13, code commit `f70bf5ef`).
+
+Endpoint-form WireGuard now resolves as an outbound route target in the live
+startup path, and legacy outbound-form WireGuard is wired into the app `adapters`
+aggregate. This does not claim full public WireGuard interoperability or
+performance certification.
 
 ## Source Findings
 
@@ -59,4 +64,24 @@ legacy outbound compatibility posture.
 
 ## Completion Notes
 
-Not started.
+Code commit `f70bf5ef` implements:
+
+- endpoint-as-outbound registration in both router and no-router bridge paths;
+- deterministic loud failure for empty endpoint tags, duplicate endpoint tags,
+  and endpoint/outbound tag conflicts;
+- `EndpointAsOutbound.connect_io()` delegation to endpoint `dial_context()` for
+  IP and FQDN destinations, while `connect()` remains explicitly unsupported;
+- app `adapter-wireguard-outbound` feature wiring through `adapters` and
+  therefore `parity`;
+- WireGuard endpoint startup without nested Tokio `block_on` panic in the live
+  runtime path.
+
+Endpoint form: DONE for package04 scope. A production `app run` smoke with
+`route.final: "wg-ep"` reached `sing-box started`, logged
+`default outbound resolved default=wg-ep`, and did not hit
+`default outbound not found`.
+
+Legacy outbound form: feature wired and builder tested under
+`adapter-wireguard-outbound`; full public peer traffic remains uncertified.
+
+Evidence: `post_fable_package04_wireguard_dataplane_evidence.md`.

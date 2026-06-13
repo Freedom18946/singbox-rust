@@ -33,7 +33,7 @@ reload/config switching does not silently break service.
 | post_fable_package02 | Schema parity, TUN first | P0 | CAL-01, H-4 | DONE (`e3defcdf`) |
 | post_fable_package12 | DNS schema parity, GUI default | P0 | F-1 | DONE (`349eecf3`) |
 | post_fable_package03 | TUN dataplane | P1 | CAL-10, H-5 | PARTIAL (`edf42095`; startup honesty fixed, macOS normal-user smoke permission-blocked) |
-| post_fable_package04 | WireGuard dataplane | P0/P1 | CAL-03, CAL-09 | PLANNED |
+| post_fable_package04 | WireGuard dataplane | P0/P1 | CAL-03, CAL-09 | DONE (`f70bf5ef`; endpoint route target + legacy feature wiring) |
 | post_fable_package05 | Reload continuity and atomicity | P1 | CAL-04, CAL-05, CAL-07, CAL-12, CAL-14 | PLANNED |
 | post_fable_package06 | Inbound liveness and observability | P1/P2 | CAL-06, CAL-13, CAL-15, CAL-16 | PLANNED |
 | post_fable_package07 | GUI E2E probe | Probe | H-1, H-2, H-3, H-9 | PARTIAL (probe PASS; interactive E2E not agent-drivable) |
@@ -52,8 +52,8 @@ reload/config switching does not silently break service.
 3. `post_fable_package12_dns_schema_parity_gui_default.md` closes package07 F-1
    before package03, so the GUI default DNS config can pass the strict production
    load path.
-4. `post_fable_package04_wireguard_dataplane.md` can run in parallel after the
-   first GUI contract/schema tranche.
+4. `post_fable_package04_wireguard_dataplane.md` is DONE for endpoint/outbound
+   wiring; public peer interoperability remains outside package04 scope.
 5. `post_fable_package05_reload_continuity_atomicity.md` after GUI reload and Go
    reload probes are documented. It is the highest-risk core-path package.
 6. `post_fable_package06_inbound_liveness_observability.md` after or together with

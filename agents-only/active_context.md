@@ -12,11 +12,13 @@
 
 ## Resume (2026-06-13) - POST-FABLE wave
 
-- **package03 (TUN dataplane) PARTIAL** (`edf42095`): GUI `mixed`/default/`smoltcp`
-  now preopen Enhanced/smoltcp before readiness; `gvisor` compat-warns; `system` and
-  non-dry-run `manual` fail loudly; GUI `address`/routes map into runtime config.
-  macOS normal-user smoke reached real TUN startup and failed before `sing-box started`
-  with `Operation not permitted`; privileged traffic proof remains open.
+- **package04 (WireGuard dataplane) DONE** (`f70bf5ef`): endpoint tags now enter
+  outbound namespace; `route.final: "wg-ep"` smoke reached `sing-box started`;
+  legacy `wireguard` outbound is wired into app `adapters`/`parity`. Public WG
+  peer interoperability/perf is not certified.
+- **package03 (TUN dataplane) PARTIAL** (`edf42095`): GUI stacks map to real/loud
+  runtime policy; macOS normal-user smoke hit real TUN startup then
+  `Operation not permitted` before ready. Privileged traffic proof remains open.
 - **package12 (DNS schema parity) DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape
   passes strict production load path. DNS schema only, not TUN dataplane.
 - **package07 (GUI E2E probe) PARTIAL**: process-contract probe PASS; interactive Wails
