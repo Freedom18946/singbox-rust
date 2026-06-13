@@ -59,3 +59,17 @@ Notes:
 
 - `cargo test -p sb-adapters --lib` still reports pre-existing unused-import
   warnings in `crates/sb-adapters/src/register.rs`; tests pass.
+
+## 06b Acceptance Fix
+
+On 2026-06-13, package06b fixed an app lib test/API exposure gap: `ClashShutdownHandle`
+again exposes a crate-internal `subscribe_runtime_state()` method backed by its
+own `ClashRuntimePublisher`, preserving the `immediate_shutdown_yields_clean_terminal`
+test contract without changing sidecar policy.
+
+Passed locally for 06b:
+
+- `cargo test -p app --lib --features adapters,clash_api,v2ray_api`
+- `cargo test -p app --features adapters,clash_api,v2ray_api run_engine_runtime`
+- `cargo test -p sb-core --lib supervisor`
+- `git diff --check`
