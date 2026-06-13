@@ -1,8 +1,10 @@
 use sb_types::IssueCode;
-use serde_json::Value;
+use serde_json::{Map, Value};
 use std::collections::HashSet;
 
-use super::{emit_issue, extract_string_list, insert_keys, object_keys, parse_u32_field};
+use super::{
+    emit_issue, extract_string_list, insert_keys, object_keys, parse_u16_field, parse_u32_field,
+};
 use crate::ir::{ConfigIR, DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR};
 
 fn allowed_dns_keys() -> HashSet<String> {
@@ -16,7 +18,18 @@ fn allowed_dns_keys() -> HashSet<String> {
 
 fn allowed_dns_server_keys() -> HashSet<String> {
     let mut set = object_keys(DnsServerIR::default());
-    insert_keys(&mut set, &["name", "type", "server"]);
+    insert_keys(
+        &mut set,
+        &[
+            "name",
+            "type",
+            "server",
+            "domain_resolver",
+            "server_port",
+            "path",
+            "interface",
+        ],
+    );
     set
 }
 
@@ -119,6 +132,110 @@ fn infer_dns_server_type_from_address(address: &str) -> Option<String> {
     }
 }
 
+fn trimmed_string_field(map: &Map<String, Value>, key: &str) -> Option<String> {
+    map.get(key)
+        .and_then(|v| v.as_str())
+        .map(str::trim)
+        .filter(|s| !s.is_empty())
+        .map(ToOwned::to_owned)
+}
+
+fn server_with_port(server: &str, port: Option<u16>) -> String {
+    match port.filter(|p| *p != 0) {
+        Some(port) => format!("{server}:{port}"),
+        None => server.to_string(),
+    }
+}
+
+fn dns_https_path(map: &Map<String, Value>) -> String {
+    let path = trimmed_string_field(map, "path").unwrap_or_else(|| "/dns-query".to_string());
+    if path.starts_with('/') {
+        path
+    } else {
+        format!("/{path}")
+    }
+}
+
+fn canonical_dns_address_from_type(map: &Map<String, Value>, ty: &str) -> String {
+    let ty = ty.trim().to_ascii_lowercase();
+    let server = trimmed_string_field(map, "server").unwrap_or_default();
+    let port = parse_u16_field(map.get("server_port"));
+
+    match ty.as_str() {
+        "local" => "local".to_string(),
+        "hosts" => "hosts".to_string(),
+        "fakeip" | "fake-ip" => "fakeip".to_string(),
+        "resolved" => "resolved".to_string(),
+        "dhcp" => trimmed_string_field(map, "interface")
+            .map(|iface| format!("dhcp://{iface}"))
+            .unwrap_or_else(|| "dhcp".to_string()),
+        "udp" => {
+            if server.is_empty() {
+                String::new()
+            } else {
+                format!("udp://{}", server_with_port(&server, port))
+            }
+        }
+        "tcp" => {
+            if server.is_empty() {
+                String::new()
+            } else {
+                format!("tcp://{}", server_with_port(&server, port))
+            }
+        }
+        "tls" | "dot" => {
+            if server.is_empty() {
+                String::new()
+            } else {
+                format!("tls://{}", server_with_port(&server, port))
+            }
+        }
+        "quic" | "doq" => {
+            if server.is_empty() {
+                String::new()
+            } else {
+                format!("quic://{}", server_with_port(&server, port))
+            }
+        }
+        "https" => {
+            if server.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "https://{}{}",
+                    server_with_port(&server, port),
+                    dns_https_path(map)
+                )
+            }
+        }
+        "h3" | "http3" | "doh3" => {
+            if server.is_empty() {
+                String::new()
+            } else {
+                format!(
+                    "h3://{}{}",
+                    server_with_port(&server, port),
+                    dns_https_path(map)
+                )
+            }
+        }
+        "rcode" => {
+            if server.is_empty() {
+                String::new()
+            } else {
+                format!("rcode://{server}")
+            }
+        }
+        other => {
+            if server.is_empty() {
+                String::new()
+            } else {
+                format!("{}://{}", other, server_with_port(&server, port))
+            }
+        }
+    }
+}
+
 /// Lower the `/dns` block from raw JSON into `ConfigIR.dns`.
 ///
 /// This is the single DNS lowering owner — `to_ir_v1()` delegates here.
@@ -154,7 +271,7 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                     .map(|s| s.trim().to_ascii_lowercase());
 
                 // Accept both legacy `address: "<proto>://..."` and
-                // go1.12.4-style `{ "type": "...", "server": "..." }` shapes.
+                // Go 1.12 type-based `{ "type": "...", "server": ... }` shapes.
                 let address = if let Some(addr) = map
                     .get("address")
                     .and_then(|v| v.as_str())
@@ -162,24 +279,7 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                 {
                     addr
                 } else if let Some(ref ty) = ty {
-                    let server = map
-                        .get("server")
-                        .and_then(|v| v.as_str())
-                        .unwrap_or("")
-                        .trim()
-                        .to_string();
-                    if server.is_empty() {
-                        String::new()
-                    } else {
-                        match ty.as_str() {
-                            "udp" => format!("udp://{}", server),
-                            "tcp" => format!("tcp://{}", server),
-                            "tls" | "dot" => format!("tls://{}", server),
-                            "https" => format!("https://{}/dns-query", server),
-                            "rcode" => format!("rcode://{}", server),
-                            other => format!("{}://{}", other, server),
-                        }
-                    }
+                    canonical_dns_address_from_type(map, ty)
                 } else {
                     String::new()
                 };
@@ -249,8 +349,10 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                         client_subnet,
                         address_resolver: map
                             .get("address_resolver")
+                            .or_else(|| map.get("domain_resolver"))
                             .and_then(|v| v.as_str())
-                            .map(|s| s.to_string()),
+                            .map(|s| s.trim().to_string())
+                            .filter(|s| !s.is_empty()),
                         address_strategy: map
                             .get("address_strategy")
                             .and_then(|v| v.as_str())
@@ -283,15 +385,16 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                             .get("inet6_range")
                             .and_then(|v| v.as_str())
                             .map(|s| s.to_string()),
-                        hosts_path: map
-                            .get("hosts_path")
-                            .and_then(|v| v.as_array())
-                            .map(|arr| {
-                                arr.iter()
-                                    .filter_map(|v| v.as_str().map(|s| s.to_string()))
-                                    .collect()
-                            })
-                            .unwrap_or_default(),
+                        hosts_path: {
+                            let mut paths =
+                                extract_string_list(map.get("hosts_path")).unwrap_or_default();
+                            if ty.as_deref() == Some("hosts") {
+                                if let Some(path) = extract_string_list(map.get("path")) {
+                                    paths.extend(path);
+                                }
+                            }
+                            paths
+                        },
                         predefined: map.get("predefined").and_then(|v| {
                             if v.is_null() {
                                 None
@@ -712,6 +815,249 @@ mod tests {
         assert_eq!(find("dot1").address, "tls://9.9.9.9");
         assert_eq!(find("h1").address, "https://dns.example.com/dns-query");
         assert_eq!(find("r1").address, "rcode://success");
+    }
+
+    #[test]
+    fn pf12_gui_default_dns_server_shape_passes_strict_validation() {
+        let doc = json!({
+            "dns": {
+                "servers": [
+                    {
+                        "tag": "FakeIP",
+                        "type": "fakeip",
+                        "inet4_range": "198.18.0.0/15",
+                        "inet6_range": "fc00::/18"
+                    },
+                    {
+                        "tag": "Local-DNS",
+                        "type": "https",
+                        "server": "223.5.5.5",
+                        "server_port": 443,
+                        "path": "/dns-query",
+                        "domain_resolver": "Local-DNS-Resolver"
+                    },
+                    {
+                        "tag": "Local-DNS-Resolver",
+                        "type": "udp",
+                        "server": "223.5.5.5",
+                        "server_port": 53
+                    },
+                    {
+                        "tag": "Remote-DNS",
+                        "type": "tls",
+                        "server": "8.8.8.8",
+                        "server_port": 853,
+                        "domain_resolver": "Remote-DNS-Resolver",
+                        "detour": "select"
+                    },
+                    {
+                        "tag": "Remote-DNS-Resolver",
+                        "type": "udp",
+                        "server": "8.8.8.8",
+                        "server_port": 53,
+                        "detour": "select"
+                    }
+                ]
+            }
+        });
+        let issues = run_validate(&doc, false);
+        assert!(
+            issues.is_empty(),
+            "GUI default DNS server shape should pass strict validation: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn pf12_domain_resolver_lowers_to_address_resolver() {
+        let doc = json!({
+            "schema_version": 2,
+            "dns": {
+                "servers": [
+                    {"tag": "resolver", "type": "udp", "server": "223.5.5.5", "server_port": 53},
+                    {
+                        "tag": "doh",
+                        "type": "https",
+                        "server": "223.5.5.5",
+                        "server_port": 443,
+                        "path": "/dns-query",
+                        "domain_resolver": "resolver"
+                    }
+                ]
+            }
+        });
+        let ir = to_ir_v1(&doc);
+        let dns = ir.dns.expect("dns");
+        let doh = dns.servers.iter().find(|s| s.tag == "doh").unwrap();
+        assert_eq!(doh.address_resolver.as_deref(), Some("resolver"));
+    }
+
+    #[test]
+    fn pf12_server_port_and_path_are_in_canonical_addresses() {
+        let doc = json!({
+            "schema_version": 2,
+            "dns": {
+                "servers": [
+                    {"tag": "udp", "type": "udp", "server": "8.8.8.8", "server_port": 5353},
+                    {"tag": "tcp", "type": "tcp", "server": "8.8.4.4", "server_port": "5354"},
+                    {"tag": "tls", "type": "tls", "server": "1.1.1.1", "server_port": 853},
+                    {"tag": "quic", "type": "quic", "server": "dns.example.com", "server_port": 8853},
+                    {"tag": "https", "type": "https", "server": "dns.example.com", "server_port": 8443, "path": "/custom-query"},
+                    {"tag": "h3", "type": "h3", "server": "h3.example.com", "server_port": 9443, "path": "dns-query"}
+                ]
+            }
+        });
+        let ir = to_ir_v1(&doc);
+        let dns = ir.dns.expect("dns");
+        let find = |tag: &str| dns.servers.iter().find(|s| s.tag == tag).unwrap();
+        assert_eq!(find("udp").address, "udp://8.8.8.8:5353");
+        assert_eq!(find("tcp").address, "tcp://8.8.4.4:5354");
+        assert_eq!(find("tls").address, "tls://1.1.1.1:853");
+        assert_eq!(find("quic").address, "quic://dns.example.com:8853");
+        assert_eq!(
+            find("https").address,
+            "https://dns.example.com:8443/custom-query"
+        );
+        assert_eq!(find("h3").address, "h3://h3.example.com:9443/dns-query");
+    }
+
+    #[test]
+    fn pf12_dhcp_interface_validates_and_lowers() {
+        let doc = json!({
+            "dns": {
+                "servers": [
+                    {"tag": "dhcp", "type": "dhcp", "interface": "en0"}
+                ]
+            }
+        });
+        let issues = run_validate(&doc, false);
+        assert!(
+            issues.is_empty(),
+            "dhcp interface should validate: {issues:?}"
+        );
+
+        let ir = to_ir_v1(&doc);
+        let dns = ir.dns.expect("dns");
+        assert_eq!(dns.servers[0].address, "dhcp://en0");
+    }
+
+    #[test]
+    fn pf12_hosts_path_validates_and_lowers_to_hosts_path() {
+        let doc = json!({
+            "dns": {
+                "servers": [
+                    {"tag": "hosts", "type": "hosts", "path": ["/etc/hosts", "/tmp/hosts"], "predefined": {"example.com": ["1.2.3.4"]}}
+                ]
+            }
+        });
+        let issues = run_validate(&doc, false);
+        assert!(issues.is_empty(), "hosts path should validate: {issues:?}");
+
+        let ir = to_ir_v1(&doc);
+        let dns = ir.dns.expect("dns");
+        assert_eq!(dns.servers[0].address, "hosts");
+        assert_eq!(
+            dns.servers[0].hosts_path,
+            vec!["/etc/hosts".to_string(), "/tmp/hosts".to_string()]
+        );
+        assert!(dns.servers[0].predefined.is_some());
+    }
+
+    #[test]
+    fn pf12_bogus_dns_server_field_still_rejected() {
+        let doc = json!({
+            "dns": {
+                "servers": [
+                    {"tag": "bad", "type": "udp", "server": "8.8.8.8", "bogus_dns_server_field": true}
+                ]
+            }
+        });
+        let issues = run_validate(&doc, false);
+        assert!(
+            issues
+                .iter()
+                .any(|i| i["ptr"] == "/dns/servers/0/bogus_dns_server_field"
+                    && i["kind"] == "error"
+                    && i["code"] == "UnknownField"),
+            "bogus dns server field should still be rejected: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn pf12_gui_defaultish_dns_config_passes_config_from_raw_value() {
+        let doc = json!({
+            "schema_version": 2,
+            "outbounds": [
+                {"type": "selector", "tag": "select", "outbounds": ["direct"]},
+                {"type": "direct", "tag": "direct"}
+            ],
+            "dns": {
+                "servers": [
+                    {
+                        "tag": "FakeIP",
+                        "type": "fakeip",
+                        "inet4_range": "198.18.0.0/15",
+                        "inet6_range": "fc00::/18"
+                    },
+                    {
+                        "tag": "Local-DNS",
+                        "type": "https",
+                        "server": "223.5.5.5",
+                        "server_port": 443,
+                        "path": "/dns-query",
+                        "domain_resolver": "Local-DNS-Resolver"
+                    },
+                    {
+                        "tag": "Local-DNS-Resolver",
+                        "type": "udp",
+                        "server": "223.5.5.5",
+                        "server_port": 53
+                    },
+                    {
+                        "tag": "Remote-DNS",
+                        "type": "tls",
+                        "server": "8.8.8.8",
+                        "server_port": 853,
+                        "domain_resolver": "Remote-DNS-Resolver",
+                        "detour": "select"
+                    },
+                    {
+                        "tag": "Remote-DNS-Resolver",
+                        "type": "udp",
+                        "server": "8.8.8.8",
+                        "server_port": 53,
+                        "detour": "select"
+                    }
+                ],
+                "rules": [
+                    {"clash_mode": "Direct", "server": "Local-DNS"},
+                    {"clash_mode": "Global", "server": "Remote-DNS"},
+                    {"rule_set": "geosite-cn", "server": "Local-DNS"},
+                    {"rule_set": "geolocation-!cn", "server": "Remote-DNS"}
+                ],
+                "disable_cache": false,
+                "disable_expire": false,
+                "independent_cache": false,
+                "final": "Remote-DNS"
+            }
+        });
+
+        let (_cfg, ir) = crate::config_from_raw_value(doc).expect("GUI DNS shape should load");
+        let dns = ir.dns.expect("dns");
+        let find = |tag: &str| dns.servers.iter().find(|s| s.tag == tag).unwrap();
+        assert_eq!(find("FakeIP").address, "fakeip");
+        assert_eq!(find("Local-DNS").address, "https://223.5.5.5:443/dns-query");
+        assert_eq!(
+            find("Local-DNS").address_resolver.as_deref(),
+            Some("Local-DNS-Resolver")
+        );
+        assert_eq!(find("Local-DNS-Resolver").address, "udp://223.5.5.5:53");
+        assert_eq!(find("Remote-DNS").address, "tls://8.8.8.8:853");
+        assert_eq!(
+            find("Remote-DNS").address_resolver.as_deref(),
+            Some("Remote-DNS-Resolver")
+        );
+        assert_eq!(find("Remote-DNS-Resolver").address, "udp://8.8.8.8:53");
+        assert_eq!(dns.final_server.as_deref(), Some("Remote-DNS"));
     }
 
     // address_resolver / service / detour on servers
