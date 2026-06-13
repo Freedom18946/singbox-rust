@@ -18,6 +18,10 @@ use tokio::sync::watch;
 pub struct AdminServices {
     #[cfg(feature = "clash_api")]
     clash_api: Option<ClashApiHandle>,
+    #[cfg(feature = "clash_api")]
+    clash_runtime: Option<ClashRuntimePublisher>,
+    #[cfg(feature = "clash_api")]
+    clash_listen: Option<std::net::SocketAddr>,
     #[cfg(feature = "admin_debug")]
     admin_debug: Option<app::admin_debug::http_server::AdminDebugHandle>,
 }
@@ -41,10 +45,11 @@ impl AdminServices {
     pub(crate) fn clash_runtime_subscription(
         &self,
     ) -> Option<crate::sidecar_runtime::SidecarRuntimeSubscription> {
-        self.clash_api.as_ref().map(|handle| {
-            crate::sidecar_runtime::SidecarRuntimeSubscription::from_clash(
+        self.clash_runtime.as_ref().map(|publisher| {
+            crate::sidecar_runtime::SidecarRuntimeSubscription::from_clash_with_listen(
                 "clash-api",
-                handle.shutdown.subscribe_runtime_state(),
+                publisher.subscribe(),
+                self.clash_listen.map(|listen| listen.to_string()),
             )
         })
     }
@@ -120,6 +125,20 @@ impl ClashRuntimePublisher {
         }
     }
 
+    fn new_terminal(exit: SidecarExit) -> Self {
+        let (runtime_tx, _) = watch::channel(SidecarRuntimeSnapshot {
+            current: None,
+            last_exit: Some(SidecarExitRecord {
+                generation: 1,
+                exit,
+            }),
+        });
+        Self {
+            runtime_tx,
+            shutdown_requested: Arc::new(AtomicBool::new(false)),
+        }
+    }
+
     /// Capability accessor used by the run-engine event bridge to subscribe a future consumer.
     fn subscribe(&self) -> watch::Receiver<SidecarRuntimeSnapshot> {
         self.runtime_tx.subscribe()
@@ -171,11 +190,6 @@ pub struct ClashShutdownHandle {
 
 #[cfg(all(feature = "router", feature = "clash_api"))]
 impl ClashShutdownHandle {
-    /// Subscribe to this Clash generation's runtime snapshot (used by the run-engine event bridge).
-    pub(crate) fn subscribe_runtime_state(&self) -> watch::Receiver<SidecarRuntimeSnapshot> {
-        self.runtime.subscribe()
-    }
-
     /// Synchronous-publish then async-drain: mark + publish `ShutdownRequested` (in the watch lock),
     /// send the shutdown signal outside any lock, then await the outer monitor's terminal commit.
     /// Idempotent — a repeated call is a safe no-op (sender/join already taken).
@@ -285,6 +299,9 @@ pub fn spawn_prebound_clash_api_server(
             SidecarExit::CleanShutdown => {
                 info!("Clash API server stopped (clean shutdown)");
             }
+            SidecarExit::StartFailed(error) => {
+                error!(error = %error, "Clash API server failed before serving");
+            }
             SidecarExit::UnexpectedCompletion => {
                 tracing::warn!("Clash API server completed without a shutdown request");
             }
@@ -338,18 +355,31 @@ fn clash_api_listen_addr(ir: &sb_config::ir::ConfigIR) -> Option<std::net::Socke
 }
 
 #[cfg(all(feature = "router", feature = "clash_api"))]
+#[derive(Default)]
+struct ClashStartupResult {
+    handle: Option<ClashApiHandle>,
+    runtime: Option<ClashRuntimePublisher>,
+    listen: Option<std::net::SocketAddr>,
+}
+
+#[cfg(all(feature = "router", feature = "clash_api"))]
 async fn start_clash_api_from_supervisor(
     supervisor: &Arc<sb_core::runtime::supervisor::Supervisor>,
-) -> Option<ClashApiHandle> {
+) -> ClashStartupResult {
     let state_lock = supervisor.handle().state().await;
     let state_guard = state_lock.read().await;
 
-    let listen_addr = clash_api_listen_addr(&state_guard.current_ir)?;
-    let clash_cfg = state_guard
+    let Some(listen_addr) = clash_api_listen_addr(&state_guard.current_ir) else {
+        return ClashStartupResult::default();
+    };
+    let Some(clash_cfg) = state_guard
         .current_ir
         .experimental
         .as_ref()
-        .and_then(|experimental| experimental.clash_api.as_ref())?;
+        .and_then(|experimental| experimental.clash_api.as_ref())
+    else {
+        return ClashStartupResult::default();
+    };
 
     let config = sb_api::types::ApiConfig {
         listen_addr,
@@ -366,7 +396,13 @@ async fn start_clash_api_from_supervisor(
         Ok(server) => server,
         Err(error) => {
             error!(error = %error, "failed to create clash api server");
-            return None;
+            return ClashStartupResult {
+                handle: None,
+                runtime: Some(ClashRuntimePublisher::new_terminal(
+                    SidecarExit::StartFailed(error.to_string()),
+                )),
+                listen: Some(listen_addr),
+            };
         }
     };
 
@@ -399,15 +435,28 @@ async fn start_clash_api_from_supervisor(
         Ok(handle) => handle,
         Err(error) => {
             error!(error = %error, listen = %listen_addr, "failed to start clash api server");
-            return None;
+            return ClashStartupResult {
+                handle: None,
+                runtime: Some(ClashRuntimePublisher::new_terminal(
+                    SidecarExit::StartFailed(error.to_string()),
+                )),
+                listen: Some(listen_addr),
+            };
         }
     };
 
     info!(listen = %handle.listen_addr, "started clash api server from run_engine");
-    Some(ClashApiHandle {
-        listen_addr: handle.listen_addr,
-        shutdown: handle.shutdown,
-    })
+    let runtime = handle.shutdown.runtime.clone();
+    let listen_addr = handle.listen_addr;
+    let shutdown = handle.shutdown;
+    ClashStartupResult {
+        handle: Some(ClashApiHandle {
+            listen_addr,
+            shutdown,
+        }),
+        runtime: Some(runtime),
+        listen: Some(listen_addr),
+    }
 }
 
 pub async fn start_admin_services(ctx: AdminStartContext<'_>) -> Result<AdminServices> {
@@ -425,7 +474,7 @@ pub async fn start_admin_services(ctx: AdminStartContext<'_>) -> Result<AdminSer
 
     if let Some(addr) = opts.admin_listen.as_ref() {
         #[cfg(feature = "clash_api")]
-        if let Some(handle) = clash_api.as_ref() {
+        if let Some(handle) = clash_api.handle.as_ref() {
             if let Ok(admin_addr) = addr.parse::<std::net::SocketAddr>() {
                 if admin_addr == handle.listen_addr {
                     tracing::warn!(
@@ -485,7 +534,11 @@ pub async fn start_admin_services(ctx: AdminStartContext<'_>) -> Result<AdminSer
 
     Ok(AdminServices {
         #[cfg(feature = "clash_api")]
-        clash_api,
+        clash_api: clash_api.handle,
+        #[cfg(feature = "clash_api")]
+        clash_runtime: clash_api.runtime,
+        #[cfg(feature = "clash_api")]
+        clash_listen: clash_api.listen,
         #[cfg(feature = "admin_debug")]
         admin_debug,
     })
@@ -560,8 +613,8 @@ mod tests {
             "bind/start failure handling must precede the started log"
         );
         assert!(
-            implementation[err_branch..started_log].contains("return None"),
-            "bind/start failure must return without creating a live-looking handle"
+            implementation[err_branch..started_log].contains("SidecarExit::StartFailed"),
+            "bind/start failure must publish a terminal StartFailed sidecar snapshot"
         );
     }
 
@@ -600,6 +653,22 @@ mod tests {
             let snapshot = rx.borrow();
             assert_eq!(current(&snapshot), Some((1, SidecarActivePhase::Running)));
             assert!(snapshot.last_exit.is_none());
+        }
+
+        #[test]
+        fn publisher_can_start_terminal_for_start_failure() {
+            let publisher =
+                ClashRuntimePublisher::new_terminal(SidecarExit::StartFailed("bind".into()));
+            let rx = publisher.subscribe();
+            let snapshot = rx.borrow();
+            assert!(snapshot.current.is_none());
+            assert_eq!(
+                snapshot.last_exit,
+                Some(SidecarExitRecord {
+                    generation: 1,
+                    exit: SidecarExit::StartFailed("bind".into()),
+                })
+            );
         }
 
         // ── B. Explicit shutdown marks ShutdownRequested(1) ──

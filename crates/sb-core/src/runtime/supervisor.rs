@@ -20,14 +20,17 @@ use crate::service::{Service, StartStage as ServiceStage};
 use anyhow::{Context as AnyhowContext, Result};
 use sb_config::ir::diff::Diff;
 use std::collections::HashMap;
+use std::io;
 use std::net::IpAddr;
 use std::path::Path;
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, oneshot, RwLock};
 use tokio_util::sync::CancellationToken;
 
 const INBOUND_READY_TIMEOUT: Duration = Duration::from_secs(10);
+const INBOUND_MONITOR_DRAIN_TIMEOUT: Duration = Duration::from_secs(2);
 
 fn ensure_bridge_startup_ready(bridge: &Bridge) -> Result<()> {
     if bridge.startup_errors.is_empty() {
@@ -68,6 +71,52 @@ struct ProviderOverlayState {
     rules_by_provider: HashMap<String, Vec<sb_config::ir::RuleIR>>,
 }
 
+#[derive(Clone, Debug, PartialEq, Eq)]
+enum InboundExitKind {
+    CleanShutdown,
+    UnexpectedCompletion,
+    ServeError,
+    Panicked,
+    JoinCancelled,
+}
+
+impl InboundExitKind {
+    fn as_str(&self) -> &'static str {
+        match self {
+            Self::CleanShutdown => "clean_shutdown",
+            Self::UnexpectedCompletion => "unexpected_completion",
+            Self::ServeError => "serve_error",
+            Self::Panicked => "panicked",
+            Self::JoinCancelled => "join_cancelled",
+        }
+    }
+
+    fn is_error(&self) -> bool {
+        !matches!(self, Self::CleanShutdown)
+    }
+}
+
+#[derive(Clone, Debug)]
+struct InboundRuntimeLabel {
+    tag: String,
+    kind: String,
+    phase: &'static str,
+}
+
+struct InboundRuntimeMonitor {
+    label: InboundRuntimeLabel,
+    shutdown_requested: Arc<AtomicBool>,
+    join: tokio::task::JoinHandle<()>,
+}
+
+impl std::fmt::Debug for InboundRuntimeMonitor {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("InboundRuntimeMonitor")
+            .field("label", &self.label)
+            .finish_non_exhaustive()
+    }
+}
+
 /// Runtime state managed by supervisor
 #[cfg(feature = "router")]
 #[derive(Debug)]
@@ -75,6 +124,7 @@ pub struct State {
     pub engine: Engine,
     pub bridge: Arc<Bridge>,
     pub context: Context,
+    inbound_monitors: Vec<InboundRuntimeMonitor>,
     pub health: Option<tokio::task::JoinHandle<()>>,
     #[cfg(feature = "service_ntp")]
     pub ntp: Option<tokio::task::JoinHandle<()>>,
@@ -89,6 +139,7 @@ pub struct State {
 pub struct State {
     pub bridge: Arc<Bridge>,
     pub context: Context,
+    inbound_monitors: Vec<InboundRuntimeMonitor>,
     pub health: Option<tokio::task::JoinHandle<()>>,
     #[cfg(feature = "service_ntp")]
     pub ntp: Option<tokio::task::JoinHandle<()>>,
@@ -126,6 +177,7 @@ impl State {
             engine,
             bridge: Arc::new(bridge),
             context,
+            inbound_monitors: Vec::new(),
             health: None,
             #[cfg(feature = "service_ntp")]
             ntp: None,
@@ -142,6 +194,7 @@ impl State {
         Self {
             bridge: Arc::new(bridge),
             context,
+            inbound_monitors: Vec::new(),
             health: None,
             #[cfg(feature = "service_ntp")]
             ntp: None,
@@ -217,12 +270,7 @@ impl Supervisor {
             .inspect_err(|_| shutdown_context(&context))?;
         tracing::info!(target: "sb_core::runtime", "Context managers started");
 
-        // Configure DNS resolver from IR (if provided)
-        if ir.dns.is_some() {
-            if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(&ir) {
-                crate::dns::global::set(resolver);
-            }
-        }
+        let _ = apply_dns_resolver_from_ir(&ir, "startup");
         // Apply TLS certificate configuration (global trust augmentation)
         crate::tls::global::apply_from_ir(ir.certificate.as_ref());
 
@@ -240,14 +288,17 @@ impl Supervisor {
             )
         };
 
-        if let Err(e) = start_inbounds_until_ready(&inbounds, "startup").await {
-            tracing::error!(target: "sb_core::runtime", error = %e, "inbound startup failed, rolling back");
-            stop_inbounds(&inbounds);
-            stop_endpoints(&endpoints);
-            stop_services(&services);
-            shutdown_context(&state.read().await.context);
-            return Err(e);
-        }
+        let inbound_monitors = match start_inbounds_until_ready(&bridge_for_health, "startup").await
+        {
+            Ok(monitors) => monitors,
+            Err(e) => {
+                tracing::error!(target: "sb_core::runtime", error = %e, "inbound startup failed, rolling back");
+                stop_endpoints(&endpoints);
+                stop_services(&services);
+                shutdown_context(&state.read().await.context);
+                return Err(e);
+            }
+        };
 
         // Endpoints and services have already been driven through Initialize
         // and Start stages by run_context_stage above. PostStart and Started
@@ -258,30 +309,31 @@ impl Supervisor {
 
         // PostStart stage for context managers (after all inbounds/endpoints/services started)
         {
-            let state_guard = state.read().await;
-            if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::PostStart) {
+            let context = { state.read().await.context.clone() };
+            if let Err(e) = run_context_stage(&context, ServiceStage::PostStart) {
                 tracing::error!(target: "sb_core::runtime", error = %e, "PostStart failed, rolling back");
-                for ib in &inbounds {
-                    ib.request_shutdown();
-                }
+                shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
+                    .await;
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&state_guard.context);
+                shutdown_context(&context);
                 return Err(e);
             }
-            if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::Started) {
+            if let Err(e) = run_context_stage(&context, ServiceStage::Started) {
                 tracing::error!(target: "sb_core::runtime", error = %e, "Started stage failed, rolling back");
-                for ib in &inbounds {
-                    ib.request_shutdown();
-                }
+                shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
+                    .await;
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&state_guard.context);
+                shutdown_context(&context);
                 return Err(e);
             }
             tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete");
+            let state_guard = state.read().await;
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
         }
+
+        state.write().await.inbound_monitors = inbound_monitors;
 
         // Optional health task
         if std::env::var("SB_HEALTH_ENABLE").is_ok() {
@@ -406,28 +458,35 @@ impl Supervisor {
         })?;
         tracing::info!(target: "sb_core::runtime", "Context managers started (no-router)");
 
+        let _ = apply_dns_resolver_from_ir(&ir, "startup");
+
         let initial_state = State::new((), bridge, context, ir);
 
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
-        let (inbounds, endpoints, services) = {
+        let (inbounds, endpoints, services, bridge_for_inbounds) = {
             let state_guard = state.read().await;
             (
                 state_guard.bridge.inbounds.clone(),
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
+                state_guard.bridge.clone(),
             )
         };
 
-        if let Err(e) = start_inbounds_until_ready(&inbounds, "startup").await {
-            tracing::error!(target: "sb_core::runtime", error = %e, "inbound startup failed (no-router), rolling back");
-            stop_inbounds(&inbounds);
-            stop_endpoints(&endpoints);
-            stop_services(&services);
-            shutdown_context(&state.read().await.context);
-            return Err(e);
-        }
+        let inbound_monitors = match start_inbounds_until_ready(&bridge_for_inbounds, "startup")
+            .await
+        {
+            Ok(monitors) => monitors,
+            Err(e) => {
+                tracing::error!(target: "sb_core::runtime", error = %e, "inbound startup failed (no-router), rolling back");
+                stop_endpoints(&endpoints);
+                stop_services(&services);
+                shutdown_context(&state.read().await.context);
+                return Err(e);
+            }
+        };
 
         // Endpoints/services already driven through Initialize+Start by
         // run_context_stage above; PostStart and Started follow.
@@ -440,30 +499,31 @@ impl Supervisor {
 
         // PostStart stage for context managers
         {
-            let state_guard = state.read().await;
-            if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::PostStart) {
+            let context = { state.read().await.context.clone() };
+            if let Err(e) = run_context_stage(&context, ServiceStage::PostStart) {
                 tracing::error!(target: "sb_core::runtime", error = %e, "PostStart failed (no-router), rolling back");
-                for ib in &inbounds {
-                    ib.request_shutdown();
-                }
+                shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
+                    .await;
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&state_guard.context);
+                shutdown_context(&context);
                 return Err(e);
             }
-            if let Err(e) = run_context_stage(&state_guard.context, ServiceStage::Started) {
+            if let Err(e) = run_context_stage(&context, ServiceStage::Started) {
                 tracing::error!(target: "sb_core::runtime", error = %e, "Started stage failed (no-router), rolling back");
-                for ib in &inbounds {
-                    ib.request_shutdown();
-                }
+                shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
+                    .await;
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&state_guard.context);
+                shutdown_context(&context);
                 return Err(e);
             }
             tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete (no-router)");
+            let state_guard = state.read().await;
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
         }
+
+        state.write().await.inbound_monitors = inbound_monitors;
 
         // Event loop (simplified for non-router case)
         let state_clone = Arc::clone(&state);
@@ -648,7 +708,8 @@ impl Supervisor {
         // see the 01A audit). The bridge is exported via `new_bridge_slot` so a failure after
         // bridge construction can still stop bridge-owned resources.
         let mut new_bridge_slot: Option<Arc<Bridge>> = None;
-        let activation_result: Result<Arc<Bridge>> = async {
+        let mut new_inbound_monitors_slot: Option<Vec<InboundRuntimeMonitor>> = None;
+        let activation_result: Result<(Arc<Bridge>, Vec<InboundRuntimeMonitor>)> = async {
             // Initialize new context managers
             run_context_stage(&new_context, ServiceStage::Initialize)?;
             tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload");
@@ -671,16 +732,12 @@ impl Supervisor {
             run_context_stage(&new_context, ServiceStage::Start)?;
             tracing::info!(target: "sb_core::runtime", "New context managers started on reload");
 
-            // Update DNS resolver from IR if present
-            if new_ir.dns.is_some() {
-                if let Ok(resolver) = crate::dns::config_builder::resolver_from_ir(&new_ir) {
-                    crate::dns::global::set(resolver);
-                }
-            }
+            let _ = apply_dns_resolver_from_ir(&new_ir, "reload");
             // Refresh global TLS trust configuration from IR
             crate::tls::global::apply_from_ir(new_ir.certificate.as_ref());
 
-            start_inbounds_until_ready(&new_bridge_arc.inbounds, "reload").await?;
+            let new_inbound_monitors = start_inbounds_until_ready(&new_bridge_arc, "reload").await?;
+            new_inbound_monitors_slot = Some(new_inbound_monitors);
             // Endpoints/services already driven through Start above; do not invoke
             // start_endpoints/start_services here (would re-trigger lifecycle and
             // bypass ServiceManager.statuses).
@@ -690,22 +747,28 @@ impl Supervisor {
             run_context_stage(&new_context, ServiceStage::Started)?;
             tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload");
 
-            Ok(new_bridge_arc)
+            let new_inbound_monitors = new_inbound_monitors_slot
+                .take()
+                .expect("reload inbound monitors present after readiness");
+            Ok((new_bridge_arc, new_inbound_monitors))
         }
         .await;
 
-        let new_bridge_arc = match activation_result {
-            Ok(bridge) => bridge,
+        let (new_bridge_arc, new_inbound_monitors) = match activation_result {
+            Ok((bridge, monitors)) => (bridge, monitors),
             Err(error) => {
                 tracing::error!(target: "sb_core::runtime", error = %error, "reload activation failed before swap, rolling back new construction");
                 let (new_inbounds, new_endpoints, new_services) = new_bridge_slot
                     .as_deref()
                     .map(|b| (&b.inbounds[..], &b.endpoints[..], &b.services[..]))
                     .unwrap_or((&[], &[], &[]));
+                if let Some(monitors) = new_inbound_monitors_slot.take() {
+                    shutdown_inbounds_and_monitors(new_inbounds, monitors, "reload-rollback").await;
+                }
                 shutdown_failed_reload_context(
                     &old_context,
                     &new_context,
-                    new_inbounds,
+                    &[],
                     new_endpoints,
                     new_services,
                 );
@@ -718,7 +781,7 @@ impl Supervisor {
         let preserve_v2ray = same_v2ray_server(&old_context, &new_context);
 
         // Update state atomically
-        {
+        let old_inbound_monitors = {
             let mut state_guard = state.write().await;
 
             // Stop old health task if any
@@ -741,6 +804,8 @@ impl Supervisor {
             state_guard.bridge = new_bridge_arc;
             state_guard.context = new_context;
             state_guard.current_ir = new_ir;
+            let old_inbound_monitors =
+                std::mem::replace(&mut state_guard.inbound_monitors, new_inbound_monitors);
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
@@ -751,7 +816,8 @@ impl Supervisor {
                 });
                 state_guard.health = Some(health_handle);
             }
-        }
+            old_inbound_monitors
+        };
 
         #[cfg(feature = "service_ntp")]
         {
@@ -759,7 +825,8 @@ impl Supervisor {
             install_ntp_task(state, ntp_cfg).await;
         }
 
-        stop_inbounds(&old_inbounds);
+        shutdown_inbounds_and_monitors(&old_inbounds, old_inbound_monitors, "reload-replaced")
+            .await;
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
         shutdown_replaced_context(&old_context, preserve_v2ray);
@@ -817,7 +884,8 @@ impl Supervisor {
         // path (see handle_reload) — any activation failure funnels into the shared
         // shutdown_failed_reload_context rollback instead of leaking the new construction.
         let mut new_bridge_slot: Option<Arc<Bridge>> = None;
-        let activation_result: Result<Arc<Bridge>> = async {
+        let mut new_inbound_monitors_slot: Option<Vec<InboundRuntimeMonitor>> = None;
+        let activation_result: Result<(Arc<Bridge>, Vec<InboundRuntimeMonitor>)> = async {
             // Initialize new context managers (Box Runtime Parity)
             run_context_stage(&new_context, ServiceStage::Initialize)?;
             tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload (no-router)");
@@ -836,7 +904,10 @@ impl Supervisor {
             run_context_stage(&new_context, ServiceStage::Start)?;
             tracing::info!(target: "sb_core::runtime", "New context managers started on reload (no-router)");
 
-            start_inbounds_until_ready(&new_bridge_arc.inbounds, "reload").await?;
+            let _ = apply_dns_resolver_from_ir(&new_ir, "reload");
+
+            let new_inbound_monitors = start_inbounds_until_ready(&new_bridge_arc, "reload").await?;
+            new_inbound_monitors_slot = Some(new_inbound_monitors);
             // Endpoints/services already driven through Start above.
 
             // PostStart stage for new managers (no-router)
@@ -844,22 +915,28 @@ impl Supervisor {
             run_context_stage(&new_context, ServiceStage::Started)?;
             tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload (no-router)");
 
-            Ok(new_bridge_arc)
+            let new_inbound_monitors = new_inbound_monitors_slot
+                .take()
+                .expect("reload inbound monitors present after readiness");
+            Ok((new_bridge_arc, new_inbound_monitors))
         }
         .await;
 
-        let new_bridge_arc = match activation_result {
-            Ok(bridge) => bridge,
+        let (new_bridge_arc, new_inbound_monitors) = match activation_result {
+            Ok((bridge, monitors)) => (bridge, monitors),
             Err(error) => {
                 tracing::error!(target: "sb_core::runtime", error = %error, "reload activation failed before swap (no-router), rolling back new construction");
                 let (new_inbounds, new_endpoints, new_services) = new_bridge_slot
                     .as_deref()
                     .map(|b| (&b.inbounds[..], &b.endpoints[..], &b.services[..]))
                     .unwrap_or((&[], &[], &[]));
+                if let Some(monitors) = new_inbound_monitors_slot.take() {
+                    shutdown_inbounds_and_monitors(new_inbounds, monitors, "reload-rollback").await;
+                }
                 shutdown_failed_reload_context(
                     &old_context,
                     &new_context,
-                    new_inbounds,
+                    &[],
                     new_endpoints,
                     new_services,
                 );
@@ -872,7 +949,7 @@ impl Supervisor {
         let preserve_v2ray = same_v2ray_server(&old_context, &new_context);
 
         // Update state atomically
-        {
+        let old_inbound_monitors = {
             let mut state_guard = state.write().await;
 
             // Stop old health task if any
@@ -884,6 +961,8 @@ impl Supervisor {
             state_guard.bridge = new_bridge_arc;
             state_guard.context = new_context;
             state_guard.current_ir = new_ir;
+            let old_inbound_monitors =
+                std::mem::replace(&mut state_guard.inbound_monitors, new_inbound_monitors);
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
@@ -894,7 +973,8 @@ impl Supervisor {
                 });
                 state_guard.health = Some(health_handle);
             }
-        }
+            old_inbound_monitors
+        };
 
         #[cfg(feature = "service_ntp")]
         {
@@ -902,7 +982,8 @@ impl Supervisor {
             install_ntp_task(state, ntp_cfg).await;
         }
 
-        stop_inbounds(&old_inbounds);
+        shutdown_inbounds_and_monitors(&old_inbounds, old_inbound_monitors, "reload-replaced")
+            .await;
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
         shutdown_replaced_context(&old_context, preserve_v2ray);
@@ -1008,12 +1089,19 @@ impl Supervisor {
     async fn handle_shutdown(state: &Arc<RwLock<State>>, deadline: Instant) {
         let start_shutdown = Instant::now();
 
-        // Stop accepting new connections (best-effort)
-        {
-            let state_guard = state.read().await;
-            for ib in &state_guard.bridge.inbounds {
-                ib.request_shutdown();
-            }
+        // Stop accepting new connections (best-effort) and mark committed monitors as deliberate.
+        let (inbounds, inbound_monitors) = {
+            let mut state_guard = state.write().await;
+            (
+                state_guard.bridge.inbounds.clone(),
+                std::mem::take(&mut state_guard.inbound_monitors),
+            )
+        };
+        for monitor in &inbound_monitors {
+            monitor.shutdown_requested.store(true, Ordering::SeqCst);
+        }
+        for inbound in &inbounds {
+            inbound.request_shutdown();
         }
         tracing::warn!(
             target: "sb_core::runtime",
@@ -1083,6 +1171,7 @@ impl Supervisor {
         stop_endpoints(&endpoints);
         stop_services(&services);
         shutdown_context(&ctx);
+        drain_inbound_monitors(inbound_monitors, "shutdown").await;
 
         // Log shutdown completion
         let shutdown_json = serde_json::json!({
@@ -1229,6 +1318,29 @@ fn has_async_runtime() -> bool {
     tokio::runtime::Handle::try_current().is_ok()
 }
 
+fn apply_dns_resolver_from_ir(ir: &sb_config::ir::ConfigIR, phase: &'static str) -> Result<bool> {
+    if ir.dns.is_none() {
+        return Ok(false);
+    }
+
+    match crate::dns::config_builder::resolver_from_ir(ir) {
+        Ok(resolver) => {
+            crate::dns::global::set(resolver);
+            Ok(true)
+        }
+        Err(error) => {
+            tracing::warn!(
+                target: "sb_core::runtime",
+                component = "dns",
+                phase,
+                error = %error,
+                "DNS resolver construction failed; continuing without replacing global resolver"
+            );
+            Err(error)
+        }
+    }
+}
+
 fn run_context_stage(ctx: &Context, stage: ServiceStage) -> Result<()> {
     let label = match stage {
         ServiceStage::Initialize => "initialize",
@@ -1273,36 +1385,212 @@ fn run_context_stage(ctx: &Context, stage: ServiceStage) -> Result<()> {
     Ok(())
 }
 
-async fn start_inbounds_until_ready(
-    inbounds: &[Arc<dyn InboundService>],
+fn inbound_runtime_label(
+    bridge: &Bridge,
+    index: usize,
     phase: &'static str,
-) -> Result<()> {
+) -> InboundRuntimeLabel {
+    let kind = bridge
+        .inbound_kinds
+        .get(index)
+        .filter(|kind| !kind.trim().is_empty())
+        .cloned()
+        .unwrap_or_else(|| "unknown".to_string());
+    let tag = bridge
+        .inbound_tags
+        .get(index)
+        .and_then(|tag| tag.as_ref())
+        .filter(|tag| !tag.trim().is_empty())
+        .cloned()
+        .unwrap_or_else(|| format!("{kind}#{index}"));
+    InboundRuntimeLabel { tag, kind, phase }
+}
+
+fn classify_inbound_exit(
+    outcome: Result<io::Result<()>, tokio::task::JoinError>,
+    shutdown_requested: bool,
+) -> (InboundExitKind, Option<String>) {
+    match outcome {
+        Ok(Ok(())) => {
+            if shutdown_requested {
+                (InboundExitKind::CleanShutdown, None)
+            } else {
+                (InboundExitKind::UnexpectedCompletion, None)
+            }
+        }
+        Ok(Err(error)) => {
+            if shutdown_requested {
+                (InboundExitKind::CleanShutdown, None)
+            } else {
+                (InboundExitKind::ServeError, Some(error.to_string()))
+            }
+        }
+        Err(join_error) => {
+            if join_error.is_panic() {
+                let payload = join_error.into_panic();
+                let message = payload
+                    .downcast_ref::<&str>()
+                    .map(|s| (*s).to_string())
+                    .or_else(|| payload.downcast_ref::<String>().cloned())
+                    .unwrap_or_else(|| "panic with non-string payload".to_string());
+                (InboundExitKind::Panicked, Some(message))
+            } else if join_error.is_cancelled() {
+                if shutdown_requested {
+                    (InboundExitKind::CleanShutdown, None)
+                } else {
+                    (InboundExitKind::JoinCancelled, None)
+                }
+            } else {
+                (InboundExitKind::JoinCancelled, None)
+            }
+        }
+    }
+}
+
+fn record_inbound_exit(
+    label: &InboundRuntimeLabel,
+    exit_kind: &InboundExitKind,
+    error: Option<&str>,
+) {
+    if exit_kind.is_error() {
+        tracing::error!(
+            target: "sb_core::runtime",
+            component = "inbound",
+            tag = %label.tag,
+            kind = %label.kind,
+            phase = label.phase,
+            exit_kind = exit_kind.as_str(),
+            error = error.unwrap_or(""),
+            "inbound serve task exited abnormally"
+        );
+    } else {
+        tracing::debug!(
+            target: "sb_core::runtime",
+            component = "inbound",
+            tag = %label.tag,
+            kind = %label.kind,
+            phase = label.phase,
+            exit_kind = exit_kind.as_str(),
+            "inbound serve task stopped"
+        );
+    }
+}
+
+fn spawn_inbound_monitor(
+    label: InboundRuntimeLabel,
+    shutdown_requested: Arc<AtomicBool>,
+    serve_join: tokio::task::JoinHandle<io::Result<()>>,
+) -> InboundRuntimeMonitor {
+    let monitor_label = label.clone();
+    let monitor_shutdown = shutdown_requested.clone();
+    let join = tokio::spawn(async move {
+        let outcome = serve_join.await;
+        let (exit_kind, error) =
+            classify_inbound_exit(outcome, monitor_shutdown.load(Ordering::SeqCst));
+        record_inbound_exit(&monitor_label, &exit_kind, error.as_deref());
+    });
+    InboundRuntimeMonitor {
+        label,
+        shutdown_requested,
+        join,
+    }
+}
+
+async fn drain_inbound_monitors(monitors: Vec<InboundRuntimeMonitor>, reason: &'static str) {
+    for monitor in monitors {
+        let label = monitor.label.clone();
+        let mut join = monitor.join;
+        tokio::select! {
+            result = &mut join => {
+                if let Err(error) = result {
+                    tracing::warn!(
+                        target: "sb_core::runtime",
+                        component = "inbound",
+                        tag = %label.tag,
+                        kind = %label.kind,
+                        phase = label.phase,
+                        reason,
+                        error = %error,
+                        "inbound runtime monitor join failed"
+                    );
+                }
+            }
+            () = tokio::time::sleep(INBOUND_MONITOR_DRAIN_TIMEOUT) => {
+                join.abort();
+                let _ = join.await;
+                tracing::warn!(
+                    target: "sb_core::runtime",
+                    component = "inbound",
+                    tag = %label.tag,
+                    kind = %label.kind,
+                    phase = label.phase,
+                    reason,
+                    timeout_ms = INBOUND_MONITOR_DRAIN_TIMEOUT.as_millis() as u64,
+                    "inbound runtime monitor drain timed out"
+                );
+            }
+        }
+    }
+}
+
+async fn shutdown_inbounds_and_monitors(
+    inbounds: &[Arc<dyn InboundService>],
+    monitors: Vec<InboundRuntimeMonitor>,
+    reason: &'static str,
+) {
+    for monitor in &monitors {
+        monitor.shutdown_requested.store(true, Ordering::SeqCst);
+    }
     for inbound in inbounds {
+        inbound.request_shutdown();
+    }
+    drain_inbound_monitors(monitors, reason).await;
+}
+
+async fn start_inbounds_until_ready(
+    bridge: &Bridge,
+    phase: &'static str,
+) -> Result<Vec<InboundRuntimeMonitor>> {
+    let mut monitors = Vec::new();
+    for (index, inbound) in bridge.inbounds.iter().enumerate() {
+        let label = inbound_runtime_label(bridge, index, phase);
+        let shutdown_requested = Arc::new(AtomicBool::new(false));
         if inbound.supports_startup_readiness() {
             let (ready_tx, ready_rx) = oneshot::channel();
             let ib = inbound.clone();
-            tokio::task::spawn_blocking(move || {
-                if let Err(e) = ib.serve_with_ready(Some(ready_tx)) {
-                    tracing::error!(
-                        target: "sb_core::runtime",
-                        phase,
-                        error = %e,
-                        "inbound serve failed"
-                    );
-                }
-            });
+            let serve_join =
+                tokio::task::spawn_blocking(move || ib.serve_with_ready(Some(ready_tx)));
+            let current_monitor =
+                spawn_inbound_monitor(label, shutdown_requested.clone(), serve_join);
 
             match tokio::time::timeout(INBOUND_READY_TIMEOUT, ready_rx).await {
-                Ok(Ok(Ok(()))) => {}
+                Ok(Ok(Ok(()))) => {
+                    monitors.push(current_monitor);
+                }
                 Ok(Ok(Err(error))) => {
+                    shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "readiness-failed")
+                        .await;
+                    drain_inbound_monitors(vec![current_monitor], "readiness-failed").await;
                     return Err(anyhow::anyhow!("{phase} inbound readiness failed: {error}"));
                 }
                 Ok(Err(_closed)) => {
+                    shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "readiness-closed")
+                        .await;
+                    drain_inbound_monitors(vec![current_monitor], "readiness-closed").await;
                     return Err(anyhow::anyhow!(
                         "{phase} inbound exited before reporting readiness"
                     ));
                 }
                 Err(_elapsed) => {
+                    current_monitor
+                        .shutdown_requested
+                        .store(true, Ordering::SeqCst);
+                    shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "readiness-timeout")
+                        .await;
+                    for inbound in &bridge.inbounds {
+                        inbound.request_shutdown();
+                    }
+                    drain_inbound_monitors(vec![current_monitor], "readiness-timeout").await;
                     return Err(anyhow::anyhow!(
                         "{phase} inbound readiness timed out after {:?}",
                         INBOUND_READY_TIMEOUT
@@ -1313,28 +1601,16 @@ async fn start_inbounds_until_ready(
             tracing::warn!(
                 target: "sb_core::runtime",
                 phase,
+                tag = %label.tag,
+                kind = %label.kind,
                 "inbound does not expose bind readiness; starting best-effort"
             );
             let ib = inbound.clone();
-            tokio::task::spawn_blocking(move || {
-                if let Err(e) = ib.serve() {
-                    tracing::error!(
-                        target: "sb_core::runtime",
-                        phase,
-                        error = %e,
-                        "inbound serve failed"
-                    );
-                }
-            });
+            let serve_join = tokio::task::spawn_blocking(move || ib.serve());
+            monitors.push(spawn_inbound_monitor(label, shutdown_requested, serve_join));
         }
     }
-    Ok(())
-}
-
-fn stop_inbounds(inbounds: &[Arc<dyn InboundService>]) {
-    for inbound in inbounds {
-        inbound.request_shutdown();
-    }
+    Ok(monitors)
 }
 
 fn inbound_endpoint_key(ib: &sb_config::ir::InboundIR) -> Option<(String, u16)> {
@@ -1987,7 +2263,7 @@ fn runtime_diff_from_env() -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::sync::atomic::{AtomicUsize, Ordering};
+    use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
     use std::sync::Mutex;
 
     #[derive(Clone)]
@@ -2139,6 +2415,163 @@ mod tests {
         let msg = err.to_string();
         assert!(msg.contains("SB_RUNTIME_DIFF"));
         assert!(msg.contains("silent parse fallback is disabled"));
+    }
+
+    #[test]
+    fn inbound_exit_classifier_covers_clean_unexpected_and_serve_error() {
+        assert_eq!(
+            classify_inbound_exit(Ok(Ok(())), true),
+            (InboundExitKind::CleanShutdown, None)
+        );
+        assert_eq!(
+            classify_inbound_exit(Ok(Ok(())), false),
+            (InboundExitKind::UnexpectedCompletion, None)
+        );
+        let (kind, error) = classify_inbound_exit(
+            Ok(Err(std::io::Error::new(
+                std::io::ErrorKind::Other,
+                "serve exploded",
+            ))),
+            false,
+        );
+        assert_eq!(kind, InboundExitKind::ServeError);
+        assert_eq!(error.as_deref(), Some("serve exploded"));
+        assert_eq!(
+            classify_inbound_exit(
+                Ok(Err(std::io::Error::new(
+                    std::io::ErrorKind::Interrupted,
+                    "closed",
+                ))),
+                true,
+            ),
+            (InboundExitKind::CleanShutdown, None)
+        );
+    }
+
+    #[tokio::test]
+    async fn inbound_exit_classifier_covers_panic_and_cancelled_join() {
+        let panic_handle = tokio::spawn(async {
+            panic!("inbound panic marker");
+        });
+        let (kind, error) = classify_inbound_exit(
+            panic_handle.await.map(|()| Ok::<(), std::io::Error>(())),
+            false,
+        );
+        assert_eq!(kind, InboundExitKind::Panicked);
+        assert!(error
+            .as_deref()
+            .unwrap_or_default()
+            .contains("inbound panic marker"));
+
+        let cancel_handle = tokio::spawn(async {
+            tokio::time::sleep(Duration::from_secs(60)).await;
+        });
+        cancel_handle.abort();
+        assert_eq!(
+            classify_inbound_exit(
+                cancel_handle.await.map(|()| Ok::<(), std::io::Error>(())),
+                false
+            ),
+            (InboundExitKind::JoinCancelled, None)
+        );
+    }
+
+    #[derive(Debug)]
+    struct TestInbound {
+        shutdown: AtomicBool,
+        fail: bool,
+    }
+
+    impl TestInbound {
+        const fn new(fail: bool) -> Self {
+            Self {
+                shutdown: AtomicBool::new(false),
+                fail,
+            }
+        }
+    }
+
+    impl InboundService for TestInbound {
+        fn serve(&self) -> std::io::Result<()> {
+            if self.fail {
+                return Err(std::io::Error::new(
+                    std::io::ErrorKind::Other,
+                    "test inbound failure",
+                ));
+            }
+            while !self.shutdown.load(Ordering::SeqCst) {
+                std::thread::sleep(std::time::Duration::from_millis(5));
+            }
+            Ok(())
+        }
+
+        fn request_shutdown(&self) {
+            self.shutdown.store(true, Ordering::SeqCst);
+        }
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn inbound_monitor_drains_clean_shutdown_without_hanging() {
+        let inbound: Arc<dyn InboundService> = Arc::new(TestInbound::new(false));
+        let mut bridge = Bridge::new(Context::new());
+        bridge.add_inbound_with_meta("test", Some("clean-test".into()), inbound);
+        let monitors = start_inbounds_until_ready(&bridge, "startup")
+            .await
+            .expect("best-effort inbound starts");
+        assert_eq!(monitors.len(), 1);
+        shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "test-clean").await;
+    }
+
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn inbound_monitor_drains_abnormal_return() {
+        let inbound: Arc<dyn InboundService> = Arc::new(TestInbound::new(true));
+        let mut bridge = Bridge::new(Context::new());
+        bridge.add_inbound_with_meta("test", Some("serve-error-test".into()), inbound);
+        let monitors = start_inbounds_until_ready(&bridge, "startup")
+            .await
+            .expect("best-effort inbound starts even without readiness");
+        assert_eq!(monitors.len(), 1);
+        drain_inbound_monitors(monitors, "test-error").await;
+    }
+
+    #[test]
+    fn inbound_liveness_logs_keep_stable_fields() {
+        let source = include_str!("supervisor.rs");
+        for needle in [
+            "component = \"inbound\"",
+            "tag = %label.tag",
+            "kind = %label.kind",
+            "phase = label.phase",
+            "exit_kind = exit_kind.as_str()",
+            "error = error.unwrap_or(\"\")",
+        ] {
+            assert!(
+                source.contains(needle),
+                "missing stable inbound log field: {needle}"
+            );
+        }
+    }
+
+    #[test]
+    fn dns_resolver_build_failure_is_nonfatal_but_observable() {
+        let mut ir = sb_config::ir::ConfigIR::default();
+        ir.dns = Some(sb_config::ir::DnsIR {
+            servers: vec![sb_config::ir::DnsServerIR {
+                tag: "bad-resolved".to_string(),
+                server_type: Some("resolved".to_string()),
+                ..Default::default()
+            }],
+            default: Some("bad-resolved".to_string()),
+            ..Default::default()
+        });
+
+        let err = apply_dns_resolver_from_ir(&ir, "startup")
+            .expect_err("unsupported resolved DNS transport should be reported");
+        assert!(err.to_string().contains("resolved"));
+
+        let source = include_str!("supervisor.rs");
+        assert!(source.contains("component = \"dns\""));
+        assert!(source.contains("phase"));
     }
 
     mod reload_atomicity {
@@ -2372,6 +2805,19 @@ mod tests {
                 connect_ok(old_port).await,
                 "old listener must keep accepting after failed reload"
             );
+            {
+                let state = supervisor.state().await;
+                let guard = state.read().await;
+                assert_eq!(
+                    guard.inbound_monitors.len(),
+                    1,
+                    "failed reload must keep the old committed inbound monitor"
+                );
+                assert_eq!(
+                    guard.inbound_monitors[0].label.tag, "old-http-reload",
+                    "failed reload must not swap in the new inbound monitor"
+                );
+            }
 
             let runtime = crate::adapter::registry::runtime_outbounds()
                 .expect("old runtime outbounds remain published");

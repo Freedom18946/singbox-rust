@@ -339,8 +339,10 @@ struct RunningGeneration {
     phase: V2RayServerActivePhase,
     /// Set by `close()` when a shutdown is requested for this generation; read by this
     /// generation's monitor to distinguish `CleanShutdown` from `UnexpectedCompletion`.
+    #[allow(dead_code)]
     shutdown_requested: Arc<AtomicBool>,
     /// This generation's shutdown signal sender (always `None` in the no-feature stub build).
+    #[allow(dead_code)]
     shutdown_tx: Option<oneshot::Sender<()>>,
 }
 
@@ -422,6 +424,7 @@ impl V2RayApiServer {
     /// Map a monitored serve task's join outcome to a terminal exit.
     ///
     /// Generic over the serve error type so tests can synthesize outcomes without a tonic error.
+    #[allow(dead_code)]
     fn classify_exit<E: std::fmt::Display>(
         outcome: Result<Result<(), E>, tokio::task::JoinError>,
         shutdown_requested: bool,
@@ -475,6 +478,7 @@ impl V2RayApiServer {
     /// nor regress `last_exit`:
     /// - clears `current` only if it still owns this generation;
     /// - updates `last_exit` only if this generation id is the highest terminal seen so far.
+    #[allow(dead_code)]
     fn commit_terminal(
         lifecycle: &Arc<Mutex<V2RayLifecycle>>,
         runtime_tx: &watch::Sender<V2RayServerRuntimeSnapshot>,
@@ -519,14 +523,61 @@ impl V2RayApiServer {
     /// tonic then serves over the pre-bound listener via `serve_with_incoming_shutdown`.
     #[cfg(feature = "service_v2ray_api")]
     fn pre_bind(addr: SocketAddr) -> anyhow::Result<tokio::net::TcpListener> {
-        let std_listener = std::net::TcpListener::bind(addr)
-            .map_err(|e| anyhow::anyhow!("V2Ray API failed to bind {}: {}", addr, e))?;
+        let std_listener = Self::bind_std_listener_with_retry(addr)?;
         std_listener.set_nonblocking(true).map_err(|e| {
             anyhow::anyhow!("V2Ray API failed to set non-blocking on {}: {}", addr, e)
         })?;
         tokio::net::TcpListener::from_std(std_listener).map_err(|e| {
             anyhow::anyhow!("V2Ray API failed to register listener on {}: {}", addr, e)
         })
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    fn bind_std_listener_with_retry(addr: SocketAddr) -> anyhow::Result<std::net::TcpListener> {
+        const RETRY_BUDGET: std::time::Duration = std::time::Duration::from_millis(1_000);
+        const RETRY_STEP: std::time::Duration = std::time::Duration::from_millis(25);
+
+        let started = Instant::now();
+        let mut attempts = 0u32;
+        loop {
+            match std::net::TcpListener::bind(addr) {
+                Ok(listener) => {
+                    if attempts > 0 {
+                        tracing::info!(
+                            target: "sb_core::services::v2ray",
+                            listen = %addr,
+                            attempts,
+                            elapsed_ms = started.elapsed().as_millis() as u64,
+                            "V2Ray API listener acquired after same-port release retry"
+                        );
+                    }
+                    return Ok(listener);
+                }
+                Err(error)
+                    if error.kind() == std::io::ErrorKind::AddrInUse
+                        && started.elapsed() < RETRY_BUDGET =>
+                {
+                    attempts = attempts.saturating_add(1);
+                    let remaining = RETRY_BUDGET.saturating_sub(started.elapsed());
+                    let sleep_for = remaining.min(RETRY_STEP);
+                    tracing::debug!(
+                        target: "sb_core::services::v2ray",
+                        listen = %addr,
+                        attempts,
+                        backoff_ms = sleep_for.as_millis() as u64,
+                        "V2Ray API listener still busy; retrying same-port release"
+                    );
+                    std::thread::sleep(sleep_for);
+                }
+                Err(error) => {
+                    return Err(anyhow::anyhow!(
+                        "V2Ray API failed to bind {}: {}",
+                        addr,
+                        error
+                    ));
+                }
+            }
+        }
     }
 }
 
@@ -984,6 +1035,7 @@ mod tests {
             .clone()
     }
 
+    #[cfg(feature = "service_v2ray_api")]
     fn current_generation(server: &V2RayApiServer) -> Option<u64> {
         snap(server).current.map(|g| g.generation)
     }
@@ -1490,14 +1542,14 @@ mod tests {
         );
     }
 
-    // ── F. Bounded-retry restart reaches generation 2 ──
+    // ── F. Bounded same-port release retry reaches generation 2 without caller-side retry ──
     #[cfg(feature = "service_v2ray_api")]
-    #[tokio::test]
-    async fn bounded_retry_restart_reaches_generation_two() {
+    #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+    async fn bounded_same_port_release_retry_reaches_generation_two() {
         let port = match reserve_port() {
             Some(p) => p,
             None => {
-                eprintln!("Skipping bounded_retry_restart test (cannot bind)");
+                eprintln!("Skipping bounded_same_port_release_retry test (cannot bind)");
                 return;
             }
         };
@@ -1507,11 +1559,11 @@ mod tests {
         assert_eq!(current_generation(&server), Some(1));
         server.close().unwrap();
 
-        // After shutdown the serve task releases the port asynchronously; a bounded retry
-        // confirms a restart is allowed and mints generation 2.
+        // The previous serve task releases the port asynchronously after close(); start() itself
+        // must absorb the transient AddrInUse window with a bounded retry.
         assert!(
-            restart_with_retry(&server).await,
-            "shutdown must allow a later restart on the same port"
+            server.start().is_ok(),
+            "same-port rapid re-enable must succeed inside V2RayApiServer::start()"
         );
         assert_eq!(
             current_generation(&server),

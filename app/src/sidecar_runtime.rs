@@ -59,6 +59,7 @@ pub struct SidecarExitRecord {
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum SidecarExit {
     CleanShutdown,
+    StartFailed(String),
     UnexpectedCompletion,
     ServeError(String),
     Panicked(String),
@@ -79,6 +80,7 @@ enum SidecarRuntimeSource {
 /// Holds the single source `watch::Receiver` directly — no forwarding task, no second channel.
 pub struct SidecarRuntimeSubscription {
     name: String,
+    listen: Option<String>,
     source: SidecarRuntimeSource,
 }
 
@@ -93,6 +95,7 @@ impl SidecarRuntimeSubscription {
         let receiver = server.subscribe_runtime_state()?;
         Some(Self {
             name: name.into(),
+            listen: None,
             source: SidecarRuntimeSource::V2Ray(receiver),
         })
     }
@@ -102,12 +105,24 @@ impl SidecarRuntimeSubscription {
     /// Unlike `from_v2ray_server`, this is infallible: the Clash task owner always publishes an
     /// app-level snapshot, so the source is always present. The Clash arm is an identity read.
     #[cfg(feature = "clash_api")]
+    #[allow(dead_code)]
     pub fn from_clash(
         name: impl Into<String>,
         receiver: watch::Receiver<SidecarRuntimeSnapshot>,
     ) -> Self {
+        Self::from_clash_with_listen(name, receiver, None)
+    }
+
+    /// Build a Clash subscription with optional listen metadata for log breadcrumbs.
+    #[cfg(feature = "clash_api")]
+    pub fn from_clash_with_listen(
+        name: impl Into<String>,
+        receiver: watch::Receiver<SidecarRuntimeSnapshot>,
+        listen: Option<String>,
+    ) -> Self {
         Self {
             name: name.into(),
+            listen,
             source: SidecarRuntimeSource::Clash(receiver),
         }
     }
@@ -115,6 +130,11 @@ impl SidecarRuntimeSubscription {
     /// The sidecar name this subscription was created for.
     pub fn name(&self) -> &str {
         &self.name
+    }
+
+    /// Optional listen endpoint metadata supplied by the sidecar owner.
+    pub fn listen(&self) -> Option<&str> {
+        self.listen.as_deref()
     }
 
     /// Read the current snapshot and mark this version as seen.
@@ -211,10 +231,14 @@ pub enum SidecarRuntimeEvent {
     /// The sidecar's current generation has terminated (carries the highest-generation terminal).
     Exited {
         name: String,
+        listen: Option<String>,
         exit: SidecarExitRecord,
     },
     /// The source `watch` channel closed before this observer saw a terminal.
-    ProjectionClosed { name: String },
+    ProjectionClosed {
+        name: String,
+        listen: Option<String>,
+    },
 }
 
 /// What the consumer decides after an event. Log-only today — always `Continue` (no hard-fail /
@@ -231,6 +255,7 @@ pub enum SidecarRuntimeAction {
 /// generation is NOT reported as dead.
 fn terminal_event_from_snapshot(
     name: &str,
+    listen: Option<&str>,
     snapshot: &SidecarRuntimeSnapshot,
 ) -> Option<SidecarRuntimeEvent> {
     if snapshot.current.is_some() {
@@ -241,6 +266,7 @@ fn terminal_event_from_snapshot(
         .as_ref()
         .map(|exit| SidecarRuntimeEvent::Exited {
             name: name.to_string(),
+            listen: listen.map(ToString::to_string),
             exit: exit.clone(),
         })
 }
@@ -255,15 +281,18 @@ async fn observe_sidecar_runtime(
     event_tx: mpsc::UnboundedSender<SidecarRuntimeEvent>,
 ) {
     let name = subscription.name().to_string();
+    let listen = subscription.listen().map(ToString::to_string);
     let initial = subscription.snapshot_and_mark_seen();
-    if let Some(event) = terminal_event_from_snapshot(&name, &initial) {
+    if let Some(event) = terminal_event_from_snapshot(&name, listen.as_deref(), &initial) {
         let _ = event_tx.send(event);
         return;
     }
     loop {
         match subscription.changed().await {
             Ok(snapshot) => {
-                if let Some(event) = terminal_event_from_snapshot(&name, &snapshot) {
+                if let Some(event) =
+                    terminal_event_from_snapshot(&name, listen.as_deref(), &snapshot)
+                {
                     let _ = event_tx.send(event);
                     return;
                 }
@@ -271,10 +300,25 @@ async fn observe_sidecar_runtime(
             }
             Err(_recv_error) => {
                 // Projection channel closed (source sender dropped) — NOT a CleanShutdown.
-                let _ = event_tx.send(SidecarRuntimeEvent::ProjectionClosed { name: name.clone() });
+                let _ = event_tx.send(SidecarRuntimeEvent::ProjectionClosed {
+                    name: name.clone(),
+                    listen: listen.clone(),
+                });
                 return;
             }
         }
+    }
+}
+
+fn sidecar_exit_fields(exit: &SidecarExit) -> (&'static str, Option<&str>) {
+    match exit {
+        SidecarExit::CleanShutdown => ("clean_shutdown", None),
+        SidecarExit::StartFailed(error) => ("start_failed", Some(error.as_str())),
+        SidecarExit::UnexpectedCompletion => ("unexpected_completion", None),
+        SidecarExit::ServeError(error) => ("serve_error", Some(error.as_str())),
+        SidecarExit::Panicked(error) => ("panicked", Some(error.as_str())),
+        SidecarExit::Cancelled => ("cancelled", None),
+        SidecarExit::Unknown => ("unknown", None),
     }
 }
 
@@ -283,19 +327,61 @@ async fn observe_sidecar_runtime(
 /// already did); only a low-noise breadcrumb / a projection-closed warning.
 fn handle_sidecar_runtime_event(event: &SidecarRuntimeEvent) -> SidecarRuntimeAction {
     match event {
-        SidecarRuntimeEvent::Exited { name, exit } => {
-            tracing::debug!(
-                target: "app::sidecar_runtime",
-                sidecar = %name,
-                generation = exit.generation,
-                exit = ?exit.exit,
-                "run-engine observed sidecar runtime exit"
-            );
+        SidecarRuntimeEvent::Exited { name, listen, exit } => {
+            let (exit_kind, error) = sidecar_exit_fields(&exit.exit);
+            let status = if matches!(exit.exit, SidecarExit::StartFailed(_)) {
+                "unavailable"
+            } else {
+                "terminated"
+            };
+            if matches!(exit.exit, SidecarExit::CleanShutdown) {
+                tracing::debug!(
+                    target: "app::sidecar_runtime",
+                    component = "sidecar",
+                    sidecar = %name,
+                    status,
+                    generation = exit.generation,
+                    exit_kind,
+                    listen = listen.as_deref().unwrap_or(""),
+                    "run-engine observed sidecar clean shutdown"
+                );
+            } else if matches!(
+                exit.exit,
+                SidecarExit::StartFailed(_) | SidecarExit::ServeError(_) | SidecarExit::Panicked(_)
+            ) {
+                tracing::error!(
+                    target: "app::sidecar_runtime",
+                    component = "sidecar",
+                    sidecar = %name,
+                    status,
+                    generation = exit.generation,
+                    exit_kind,
+                    listen = listen.as_deref().unwrap_or(""),
+                    error = error.unwrap_or(""),
+                    "run-engine observed sidecar unavailable"
+                );
+            } else {
+                tracing::warn!(
+                    target: "app::sidecar_runtime",
+                    component = "sidecar",
+                    sidecar = %name,
+                    status,
+                    generation = exit.generation,
+                    exit_kind,
+                    listen = listen.as_deref().unwrap_or(""),
+                    error = error.unwrap_or(""),
+                    "run-engine observed sidecar terminated"
+                );
+            }
         }
-        SidecarRuntimeEvent::ProjectionClosed { name } => {
+        SidecarRuntimeEvent::ProjectionClosed { name, listen } => {
             tracing::warn!(
                 target: "app::sidecar_runtime",
+                component = "sidecar",
                 sidecar = %name,
+                status = "terminated",
+                exit_kind = "projection_closed",
+                listen = listen.as_deref().unwrap_or(""),
                 "sidecar runtime projection channel closed"
             );
         }
@@ -740,7 +826,7 @@ mod tests {
                     exit: SidecarExit::CleanShutdown,
                 }),
             };
-            assert!(terminal_event_from_snapshot("v2ray", &snapshot).is_none());
+            assert!(terminal_event_from_snapshot("v2ray", None, &snapshot).is_none());
         }
 
         // ── K. Consumer is log-only: every event returns Continue ──
@@ -749,6 +835,7 @@ mod tests {
             assert_eq!(
                 handle_sidecar_runtime_event(&SidecarRuntimeEvent::Exited {
                     name: "clash".into(),
+                    listen: Some("127.0.0.1:9090".into()),
                     exit: SidecarExitRecord {
                         generation: 1,
                         exit: SidecarExit::ServeError("boom".into()),
@@ -759,9 +846,27 @@ mod tests {
             assert_eq!(
                 handle_sidecar_runtime_event(&SidecarRuntimeEvent::ProjectionClosed {
                     name: "clash".into(),
+                    listen: None,
                 }),
                 SidecarRuntimeAction::Continue
             );
+            for exit in [
+                SidecarExit::StartFailed("bind".into()),
+                SidecarExit::Panicked("panic".into()),
+                SidecarExit::UnexpectedCompletion,
+            ] {
+                assert_eq!(
+                    handle_sidecar_runtime_event(&SidecarRuntimeEvent::Exited {
+                        name: "clash-api".into(),
+                        listen: Some("127.0.0.1:9090".into()),
+                        exit: SidecarExitRecord {
+                            generation: 1,
+                            exit,
+                        },
+                    }),
+                    SidecarRuntimeAction::Continue
+                );
+            }
         }
 
         // ── A. Initial terminal is not missed (terminal published before observer spawns) ──
@@ -777,6 +882,7 @@ mod tests {
                 event_rx.recv().await,
                 Some(SidecarRuntimeEvent::Exited {
                     name: "clash".into(),
+                    listen: None,
                     exit: SidecarExitRecord {
                         generation: 1,
                         exit: SidecarExit::CleanShutdown,
@@ -838,6 +944,7 @@ mod tests {
                 event_rx.recv().await,
                 Some(SidecarRuntimeEvent::Exited {
                     name: "clash".into(),
+                    listen: None,
                     exit: SidecarExitRecord {
                         generation: 1,
                         exit: SidecarExit::CleanShutdown,
@@ -863,6 +970,7 @@ mod tests {
                 event_rx.recv().await,
                 Some(SidecarRuntimeEvent::ProjectionClosed {
                     name: "clash".into(),
+                    listen: None,
                 })
             );
             let _ = observer.await;
@@ -929,6 +1037,39 @@ mod tests {
                     .is_ok()
             );
             let _ = (tx_a, tx_b);
+        }
+
+        #[tokio::test]
+        async fn initial_start_failed_reports_listen_metadata() {
+            let (tx, rx) = watch::channel(SidecarRuntimeSnapshot {
+                current: None,
+                last_exit: Some(SidecarExitRecord {
+                    generation: 1,
+                    exit: SidecarExit::StartFailed("occupied".into()),
+                }),
+            });
+            let (event_tx, mut event_rx) = mpsc::unbounded_channel();
+            let observer = tokio::spawn(observe_sidecar_runtime(
+                SidecarRuntimeSubscription::from_clash_with_listen(
+                    "clash-api",
+                    rx,
+                    Some("127.0.0.1:9090".into()),
+                ),
+                event_tx,
+            ));
+            assert_eq!(
+                event_rx.recv().await,
+                Some(SidecarRuntimeEvent::Exited {
+                    name: "clash-api".into(),
+                    listen: Some("127.0.0.1:9090".into()),
+                    exit: SidecarExitRecord {
+                        generation: 1,
+                        exit: SidecarExit::StartFailed("occupied".into()),
+                    },
+                })
+            );
+            let _ = observer.await;
+            let _ = tx;
         }
     }
 }
