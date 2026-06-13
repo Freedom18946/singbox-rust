@@ -3,7 +3,7 @@
 
 ## Status
 
-PLANNED.
+DONE (`a9236205`).
 
 ## Source Findings
 
@@ -74,4 +74,25 @@ state must match the active bridge.
 
 ## Completion Notes
 
-Not started.
+Closed 2026-06-13 by `a9236205` as a conservative reliability fix.
+
+- `Supervisor::reload` and `SupervisorHandle::reload` now wait for the event-loop
+  activation result via `ReloadMsg::Apply { result }`; `/reload`, SIGHUP/watch
+  reload, and direct callers receive activation failures instead of optimistic
+  success.
+- Reload order is now build/activate/readiness/commit first, then old-resource
+  teardown. Old inbounds are no longer pre-shutdown before activation.
+- HTTP, SOCKS, and MIXED expose bind readiness and report occupied-port failures
+  through the ready channel. Other inbound types remain best-effort and are logged
+  as the readiness coverage boundary.
+- Runtime inbound/outbound registries are published only after startup success or
+  reload commit. `build_bridge` uses local handles and no longer installs global
+  runtime handles during speculative construction.
+- Same-port in-process reload is intentionally rejected before touching old
+  listeners. The error names the overlapping endpoint and says in-process
+  same-port handoff is unsupported; GUI process restart remains supported.
+- CAL status: CAL-04 CLOSED, CAL-05 CLOSED for supported ready inbounds, CAL-07
+  CLOSED, CAL-12 not expanded beyond preserving existing shutdown behavior, CAL-14
+  CLOSED as safe rejection rather than fd handoff.
+
+Evidence: `post_fable_package05_reload_continuity_evidence.md`.

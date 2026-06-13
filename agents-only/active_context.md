@@ -12,13 +12,13 @@
 
 ## Resume (2026-06-13) - POST-FABLE wave
 
-- **package04 (WireGuard dataplane) DONE** (`f70bf5ef`): endpoint tags now enter
-  outbound namespace; `route.final: "wg-ep"` smoke reached `sing-box started`;
-  legacy `wireguard` outbound is wired into app `adapters`/`parity`. Public WG
-  peer interoperability/perf is not certified.
-- **package03 (TUN dataplane) PARTIAL** (`edf42095`): GUI stacks map to real/loud
-  runtime policy; macOS normal-user smoke hit real TUN startup then
-  `Operation not permitted` before ready. Privileged traffic proof remains open.
+- **package05 (Reload continuity/atomicity) DONE** (`a9236205`): reload waits for
+  activation/readiness before commit; failed reload keeps old listeners/registries;
+  same-port in-process reload is a safe documented rejection.
+- **package04 (WireGuard dataplane) DONE** (`f70bf5ef`): endpoint tags enter outbound namespace;
+  app `adapters`/`parity` wire legacy `wireguard`; public WG peer proof remains out of scope.
+- **package03 (TUN dataplane) PARTIAL** (`edf42095`): GUI stacks map to real/loud runtime policy;
+  macOS normal-user smoke is permission-blocked before privileged traffic proof.
 - **package12 (DNS schema parity) DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape
   passes strict production load path. DNS schema only, not TUN dataplane.
 - **package07 (GUI E2E probe) PARTIAL**: process-contract probe PASS; interactive Wails
