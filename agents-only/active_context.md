@@ -10,23 +10,21 @@
 
 ---
 
-## Resume (2026-06-13) — POST-FABLE P0 wave
+## Resume (2026-06-13) - POST-FABLE P0 wave
 
-- **package07 (GUI E2E probe) PARTIAL** (probe/docs-only): process-contract equivalence
-  probe **14/14 PASS** (GUI-exact launch→`sing-box started`; mixed+clash bind; SOCKS5+CONNECT
-  200; Clash API /configs+/proxies+401; SIGINT graceful 0.27s; restart same-port rebind).
-  Interactive Wails window E2E = BLOCKED (not agent-drivable; build env ready). **NEW BLOCKER
-  F-1**: GUI default DNS (type-based servers w/ `domain_resolver`/`server_port`/`path`)
-  rejected by strict validator on **production load path (run AND --check)** → kernel exits →
-  GUI never starts; isolated to DNS server fields → needs DNS schema package (package02
-  sibling). F-2: default build lacks adapters (GUI drop-in needs `--features adapters`).
-  F-3: HTTP inbound CONNECT-only (plain-HTTP fwd→405). package05 NOT a GUI prereq (GUI=process
-  restart, kernel survives). Detail: post_fable_package07_gui_e2e_probe_note.md.
-- **package02 (TUN schema parity) DONE** (`e3defcdf`): validator accepts GUI flat TUN
-  (per-type whitelist; nested `tun` Raw-checked); `lower_inbounds` fills `InboundIR.tun`. NOT
-  dataplane-ready → package03. sb-config 693 PASS. diff: post_fable_package02_tun_schema_diff.md.
-- **package01 (GUI startup) DONE** (`0a4cae74`): `sing-box started`; keep 0.1.0 (CAL-17/H-3).
-  Next: **F-1 DNS schema parity** (hard blocker for GUI default config) → package03 (TUN). Map: README.
+- **package12 (DNS schema parity) DONE** (`349eecf3`): F-1 CLOSED. GUI default DNS
+  type-based fields (`domain_resolver`/`server_port`/`path`/`interface`, plus hosts
+  `path`) pass strict production load path; lowering maps `domain_resolver` to
+  `address_resolver` and canonicalizes port/path/interface into `DnsServerIR`.
+  sb-config 701 PASS; app GUI-DNS `run` + `run --check` PASS; package07 harness 14/14 PASS.
+  DNS schema parity only, NOT TUN dataplane-ready.
+- **package07 (GUI E2E probe) PARTIAL**: process-contract probe 14/14 PASS; interactive
+  Wails window E2E BLOCKED. F-2 default build needs `--features adapters`; F-3 HTTP
+  inbound is CONNECT-only. Detail: post_fable package07 probe note.
+- **package02 (TUN schema parity) DONE** (`e3defcdf`): GUI flat TUN parses/lowers; NOT
+  dataplane-ready. Diff: post_fable package02 TUN schema diff.
+- **package01 (GUI startup) DONE** (`0a4cae74`): `sing-box started`; keep 0.1.0
+  (CAL-17/H-3). Next: **package03 TUN dataplane**. Map: post_fable package README.
 
 ## Resume (2026-06-10)
 T3-2 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed.

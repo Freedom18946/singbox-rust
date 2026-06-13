@@ -31,6 +31,7 @@ reload/config switching does not silently break service.
 |---|---|---:|---|---|
 | post_fable_package01 | GUI contract | P0 | CAL-02, CAL-17 | DONE (`0a4cae74`) |
 | post_fable_package02 | Schema parity, TUN first | P0 | CAL-01, H-4 | DONE (`e3defcdf`) |
+| post_fable_package12 | DNS schema parity, GUI default | P0 | F-1 | DONE (`349eecf3`) |
 | post_fable_package03 | TUN dataplane | P1 | CAL-10, H-5 | PLANNED |
 | post_fable_package04 | WireGuard dataplane | P0/P1 | CAL-03, CAL-09 | PLANNED |
 | post_fable_package05 | Reload continuity and atomicity | P1 | CAL-04, CAL-05, CAL-07, CAL-12, CAL-14 | PLANNED |
@@ -48,15 +49,18 @@ reload/config switching does not silently break service.
    first real GUI launch attempt.
 2. `post_fable_package07_gui_e2e_probe.md` immediately after packages 01 and 02.
    Use it to decide how exposed reload continuity is in actual GUI workflows.
-3. `post_fable_package04_wireguard_dataplane.md` can run in parallel after the
+3. `post_fable_package12_dns_schema_parity_gui_default.md` closes package07 F-1
+   before package03, so the GUI default DNS config can pass the strict production
+   load path.
+4. `post_fable_package04_wireguard_dataplane.md` can run in parallel after the
    first GUI contract/schema tranche.
-4. `post_fable_package05_reload_continuity_atomicity.md` after GUI reload and Go
+5. `post_fable_package05_reload_continuity_atomicity.md` after GUI reload and Go
    reload probes are documented. It is the highest-risk core-path package.
-5. `post_fable_package06_inbound_liveness_observability.md` after or together with
+6. `post_fable_package06_inbound_liveness_observability.md` after or together with
    package 05 if the ready/monitor channel is shared.
-6. `post_fable_package03_tun_dataplane.md` after package 02, because the GUI TUN
-   config must first parse.
-7. Packages 08-11 are lower-risk support work and can be scheduled around the P0/P1
+7. `post_fable_package03_tun_dataplane.md` after package 02 and package12, because
+   the GUI TUN config and GUI default DNS config must first parse.
+8. Packages 08-11 are lower-risk support work and can be scheduled around the P0/P1
    path.
 
 ## CAL Coverage Matrix
@@ -92,6 +96,7 @@ reload/config switching does not silently break service.
 | CAL-27 | post_fable_package09 | Specific feature test builds still produce warnings. |
 | CAL-28 | post_fable_package08 | Deep trojan handshake tests remain ignored. |
 | CAL-29 | post_fable_package09 | Flake group root causes need hardening or clearer isolation. |
+| F-1 | post_fable_package12 | GUI default DNS type-based server fields were rejected by strict schema. |
 
 ## Unknowns Coverage
 
@@ -102,6 +107,7 @@ reload/config switching does not silently break service.
 | H-3 GUI behavior for kernel version `0.1.0` | post_fable_package07 and 01 | Version string/reporting policy. |
 | H-4 Other Go 1.12 fields rejected by strict schema | post_fable_package02 | Whether package 02 expands beyond TUN. |
 | H-5 TUN smoltcp quality | post_fable_package03 | Whether TUN data path can be closed or must be de-scoped. |
+| F-1 GUI default DNS schema blocker | post_fable_package12 | CLOSED: default DNS shape passes strict production load path. |
 | H-7 Go BoltDB cache versus Rust sled cache | Future package if needed | Migration or compatibility posture. |
 | H-9 Go reload semantic details | post_fable_package07 and 05 | Exact reload design target. |
 | H-10 Subscription format coverage | post_fable_package08 | Additional fixture set and parser backlog. |
@@ -119,3 +125,4 @@ reload/config switching does not silently break service.
 - `post_fable_package09_lint_test_gate_policy.md`
 - `post_fable_package10_runtime_config_hygiene.md`
 - `post_fable_package11_doc_calibration.md`
+- `post_fable_package12_dns_schema_parity_gui_default.md`
