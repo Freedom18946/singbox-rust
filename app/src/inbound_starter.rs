@@ -578,7 +578,7 @@ fn start_tun_inbound(
         },
         None => TunInboundConfig::default(),
     };
-    let inbound = TunInbound::new(
+    let inbound = match TunInbound::try_new(
         cfg,
         {
             #[cfg(feature = "router")]
@@ -595,7 +595,13 @@ fn start_tun_inbound(
         None,
         ib.sniff,
         ib.sniff_override_destination,
-    );
+    ) {
+        Ok(inbound) => inbound,
+        Err(error) => {
+            warn!(%error, "tun inbound: runtime backend preparation failed; refusing to start");
+            return None;
+        }
+    };
     let join = tokio::spawn(async move {
         if let Err(e) = inbound.serve() {
             warn!(error=%e, "tun inbound failed");

@@ -19,6 +19,7 @@ use tokio::io::unix::AsyncFd;
 #[cfg(unix)]
 use tokio::io::Interest;
 
+use crate::inbound::tun::platform::{create_platform_hook, TunPlatformConfig, TunPlatformHook};
 use crate::inbound::tun::TunInboundConfig;
 use crate::inbound::tun_session::{
     build_tcp_response_packet, CleanupMode, FourTuple, TcpSession, TcpSessionManager, TunWriter,
@@ -40,6 +41,14 @@ pub struct EnhancedTunConfig {
     pub ipv6: Option<IpAddr>,
     #[serde(default)]
     pub auto_route: bool,
+    #[serde(default)]
+    pub auto_redirect: bool,
+    #[serde(default)]
+    pub strict_route: bool,
+    #[serde(default)]
+    pub include_routes: Vec<String>,
+    #[serde(default)]
+    pub exclude_routes: Vec<String>,
     #[serde(default = "default_tcp_timeout")]
     pub tcp_timeout_ms: u64,
     #[serde(default = "default_udp_timeout")]
@@ -78,6 +87,10 @@ impl Default for EnhancedTunConfig {
             ipv4: None,
             ipv6: None,
             auto_route: false,
+            auto_redirect: false,
+            strict_route: false,
+            include_routes: Vec::new(),
+            exclude_routes: Vec::new(),
             tcp_timeout_ms: default_tcp_timeout(),
             udp_timeout_ms: default_udp_timeout(),
             buffer_size: default_buffer_size(),
@@ -87,21 +100,17 @@ impl Default for EnhancedTunConfig {
 }
 
 impl EnhancedTunConfig {
-    pub fn from_legacy_config(cfg: &TunInboundConfig) -> Self {
-        Self {
+    pub fn try_from_legacy_config(cfg: &TunInboundConfig) -> io::Result<Self> {
+        Ok(Self {
             name: cfg.name.clone(),
             mtu: cfg.mtu,
-            ipv4: cfg
-                .inet4_address
-                .as_ref()
-                .and_then(|value| value.split('/').next())
-                .and_then(|value| value.parse().ok()),
-            ipv6: cfg
-                .inet6_address
-                .as_ref()
-                .and_then(|value| value.split('/').next())
-                .and_then(|value| value.parse().ok()),
+            ipv4: cfg.effective_inet4_address()?,
+            ipv6: cfg.effective_inet6_address()?,
             auto_route: cfg.auto_route,
+            auto_redirect: cfg.auto_redirect,
+            strict_route: cfg.strict_route,
+            include_routes: cfg.effective_include_routes(),
+            exclude_routes: cfg.effective_exclude_routes(),
             tcp_timeout_ms: cfg.timeout_ms,
             udp_timeout_ms: cfg
                 .udp_timeout
@@ -110,7 +119,14 @@ impl EnhancedTunConfig {
                 .unwrap_or_else(default_udp_timeout),
             buffer_size: default_buffer_size(),
             max_tcp_connections: default_max_tcp_connections(),
-        }
+        })
+    }
+
+    pub fn from_legacy_config(cfg: &TunInboundConfig) -> Self {
+        Self::try_from_legacy_config(cfg).unwrap_or_else(|error| {
+            debug!(error = %error, "tun enhanced: invalid legacy config; using defaults for compatibility helper");
+            Self::default()
+        })
     }
 }
 
@@ -286,6 +302,39 @@ pub struct EnhancedTunInbound {
     session_manager: Arc<TcpSessionManager>,
 }
 
+pub struct PreparedEnhancedTunRuntime {
+    device: Option<Box<dyn sb_platform::tun::TunDevice>>,
+    platform_hook: Option<Box<dyn TunPlatformHook>>,
+}
+
+impl PreparedEnhancedTunRuntime {
+    fn new(
+        device: Box<dyn sb_platform::tun::TunDevice>,
+        platform_hook: Option<Box<dyn TunPlatformHook>>,
+    ) -> Self {
+        Self {
+            device: Some(device),
+            platform_hook,
+        }
+    }
+
+    fn take_device(&mut self) -> io::Result<Box<dyn sb_platform::tun::TunDevice>> {
+        self.device
+            .take()
+            .ok_or_else(|| io::Error::other("tun: prepared runtime device already consumed"))
+    }
+}
+
+impl Drop for PreparedEnhancedTunRuntime {
+    fn drop(&mut self) {
+        if let Some(hook) = self.platform_hook.as_ref() {
+            if let Err(error) = hook.cleanup() {
+                debug!(error = %error, "tun enhanced: platform hook cleanup failed");
+            }
+        }
+    }
+}
+
 #[cfg(unix)]
 struct AsyncTunFd {
     inner: Box<dyn sb_platform::tun::TunDevice>,
@@ -375,8 +424,30 @@ impl EnhancedTunInbound {
         }
     }
 
+    pub fn try_from_tun_config(
+        cfg: &TunInboundConfig,
+        outbounds: Arc<OutboundRegistryHandle>,
+        router: Option<Arc<RouterHandle>>,
+    ) -> io::Result<Self> {
+        let config = EnhancedTunConfig::try_from_legacy_config(cfg)?;
+        Ok(Self {
+            config,
+            outbounds,
+            router,
+            session_manager: Arc::new(TcpSessionManager::new()),
+        })
+    }
+
     pub async fn start(&self) -> io::Result<()> {
-        let device = create_platform_device(&self.to_platform_config()).map_err(tun_error_to_io)?;
+        let prepared = self.prepare_runtime()?;
+        self.start_with_prepared(prepared).await
+    }
+
+    pub async fn start_with_prepared(
+        &self,
+        mut prepared: PreparedEnhancedTunRuntime,
+    ) -> io::Result<()> {
+        let device = prepared.take_device()?;
         let (tx, rx) = mpsc::channel(128);
         let writer: Arc<dyn TunWriter + Send + Sync> = Arc::new(ChannelTunWriter { tx });
 
@@ -397,6 +468,24 @@ impl EnhancedTunInbound {
         }
     }
 
+    pub fn prepare_runtime(&self) -> io::Result<PreparedEnhancedTunRuntime> {
+        #[cfg(not(unix))]
+        {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "tun: Enhanced smoltcp backend currently requires unix-style TUN fd support",
+            ))
+        }
+
+        #[cfg(unix)]
+        {
+            let device =
+                create_platform_device(&self.to_platform_config()).map_err(tun_error_to_io)?;
+            let hook = self.configure_platform_hooks()?;
+            Ok(PreparedEnhancedTunRuntime::new(device, hook))
+        }
+    }
+
     pub fn config(&self) -> &EnhancedTunConfig {
         &self.config
     }
@@ -407,9 +496,49 @@ impl EnhancedTunInbound {
             mtu: self.config.mtu,
             ipv4: self.config.ipv4,
             ipv6: self.config.ipv6,
-            auto_route: self.config.auto_route,
+            auto_route: false,
             table: None,
         }
+    }
+
+    fn to_platform_hook_config(&self) -> TunPlatformConfig {
+        TunPlatformConfig {
+            interface_name: self.config.name.clone(),
+            mtu: self.config.mtu,
+            inet4_address: self.config.ipv4,
+            inet6_address: self.config.ipv6,
+            auto_route: self.config.auto_route,
+            auto_redirect: self.config.auto_redirect,
+            strict_route: self.config.strict_route,
+            table_id: None,
+            fwmark: None,
+            exclude_routes: self.config.exclude_routes.clone(),
+            include_routes: self.config.include_routes.clone(),
+            exclude_uids: Vec::new(),
+            include_uids: Vec::new(),
+            exclude_processes: Vec::new(),
+            include_processes: Vec::new(),
+        }
+    }
+
+    fn configure_platform_hooks(&self) -> io::Result<Option<Box<dyn TunPlatformHook>>> {
+        if !self.config.auto_route && !self.config.auto_redirect && !self.config.strict_route {
+            return Ok(None);
+        }
+
+        let hook = create_platform_hook();
+        if !hook.is_supported() {
+            return Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!(
+                    "tun: platform hooks required for auto_route/auto_redirect/strict_route but unsupported on {}",
+                    hook.platform_name()
+                ),
+            ));
+        }
+
+        hook.configure(&self.to_platform_hook_config())?;
+        Ok(Some(hook))
     }
 
     async fn process_packet(
@@ -744,18 +873,25 @@ mod tests {
             mtu: 1400,
             timeout_ms: 8_000,
             auto_route: true,
-            inet4_address: Some("172.19.0.1/30".to_string()),
-            inet6_address: Some("fd00::1/64".to_string()),
+            auto_redirect: true,
+            strict_route: true,
+            address: vec!["172.19.0.1/30".to_string(), "fd00::1/64".to_string()],
+            route_address: vec!["10.0.0.0/8".to_string()],
+            route_exclude_address: vec!["192.168.0.0/16".to_string()],
             udp_timeout: Some("45s".to_string()),
             ..TunInboundConfig::default()
         };
 
-        let enhanced = EnhancedTunConfig::from_legacy_config(&cfg);
+        let enhanced = EnhancedTunConfig::try_from_legacy_config(&cfg).unwrap();
         assert_eq!(enhanced.name, "utun9");
         assert_eq!(enhanced.mtu, 1400);
         assert_eq!(enhanced.tcp_timeout_ms, 8_000);
         assert_eq!(enhanced.udp_timeout_ms, 45_000);
         assert!(enhanced.auto_route);
+        assert!(enhanced.auto_redirect);
+        assert!(enhanced.strict_route);
+        assert_eq!(enhanced.include_routes, vec!["10.0.0.0/8"]);
+        assert_eq!(enhanced.exclude_routes, vec!["192.168.0.0/16"]);
         assert_eq!(
             enhanced.ipv4.map(|ip| ip.to_string()).as_deref(),
             Some("172.19.0.1")
@@ -764,6 +900,27 @@ mod tests {
             enhanced.ipv6.map(|ip| ip.to_string()).as_deref(),
             Some("fd00::1")
         );
+    }
+
+    #[test]
+    fn enhanced_platform_hook_config_preserves_routes() {
+        let config = EnhancedTunConfig {
+            name: "utun9".to_string(),
+            auto_route: true,
+            auto_redirect: true,
+            strict_route: true,
+            include_routes: vec!["10.0.0.0/8".to_string()],
+            exclude_routes: vec!["192.168.0.0/16".to_string()],
+            ..EnhancedTunConfig::default()
+        };
+        let inbound = EnhancedTunInbound::new(config, Arc::new(OutboundRegistryHandle::default()));
+
+        let platform = inbound.to_platform_hook_config();
+        assert!(platform.auto_route);
+        assert!(platform.auto_redirect);
+        assert!(platform.strict_route);
+        assert_eq!(platform.include_routes, vec!["10.0.0.0/8"]);
+        assert_eq!(platform.exclude_routes, vec!["192.168.0.0/16"]);
     }
 
     #[test]

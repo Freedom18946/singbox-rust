@@ -2364,7 +2364,7 @@ fn build_tun_inbound(
 
     tracing::info!("Initializing TunInbound: {}", config.name);
     let stats = ctx.context.v2ray_server.as_ref().and_then(|s| s.stats());
-    Some(Arc::new(TunInbound::new(
+    let inbound = match TunInbound::try_new(
         config,
         ctx.router.clone(),
         ctx.outbounds.clone(),
@@ -2372,7 +2372,18 @@ fn build_tun_inbound(
         stats,
         param.sniff,
         param.sniff_override_destination,
-    )))
+    ) {
+        Ok(inbound) => inbound,
+        Err(error) => {
+            tracing::error!(
+                inbound = %param.tag.as_deref().unwrap_or("tun"),
+                error = %error,
+                "failed to prepare TUN runtime backend"
+            );
+            return None;
+        }
+    };
+    Some(Arc::new(inbound))
 }
 
 #[allow(dead_code)]

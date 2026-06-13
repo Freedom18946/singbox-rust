@@ -470,6 +470,8 @@ pub struct Bridge {
 
     /// Background services (Resolved, DERP, SSM API, etc.)
     pub services: Vec<Arc<dyn Service>>,
+    /// Fatal adapter startup/build errors that must block runtime readiness.
+    pub startup_errors: Vec<String>,
     /// Global runtime context
     pub context: Context,
     /// Router handle (if available)
@@ -490,6 +492,7 @@ impl Bridge {
             outbound_deps: HashMap::new(),
             endpoints: vec![],
             services: vec![],
+            startup_errors: vec![],
             context,
             #[cfg(feature = "router")]
             router: None,

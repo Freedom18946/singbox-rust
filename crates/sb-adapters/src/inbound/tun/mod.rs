@@ -24,7 +24,7 @@ use sb_core::router::rules::Decision;
 use sb_core::router::{RouteCtx, RouterHandle};
 use sb_core::services::v2ray_api::StatsManager;
 
-use crate::inbound::tun_enhanced::EnhancedTunInbound;
+use crate::inbound::tun_enhanced::{EnhancedTunInbound, PreparedEnhancedTunRuntime};
 
 // TCP session management
 use crate::inbound::tun_session::{FourTuple, TcpSessionManager, TunWriter};
@@ -165,26 +165,62 @@ fn route_target_from_decision(decision: &Decision) -> io::Result<(RouteTarget, S
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 enum TunBackendKind {
-    Manual,
-    Smoltcp,
+    DryRunManual,
+    Enhanced,
 }
 
-fn parse_stack_backend(stack: Option<&str>) -> io::Result<TunBackendKind> {
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct TunStackPolicy {
+    backend: TunBackendKind,
+    compat_warning: Option<&'static str>,
+}
+
+fn resolve_stack_policy(stack: Option<&str>, dry_run: bool) -> io::Result<TunStackPolicy> {
     let normalized = stack.map(str::trim).filter(|value| !value.is_empty());
     match normalized {
-        None => Ok(TunBackendKind::Manual),
+        None => Ok(TunStackPolicy {
+            backend: TunBackendKind::Enhanced,
+            compat_warning: None,
+        }),
         Some(value)
-            if value.eq_ignore_ascii_case("manual")
-                || value.eq_ignore_ascii_case("system")
-                || value.eq_ignore_ascii_case("default") =>
+            if value.eq_ignore_ascii_case("default")
+                || value.eq_ignore_ascii_case("mixed")
+                || value.eq_ignore_ascii_case("smoltcp") =>
         {
-            Ok(TunBackendKind::Manual)
+            Ok(TunStackPolicy {
+                backend: TunBackendKind::Enhanced,
+                compat_warning: None,
+            })
         }
-        Some(value) if value.eq_ignore_ascii_case("smoltcp") => Ok(TunBackendKind::Smoltcp),
+        Some(value) if value.eq_ignore_ascii_case("gvisor") => Ok(TunStackPolicy {
+            backend: TunBackendKind::Enhanced,
+            compat_warning: Some(
+                "tun: stack 'gvisor' requested but no gVisor netstack is available; using the smoltcp-compatible Enhanced backend",
+            ),
+        }),
+        Some(value) if value.eq_ignore_ascii_case("manual") => {
+            if dry_run {
+                Ok(TunStackPolicy {
+                    backend: TunBackendKind::DryRunManual,
+                    compat_warning: Some(
+                        "tun: explicit dry_run manual stack selected; no TUN device or dataplane will be started",
+                    ),
+                })
+            } else {
+                Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    "tun: stack 'manual' is only allowed with explicit dry_run=true; GUI/runtime TUN requires the Enhanced smoltcp backend",
+                ))
+            }
+        }
+        Some(value) if value.eq_ignore_ascii_case("system") => Err(io::Error::new(
+            io::ErrorKind::Unsupported,
+            "tun: stack 'system' is unsupported because no real system-stack backend is wired; use mixed/gvisor/smoltcp or explicit dry_run manual",
+        )),
         Some(value) => Err(io::Error::new(
             io::ErrorKind::InvalidInput,
             format!(
-                "tun: unsupported stack backend '{value}'; supported values are manual/system/default and smoltcp"
+                "tun: unsupported stack backend '{value}'; supported runtime values are mixed/gvisor/smoltcp/default; system is not wired and manual requires dry_run=true"
             ),
         )),
     }
@@ -246,7 +282,7 @@ fn default_timeout_ms() -> u64 {
 }
 
 fn default_dry_run() -> bool {
-    true
+    false
 }
 
 /// Minimal config for Phase 1; extended later when wiring real device
@@ -258,11 +294,8 @@ pub struct TunInboundConfig {
     pub name: String,
     #[serde(default = "default_mtu")]
     pub mtu: u32,
-    /// 2.3b：默认 dry-run（只路由不拨号）；置为 false 时会拨号并立即关闭以做可达性验证
-    ///
-    /// serde default 与 `Default` impl 保持一致 (= true)：post_fable_package02 起
-    /// `InboundIR.tun` 会被真实填充并经 JSON round-trip 解码到这里，缺省时必须
-    /// 维持 dry-run 运行姿态；真实 dataplane 行为切换属 package03。
+    /// Explicit diagnostic mode. The runtime default is a real TUN attempt; only
+    /// configs that set `dry_run: true` may use the manual/no-op diagnostic path.
     #[serde(default = "default_dry_run")]
     pub dry_run: bool,
     /// 2.3c：将 user 信息注入 RequestMeta / ConnectParams（优先匹配路由规则）
@@ -287,6 +320,9 @@ pub struct TunInboundConfig {
     /// IPv6 address for the TUN interface
     #[serde(default)]
     pub inet6_address: Option<String>,
+    /// Go/GUI merged TUN interface address list.
+    #[serde(default)]
+    pub address: Vec<String>,
     /// Route table ID for policy routing (Linux specific)
     #[serde(default)]
     pub table_id: Option<u32>,
@@ -299,6 +335,12 @@ pub struct TunInboundConfig {
     /// Routes to include in TUN (only route these)
     #[serde(default)]
     pub include_routes: Vec<String>,
+    /// Go/GUI include routes. Takes precedence over legacy include_routes.
+    #[serde(default)]
+    pub route_address: Vec<String>,
+    /// Go/GUI exclude routes. Takes precedence over legacy exclude_routes.
+    #[serde(default)]
+    pub route_exclude_address: Vec<String>,
     /// UIDs to exclude from TUN routing (Linux specific)
     #[serde(default)]
     pub exclude_uids: Vec<u32>,
@@ -319,7 +361,7 @@ impl Default for TunInboundConfig {
             platform: default_platform(),
             name: default_name(),
             mtu: default_mtu(),
-            dry_run: true,
+            dry_run: false,
             user_tag: None,
             timeout_ms: default_timeout_ms(),
             auto_route: false,
@@ -327,10 +369,13 @@ impl Default for TunInboundConfig {
             strict_route: false,
             inet4_address: None,
             inet6_address: None,
+            address: Vec::new(),
             table_id: None,
             fwmark: None,
             exclude_routes: Vec::new(),
             include_routes: Vec::new(),
+            route_address: Vec::new(),
+            route_exclude_address: Vec::new(),
             exclude_uids: Vec::new(),
             exclude_processes: Vec::new(),
             stack: None,
@@ -338,6 +383,68 @@ impl Default for TunInboundConfig {
             udp_timeout: None,
         }
     }
+}
+
+impl TunInboundConfig {
+    pub(crate) fn effective_inet4_address(&self) -> io::Result<Option<IpAddr>> {
+        self.effective_address_for_family(true)
+    }
+
+    pub(crate) fn effective_inet6_address(&self) -> io::Result<Option<IpAddr>> {
+        self.effective_address_for_family(false)
+    }
+
+    pub(crate) fn effective_include_routes(&self) -> Vec<String> {
+        if self.route_address.is_empty() {
+            self.include_routes.clone()
+        } else {
+            self.route_address.clone()
+        }
+    }
+
+    pub(crate) fn effective_exclude_routes(&self) -> Vec<String> {
+        if self.route_exclude_address.is_empty() {
+            self.exclude_routes.clone()
+        } else {
+            self.route_exclude_address.clone()
+        }
+    }
+
+    fn effective_address_for_family(&self, ipv4: bool) -> io::Result<Option<IpAddr>> {
+        for raw in &self.address {
+            let ip = parse_tun_ip_entry(raw)?;
+            if ip.is_ipv4() == ipv4 {
+                return Ok(Some(ip));
+            }
+        }
+
+        let legacy = if ipv4 {
+            self.inet4_address.as_deref()
+        } else {
+            self.inet6_address.as_deref()
+        };
+        legacy.map(parse_tun_ip_entry).transpose()
+    }
+}
+
+fn parse_tun_ip_entry(raw: &str) -> io::Result<IpAddr> {
+    let host = raw
+        .split_once('/')
+        .map(|(host, _)| host)
+        .unwrap_or(raw)
+        .trim();
+    if host.is_empty() {
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("tun: empty interface address entry '{raw}'"),
+        ));
+    }
+    host.parse::<IpAddr>().map_err(|err| {
+        io::Error::new(
+            io::ErrorKind::InvalidInput,
+            format!("tun: invalid interface address '{raw}': {err}"),
+        )
+    })
 }
 
 mod stack;
@@ -368,6 +475,7 @@ pub struct TunInbound {
     stack_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<Vec<u8>>>>,
     /// Platform hook for routing configuration
     platform_hook: Box<dyn TunPlatformHook>,
+    prepared_enhanced: parking_lot::Mutex<Option<PreparedEnhancedTunRuntime>>,
 }
 
 impl TunInbound {
@@ -405,7 +513,57 @@ impl TunInbound {
             stack: Arc::new(tokio::sync::Mutex::new(stack)),
             stack_rx: Arc::new(tokio::sync::Mutex::new(rx)),
             platform_hook,
+            prepared_enhanced: parking_lot::Mutex::new(None),
         }
+    }
+
+    pub fn try_new(
+        cfg: TunInboundConfig,
+        router: Arc<RouterHandle>,
+        outbounds: Arc<OutboundRegistryHandle>,
+        inbound_tag: Option<String>,
+        stats: Option<Arc<StatsManager>>,
+        sniff: bool,
+        sniff_override_destination: bool,
+    ) -> io::Result<Self> {
+        let inbound = Self::new(
+            cfg,
+            router,
+            outbounds,
+            inbound_tag,
+            stats,
+            sniff,
+            sniff_override_destination,
+        );
+        inbound.prepare_startup()?;
+        Ok(inbound)
+    }
+
+    fn prepare_startup(&self) -> io::Result<()> {
+        let policy = resolve_stack_policy(self.cfg.stack.as_deref(), self.cfg.dry_run)?;
+        if let Some(warning) = policy.compat_warning {
+            warn!("{warning}");
+        }
+        match policy.backend {
+            TunBackendKind::DryRunManual => Ok(()),
+            TunBackendKind::Enhanced => {
+                if self.prepared_enhanced.lock().is_some() {
+                    return Ok(());
+                }
+                let backend = self.enhanced_backend()?;
+                let prepared = backend.prepare_runtime()?;
+                *self.prepared_enhanced.lock() = Some(prepared);
+                Ok(())
+            }
+        }
+    }
+
+    fn enhanced_backend(&self) -> io::Result<EnhancedTunInbound> {
+        EnhancedTunInbound::try_from_tun_config(
+            &self.cfg,
+            Arc::clone(&self.outbounds),
+            Some(Arc::clone(&self.router)),
+        )
     }
 
     /// Convert TunInboundConfig to TunPlatformConfig
@@ -413,23 +571,15 @@ impl TunInbound {
         TunPlatformConfig {
             interface_name: self.cfg.name.clone(),
             mtu: self.cfg.mtu,
-            inet4_address: self
-                .cfg
-                .inet4_address
-                .as_ref()
-                .and_then(|s| s.split('/').next()?.parse().ok()),
-            inet6_address: self
-                .cfg
-                .inet6_address
-                .as_ref()
-                .and_then(|s| s.split('/').next()?.parse().ok()),
+            inet4_address: self.cfg.effective_inet4_address().ok().flatten(),
+            inet6_address: self.cfg.effective_inet6_address().ok().flatten(),
             auto_route: self.cfg.auto_route,
             auto_redirect: self.cfg.auto_redirect,
             strict_route: self.cfg.strict_route,
             table_id: self.cfg.table_id,
             fwmark: self.cfg.fwmark,
-            exclude_routes: self.cfg.exclude_routes.clone(),
-            include_routes: self.cfg.include_routes.clone(),
+            exclude_routes: self.cfg.effective_exclude_routes(),
+            include_routes: self.cfg.effective_include_routes(),
             exclude_uids: self.cfg.exclude_uids.clone(),
             include_uids: Vec::new(),
             exclude_processes: self.cfg.exclude_processes.clone(),
@@ -474,616 +624,29 @@ impl TunInbound {
     }
 
     pub(crate) async fn run(&self) -> io::Result<()> {
-        match parse_stack_backend(self.cfg.stack.as_deref())? {
-            TunBackendKind::Manual => {}
-            TunBackendKind::Smoltcp => {
-                let backend = EnhancedTunInbound::from_tun_config(
-                    &self.cfg,
-                    Arc::clone(&self.outbounds),
-                    Some(Arc::clone(&self.router)),
+        let policy = resolve_stack_policy(self.cfg.stack.as_deref(), self.cfg.dry_run)?;
+        if let Some(warning) = policy.compat_warning {
+            warn!("{warning}");
+        }
+
+        match policy.backend {
+            TunBackendKind::DryRunManual => {
+                warn!(
+                    name = %self.cfg.name,
+                    stack = ?self.cfg.stack,
+                    "tun dry_run manual diagnostic path selected; no TUN device or dataplane started"
                 );
-                return backend.start().await;
+                Ok(())
             }
-        }
-
-        let _span = tracing::info_span!("tun_run").entered();
-        tracing::info!(
-            "tun inbound starting: platform={}, name={}, mtu={}, auto_route={}, auto_redirect={}",
-            self.cfg.platform,
-            self.cfg.name,
-            self.cfg.mtu,
-            self.cfg.auto_route,
-            self.cfg.auto_redirect,
-        );
-
-        // Configure platform hooks (auto_route, auto_redirect, strict_route)
-        if let Err(e) = self.configure_platform() {
-            warn!(
-                "Failed to configure platform hooks: {} - continuing without routing",
-                e
-            );
-        }
-
-        // Spawn UDP NAT eviction task
-        let _udp_nat_maintenance = udp::spawn_eviction_task(Arc::clone(&self.udp_nat));
-
-        // Spawn test-only memory feeder pump
-        // Spawn test-only memory feeder pump
-        #[cfg(test)]
-        {
-            // Lock and acquire the receiver
-            let mut rx_guard = self.stack_rx.lock().await;
-            // logic to drain rx
-            // However, we can't easily "take" it if it's wrapped in Arc<Mutex>.
-            // We can only process it while holding the lock, which blocks everyone else.
-            // Or if we can swap it out.
-            // But for now, let's just comment it out or fix it to use the lock.
-            // Actually, if we just want to drain it in a background task, we need to clone the Arc?
-            // But Receiver is not Clone.
-            // If this is just a stub test logic, I will disable it or fix it later.
-            // Given "Phase 1: skeleton/WIP", I'll comment out the broken logic for now.
-        }
-        // Platform stubs (no-op, but assert compilation paths per OS)
-        #[cfg(target_os = "macos")]
-        {
-            tracing::info!(
-                "tun(macos): start name={}, mtu={}",
-                self.cfg.name,
-                self.cfg.mtu
-            );
-            // 若启用 utun 特性：打开设备并在此处做 read->parse->装配 ConnectParams（仍然丢弃负载）
-            #[cfg(feature = "tun")]
-            {
-                use sb_core::net::Address;
-                use sb_core::session::ConnectParams;
-                // RequestMeta 在上层统一导入或直接全路径使用；未用到则移除以消除告警
-                // use sb_core::router::RequestMeta;
-                // use std::net::{IpAddr, SocketAddr};
-                match sys_macos::open_async_fd(&self.cfg.name, self.cfg.mtu).await {
-                    Ok(afd) => {
-                        let mut buf = vec![0u8; 65536];
-
-                        // Initialize TunWriter
-                        let writer_file = afd.get_ref().try_clone()?;
-                        let writer = Arc::new(MacOsTunWriter {
-                            fd: Arc::new(parking_lot::Mutex::new(writer_file)),
-                        });
-
-                        loop {
-                            let mut guard = afd.readable().await?;
-                            let readn = match guard.try_io(|f| {
-                                use std::io::Read;
-                                // get_ref() 返回 &File，无法可变借用；clone 一份再读
-                                let mut file_for_read = f.get_ref().try_clone()?;
-                                let n = file_for_read.read(&mut buf)?;
-                                Ok(n)
-                            }) {
-                                Ok(Ok(n)) => n,
-                                Ok(Err(e)) => {
-                                    return Err(e);
-                                }
-                                Err(_would_block) => continue,
-                            };
-                            if readn == 0 {
-                                break;
-                            }
-                            if let Some(pkt) = sys_macos::parse_frame(&buf[..readn]) {
-                                match pkt.proto {
-                                    sys_macos::L4::Tcp => {
-                                        // TCP Session Management
-                                        let packet_payload = if let Some(head) = &pkt.payload_head {
-                                            // The payload_head in Parsed only contains partial data
-                                            // For sending to session, we need the actual payload from buf
-                                            // sys_macos::parse_frame only returns a summary
-                                            // We need to re-extract the full payload if possible or change parse logic
-                                            // But for now, let's assume `buf` contains the full packet.
-                                            // We also need to strip IP/TCP headers to get payload?
-                                            // Wait, TcpSessionManager (tun_session.rs) expects raw payload bytes in `send_to_outbound`?
-                                            // No, `relay_tun_to_outbound` writes directly to `outbound` (TcpStream).
-                                            // So `send_to_outbound` should likely send payload only.
-                                            // But `TunInbound` receives raw IP packets.
-                                            // We need full TCP/IP stack logic to strip headers and track state?
-                                            // NO, `tun_session.rs` seems to just forward bytes?
-                                            // Checking `tun_session.rs`:
-                                            // `relay_tun_to_outbound` receives `Bytes` and writes to `outbound`.
-                                            // If `outbound` is a TcpStream connected to target, we should only send the TCP PAYLOAD.
-                                            // We cannot send raw IP packets to a remote TCP server unless it expects them.
-                                            // So we must strip headers.
-                                            // `sys_macos::parse_frame` parses headers but doesn't return offset to payload easily.
-                                            // We need to upgrade `parse_frame` or re-parse here.
-                                            // Let's re-parse simply to get payload offset.
-                                            // sys_macos::Parsed doesn't have payload offset.
-                                            // We will do a quick parse helper here or modify sys_macos.
-                                            // For now, let's assume we can calculate it manually or just sniff.
-
-                                            // Re-parse to find payload offset
-                                            // IPv4 header length
-                                            let ip_version = (buf[4] >> 4);
-                                            if ip_version == 4 {
-                                                let ihl = (buf[4] & 0x0f) as usize * 4;
-                                                // TCP header length
-                                                // packet starts at buf[4] (after 4 byte AF info)
-                                                // Protocol is at buf[4+9]
-                                                if buf.len() > 4 + ihl + 12 {
-                                                    let tcph_doff =
-                                                        (buf[4 + ihl + 12] >> 4) as usize * 4;
-                                                    let payload_offset = 4 + ihl + tcph_doff;
-                                                    if payload_offset <= readn {
-                                                        &buf[payload_offset..readn]
-                                                    } else {
-                                                        &[]
-                                                    }
-                                                } else {
-                                                    &[]
-                                                }
-                                            } else {
-                                                &[]
-                                            }
-                                        } else {
-                                            &[]
-                                        };
-
-                                        // Skip if empty payload (pure ACK/SYN without data)?
-                                        // Wait, SYN needs to trigger connection.
-                                        // If payload is empty but it's a SYN, we enter session creation.
-
-                                        let tuple = FourTuple::new(
-                                            pkt.src_ip,
-                                            pkt.src_port,
-                                            pkt.dst_ip,
-                                            pkt.dst_port,
-                                        );
-
-                                        if let Some(session) = self.session_manager.get(&tuple) {
-                                            // Existing session: forward payload
-                                            if !packet_payload.is_empty() {
-                                                let _ = session
-                                                    .send_to_outbound(Bytes::copy_from_slice(
-                                                        packet_payload,
-                                                    ))
-                                                    .await;
-                                            }
-                                        } else {
-                                            // New session: Sniff -> Route -> Dial -> Create
-                                            // Detect SYN? sys_macos::Parsed doesn't show flags.
-                                            // For simplicity, treat any first packet as trigger.
-                                            let (ip, port) = pkt.dst_socket();
-                                            use std::net::SocketAddr;
-                                            use std::time::{Duration, Instant};
-                                            let dst = Address::Ip(SocketAddr::new(ip, port));
-
-                                            // Sniffing: use full sniff_stream for better coverage
-                                            let sniff_outcome = if let Some(head) =
-                                                &pkt.payload_head
-                                            {
-                                                if !sb_core::router::sniff::skip_sniff(port) {
-                                                    let outcome =
-                                                        sb_core::router::sniff::sniff_stream(head);
-                                                    if outcome.protocol.is_some() {
-                                                        SNI_OK.fetch_add(1, Ordering::Relaxed);
-                                                    }
-                                                    Some(outcome)
-                                                } else {
-                                                    None
-                                                }
-                                            } else {
-                                                None
-                                            };
-                                            let sniff_host =
-                                                sniff_outcome.as_ref().and_then(|o| o.host.clone());
-
-                                            let host_str = match sniff_host.as_ref() {
-                                                Some(s) if !s.is_empty() => s.clone(),
-                                                _ => format!("{}:{}", ip, port),
-                                            };
-
-                                            let sniff_proto =
-                                                sniff_outcome.as_ref().and_then(|o| o.protocol);
-
-                                            let (wifi_ssid, wifi_bssid) = if let Some(info) =
-                                                sb_platform::wifi::get_wifi_info()
-                                            {
-                                                (Some(info.ssid), Some(info.bssid))
-                                            } else {
-                                                (None, None)
-                                            };
-
-                                            let route_ctx = RouteCtx {
-                                                host: Some(&host_str),
-                                                ip: Some(ip),
-                                                port: Some(port),
-                                                transport: Transport::Tcp,
-                                                protocol: sniff_proto,
-                                                wifi_ssid: wifi_ssid.as_deref(),
-                                                wifi_bssid: wifi_bssid.as_deref(),
-                                                inbound_tag: self.inbound_tag.as_deref(),
-                                                inbound_sniff: self.sniff,
-                                                inbound_sniff_override: self
-                                                    .sniff_override_destination,
-                                                ..Default::default()
-                                            };
-                                            let mut decision = self.router.decide(&route_ctx);
-
-                                            // Handle Decision::Sniff: re-decide with sniffed metadata
-                                            let mut override_host: Option<String> = None;
-                                            if let Decision::Sniff {
-                                                override_destination,
-                                            } = decision
-                                            {
-                                                if sniff_proto.is_some() {
-                                                    // Already sniffed — re-decide should skip Sniff rules
-                                                    // The guard in engine.rs handles this via protocol.is_some()
-                                                    decision = self.router.decide(&route_ctx);
-                                                }
-                                                // Safety net
-                                                if matches!(decision, Decision::Sniff { .. }) {
-                                                    decision = Decision::Direct;
-                                                }
-                                                // Apply override_destination: replace IP target with sniffed hostname
-                                                if override_destination {
-                                                    if let Some(ref h) = sniff_host {
-                                                        if !h.is_empty() {
-                                                            tracing::debug!(sniffed_host = %h, "tun: override destination with sniffed host");
-                                                            override_host = Some(h.clone());
-                                                        }
-                                                    }
-                                                }
-                                            }
-
-                                            let (selected_target, outbound_tag) =
-                                                match route_target_from_decision(&decision) {
-                                                    Ok(route) => route,
-                                                    Err(e) => {
-                                                        tracing::warn!(
-                                                            "TUN: unsupported routing action for {}: {}",
-                                                            host_str,
-                                                            e
-                                                        );
-                                                        continue;
-                                                    }
-                                                };
-                                            let traffic = self.stats.as_ref().and_then(|stats| {
-                                                stats.traffic_recorder(
-                                                    self.inbound_tag.as_deref(),
-                                                    Some(outbound_tag.as_str()),
-                                                    self.cfg.user_tag.as_deref(),
-                                                )
-                                            });
-
-                                            // Dial Outbound — use sniffed domain when override_destination is active
-                                            let ep = if let Some(ref oh) = override_host {
-                                                Endpoint::Domain(oh.clone(), port)
-                                            } else {
-                                                Endpoint::Ip(SocketAddr::new(ip, port))
-                                            };
-                                            match self
-                                                .outbounds
-                                                .connect_tcp(&selected_target, ep)
-                                                .await
-                                            {
-                                                Ok(stream) => {
-                                                    tracing::debug!(
-                                                        "TUN: Connected to {} via {:?}",
-                                                        host_str,
-                                                        selected_target
-                                                    );
-                                                    let session =
-                                                        self.session_manager.create_session(
-                                                            tuple,
-                                                            stream,
-                                                            writer.clone(),
-                                                            traffic,
-                                                        );
-                                                    // Forward initial payload if any
-                                                    if !packet_payload.is_empty() {
-                                                        let _ = session
-                                                            .send_to_outbound(
-                                                                Bytes::copy_from_slice(
-                                                                    packet_payload,
-                                                                ),
-                                                            )
-                                                            .await;
-                                                    }
-                                                }
-                                                Err(e) => {
-                                                    tracing::warn!(
-                                                        "TUN: Failed to connect to {}: {}",
-                                                        host_str,
-                                                        e
-                                                    );
-                                                }
-                                            }
-                                        }
-                                    }
-                                    sys_macos::L4::Udp => {
-                                        // Extract full UDP payload from raw buffer
-                                        let udp_payload = {
-                                            let ip_start = 4; // AF prefix
-                                            let ip_version = buf[ip_start] >> 4;
-                                            if ip_version == 4 {
-                                                let ihl = (buf[ip_start] & 0x0f) as usize * 4;
-                                                let payload_offset = ip_start + ihl + 8; // IP hdr + UDP hdr (8 bytes)
-                                                if payload_offset < readn {
-                                                    Some(&buf[payload_offset..readn])
-                                                } else {
-                                                    None
-                                                }
-                                            } else if ip_version == 6 {
-                                                // IPv6: fixed 40-byte header + 8-byte UDP header
-                                                let payload_offset = ip_start + 40 + 8;
-                                                if payload_offset <= readn {
-                                                    Some(&buf[payload_offset..readn])
-                                                } else {
-                                                    None
-                                                }
-                                            } else {
-                                                None
-                                            }
-                                        };
-
-                                        if let Some(payload) = udp_payload {
-                                            let key = UdpFourTuple {
-                                                src_ip: pkt.src_ip,
-                                                src_port: pkt.src_port,
-                                                dst_ip: pkt.dst_ip,
-                                                dst_port: pkt.dst_port,
-                                            };
-                                            trace!(
-                                                "tun udp {}:{} -> {}:{} len={}",
-                                                pkt.src_ip,
-                                                pkt.src_port,
-                                                pkt.dst_ip,
-                                                pkt.dst_port,
-                                                payload.len()
-                                            );
-                                            if let Err(e) = self
-                                                .udp_nat
-                                                .forward(key, payload, writer.clone())
-                                                .await
-                                            {
-                                                trace!("tun udp forward error: {}", e);
-                                            }
-                                        }
-                                    }
-                                    _ => {
-                                        // Other protocols - skip
-                                        trace!(
-                                            "tun pkt {:?} -> {}:{} | skip (other)",
-                                            pkt.proto,
-                                            pkt.dst_ip,
-                                            pkt.dst_port
-                                        );
-                                    }
-                                }
-                            } else {
-                                tracing::trace!("tun unknown/short frame len={}", readn);
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("open utun({}) fail: {}", self.cfg.name, e);
-                    }
+            TunBackendKind::Enhanced => {
+                let backend = self.enhanced_backend()?;
+                let prepared = self.prepared_enhanced.lock().take();
+                match prepared {
+                    Some(prepared) => backend.start_with_prepared(prepared).await,
+                    None => backend.start().await,
                 }
             }
         }
-        #[cfg(target_os = "linux")]
-        {
-            tracing::info!(
-                "tun(linux): start name={}, mtu={}",
-                self.cfg.name,
-                self.cfg.mtu
-            );
-            #[cfg(feature = "tun")]
-            {
-                use std::os::unix::io::{AsRawFd, FromRawFd};
-                use tokio::io::unix::AsyncFd;
-                use tokio::io::Interest;
-
-                match sys_linux::open_tun_device(&self.cfg.name, self.cfg.mtu) {
-                    Ok(device) => {
-                        let mut buf = vec![0u8; 65536];
-                        let router = Arc::clone(&self.router);
-
-                        // Clone the fd for writing before moving device into AsyncFd
-                        use std::os::unix::io::AsRawFd;
-                        let raw_fd = device.as_raw_fd();
-                        // SAFETY: We duplicate the fd; the original is owned by `device`.
-                        // The dup'd fd is wrapped in File which will close it on drop.
-                        let writer_file = unsafe {
-                            let dup_fd = libc::dup(raw_fd);
-                            if dup_fd < 0 {
-                                return Err(io::Error::last_os_error());
-                            }
-                            std::fs::File::from_raw_fd(dup_fd)
-                        };
-                        let writer: Arc<dyn TunWriter> = Arc::new(LinuxTunWriter {
-                            fd: Arc::new(parking_lot::Mutex::new(writer_file)),
-                        });
-
-                        // Wrap the file descriptor in AsyncFd for async operations
-                        let async_fd = AsyncFd::with_interest(device, Interest::READABLE)
-                            .map_err(io::Error::other)?;
-
-                        loop {
-                            let mut guard = async_fd.readable().await?;
-
-                            let n = match guard.try_io(|inner| {
-                                use std::io::Read;
-                                inner.get_ref().read(&mut buf)
-                            }) {
-                                Ok(Ok(n)) => n,
-                                Ok(Err(e)) => return Err(e),
-                                Err(_would_block) => continue,
-                            };
-
-                            if n > 0 {
-                                if let Some((l4, dst_ip, dst_port)) =
-                                    sys_linux::parse_tun_packet(&buf[..n])
-                                {
-                                    match (l4, dst_ip, dst_port) {
-                                        (L4::Tcp, Some(ip), Some(port)) => {
-                                            tracing::trace!(
-                                                "tun: TCP -> {}:{} (linux, routing stub)",
-                                                ip,
-                                                port
-                                            );
-                                        }
-                                        (L4::Udp, Some(_ip), Some(_port)) => {
-                                            // Parse full UDP 5-tuple + payload from raw IP packet
-                                            if let Some(parsed) = parse_raw_udp(&buf[..n]) {
-                                                let key = UdpFourTuple {
-                                                    src_ip: parsed.src_ip,
-                                                    src_port: parsed.src_port,
-                                                    dst_ip: parsed.dst_ip,
-                                                    dst_port: parsed.dst_port,
-                                                };
-                                                let payload = &buf[parsed.payload_offset
-                                                    ..parsed.payload_offset + parsed.payload_len];
-                                                tracing::trace!(
-                                                    "tun udp {}:{} -> {}:{} len={}",
-                                                    parsed.src_ip,
-                                                    parsed.src_port,
-                                                    parsed.dst_ip,
-                                                    parsed.dst_port,
-                                                    payload.len()
-                                                );
-                                                if let Err(e) = self
-                                                    .udp_nat
-                                                    .forward(key, payload, writer.clone())
-                                                    .await
-                                                {
-                                                    tracing::trace!("tun udp forward error: {}", e);
-                                                }
-                                            }
-                                        }
-                                        _ => {
-                                            tracing::trace!("tun: other/short packet");
-                                        }
-                                    }
-                                } else {
-                                    tracing::trace!("tun: failed to parse packet");
-                                }
-                            } else {
-                                // EOF
-                                break;
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("open tun({}) failed: {}", self.cfg.name, e);
-                    }
-                }
-            }
-        }
-        #[cfg(target_os = "windows")]
-        {
-            tracing::info!(
-                "tun(windows): start name={}, mtu={}",
-                self.cfg.name,
-                self.cfg.mtu
-            );
-            #[cfg(feature = "tun")]
-            {
-                sys_windows::probe()?;
-
-                match sys_windows::open_wintun_adapter(&self.cfg.name, self.cfg.mtu) {
-                    Ok(adapter) => {
-                        let session = match adapter.start_session(wintun::MAX_RING_CAPACITY) {
-                            Ok(s) => Arc::new(s),
-                            Err(e) => {
-                                tracing::error!("Failed to start wintun session: {}", e);
-                                return Err(io::Error::new(io::ErrorKind::Other, e));
-                            }
-                        };
-
-                        // Create TUN writer for UDP response packets
-                        let writer: Arc<dyn TunWriter> = Arc::new(WintunTunWriter {
-                            session: Arc::clone(&session),
-                        });
-
-                        loop {
-                            match session.receive_blocking() {
-                                Ok(packet) => {
-                                    let bytes = packet.bytes();
-                                    if let Some((l4, dst_ip, dst_port)) =
-                                        sys_windows::parse_wintun_packet(bytes)
-                                    {
-                                        match (l4, dst_ip, dst_port) {
-                                            (L4::Tcp, Some(ip), Some(port)) => {
-                                                tracing::trace!(
-                                                    "tun: TCP -> {}:{} (windows, routing stub)",
-                                                    ip,
-                                                    port
-                                                );
-                                            }
-                                            (L4::Udp, Some(_ip), Some(_port)) => {
-                                                // Parse full UDP 5-tuple + payload from raw IP packet
-                                                if let Some(parsed) = parse_raw_udp(bytes) {
-                                                    let key = UdpFourTuple {
-                                                        src_ip: parsed.src_ip,
-                                                        src_port: parsed.src_port,
-                                                        dst_ip: parsed.dst_ip,
-                                                        dst_port: parsed.dst_port,
-                                                    };
-                                                    let payload = &bytes[parsed.payload_offset
-                                                        ..parsed.payload_offset
-                                                            + parsed.payload_len];
-                                                    tracing::trace!(
-                                                        "tun udp {}:{} -> {}:{} len={}",
-                                                        parsed.src_ip,
-                                                        parsed.src_port,
-                                                        parsed.dst_ip,
-                                                        parsed.dst_port,
-                                                        payload.len()
-                                                    );
-                                                    if let Err(e) = self
-                                                        .udp_nat
-                                                        .forward(key, payload, writer.clone())
-                                                        .await
-                                                    {
-                                                        tracing::trace!(
-                                                            "tun udp forward error: {}",
-                                                            e
-                                                        );
-                                                    }
-                                                }
-                                            }
-                                            _ => {
-                                                tracing::trace!("tun: other/short packet");
-                                            }
-                                        }
-                                    } else {
-                                        tracing::trace!("tun: failed to parse packet");
-                                    }
-                                }
-                                Err(e) => {
-                                    tracing::error!("wintun receive error: {}", e);
-                                    break;
-                                }
-                            }
-                        }
-                    }
-                    Err(e) => {
-                        tracing::warn!("open wintun({}) failed: {}", self.cfg.name, e);
-                    }
-                }
-            }
-            #[cfg(not(feature = "tun"))]
-            {
-                sys_windows::probe()?;
-                tracing::info!("tun inbound: Windows TUN feature not enabled");
-            }
-        }
-        #[cfg(all(
-            not(target_os = "macos"),
-            not(target_os = "windows"),
-            not(target_os = "linux")
-        ))]
-        {
-            // Not implemented for this OS
-            tracing::info!("tun inbound: this OS is not currently supported");
-        }
-        Ok(())
     }
 
     /// 直接从 JSON 生成 TunInbound（不改变默认行为；仅在显式配置中使用）
@@ -1923,14 +1486,20 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn tun_phase1_skeleton_starts() {
-        let cfg = TunInboundConfig::default();
+    async fn explicit_dry_run_manual_returns_without_device() {
+        let cfg = TunInboundConfig {
+            dry_run: true,
+            stack: Some("manual".to_string()),
+            ..TunInboundConfig::default()
+        };
         let router = create_dummy_router();
         let outbounds = Arc::new(sb_core::outbound::OutboundRegistryHandle::default());
         let inbound = TunInbound::new(cfg, router, outbounds, None, None, false, false);
 
-        // Run for a short time to verify it starts without error
-        let _ = tokio::time::timeout(std::time::Duration::from_millis(100), inbound.run()).await;
+        inbound
+            .run()
+            .await
+            .expect("explicit dry_run should not open TUN");
     }
 
     #[tokio::test]
@@ -1952,7 +1521,7 @@ mod tests {
     #[test]
     fn config_defaults_2_3c() {
         let d = TunInboundConfig::default();
-        assert!(d.dry_run);
+        assert!(!d.dry_run);
         assert!(d.user_tag.is_none());
         assert!(d.timeout_ms >= 5_000); // 默认应为一个合理超时
     }
@@ -2004,31 +1573,107 @@ mod tests {
     }
 
     #[test]
-    fn tun_stack_backend_defaults_to_manual() {
-        assert_eq!(parse_stack_backend(None).unwrap(), TunBackendKind::Manual);
+    fn tun_stack_policy_defaults_to_enhanced() {
         assert_eq!(
-            parse_stack_backend(Some("")).unwrap(),
-            TunBackendKind::Manual
+            resolve_stack_policy(None, false).unwrap().backend,
+            TunBackendKind::Enhanced
         );
         assert_eq!(
-            parse_stack_backend(Some("system")).unwrap(),
-            TunBackendKind::Manual
+            resolve_stack_policy(Some(""), false).unwrap().backend,
+            TunBackendKind::Enhanced
         );
-    }
-
-    #[test]
-    fn tun_stack_backend_recognizes_smoltcp() {
         assert_eq!(
-            parse_stack_backend(Some("smoltcp")).unwrap(),
-            TunBackendKind::Smoltcp
+            resolve_stack_policy(Some("default"), false)
+                .unwrap()
+                .backend,
+            TunBackendKind::Enhanced
         );
     }
 
     #[test]
-    fn tun_stack_backend_rejects_unknown_values() {
-        let err = parse_stack_backend(Some("netstack-smoltcp")).expect_err("unknown backend");
+    fn tun_stack_policy_maps_gui_values_to_enhanced() {
+        assert_eq!(
+            resolve_stack_policy(Some("mixed"), false).unwrap().backend,
+            TunBackendKind::Enhanced
+        );
+        let gvisor = resolve_stack_policy(Some("gvisor"), false).unwrap();
+        assert_eq!(gvisor.backend, TunBackendKind::Enhanced);
+        assert!(gvisor
+            .compat_warning
+            .expect("gvisor should warn")
+            .contains("smoltcp-compatible"));
+        assert_eq!(
+            resolve_stack_policy(Some("smoltcp"), false)
+                .unwrap()
+                .backend,
+            TunBackendKind::Enhanced
+        );
+    }
+
+    #[test]
+    fn tun_stack_policy_rejects_unsupported_system_and_manual_runtime() {
+        let err = resolve_stack_policy(Some("system"), false).expect_err("system unsupported");
+        assert_eq!(err.kind(), io::ErrorKind::Unsupported);
+        assert!(err.to_string().contains("system"));
+
+        let err = resolve_stack_policy(Some("manual"), false).expect_err("manual needs dry_run");
+        assert_eq!(err.kind(), io::ErrorKind::Unsupported);
+        assert!(err.to_string().contains("dry_run=true"));
+
+        let manual = resolve_stack_policy(Some("manual"), true).unwrap();
+        assert_eq!(manual.backend, TunBackendKind::DryRunManual);
+    }
+
+    #[test]
+    fn tun_stack_policy_rejects_unknown_values() {
+        let err =
+            resolve_stack_policy(Some("netstack-smoltcp"), false).expect_err("unknown backend");
         assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
         assert!(err.to_string().contains("unsupported stack backend"));
+    }
+
+    #[test]
+    fn gui_tun_fields_map_to_runtime_config() {
+        let cfg: TunInboundConfig = serde_json::from_value(json!({
+            "name": "utun9",
+            "address": ["172.19.0.1/30", "fdfe:dcba:9876::1/126"],
+            "route_address": ["10.0.0.0/8"],
+            "route_exclude_address": ["192.168.0.0/16"],
+            "include_routes": ["172.16.0.0/12"],
+            "exclude_routes": ["100.64.0.0/10"]
+        }))
+        .unwrap();
+
+        assert_eq!(
+            cfg.effective_inet4_address()
+                .unwrap()
+                .map(|ip| ip.to_string()),
+            Some("172.19.0.1".to_string())
+        );
+        assert_eq!(
+            cfg.effective_inet6_address()
+                .unwrap()
+                .map(|ip| ip.to_string()),
+            Some("fdfe:dcba:9876::1".to_string())
+        );
+        assert_eq!(cfg.effective_include_routes(), vec!["10.0.0.0/8"]);
+        assert_eq!(cfg.effective_exclude_routes(), vec!["192.168.0.0/16"]);
+    }
+
+    #[test]
+    fn try_new_propagates_invalid_gui_address() {
+        let cfg = TunInboundConfig {
+            stack: Some("mixed".to_string()),
+            address: vec!["not-an-ip/30".to_string()],
+            ..TunInboundConfig::default()
+        };
+        let router = create_dummy_router();
+        let outbounds = Arc::new(sb_core::outbound::OutboundRegistryHandle::default());
+
+        let err = TunInbound::try_new(cfg, router, outbounds, None, None, false, false)
+            .expect_err("invalid GUI address must block runtime preparation");
+        assert_eq!(err.kind(), io::ErrorKind::InvalidInput);
+        assert!(err.to_string().contains("invalid interface address"));
     }
 
     #[cfg(feature = "tun")]

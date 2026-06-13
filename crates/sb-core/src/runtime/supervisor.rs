@@ -26,6 +26,16 @@ use std::time::{Duration, Instant};
 use tokio::sync::{mpsc, RwLock};
 use tokio_util::sync::CancellationToken;
 
+fn ensure_bridge_startup_ready(bridge: &Bridge) -> Result<()> {
+    if bridge.startup_errors.is_empty() {
+        return Ok(());
+    }
+    Err(anyhow::anyhow!(
+        "runtime startup blocked by adapter errors: {}",
+        bridge.startup_errors.join("; ")
+    ))
+}
+
 /// Messages sent to supervisor event loop
 #[derive(Debug)]
 pub enum ReloadMsg {
@@ -179,6 +189,7 @@ impl Supervisor {
 
         // Build bridge via adapter bridge to enable routed inbounds/outbounds
         let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone(), context.clone());
+        ensure_bridge_startup_ready(&bridge).inspect_err(|_| shutdown_context(&context))?;
 
         // Register bridge components (endpoints, services, outbounds) into the
         // context managers BEFORE Start stage, so EndpointManager.run_stage and
@@ -367,6 +378,7 @@ impl Supervisor {
         tracing::debug!(target: "sb_core::runtime", "Context managers initialized (no-router)");
 
         let bridge = crate::adapter::bridge::build_bridge(&ir, (), context.clone());
+        ensure_bridge_startup_ready(&bridge).inspect_err(|_| shutdown_context(&context))?;
 
         // Register bridge components into context managers BEFORE Start stage.
         // See router-init path for the rationale (LC-003 lifecycle fix).
@@ -633,6 +645,7 @@ impl Supervisor {
                 new_engine.clone(),
                 new_context.clone(),
             );
+            ensure_bridge_startup_ready(&new_bridge)?;
 
             // Wrap in Arc and register components BEFORE Start stage. See LC-003
             // lifecycle fix in initial-start path for rationale.
@@ -813,6 +826,7 @@ impl Supervisor {
             // Build new bridge (no engine needed)
             let new_bridge =
                 crate::adapter::bridge::build_bridge(&new_ir, (), new_context.clone());
+            ensure_bridge_startup_ready(&new_bridge)?;
 
             // Wrap and register BEFORE Start (LC-003 lifecycle fix).
             let new_bridge_arc = Arc::new(new_bridge);

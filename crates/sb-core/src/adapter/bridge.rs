@@ -825,6 +825,12 @@ pub fn build_bridge(
         if let Some(i) = try_adapter_inbound(&p, &adapter_ctx) {
             br.add_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
         } else {
+            if p.kind == "tun" {
+                br.startup_errors.push(format!(
+                    "tun inbound '{}' failed to prepare runtime backend",
+                    p.tag.as_deref().unwrap_or("tun")
+                ));
+            }
             tracing::error!(
                 target: "sb_core::adapter",
                 inbound = %p.kind,
@@ -934,6 +940,12 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
         if let Some(i) = try_adapter_inbound(&p, &adapter_ctx) {
             br.add_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
         } else {
+            if p.kind == "tun" {
+                br.startup_errors.push(format!(
+                    "tun inbound '{}' failed to prepare runtime backend",
+                    p.tag.as_deref().unwrap_or("tun")
+                ));
+            }
             tracing::error!(
                 target: "sb_core::adapter",
                 inbound = %p.kind,
