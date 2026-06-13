@@ -945,4 +945,74 @@ mod tests {
     fn sni_fallback_localhost_when_endpoint_invalid() {
         assert_eq!(sni_for_test(None, "no-port-here"), "localhost");
     }
+
+    // ---- CAL-28: Trojan UDP packet encode/decode (pure local, no network) ----
+    // encode_packet/decode_packet never touch the socket, so a loopback-bound
+    // UdpSocket is enough to exercise every ATYP branch and error path offline.
+
+    async fn loopback_udp_socket() -> TrojanUdpSocket {
+        let udp = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        TrojanUdpSocket::new(std::sync::Arc::new(udp)).unwrap()
+    }
+
+    #[tokio::test]
+    async fn trojan_udp_roundtrip_ipv4() {
+        let sock = loopback_udp_socket().await;
+        let target = Target::tcp("1.2.3.4", 4433);
+        let packet = sock.encode_packet(b"ping", &target).unwrap();
+        assert_eq!(packet[0], 0x03, "CMD must be UDP (0x03)");
+        assert_eq!(packet[1], 0x01, "ATYP must be IPv4 (0x01)");
+        assert_eq!(&packet[2..6], &[1u8, 2, 3, 4][..], "IPv4 octets");
+        assert_eq!(&packet[6..8], &4433u16.to_be_bytes()[..], "port big-endian");
+        assert_eq!(&packet[8..], &b"ping"[..], "payload trails the header");
+        assert_eq!(sock.decode_packet(&packet).unwrap(), b"ping".to_vec());
+    }
+
+    #[tokio::test]
+    async fn trojan_udp_roundtrip_ipv6() {
+        let sock = loopback_udp_socket().await;
+        let target = Target::tcp("2001:db8::1", 443);
+        let packet = sock.encode_packet(b"x", &target).unwrap();
+        assert_eq!(packet[0], 0x03);
+        assert_eq!(packet[1], 0x04, "ATYP must be IPv6 (0x04)");
+        assert_eq!(sock.decode_packet(&packet).unwrap(), b"x".to_vec());
+    }
+
+    #[tokio::test]
+    async fn trojan_udp_roundtrip_domain() {
+        let sock = loopback_udp_socket().await;
+        let target = Target::tcp("example.com", 8080);
+        let packet = sock.encode_packet(b"payload", &target).unwrap();
+        assert_eq!(packet[0], 0x03);
+        assert_eq!(packet[1], 0x03, "ATYP must be Domain (0x03)");
+        assert_eq!(packet[2] as usize, "example.com".len(), "domain length prefix");
+        assert_eq!(sock.decode_packet(&packet).unwrap(), b"payload".to_vec());
+    }
+
+    #[tokio::test]
+    async fn trojan_udp_encode_rejects_overlong_domain() {
+        let sock = loopback_udp_socket().await;
+        let long_host = "a".repeat(256);
+        let target = Target::tcp(long_host.as_str(), 443);
+        assert!(
+            sock.encode_packet(b"d", &target).is_err(),
+            "domain longer than 255 bytes must be rejected"
+        );
+    }
+
+    #[tokio::test]
+    async fn trojan_udp_decode_rejects_malformed() {
+        let sock = loopback_udp_socket().await;
+        assert!(sock.decode_packet(b"").is_err(), "empty packet");
+        assert!(sock.decode_packet(&[0x01u8, 0x01]).is_err(), "non-UDP CMD");
+        assert!(sock.decode_packet(&[0x03u8, 0x09]).is_err(), "invalid ATYP");
+        assert!(
+            sock.decode_packet(&[0x03u8, 0x01, 1, 2]).is_err(),
+            "truncated IPv4 addr/port"
+        );
+        assert!(
+            sock.decode_packet(&[0x03u8, 0x03]).is_err(),
+            "missing domain length byte"
+        );
+    }
 }

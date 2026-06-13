@@ -183,6 +183,23 @@ fn invalid_outbound_config_reason(
     .into()
 }
 
+/// Reason string for a long-tail outbound whose Cargo feature is not compiled in.
+///
+/// Used by the feature-disabled stub branches of long-tail outbound builders
+/// (tor / tailscale / shadowsocksr — CAL-18). Instead of returning `None` (which
+/// the bridge turns into a generic "no outbound builder available" log line and
+/// silently skips the outbound, surfacing downstream as a misleading "outbound not
+/// found"), these branches register an [`InvalidConfigConnector`] carrying this
+/// reason, so any dial through the outbound fails loudly with the missing feature
+/// name and a concrete next step.
+#[allow(dead_code)] // Referenced only when the matching long-tail feature is OFF.
+fn unsupported_outbound_feature_reason(feature: &str) -> Arc<str> {
+    format!(
+        "this long-tail protocol is not compiled into this binary; it requires the '{feature}' cargo feature (excluded from the default/parity build). Rebuild with that feature enabled (e.g. --features {feature}) or remove this outbound from the config"
+    )
+    .into()
+}
+
 #[allow(dead_code)] // Shared by optional outbound builders under feature-gated code paths.
 fn parse_required_outbound_uuid(
     protocol: &'static str,
@@ -987,7 +1004,10 @@ fn build_shadowsocksr_outbound(
     _ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    None
+    invalid_config_outbound(
+        "shadowsocksr",
+        unsupported_outbound_feature_reason("legacy_shadowsocksr"),
+    )
 }
 
 #[cfg(feature = "adapter-trojan")]
@@ -2749,8 +2769,7 @@ fn build_tor_outbound(
 
     #[cfg(not(feature = "adapter-tor"))]
     {
-        stub_outbound("tor");
-        None
+        invalid_config_outbound("tor", unsupported_outbound_feature_reason("adapter-tor"))
     }
 }
 
@@ -2850,8 +2869,10 @@ fn build_tailscale_outbound(
     _ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    stub_outbound("tailscale");
-    None
+    invalid_config_outbound(
+        "tailscale",
+        unsupported_outbound_feature_reason("adapter-tailscale"),
+    )
 }
 
 #[cfg(feature = "adapter-hysteria")]
@@ -3609,6 +3630,80 @@ mod tests {
         assert!(err
             .to_string()
             .contains("missing required field 'password'"));
+    }
+
+    // ---- CAL-18: long-tail outbound loud-unsupported behavior ----
+
+    #[test]
+    fn longtail_unsupported_feature_reason_names_feature_and_rebuild() {
+        // The reason string handed to a disabled long-tail outbound must name the
+        // missing cargo feature and give a concrete next step (no generic message).
+        for feature in ["adapter-tor", "adapter-tailscale", "legacy_shadowsocksr"] {
+            let reason = unsupported_outbound_feature_reason(feature);
+            let msg = reason.as_ref();
+            assert!(msg.contains(feature), "reason must name the cargo feature: {msg}");
+            assert!(
+                msg.contains("not compiled"),
+                "reason must state it is not compiled in: {msg}"
+            );
+            assert!(
+                msg.contains("--features"),
+                "reason must give a rebuild hint: {msg}"
+            );
+        }
+    }
+
+    #[test]
+    fn longtail_disabled_outbound_connect_fails_loudly() {
+        // A feature-disabled long-tail outbound registers an InvalidConfigConnector
+        // (instead of silently returning None), so a dial fails loudly carrying the
+        // outbound type, the missing feature, and a rebuild hint.
+        let (connector, _udp) =
+            invalid_config_outbound("tor", unsupported_outbound_feature_reason("adapter-tor"))
+                .expect("invalid_config_outbound always returns Some");
+        let err = futures::executor::block_on(connector.connect("example.com", 443))
+            .expect_err("disabled long-tail outbound must reject dials");
+        let msg = err.to_string();
+        assert!(msg.contains("tor"), "error must name the outbound type: {msg}");
+        assert!(
+            msg.contains("adapter-tor"),
+            "error must name the cargo feature: {msg}"
+        );
+        assert!(
+            msg.contains("--features"),
+            "error must give a rebuild hint: {msg}"
+        );
+    }
+
+    #[test]
+    #[cfg(feature = "adapter-dns")]
+    fn longtail_dns_outbound_is_real_not_stub() {
+        // CAL-18 calibration: dns is wired into the adapters/parity aggregate, so the
+        // real builder (not the #[cfg(not)] stub) must be compiled and return a
+        // connector. Guards against regressing dns back into the long-tail stub set.
+        let ir = OutboundIR {
+            ty: OutboundType::Dns,
+            server: Some("1.1.1.1".into()),
+            port: Some(53),
+            ..Default::default()
+        };
+        let param = OutboundParam {
+            kind: "dns".into(),
+            name: Some("dns-out".into()),
+            server: None,
+            port: None,
+            ..Default::default()
+        };
+        let context = sb_core::context::Context::new();
+        let bridge = std::sync::Arc::new(sb_core::adapter::Bridge::new(context));
+        let ctx = sb_core::registry::AdapterOutboundContext {
+            context: sb_core::context::ContextRegistry::from(&bridge.context),
+            bridge,
+        };
+        assert!(
+            build_dns_outbound(&param, &ir, &ctx).is_some(),
+            "dns outbound must build a real connector under adapter-dns"
+        );
     }
 }
 

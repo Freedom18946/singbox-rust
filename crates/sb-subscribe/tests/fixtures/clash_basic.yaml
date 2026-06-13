@@ -1,0 +1,32 @@
+# H-10 fixture: Clash YAML with mainstream proxy types + one unknown type.
+# parse_clash extracts only (name, type) and passes ANY type through verbatim
+# (no whitelist), so `clash-unknown` (type: brook) must survive as kind "brook".
+proxies:
+  - name: clash-trojan
+    type: trojan
+    server: trojan.example.com
+    port: 443
+    password: secret
+  - name: clash-vmess
+    type: vmess
+    server: vmess.example.com
+    port: 443
+    uuid: 11111111-2222-3333-4444-555555555555
+  - name: clash-vless
+    type: vless
+    server: vless.example.com
+    port: 443
+    uuid: 22222222-3333-4444-5555-666666666666
+  - name: clash-ss
+    type: ss
+    server: ss.example.com
+    port: 8388
+    cipher: aes-256-gcm
+    password: sspass
+  - name: clash-unknown
+    type: brook
+    server: brook.example.com
+    port: 9999
+rules:
+  - DOMAIN-SUFFIX,example.com,clash-trojan
+  - DOMAIN-KEYWORD,ads,clash-vless

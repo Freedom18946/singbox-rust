@@ -1,0 +1,7 @@
+trojan://trojanpass@trojan.example.com:443?sni=trojan.example.com#prov-trojan
+vless://33333333-4444-5555-6666-777777777777@vless.example.com:443?encryption=none#prov-vless
+hy2://hy2pass@hy2.example.com:443#prov-hy2
+vmess://eyJ2IjoiMiIsInBzIjoibm9kZS12bWVzcyIsImFkZCI6InZtZXNzLmV4YW1wbGUuY29tIiwicG9ydCI6NDQzLCJpZCI6IjExMTExMTExLTIyMjItMzMzMy00NDQ0LTU1NTU1NTU1NTU1NSIsImFpZCI6MCwibmV0IjoidGNwIn0=
+ss://YWVzLTI1Ni1nY206cGFzc3dvcmQxMjM=@ss.example.com:8388#prov-ss
+tuic://tuicpass@tuic.example.com:443#prov-tuic-unknown-scheme
+not-a-valid-uri-line-at-all
