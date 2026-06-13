@@ -10,36 +10,36 @@
 
 ---
 
-## Resume (2026-06-12) — POST-FABLE P0 wave
+## Resume (2026-06-13) — POST-FABLE P0 wave
 
-- **package02 (TUN schema parity) DONE** (`e3defcdf`): strict validator accepts GUI flat TUN
-  fields (per-type TUN-only whitelist; nested `tun` now content-checked via Raw bridge);
-  `lower_inbounds` populates `InboundIR.tun` (flat-over-nested, Go omitempty normalization,
-  `interface_name`→`name` alias). H-4: GUI listen-block fields (tcp_fast_open/tcp_multi_path/
-  udp_fragment) accepted as schema no-ops (same-launch-path exception). sb-config 693 PASS;
-  GUI-shape `run --check` smoke PASS. NOT dataplane-ready → package03; diff record:
-  post_fable_packages/post_fable_package02_tun_schema_diff.md.
-- **package01 (GUI startup contract) DONE** (`0a4cae74`): `sing-box started` keyword in
-  LogOnly/TextStdout (JsonStdout pure; = supervisor started, NOT bind-ready → package05);
-  version probe: no GUI gating → keep 0.1.0 (CAL-17/H-3 closed).
-- Next: package03 (TUN dataplane) ∥ package07 (GUI E2E probe); map: post_fable_packages/README.
+- **package07 (GUI E2E probe) PARTIAL** (probe/docs-only): process-contract equivalence
+  probe **14/14 PASS** (GUI-exact launch→`sing-box started`; mixed+clash bind; SOCKS5+CONNECT
+  200; Clash API /configs+/proxies+401; SIGINT graceful 0.27s; restart same-port rebind).
+  Interactive Wails window E2E = BLOCKED (not agent-drivable; build env ready). **NEW BLOCKER
+  F-1**: GUI default DNS (type-based servers w/ `domain_resolver`/`server_port`/`path`)
+  rejected by strict validator on **production load path (run AND --check)** → kernel exits →
+  GUI never starts; isolated to DNS server fields → needs DNS schema package (package02
+  sibling). F-2: default build lacks adapters (GUI drop-in needs `--features adapters`).
+  F-3: HTTP inbound CONNECT-only (plain-HTTP fwd→405). package05 NOT a GUI prereq (GUI=process
+  restart, kernel survives). Detail: post_fable_package07_gui_e2e_probe_note.md.
+- **package02 (TUN schema parity) DONE** (`e3defcdf`): validator accepts GUI flat TUN
+  (per-type whitelist; nested `tun` Raw-checked); `lower_inbounds` fills `InboundIR.tun`. NOT
+  dataplane-ready → package03. sb-config 693 PASS. diff: post_fable_package02_tun_schema_diff.md.
+- **package01 (GUI startup) DONE** (`0a4cae74`): `sing-box started`; keep 0.1.0 (CAL-17/H-3).
+  Next: **F-1 DNS schema parity** (hard blocker for GUI default config) → package03 (TUN). Map: README.
 
 ## Resume (2026-06-10)
-T3-2 + DRIFT-01 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed.
-- 01B pre-swap rollback guard (`47e15b0b`): one txn block + shared
-  `shutdown_failed_reload_context`; fresh V2Ray closed / inherited Arc preserved; 9 tests;
-  sb-core 1109 PASS; gates clean. TIDY-APP-BREAKER-FLAKE isolated+rerun PASS (not fixed).
-  01A audit (`907f5944`). APP-RELOAD-INBOUND-CONTINUITY-01A = DEFER/FOLLOW-UP AUDIT.
-- 01C V2Ray reuse (`7dc853ef`, 11 tests); LIVENESS-01 CLOSED (log-only Continue; POLICY-02A
-  DEFER); V2RAY-SURFACE-02D (`60b88414`; TIDY-RUSTDOC-LINKS DEFER); SIDECAR-BIND-01 (`e1f0be43`).
-  sb-core pre-existing flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
+T3-2 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed.
+- 01B pre-swap rollback guard (`47e15b0b`): txn block + shared `shutdown_failed_reload_context`;
+  9 tests; sb-core 1109 PASS. 01A audit (`907f5944`); INBOUND-CONTINUITY-01A=DEFER. 01C V2Ray
+  reuse (`7dc853ef`); LIVENESS-01 CLOSED; V2RAY-SURFACE-02D (`60b88414`); SIDECAR-BIND-01
+  (`e1f0be43`). flakes: `cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
 
 ## Strategic State
 
 Phase: MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
-(non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, is not in
-the S1/S6 denominator; no increment unless an S3 case is promoted (T3 added none).
-DEV-REALITY-01 = ARCH-LIMIT (residual): local profile parity CLOSED, official-JA4 + camouflage OPEN.
+(non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, not in the
+S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, official-JA4 + camouflage OPEN.
 
 ## Current Build And Gate
 

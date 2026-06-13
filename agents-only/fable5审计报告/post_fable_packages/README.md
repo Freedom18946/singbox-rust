@@ -29,13 +29,13 @@ reload/config switching does not silently break service.
 
 | Package | Title | Priority | Covers | Status |
 |---|---|---:|---|---|
-| post_fable_package01 | GUI contract | P0 | CAL-02, CAL-17 | PLANNED |
-| post_fable_package02 | Schema parity, TUN first | P0 | CAL-01, H-4 | PLANNED |
+| post_fable_package01 | GUI contract | P0 | CAL-02, CAL-17 | DONE (`0a4cae74`) |
+| post_fable_package02 | Schema parity, TUN first | P0 | CAL-01, H-4 | DONE (`e3defcdf`) |
 | post_fable_package03 | TUN dataplane | P1 | CAL-10, H-5 | PLANNED |
 | post_fable_package04 | WireGuard dataplane | P0/P1 | CAL-03, CAL-09 | PLANNED |
 | post_fable_package05 | Reload continuity and atomicity | P1 | CAL-04, CAL-05, CAL-07, CAL-12, CAL-14 | PLANNED |
 | post_fable_package06 | Inbound liveness and observability | P1/P2 | CAL-06, CAL-13, CAL-15, CAL-16 | PLANNED |
-| post_fable_package07 | GUI E2E probe | Probe | H-1, H-2, H-3, H-9 | PLANNED |
+| post_fable_package07 | GUI E2E probe | Probe | H-1, H-2, H-3, H-9 | PARTIAL (probe PASS; interactive E2E not agent-drivable) |
 | post_fable_package08 | Long-tail protocols and subscription | P2 | CAL-18, CAL-28, H-10 | PLANNED |
 | post_fable_package09 | Lint, test, and gate policy | P1/P2/P3 | CAL-08, CAL-19, CAL-27, CAL-29 | PLANNED |
 | post_fable_package10 | Runtime and config hygiene | P2/P3 | CAL-11, CAL-20, CAL-21, CAL-22, CAL-23, CAL-24, CAL-25 | PLANNED |
