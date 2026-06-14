@@ -1,5 +1,10 @@
 # Production Deployment Checklist
 
+> Historical deployment snapshot. This checklist is retained as provenance for an
+> older rollout plan. It is not a current release approval, GUI readiness claim,
+> or drop-in replacement certificate. For live gate posture, read
+> [`agents-only/active_context.md`](../agents-only/active_context.md).
+
 ## Pre-Deployment Validation ✅
 
 ### Code Quality
@@ -327,6 +332,6 @@ ssh rust-singbox-1 "systemctl restart singbox"
 
 ---
 
-**Deployment Status:** ✅ READY  
+**Historical Snapshot Status:** READY in this 2026-01-01 checklist; not current release readiness.
 **Last Updated:** 2026-01-01  
 **Version:** 1.0.0-rc1

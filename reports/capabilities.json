@@ -3,6 +3,18 @@
   "generated_at": "2026-03-21T06:09:04Z",
   "source_commit": "c36d29d3",
   "profile": "docs-only",
+  "staleness": {
+    "status": "stale_docs_only_snapshot",
+    "calibrated_at": "2026-06-14",
+    "calibration_source": "post_fable_package11_doc_calibration",
+    "current_status_source": "agents-only/active_context.md",
+    "package_state_source": "agents-only/fable5审计报告/post_fable_packages/README.md",
+    "notes": [
+      "This report is retained as a docs-only snapshot and is not current GUI readiness, drop-in readiness, or full runtime parity proof.",
+      "Package11 did not overwrite this file with generator output because a dry-run at HEAD 226581b7 still produced stale static evidence anchors.",
+      "Current gates and recommended next step must be read from agents-only/active_context.md."
+    ]
+  },
   "acceptance_closure": {
     "status": "snapshot_unverified",
     "evidence_scope": "active_docs_and_provenance_only",

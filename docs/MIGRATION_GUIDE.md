@@ -1,5 +1,12 @@
 # Migration Guide: sing-box Go 1.12.14 → singbox-rust
 
+> Historical migration snapshot. This guide is useful provenance for Go 1.12.14
+> migration work, but its tables and coverage counts are not current GUI
+> readiness, drop-in readiness, or full behavior parity certification. Current
+> status and gates live in
+> [`agents-only/active_context.md`](../agents-only/active_context.md); package
+> limitations live in the post-FABLE package map.
+
 This guide helps users migrate from sing-box Go version 1.12.14 to the Rust implementation, documenting configuration compatibility, capability state, and known limitations.
 
 **Last Updated:** 2026-01-18  
@@ -8,15 +15,19 @@ This guide helps users migrate from sing-box Go version 1.12.14 to the Rust impl
 
 ## Executive Summary
 
-**Acceptance Closure Status: `UNVERIFIED (slim snapshot)`**
+**Historical Acceptance Closure Status: `UNVERIFIED (slim snapshot)`**
 
-- ✅ **Protocols**: 100% coverage of Go protocols (18/18 inbound, 19/19 outbound)
-- ✅ **DNS**: 11/11 transports aligned (feature-gated)
-- ✅ **VPN Endpoints**: WireGuard userspace MVP available
+- **Protocols**: the January snapshot claimed full protocol table coverage; use
+  current package notes before treating this as deployment evidence.
+- **DNS**: the January snapshot claimed transport alignment; current schema and
+  runtime posture are tracked outside this file.
+- **VPN Endpoints**: WireGuard userspace MVP was available in this snapshot.
 - ◐ **Services**: DERP aligned; V2Ray API gRPC partial; Resolved/SSMAPI parity gaps (feature-gated)
 - ⚠️ **Tailscale**: Endpoint de-scoped (see [Tailscale Limitations](#tailscale-limitations))
 
-**Current posture:** capability state is documented in `docs/capabilities.md`; strong closure claims require self-contained local evidence.
+**Current posture:** read `agents-only/active_context.md` first. Capability
+state in `docs/capabilities.md` is a docs-only snapshot; strong closure claims
+require self-contained local evidence.
 
 ---
 

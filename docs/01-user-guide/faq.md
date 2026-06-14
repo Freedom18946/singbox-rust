@@ -55,7 +55,15 @@ However, running the migrator is recommended for a clean V2 config.
 
 ### What features are supported?
 
-singbox-rust has 100% feature parity with Go sing-box 1.12.14 (209/209 features).
+Feature support must be read through the current status chain, not through the
+old acceptance count. The historical 209/209 ledger is closure accounting; it is
+not GUI-ready, drop-in-ready, or full behavior parity proof. Read
+[`agents-only/active_context.md`](../../agents-only/active_context.md) first and
+then the docs-only capability snapshot in
+[`docs/capabilities.md`](../capabilities.md).
+
+The list below is a configuration surface index, not a current support
+certificate.
 
 **Inbound types**: socks, http, mixed, tun, redirect, tproxy, direct, shadowsocks, vmess, vless, trojan, naive, shadowtls, anytls, hysteria, hysteria2, tuic, dns, ssh
 

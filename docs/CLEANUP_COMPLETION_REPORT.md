@@ -1,5 +1,11 @@
 # 文档清理与源码校验完成报告
 
+> Historical snapshot. This 2025 cleanup report is retained as provenance only.
+> It is not the current documentation map, source-of-truth statement, or release
+> readiness evidence. For live project state, read
+> [`agents-only/active_context.md`](../agents-only/active_context.md) and the
+> post-FABLE package map.
+
 **执行日期**: 2025-10-18  
 **任务**: 删除旧文档 + 源码校验 + 路径更新  
 **状态**: ✅ 完成

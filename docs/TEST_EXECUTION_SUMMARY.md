@@ -1,5 +1,10 @@
 # Test Execution Summary
 
+> Historical snapshot. This Milestone 1 planning document is retained as
+> provenance only. It is not a current test gate, readiness report, or evidence
+> that the Rust binary is GUI ready or drop-in ready. For live gate posture, read
+> [`agents-only/active_context.md`](../agents-only/active_context.md).
+
 ## Overview
 
 This document summarizes test execution status for Milestone 1 protocol implementations.

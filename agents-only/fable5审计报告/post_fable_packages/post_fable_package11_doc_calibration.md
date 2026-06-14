@@ -3,7 +3,7 @@
 
 ## Status
 
-PLANNED.
+DONE.
 
 ## Source Findings
 
@@ -59,4 +59,18 @@ or current capability truth that fable5 disproved.
 
 ## Completion Notes
 
-Not started.
+DONE in package11 doc calibration.
+
+- README and `docs/STATUS.md` no longer present the repository as pure
+  maintenance. Both point volatile current state to `agents-only/active_context.md`
+  and separate GUI drop-in goals from scoped ledgers.
+- `docs/capabilities.md` and `reports/capabilities.json` now mark the capability
+  report as a stale docs-only snapshot rather than current runtime or GUI
+  readiness proof.
+- Historical docs that previously read like current status were bannered:
+  `docs/TEST_EXECUTION_SUMMARY.md`, `docs/CLEANUP_COMPLETION_REPORT.md`,
+  `docs/MIGRATION_GUIDE.md`, and `docs/DEPLOYMENT_CHECKLIST.md`.
+- No product code, `.github/workflows/*`, `agents-only/a0_reality_spike/`, or
+  original fable5 audit body files were edited.
+- Evidence and validation results:
+  `post_fable_package11_doc_calibration_evidence.md`.

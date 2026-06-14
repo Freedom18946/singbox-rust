@@ -1,7 +1,21 @@
 # Capability Ledger
 
-This is the authoritative human-readable entry for capability states.
-Machine source of truth: [`reports/capabilities.json`](../reports/capabilities.json) (schema: [`scripts/capabilities/schema.json`](../scripts/capabilities/schema.json)).
+> Historical docs-only snapshot. This page reflects
+> [`reports/capabilities.json`](../reports/capabilities.json), generated at the
+> commit recorded inside that JSON. It is not the live project status source and
+> must not be used as GUI-ready, drop-in-ready, or full runtime parity proof.
+> Current status, gates, and recommended next step live in
+> [`agents-only/active_context.md`](../agents-only/active_context.md); post-FABLE
+> package state lives in the
+> [package map](../agents-only/fable5审计报告/post_fable_packages/README.md).
+>
+> Package11 calibration note: a generator dry-run at HEAD `226581b7` succeeded,
+> but the generated evidence map still includes a stale validator path. The
+> tracked JSON is therefore marked stale rather than regenerated.
+
+This is the human-readable entry for the docs-only capability snapshot.
+Machine snapshot: [`reports/capabilities.json`](../reports/capabilities.json)
+(schema: [`scripts/capabilities/schema.json`](../scripts/capabilities/schema.json)).
 
 ## Metadata Contract
 
@@ -11,6 +25,7 @@ Machine source of truth: [`reports/capabilities.json`](../reports/capabilities.j
 - `generated_at` (RFC3339)
 - `source_commit` (git sha)
 - `profile` (`docs-only` in Batch A)
+- `staleness` (package11 calibration metadata for stale docs-only snapshots)
 - `acceptance_closure`
 - `capabilities[]`
 - `runtime_probe` (optional, present when runtime probe report is available)

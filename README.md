@@ -2,7 +2,17 @@
 
 A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **never break userspace**, and **boring clarity**.
 
-> **Status**: Maintenance mode (L1-L25 Closed). Closure, capability state, and behavior evidence are tracked separately. See [docs/STATUS.md](docs/STATUS.md), [docs/capabilities.md](docs/capabilities.md), and [agents-only/reference/GO_PARITY_MATRIX.md](agents-only/reference/GO_PARITY_MATRIX.md).
+> **Status**: Active post-FABLE calibration. L1-L25 baseline work is closed, but
+> the repository is not in pure maintenance mode. The live current state, gates,
+> and recommended next step are tracked in
+> [`agents-only/active_context.md`](agents-only/active_context.md).
+>
+> The highest current goal is a GUI.for SingBox 1.19.0 drop-in replacement path
+> for the Rust binary. Package03 and package07 still record limits on that path,
+> so ledger closure, BHV/REALITY/T3 results, and MT-GUI-04 style counts must not
+> be read as GUI-ready or behavior-complete certification. See
+> [docs/STATUS.md](docs/STATUS.md), [docs/capabilities.md](docs/capabilities.md),
+> and the [post-FABLE package map](agents-only/fable5审计报告/post_fable_packages/README.md).
 
 ---
 
