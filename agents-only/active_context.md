@@ -45,7 +45,7 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
   (lint relaxed 2026-06-03: warnings/dead_code deny→warn, safety kept deny).
 - cargo check --workspace --all-features: **PASS**. strict check-boundaries.sh: **exit 0**.
 - python3 unittest (reality_probe_tools / clienthello_family /
-  dual_kernel_verification): **PASS**. trojan_integration: **17 PASS, 2 ign**.
+  dual_kernel_verification): **PASS**. trojan_integration: **19 PASS, 0 ignored**.
 
 ## T3 ClientHello Fingerprint Parity — T3-0…T3-2 DONE (2026-06-08)
 

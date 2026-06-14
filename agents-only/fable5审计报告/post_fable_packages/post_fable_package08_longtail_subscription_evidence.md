@@ -139,3 +139,28 @@ so they are exercised via `--test trojan_integration`, and the UDP unit tests vi
    `app/src/run_engine_runtime/admin_start.rs:194` (introduced by `cf1de32b`,
    package06) — surfaced by `cargo check --workspace --all-features`, unrelated to
    package08.
+
+---
+
+## 08b acceptance fix (2026-06-14)
+
+Two acceptance-review nits closed; no behavior / feature-aggregate change:
+
+1. **longtail test `unused_imports` warning.** `cargo test -p sb-adapters --lib longtail`
+   on the default feature set emitted `unused imports: OutboundIR and OutboundType`
+   (`register.rs` test module). The top-level `use sb_config::ir::{OutboundIR,
+   OutboundType};` is consumed only by feature-gated tests; confirmed (via rg) those
+   tests span **four** features — `adapter-dns`, `adapter-wireguard-outbound`,
+   `adapter-shadowtls`, `adapter-vless` — not just `adapter-dns`. The import now carries
+   `#[cfg(any(...four...))]`, so the default (no-adapter) build does not compile it (no
+   warning) while every feature build still has it. A bare `adapter-dns` cfg would have
+   broken the wireguard-outbound / shadowtls / vless tests.
+2. **active_context stale number.** `Current Build And Gate` still read
+   `trojan_integration: 17 PASS, 2 ign`; corrected to `19 PASS, 0 ignored` to match the
+   package08 closure.
+
+Verified: `cargo test -p sb-adapters --lib longtail` (no warning) + `--features
+adapter-dns` (3 pass) + `--test trojan_integration --features
+adapter-trojan,adapter-shadowsocks` (19 pass / 0 ignored) + `git diff --check` clean.
+Commits: `fix(adapters): remove longtail test cfg warning` + `checkpoint: record
+package08 acceptance fix`.
