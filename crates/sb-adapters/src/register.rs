@@ -3248,6 +3248,15 @@ fn stub_outbound(kind: &str) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    // Only the feature-gated tests below (dns / wireguard-outbound / shadowtls /
+    // vless) construct OutboundIR literals; gate the import to match so the default
+    // (no-adapter) test build doesn't see it as unused.
+    #[cfg(any(
+        feature = "adapter-dns",
+        feature = "adapter-wireguard-outbound",
+        feature = "adapter-shadowtls",
+        feature = "adapter-vless",
+    ))]
     use sb_config::ir::{OutboundIR, OutboundType};
 
     #[test]
