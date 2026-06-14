@@ -126,20 +126,26 @@ enforcement needs user approval (per the package dependency).
   longtail` / `-p app --lib --features adapters,clash_api,v2ray_api` / `cargo check --workspace
   --all-features`.
 
-## CAL-29 — flake handling (DONE: 1 hardened, rest documented)
+## CAL-29 — flake handling (DONE: hardened + deterministic isolation)
 
 | flake | root cause | handling | isolation |
 |---|---|---|---|
 | `cache_file::test_fakeip_persistence_sled` | sled dir-lock + debouncer worker + reopen ordering | **hardened**: explicit `drop(writer)` before reopen (sled drop-flush + worker join). 6 consecutive default-concurrency runs green | `cargo test -p sb-core --lib services::cache_file -- --test-threads=1` |
-| `dns_steady::bad_domain_returns_err` | system resolver NXDOMAIN-hijack | documented (no in-process fix without a mock resolver) | clean network; `--test-threads=1` |
-| `dns_steady::udp_pool_timeout_is_handled` | process-global `SB_DNS_POOL` env race across test binaries | documented (in-file `serial_guard` is per-file) | `--test-threads=1` |
+| `dns_steady::bad_domain_returns_err` | system resolver NXDOMAIN-hijack | **09b hardened**: local UDP NXDOMAIN stub via `SB_DNS_POOL=udp:<127.0.0.1:0>`; no system resolver dependency | `cargo test -p sb-core --test dns_steady -- --test-threads=1` |
+| `dns_steady::udp_pool_timeout_is_handled` | fixed discard-port / env-race sensitivity | **09b hardened**: local blackhole UDP stub on a dynamic port; serial guard now recovers from poison | `cargo test -p sb-core --test dns_steady -- --test-threads=1` |
+| `app outbound_builder::simple` resolver-hijack case | test used real `ToSocketAddrs` on `invalid.invalid.invalid` | **09b hardened**: private test seam injects resolver failure; missing endpoint coverage split out and still asserts resolver is not called | `cargo test -p app --lib --features adapters,clash_api,v2ray_api` |
 
-- **Newly found, same class (logged, NOT in CAL-29's set)**: `app
-  outbound_builder::simple::simple_proxy_family_skips_unresolvable_host_or_missing_endpoint`
-  asserts `invalid.invalid.invalid` is NXDOMAIN. On the current (hijacking) network it resolves
-  to `198.18.2.39` (verified via `getaddrinfo`), so `build_simple_outbound` returns `Some` and the
-  assertion flips. Same resolver-hijack class as `dns_steady::bad_domain`; environmental, NOT a
-  package09 regression; a one-line flake note was added; passes on a clean network.
+## 09b DNS flake determinism (DONE)
+
+- Reproduced on the local NXDOMAIN-hijacking network: `dns_steady::bad_domain_returns_err`
+  flipped to success, poisoning the serial mutex and cascading 3/3 failures; the app simple
+  outbound test also failed because `invalid.invalid.invalid` resolved to a synthetic IP.
+- Fix: replaced both real-system DNS assumptions with deterministic local seams. `dns_steady`
+  now uses loopback UDP stubs for NXDOMAIN and timeout behavior, and its serial guard recovers
+  from a prior panic. App simple outbound keeps production behavior unchanged while tests inject
+  resolver success/failure through a private helper.
+- Scope check: no product runtime/config hygiene behavior changed; no package10 CAL-11/CAL-20..25
+  work; no `#[ignore]`, environment gate, GitHub Actions, or `a0_reality_spike/` touch.
 
 ## Test / gate results
 
@@ -147,19 +153,19 @@ enforcement needs user approval (per the package dependency).
 |---|---|
 | `cargo test -p sb-core --test proxy_pool_select` | 5 passed |
 | `cargo test -p sb-core --lib` | 570 passed, 9 ignored |
-| `cargo test -p sb-core --test dns_steady -- --test-threads=1` | 3 passed |
+| `cargo test -p sb-core --test dns_steady -- --test-threads=1` | 3 passed (09b deterministic local DNS stubs) |
 | `cargo test -p sb-core --lib fakeip_persistence_sled -- --test-threads=1` | 1 passed |
 | `cargo test -p sb-adapters --lib trojan --features adapter-trojan,trojan` | 23 passed |
 | `cargo test -p sb-adapters --test trojan_integration --features adapter-trojan,trojan` | 20 passed (×3 stable) |
 | `cargo test -p sb-adapters --lib longtail` | 2 passed |
-| `cargo test -p app --lib --features adapters,clash_api,v2ray_api` | 182 passed, 1 env-flake (above) |
-| `cargo check --workspace --all-features` | 0 warning |
-| `cargo clippy --workspace --all-features --all-targets` | 0 warning |
+| `cargo test -p app --lib --features adapters,clash_api,v2ray_api` | 184 passed |
+| `cargo check --workspace --all-features` | PASS, 0 warning |
+| `cargo clippy --workspace --all-features --all-targets` | PASS, 0 warning |
 | `git diff --check` | clean |
 
 ## Follow-ups (not in package09 scope)
 
 1. Lint enforcement rollout (CAL-08) — deferred, needs user approval; start with sb-proto/sb-runtime.
 2. 5 other always-false-cfg sb-core integration tests (dns_cache / prop / router_domain) — pre-existing rot, future review.
-3. `app outbound_builder::simple` resolver-hijack flake + the `dns_steady` pair — true hardening needs mock-resolver injection (out of minimal scope).
+3. `app outbound_builder::simple` resolver-hijack flake + the `dns_steady` pair — CLOSED by 09b.
 4. trojan `udp_relay_dial` still derives connect timeout from config only (no `DialOpts` param) — wire if the UDP path gains opts.

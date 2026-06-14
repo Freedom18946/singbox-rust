@@ -23,9 +23,16 @@ pub(crate) struct HttpProxySpec {
 }
 
 pub(crate) fn build_simple_outbound(outbound: &OutboundIR) -> Option<SimpleOutboundSpec> {
+    build_simple_outbound_with_resolver(outbound, super::resolve_host_port)
+}
+
+fn build_simple_outbound_with_resolver(
+    outbound: &OutboundIR,
+    resolve_host_port: impl FnOnce(&str, u16) -> Option<SocketAddr>,
+) -> Option<SimpleOutboundSpec> {
     let host = outbound.server.as_deref()?;
     let port = outbound.port?;
-    let proxy_addr = super::resolve_host_port(host, port)?;
+    let proxy_addr = resolve_host_port(host, port)?;
     let username = outbound
         .credentials
         .as_ref()
@@ -110,27 +117,42 @@ mod tests {
         assert_eq!(http.password, None);
     }
 
-    // Flake note (package09): the first case relies on `invalid.invalid.invalid` being
-    // NXDOMAIN. On a network with a captive portal or a wildcard/NXDOMAIN-hijacking resolver
-    // it resolves to a synthetic IP (observed locally: 198.18.2.39) and `build_simple_outbound`
-    // returns `Some`, flipping `unresolved.is_none()`. Same resolver-hijack class as `sb-core`
-    // `dns_steady::bad_domain_returns_err`; environmental, not a logic bug — run on a clean
-    // network. (Outside CAL-29's named set; logged for parity, not hardened here.)
     #[test]
-    fn simple_proxy_family_skips_unresolvable_host_or_missing_endpoint() {
-        let unresolved = build_simple_outbound(&OutboundIR {
-            ty: OutboundType::Socks,
-            server: Some("invalid.invalid.invalid".to_string()),
-            port: Some(1080),
-            ..Default::default()
-        });
+    fn simple_proxy_family_skips_unresolvable_host() {
+        // 09b: keep this deterministic under NXDOMAIN-hijacking resolvers by injecting
+        // the resolver result instead of querying the host system.
+        let unresolved = build_simple_outbound_with_resolver(
+            &OutboundIR {
+                ty: OutboundType::Socks,
+                server: Some("unresolved.example".to_string()),
+                port: Some(1080),
+                ..Default::default()
+            },
+            |_host, _port| None,
+        );
         assert!(unresolved.is_none());
+    }
 
-        let missing = build_simple_outbound(&OutboundIR {
-            ty: OutboundType::Http,
-            server: Some("127.0.0.1".to_string()),
-            ..Default::default()
-        });
+    #[test]
+    fn simple_proxy_family_skips_missing_endpoint() {
+        let missing = build_simple_outbound_with_resolver(
+            &OutboundIR {
+                ty: OutboundType::Http,
+                server: Some("127.0.0.1".to_string()),
+                ..Default::default()
+            },
+            |_host, _port| panic!("missing port must not call resolver"),
+        );
+        assert!(missing.is_none());
+
+        let missing = build_simple_outbound_with_resolver(
+            &OutboundIR {
+                ty: OutboundType::Socks,
+                port: Some(1080),
+                ..Default::default()
+            },
+            |_host, _port| panic!("missing host must not call resolver"),
+        );
         assert!(missing.is_none());
     }
 }

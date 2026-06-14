@@ -84,6 +84,5 @@ DONE (local-only). Full detail + test/gate table: `post_fable_package09_lint_tes
   --all-targets` driven from 5 → **0** (1 self-introduced doc-markdown + 4 pre-existing
   low-risk, all mechanical, no behavior change).
 - **CAL-29** (flakes): `test_fakeip_persistence_sled` hardened (explicit pre-reopen drop, 6
-  consecutive runs green); the `dns_steady` pair documented (resolver-hijack + env-race, with
-  isolation commands); a same-class `app outbound_builder::simple` resolver-hijack flake found
-  and logged (environmental, not a regression).
+  consecutive runs green); 09b hardened the `dns_steady` pair and same-class `app
+  outbound_builder::simple` resolver-hijack case with deterministic local DNS/test seams.

@@ -12,9 +12,9 @@
 
 ## Resume (2026-06-14) - POST-FABLE wave
 
-- **package09 (lint/test/gate discipline) DONE** (`f2dcc34b`): selector tests rewritten + 2
-  stubs rm; both package08 trojan follow-ups CLOSED (feature→shadowsocks; dial honors DialOpts);
-  CAL-08 inventory closed/deferred; clippy all-features all-targets → 0; flakes hardened/documented.
+- **package09 (lint/test/gate discipline) DONE** (`f2dcc34b` + 09b): selector tests rewritten
+  + 2 stubs rm; package08 trojan follow-ups CLOSED; CAL-08 inventory closed/deferred; DNS
+  resolver-hijack flakes hardened; clippy all-features all-targets → 0.
 - **package08 (long-tail outbound + subscription) DONE** (`c31e9d1d`): tor/tailscale/ssr
   feature-OFF stubs now loud (type+feature+rebuild via InvalidConfigConnector); dns confirmed
   real in parity (audit stale); 2 deepest trojan tests enabled → 0 ignored + UDP units;

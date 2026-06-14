@@ -2,13 +2,16 @@
 
 use sb_core::dns::cache::{DnsCache, Key, QType};
 use sb_core::dns::ResolverHandle;
-use std::net::IpAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
+use tokio::net::UdpSocket;
 
 fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|err| err.into_inner())
 }
 
 struct EnvVarGuard {
@@ -22,12 +25,6 @@ impl EnvVarGuard {
         std::env::set_var(key, value);
         Self { key, prev }
     }
-
-    fn remove(key: &'static str) -> Self {
-        let prev = std::env::var_os(key);
-        std::env::remove_var(key);
-        Self { key, prev }
-    }
 }
 
 impl Drop for EnvVarGuard {
@@ -39,34 +36,59 @@ impl Drop for EnvVarGuard {
     }
 }
 
-// CAL-29 flake note (package09): depends on the real system resolver. On a network with
-// a captive portal, or an ISP that NXDOMAIN-hijacks (returns a synthetic A record for
-// non-existent names), `nonexistent.invalid` resolves "successfully" and this assertion
-// flips. The root cause is environmental, not a logic bug; there is no low-risk in-process
-// hardening short of injecting a mock resolver (out of package09 scope). Residual: run on a
-// clean network. Isolate with: `cargo test -p sb-core --test dns_steady -- --test-threads=1`.
+async fn start_nxdomain_dns_stub() -> std::io::Result<SocketAddr> {
+    let socket = UdpSocket::bind("127.0.0.1:0").await?;
+    let addr = socket.local_addr()?;
+    tokio::spawn(async move {
+        let mut buf = [0u8; 1500];
+        while let Ok((len, peer)) = socket.recv_from(&mut buf).await {
+            if let Some(response) =
+                sb_core::dns::message::build_dns_response(&buf[..len], &[], 0, 3)
+            {
+                let _ = socket.send_to(&response, peer).await;
+            }
+        }
+    });
+    Ok(addr)
+}
+
+async fn start_blackhole_dns_stub() -> std::io::Result<SocketAddr> {
+    let socket = UdpSocket::bind("127.0.0.1:0").await?;
+    let addr = socket.local_addr()?;
+    tokio::spawn(async move {
+        let mut buf = [0u8; 1500];
+        while socket.recv_from(&mut buf).await.is_ok() {}
+    });
+    Ok(addr)
+}
+
 #[tokio::test]
 async fn bad_domain_returns_err() {
     let _serial = serial_guard();
-    // Ensure system resolver path
-    let _pool = EnvVarGuard::remove("SB_DNS_POOL");
+    let upstream = start_nxdomain_dns_stub()
+        .await
+        .expect("start local NXDOMAIN DNS stub");
+    let _enabled = EnvVarGuard::set("SB_DNS_ENABLE", "1");
+    let _pool = EnvVarGuard::set("SB_DNS_POOL", &format!("udp:{upstream}"));
+    let _strategy = EnvVarGuard::set("SB_DNS_POOL_STRATEGY", "sequential");
+    let _timeout = EnvVarGuard::set("SB_DNS_UDP_TIMEOUT_MS", "100");
+    let _he = EnvVarGuard::set("SB_DNS_HE_RACE_MS", "0");
     let h = ResolverHandle::from_env_or_default();
     let res = h.resolve("nonexistent.invalid").await;
     assert!(res.is_err());
 }
 
-// CAL-29 flake note (package09): mutates the process-global `SB_DNS_POOL` /
-// `SB_DNS_UDP_TIMEOUT_MS` env vars. The in-file `serial_guard()` only serializes tests
-// within this file; another test binary touching the same globals in parallel can still
-// race. The assertion direction (`is_err()`) is itself robust — the discard port
-// 127.0.0.1:9 never answers. Isolate with:
-// `cargo test -p sb-core --test dns_steady -- --test-threads=1`.
 #[tokio::test]
 async fn udp_pool_timeout_is_handled() {
     let _serial = serial_guard();
-    // Force UDP upstream to an unroutable/closed port and a tiny timeout
-    let _pool = EnvVarGuard::set("SB_DNS_POOL", "udp:127.0.0.1:9");
+    let upstream = start_blackhole_dns_stub()
+        .await
+        .expect("start local blackhole DNS stub");
+    let _enabled = EnvVarGuard::set("SB_DNS_ENABLE", "1");
+    let _pool = EnvVarGuard::set("SB_DNS_POOL", &format!("udp:{upstream}"));
+    let _strategy = EnvVarGuard::set("SB_DNS_POOL_STRATEGY", "sequential");
     let _timeout = EnvVarGuard::set("SB_DNS_UDP_TIMEOUT_MS", "20");
+    let _he = EnvVarGuard::set("SB_DNS_HE_RACE_MS", "0");
     let h = ResolverHandle::from_env_or_default();
     let res = h.resolve("example.com").await;
     assert!(res.is_err());
