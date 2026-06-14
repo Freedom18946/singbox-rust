@@ -25,8 +25,8 @@
   failed reload keeps old listeners/registries; same-port in-process reload is rejected.
 - **package04 DONE** (`f70bf5ef`): endpoint tags enter outbound namespace; app
   `adapters`/`parity` wire legacy `wireguard`; public WG peer proof remains out of scope.
-- **package03 PARTIAL** (`edf42095`): GUI stacks map to real/loud runtime policy; macOS
-  normal-user smoke is permission-blocked before privileged traffic proof.
+- **package03 PARTIAL** (`edf42095`, 03b boxed): GUI stacks map to real/loud policy;
+  normal-user TUN fails before `started`; privileged smoke blocked here by sudo/password.
 - **package12 DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape passes strict load path.
 - **package07 PARTIAL**: process-contract probe PASS; interactive Wails window E2E BLOCKED.
   F-2 default build needs `--features adapters`; F-3 HTTP inbound is CONNECT-only.

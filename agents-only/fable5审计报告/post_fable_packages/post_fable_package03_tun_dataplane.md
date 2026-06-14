@@ -3,15 +3,16 @@
 
 ## Status
 
-PARTIAL (2026-06-13, code commit `edf42095`).
+PARTIAL (2026-06-14, code commit `edf42095` + 03b harness boxed).
 
 Runtime wiring and startup honesty are fixed for GUI-default-ish TUN configs:
 `mixed`/default/`smoltcp` enter Enhanced/smoltcp, `gvisor` enters the same backend
 with a compatibility warning, unsupported `system` and non-dry-run `manual` fail
 loudly, and TUN open/configure failure blocks startup before `sing-box started`.
 
-This is not DONE because the local macOS smoke was blocked by normal-user TUN
-permission (`Operation not permitted`) before dataplane traffic could be proven.
+This is not DONE because local privileged TUN traffic proof is still blocked:
+normal-user macOS smoke reliably fails before `sing-box started`, and the 03b
+privileged harness cannot run here without a sudo password/root entitlement.
 
 ## Source Findings
 
@@ -96,3 +97,14 @@ Verification snapshot:
 Live smoke conclusion: normal-user macOS run with GUI-style `stack: "mixed"` TUN
 config exited before `sing-box started`; log showed
 `failed to prepare TUN runtime backend ... Operation not permitted (os error 1)`.
+
+03b acceptance harness:
+
+- `post_fable_package03b_tun_smoke_harness.sh` added under this package directory.
+- Normal-user mode PASS: config validation passed; TUN startup failed before
+  `sing-box started` with `Operation not permitted (os error 1)`.
+- Privileged mode BLOCKED in this environment: non-root UID 501 and no
+  noninteractive sudo (`sudo: a password is required`). The harness exits 3 and
+  records exact rerun instructions for a root/admin run.
+- Result: package03 remains PARTIAL, but the remaining privileged dataplane proof
+  is now boxed behind a reproducible one-command harness.
