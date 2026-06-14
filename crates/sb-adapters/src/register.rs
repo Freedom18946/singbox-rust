@@ -3882,7 +3882,7 @@ impl InboundService for HttpInboundAdapter {
     }
 
     fn request_shutdown(&self) {
-        eprintln!("HttpInboundAdapter::request_shutdown called");
+        tracing::debug!("HttpInboundAdapter::request_shutdown called");
         let mut guard = self.stop_tx.lock().unwrap_or_else(|e| e.into_inner());
         if let Some(tx) = guard.take() {
             let _ = tx.try_send(());

@@ -12,13 +12,13 @@
 
 ## Resume (2026-06-14) - POST-FABLE wave
 
-- **package09 (lint/test/gate discipline) DONE** (`f2dcc34b` + 09b): selector tests rewritten
-  + 2 stubs rm; package08 trojan follow-ups CLOSED; CAL-08 inventory closed/deferred; DNS
-  resolver-hijack flakes hardened; clippy all-features all-targets → 0.
-- **package08 (long-tail outbound + subscription) DONE** (`c31e9d1d`): tor/tailscale/ssr
-  feature-OFF stubs now loud (type+feature+rebuild via InvalidConfigConnector); dns confirmed
-  real in parity (audit stale); 2 deepest trojan tests enabled → 0 ignored + UDP units;
-  sb-subscribe fixtures (Clash/sing-box/URI) pin unknown-type baselines.
+- **package10 (runtime/config hygiene) DONE**: CAL-11/20-25 closed via tracing cleanup,
+  config validation errors, explicit unsupported system_proxy, HTTP heartbeat guard, and
+  runtime entrypoint ownership pins.
+- **package09 DONE** (`f2dcc34b` + 09b): selector/proxy-pool tests restored; DNS
+  resolver-hijack flakes hardened; CAL-08 inventory closed/deferred; clippy gate → 0.
+- **package08 DONE** (`c31e9d1d`): long-tail stubs loud; dns real in parity; deepest trojan
+  tests enabled; sb-subscribe fixtures pin unknown-type baselines.
 - **package06 (Inbound liveness/observability) DONE** (`bbc00416`): inbound monitors
   classify exits; Clash `StartFailed` sidecar snapshots; DNS warning helper; V2Ray same-port retry.
 - **package05 DONE** (`a9236205`): reload waits for activation/readiness before commit;

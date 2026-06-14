@@ -1,6 +1,9 @@
+use sb_types::IssueCode;
 use serde_json::Value;
 
 use crate::ir::ConfigIR;
+
+use super::emit_issue;
 
 /// Lower top-level blocks (experimental, log, ntp, certificate) from raw JSON into IR.
 ///
@@ -12,6 +15,25 @@ pub(crate) fn lower_top_level_blocks(doc: &Value, ir: &mut ConfigIR) {
     lower_log(doc, ir);
     lower_ntp(doc, ir);
     lower_certificate(doc, ir);
+}
+
+pub(crate) fn validate_top_level_blocks(doc: &Value, issues: &mut Vec<Value>) {
+    validate_experimental(doc, issues);
+}
+
+fn validate_experimental(doc: &Value, issues: &mut Vec<Value>) {
+    let Some(exp) = doc.get("experimental") else {
+        return;
+    };
+    if let Err(err) = serde_json::from_value::<crate::ir::ExperimentalIR>(exp.clone()) {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            "/experimental",
+            &format!("experimental block is malformed: {err}"),
+            "fix experimental option types or remove the experimental block",
+        ));
+    }
 }
 
 /// Preserve optional experimental block (schema v2 passthrough).
@@ -151,6 +173,42 @@ mod tests {
             .experimental
             .expect("experimental block should be present");
         assert_eq!(exp.quic_ech_mode.as_deref(), Some("experimental"));
+    }
+
+    #[test]
+    fn malformed_experimental_block_emits_type_mismatch() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "experimental": {
+                "cache_file": true
+            }
+        });
+        let mut issues = Vec::new();
+        validate_top_level_blocks(&json, &mut issues);
+        assert!(
+            issues.iter().any(|i| {
+                i["ptr"] == "/experimental" && i["kind"] == "error" && i["code"] == "TypeMismatch"
+            }),
+            "malformed experimental block should be visible: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn experimental_unknown_keys_remain_passthrough_compatible() {
+        let json = serde_json::json!({
+            "schema_version": 2,
+            "experimental": {
+                "future_runtime_option": {
+                    "enabled": true
+                }
+            }
+        });
+        let mut issues = Vec::new();
+        validate_top_level_blocks(&json, &mut issues);
+        assert!(
+            issues.is_empty(),
+            "unknown experimental sub-keys should remain forward-compatible: {issues:?}"
+        );
     }
 
     #[test]

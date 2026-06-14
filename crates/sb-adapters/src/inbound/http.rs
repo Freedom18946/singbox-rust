@@ -129,6 +129,28 @@ fn should_short_circuit_405() -> bool {
     http_smoke_405_enabled()
 }
 
+struct HttpHeartbeatGuard {
+    handle: tokio::task::JoinHandle<()>,
+}
+
+impl HttpHeartbeatGuard {
+    fn spawn(period: Duration) -> Self {
+        let mut hb = interval(period);
+        let handle = tokio::spawn(async move {
+            loop {
+                let _ = hb.tick().await;
+            }
+        });
+        Self { handle }
+    }
+}
+
+impl Drop for HttpHeartbeatGuard {
+    fn drop(&mut self) {
+        self.handle.abort();
+    }
+}
+
 /// Read an optional duration (milliseconds) from environment once per process.
 #[inline]
 fn opt_duration_ms_from_env(key: &str) -> Option<std::time::Duration> {
@@ -299,21 +321,14 @@ pub async fn serve_http(
     // Add watcher task for accept loop heartbeat
     let local = listener.local_addr().ok();
     tracing::info!(?local, "http: listener ready");
-    let mut hb = interval(Duration::from_millis(500));
-    tokio::spawn(async move {
-        loop {
-            let _ = hb.tick().await;
-            // Avoid log spam in production;
-            // tracing::debug!("http: accept-loop heartbeat");
-        }
-    });
+    let _heartbeat_guard = HttpHeartbeatGuard::spawn(Duration::from_millis(500));
 
     // Add disable stop debug switch
     let disable_stop = http_disable_stop_enabled();
     loop {
         select! {
             _ = stop_rx.recv(), if !disable_stop => {
-                eprintln!("serve_http: stop signal received");
+                debug!("http: stop signal received");
                 break;
             },
             r = listener.accept() => {
@@ -1204,6 +1219,17 @@ mod readiness_tests {
             Some(ErrorKind::AddrInUse)
         );
         drop(holder);
+    }
+
+    #[test]
+    fn heartbeat_task_is_bound_to_serve_http_lifecycle() {
+        let source = include_str!("http.rs");
+        assert!(source.contains(concat!("struct ", "HttpHeartbeatGuard")));
+        assert!(source.contains(concat!("impl Drop for ", "HttpHeartbeatGuard")));
+        assert!(source.contains(concat!(
+            "let _heartbeat_guard = ",
+            "HttpHeartbeatGuard::spawn"
+        )));
     }
 }
 

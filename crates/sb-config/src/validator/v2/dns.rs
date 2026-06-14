@@ -111,6 +111,63 @@ pub(crate) fn validate_dns(doc: &Value, allow_unknown: bool, issues: &mut Vec<Va
             }
         }
     }
+
+    validate_fakeip_masks(dns, issues);
+}
+
+fn validate_fakeip_masks(dns: &Map<String, Value>, issues: &mut Vec<Value>) {
+    let Some(fakeip) = dns.get("fakeip").and_then(|v| v.as_object()) else {
+        return;
+    };
+
+    validate_fakeip_cidr_mask(
+        fakeip.get("inet4_range"),
+        "/dns/fakeip/inet4_range",
+        32,
+        "IPv4",
+        issues,
+    );
+    validate_fakeip_cidr_mask(
+        fakeip.get("inet6_range"),
+        "/dns/fakeip/inet6_range",
+        128,
+        "IPv6",
+        issues,
+    );
+}
+
+fn validate_fakeip_cidr_mask(
+    value: Option<&Value>,
+    ptr: &str,
+    max_mask: u16,
+    family: &str,
+    issues: &mut Vec<Value>,
+) {
+    let Some(range) = value.and_then(|v| v.as_str()) else {
+        return;
+    };
+    let Some((_, mask)) = range.rsplit_once('/') else {
+        return;
+    };
+    let mask = mask.trim();
+
+    match mask.parse::<u16>() {
+        Ok(mask) if mask <= max_mask => {}
+        Ok(mask) => issues.push(emit_issue(
+            "error",
+            IssueCode::RangeExceeded,
+            ptr,
+            &format!("fakeip {family} CIDR mask {mask} exceeds /{max_mask}"),
+            "use a valid fakeip CIDR prefix length",
+        )),
+        Err(err) => issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            ptr,
+            &format!("fakeip {family} CIDR mask must be numeric: {err}"),
+            "use inet4_range like 198.18.0.0/15 or inet6_range like fc00::/18",
+        )),
+    }
 }
 
 // ───── DNS lowering ─────
@@ -695,6 +752,67 @@ mod tests {
             .any(|i| i["ptr"] == "/dns/rules/0/unknown_dns_rule_field"
                 && i["kind"] == "warning"
                 && i["code"] == "UnknownField"));
+    }
+
+    #[test]
+    fn dns_fakeip_invalid_v4_mask_reports_type_mismatch() {
+        let doc = json!({
+            "dns": {
+                "fakeip": {
+                    "enabled": true,
+                    "inet4_range": "198.18.0.0/not-a-mask"
+                }
+            }
+        });
+        let issues = run_validate(&doc, false);
+        assert!(
+            issues.iter().any(|i| {
+                i["ptr"] == "/dns/fakeip/inet4_range"
+                    && i["kind"] == "error"
+                    && i["code"] == "TypeMismatch"
+            }),
+            "invalid fakeip v4 mask should be visible: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn dns_fakeip_out_of_range_v6_mask_reports_range_exceeded() {
+        let doc = json!({
+            "dns": {
+                "fakeip": {
+                    "enabled": true,
+                    "inet6_range": "fc00::/129"
+                }
+            }
+        });
+        let issues = run_validate(&doc, false);
+        assert!(
+            issues.iter().any(|i| {
+                i["ptr"] == "/dns/fakeip/inet6_range"
+                    && i["kind"] == "error"
+                    && i["code"] == "RangeExceeded"
+            }),
+            "out-of-range fakeip v6 mask should be visible: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn config_from_raw_value_rejects_invalid_fakeip_mask() {
+        let doc = json!({
+            "schema_version": 2,
+            "dns": {
+                "fakeip": {
+                    "enabled": true,
+                    "inet4_range": "198.18.0.0/33"
+                }
+            }
+        });
+        let err = crate::config_from_raw_value(doc)
+            .expect_err("full config load path must reject invalid fakeip mask");
+        assert!(
+            err.to_string().contains("/dns/fakeip/inet4_range"),
+            "error should identify fakeip mask path: {err}"
+        );
     }
 
     #[test]

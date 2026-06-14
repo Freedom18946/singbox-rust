@@ -27,6 +27,7 @@ pub(super) fn validate_v2(doc: &serde_json::Value, allow_unknown: bool) -> Vec<V
     dns::validate_dns(doc, allow_unknown, &mut issues);
     service::validate_services(doc, allow_unknown, &mut issues);
     endpoint::validate_endpoints(doc, allow_unknown, &mut issues);
+    top_level::validate_top_level_blocks(doc, &mut issues);
 
     issues.extend(deprecation::check_deprecations(doc));
     issues.extend(security::check_non_localhost_binding_warnings(doc));
@@ -425,6 +426,7 @@ mod tests {
         dns::validate_dns(&doc, true, &mut expected);
         service::validate_services(&doc, true, &mut expected);
         endpoint::validate_endpoints(&doc, true, &mut expected);
+        top_level::validate_top_level_blocks(&doc, &mut expected);
         expected.extend(deprecation::check_deprecations(&doc));
         expected.extend(security::check_non_localhost_binding_warnings(&doc));
         expected.extend(outbound::check_tls_capabilities(&doc));
@@ -432,7 +434,7 @@ mod tests {
         let issues = crate::validator::v2::validate_v2(&doc, true);
         assert_eq!(
             issues, expected,
-            "validate_v2 should remain a pure facade over root schema + domain validation + deprecation + security + TLS capability passes"
+            "validate_v2 should remain a pure facade over root schema + domain validation + top-level validation + deprecation + security + TLS capability passes"
         );
         assert!(issues
             .iter()

@@ -74,6 +74,10 @@ pub fn build_router_index_from_config(cfg: &Config) -> Result<Arc<sb_core::route
 
 /// Start the proxy runtime from configuration.
 ///
+/// Legacy compatibility entrypoint: production CLI/bin startup is owned by
+/// `run_engine::run_supervisor`. Keep this path thin and do not move live
+/// supervisor-loop ownership back into `bootstrap.rs`.
+///
 /// # Global Strategic Logic / 全局战略逻辑
 /// This is the **Factory Method** of the application. It orchestrates the initialization of the entire proxy system.
 /// 这是应用程序的 **工厂方法**。它编排整个代理系统的初始化。

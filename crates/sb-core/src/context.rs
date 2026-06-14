@@ -68,6 +68,9 @@ impl Startable for crate::service::ServiceManager {
     }
 
     fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        // Service shutdown is owned by supervisor snapshots via `stop_services`.
+        // This compatibility hook only closes the manager shell; calling service
+        // `close()` here would lose the activation snapshot and double-drive lifecycle.
         tracing::debug!(target: "sb_core::context", "ServiceManager closing");
         Ok(())
     }

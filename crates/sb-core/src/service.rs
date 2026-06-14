@@ -753,6 +753,56 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn service_manager_close_is_manager_noop_service_shutdown_is_supervisor_owned() {
+        use crate::context::Startable;
+        use std::sync::atomic::{AtomicUsize, Ordering};
+
+        struct CloseCountingService {
+            closes: Arc<AtomicUsize>,
+        }
+
+        impl Service for CloseCountingService {
+            fn service_type(&self) -> &str {
+                "close-counting"
+            }
+
+            fn tag(&self) -> &str {
+                "close-counting-svc"
+            }
+
+            fn start(
+                &self,
+                _stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                self.closes.fetch_add(1, Ordering::SeqCst);
+                Ok(())
+            }
+        }
+
+        let mgr = ServiceManager::new();
+        let closes = Arc::new(AtomicUsize::new(0));
+        mgr.add_service(
+            "close-counting-svc".into(),
+            Arc::new(CloseCountingService {
+                closes: closes.clone(),
+            }),
+        )
+        .await;
+
+        Startable::close(&mgr).expect("ServiceManager close should be a manager no-op");
+
+        assert_eq!(
+            closes.load(Ordering::SeqCst),
+            0,
+            "service shutdown is owned by supervisor stop_services snapshots, not ServiceManager::close"
+        );
+    }
+
+    #[tokio::test]
     async fn test_health_status() {
         struct DummyService2 {
             tag_name: String,

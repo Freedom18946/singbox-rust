@@ -235,6 +235,22 @@ impl SystemProxyManager {
         self.enabled.load(Ordering::SeqCst)
     }
 
+    #[cfg(any(
+        test,
+        not(any(
+            target_os = "macos",
+            target_os = "linux",
+            target_os = "windows",
+            target_os = "android"
+        ))
+    ))]
+    fn unsupported_platform_error(action: &str) -> io::Error {
+        io::Error::new(
+            ErrorKind::Unsupported,
+            format!("system proxy {action} is not supported on this platform"),
+        )
+    }
+
     /// Enable system proxy pointing to 127.0.0.1:port.
     /// 启用指向 127.0.0.1:port 的系统代理。
     ///
@@ -290,7 +306,7 @@ impl SystemProxyManager {
             target_os = "android"
         )))]
         {
-            warn!("System proxy not supported on this platform");
+            return Err(Self::unsupported_platform_error("enable"));
         }
 
         self.enabled.store(true, Ordering::SeqCst);
@@ -338,7 +354,7 @@ impl SystemProxyManager {
             target_os = "android"
         )))]
         {
-            warn!("System proxy not supported on this platform");
+            return Err(Self::unsupported_platform_error("disable"));
         }
 
         self.enabled.store(false, Ordering::SeqCst);
@@ -840,5 +856,15 @@ mod tests {
         let manager = SystemProxyManager::with_monitor(8080, true, monitor);
         assert!(!manager.is_enabled());
         assert!(manager.monitor.is_some());
+    }
+
+    #[test]
+    fn unsupported_platform_error_is_explicit() {
+        let error = SystemProxyManager::unsupported_platform_error("enable");
+        assert_eq!(error.kind(), ErrorKind::Unsupported);
+        assert!(
+            error.to_string().contains("not supported"),
+            "unsupported error should be explicit: {error}"
+        );
     }
 }

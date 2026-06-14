@@ -3,7 +3,7 @@
 
 ## Status
 
-PLANNED.
+DONE.
 
 ## Source Findings
 
@@ -69,4 +69,18 @@ Reduce runtime/config surprise without changing the main product direction.
 
 ## Completion Notes
 
-Not started.
+Closed by package10 runtime/config hygiene patch.
+
+- CAL-11: remaining production stderr writes in HTTP stop/shutdown paths now use `tracing`.
+- CAL-20: `ServiceManager::close` remains a compatibility no-op; supervisor `stop_services`
+  ownership is documented and tested.
+- CAL-21/CAL-22: malformed FakeIP masks and malformed typed `experimental` blocks now emit
+  validation errors and fail the full config load path.
+- CAL-23: unsupported-platform `SystemProxyManager` paths return explicit `Unsupported`.
+- CAL-24: HTTP heartbeat task is bound to `serve_http` lifecycle through an abort-on-drop guard.
+- CAL-25: live runtime entrypoint remains `run_engine::run_supervisor`; bootstrap is documented
+  and pinned as legacy compatibility.
+- Evidence and command results: `post_fable_package10_runtime_config_hygiene_evidence.md`.
+- Scope review: no package11 external-doc calibration, no package05/06 reload/liveness reopening,
+  no `.github/workflows/*`, no `agents-only/a0_reality_spike/`, and no original fable5 audit body
+  edits.

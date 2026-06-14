@@ -387,6 +387,9 @@ mod tests {
     fn wp30ao_pin_run_engine_is_thin_supervisor_facade() {
         let source = include_str!("supervisor.rs");
         let run_engine = include_str!("../run_engine.rs");
+        let bin_run = include_str!("../bin/run.rs");
+        let cli_run = include_str!("../cli/run.rs");
+        let bootstrap = include_str!("../bootstrap.rs");
 
         assert!(source.contains("async fn run_supervisor("));
         assert!(source.contains("RuntimeContext::from_raw(&raw)?"));
@@ -395,6 +398,11 @@ mod tests {
         assert!(source.contains("runtime_context.spawn_watch("));
         assert!(source.contains("RuntimeLifecycle::new("));
         assert!(run_engine.contains("run_engine_runtime::supervisor::run_supervisor(opts).await"));
+        assert!(bin_run.contains("app::run_engine::run_supervisor(opts).await"));
+        assert!(cli_run.contains("app::run_engine::run_supervisor(opts).await"));
+        assert!(bootstrap.contains("Legacy compatibility entrypoint"));
+        assert!(!bootstrap.contains("crate::run_engine_runtime::supervisor::run_supervisor"));
+        assert!(!bootstrap.contains("RuntimeLifecycle::new("));
         assert!(!run_engine.contains("struct CloseMonitor"));
         assert!(!run_engine.contains("Supervisor startup returned"));
     }
