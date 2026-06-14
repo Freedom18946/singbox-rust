@@ -2428,10 +2428,7 @@ mod tests {
             (InboundExitKind::UnexpectedCompletion, None)
         );
         let (kind, error) = classify_inbound_exit(
-            Ok(Err(std::io::Error::new(
-                std::io::ErrorKind::Other,
-                "serve exploded",
-            ))),
+            Ok(Err(std::io::Error::other("serve exploded"))),
             false,
         );
         assert_eq!(kind, InboundExitKind::ServeError);
@@ -2494,10 +2491,7 @@ mod tests {
     impl InboundService for TestInbound {
         fn serve(&self) -> std::io::Result<()> {
             if self.fail {
-                return Err(std::io::Error::new(
-                    std::io::ErrorKind::Other,
-                    "test inbound failure",
-                ));
+                return Err(std::io::Error::other("test inbound failure"));
             }
             while !self.shutdown.load(Ordering::SeqCst) {
                 std::thread::sleep(std::time::Duration::from_millis(5));

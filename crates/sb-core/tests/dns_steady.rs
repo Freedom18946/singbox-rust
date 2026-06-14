@@ -39,6 +39,12 @@ impl Drop for EnvVarGuard {
     }
 }
 
+// CAL-29 flake note (package09): depends on the real system resolver. On a network with
+// a captive portal, or an ISP that NXDOMAIN-hijacks (returns a synthetic A record for
+// non-existent names), `nonexistent.invalid` resolves "successfully" and this assertion
+// flips. The root cause is environmental, not a logic bug; there is no low-risk in-process
+// hardening short of injecting a mock resolver (out of package09 scope). Residual: run on a
+// clean network. Isolate with: `cargo test -p sb-core --test dns_steady -- --test-threads=1`.
 #[tokio::test]
 async fn bad_domain_returns_err() {
     let _serial = serial_guard();
@@ -49,6 +55,12 @@ async fn bad_domain_returns_err() {
     assert!(res.is_err());
 }
 
+// CAL-29 flake note (package09): mutates the process-global `SB_DNS_POOL` /
+// `SB_DNS_UDP_TIMEOUT_MS` env vars. The in-file `serial_guard()` only serializes tests
+// within this file; another test binary touching the same globals in parallel can still
+// race. The assertion direction (`is_err()`) is itself robust — the discard port
+// 127.0.0.1:9 never answers. Isolate with:
+// `cargo test -p sb-core --test dns_steady -- --test-threads=1`.
 #[tokio::test]
 async fn udp_pool_timeout_is_handled() {
     let _serial = serial_guard();

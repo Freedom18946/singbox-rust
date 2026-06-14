@@ -96,7 +96,7 @@ pub fn report_reload_result(
 /// `out.includes('sing-box started')` 判定内核启动成功(CAL-02)。
 /// 该启动行语义 = supervisor 已完成事务式启动；HTTP/SOCKS/MIXED 已等待 bind-ready，
 /// 其他 inbound 仍是 best-effort readiness 边界。
-pub(crate) const STARTUP_KEYWORD: &str = "sing-box started";
+const STARTUP_KEYWORD: &str = "sing-box started";
 
 fn startup_log_line() -> String {
     format!("{STARTUP_KEYWORD}; press Ctrl+C to quit")

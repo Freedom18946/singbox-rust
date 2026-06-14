@@ -520,10 +520,11 @@ mod fresh13_tls_verifier_loopback {
     /// misdiagnosis — the failure happens in the TCP connect phase to a non-routable
     /// IP, well before any TLS/CryptoProvider use. We still call `init_crypto()` to
     /// remove all doubt, then assert the dial fails within a bounded time (it must not
-    /// hang indefinitely). NOTE: trojan `dial` currently ignores `DialOpts` (`_opts`)
-    /// and derives its connect timeout from `config.connect_timeout_sec` (default 30s);
-    /// observed wall-time to a non-routable IP is ~10s, so the bound below is generous.
-    /// Tightening the connect-timeout path is a dataplane follow-up outside package08.
+    /// hang indefinitely). NOTE: since package09 trojan `dial` honors
+    /// `DialOpts.connect_timeout`, taking the stricter of it and `config.connect_timeout_sec`.
+    /// This test uses `make_trojan_config` (config timeout 2s) + default `DialOpts` (10s),
+    /// so the effective bound is ~2s; the generous 30s assertion below still holds.
+    /// See `dial_honors_short_dialopts_connect_timeout` for the DialOpts-driven bound.
     #[tokio::test]
     async fn connection_to_unroutable_ip_fails_bounded() {
         init_crypto();
@@ -540,6 +541,41 @@ mod fresh13_tls_verifier_loopback {
         assert!(
             elapsed < Duration::from_secs(30),
             "dial must fail within a bounded time (no infinite hang), took {elapsed:?}"
+        );
+    }
+
+    /// package09 (supersedes package08 follow-up #2): trojan `dial` previously ignored
+    /// `DialOpts` and derived its connect timeout solely from `config.connect_timeout_sec`.
+    /// It now uses `opts.connect_timeout.min(config_timeout)`. Give the config a large,
+    /// distinctive 99s ceiling and dial a non-routable IP with a 250ms `DialOpts.connect_timeout`:
+    /// the dial must fail well within the ceiling, and its `AdapterError::Timeout` must report the
+    /// 250ms DialOpts bound, never 99s. The error-content check is deterministic — the reported
+    /// duration is the internal `timeout` variable (250ms) regardless of scheduler jitter, so this
+    /// does not flake under the timer starvation seen when many connect-to-unroutable tests run in
+    /// parallel. The outer 40s test-side timeout guards against a regression that hangs ~99s.
+    #[tokio::test]
+    async fn dial_honors_short_dialopts_connect_timeout() {
+        init_crypto();
+        let mut config = make_trojan_config("10.255.255.1:443", true); // non-routable
+        config.connect_timeout_sec = Some(99); // large, distinctive ceiling; the DialOpts must win
+        let connector = TrojanConnector::new(config);
+        let target = Target::tcp("example.com", 80);
+        let opts = DialOpts::new().with_connect_timeout(Duration::from_millis(250));
+        let outcome =
+            tokio::time::timeout(Duration::from_secs(40), connector.dial(target, opts)).await;
+        let result = outcome.expect(
+            "DialOpts.connect_timeout (250ms) must bound dial well under the 99s config ceiling; \
+             dial did not return within 40s (regressed to the config ceiling?)",
+        );
+        let err = match result {
+            Ok(_) => panic!("dial to a non-routable IP must fail, not succeed"),
+            Err(e) => e,
+        };
+        let msg = format!("{err}");
+        assert!(
+            !msg.contains("99s"),
+            "dial timeout must reflect the 250ms DialOpts.connect_timeout, not the 99s config \
+             ceiling; got: {msg}"
         );
     }
 }

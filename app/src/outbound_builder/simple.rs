@@ -110,6 +110,12 @@ mod tests {
         assert_eq!(http.password, None);
     }
 
+    // Flake note (package09): the first case relies on `invalid.invalid.invalid` being
+    // NXDOMAIN. On a network with a captive portal or a wildcard/NXDOMAIN-hijacking resolver
+    // it resolves to a synthetic IP (observed locally: 198.18.2.39) and `build_simple_outbound`
+    // returns `Some`, flipping `unresolved.is_none()`. Same resolver-hijack class as `sb-core`
+    // `dns_steady::bad_domain_returns_err`; environmental, not a logic bug — run on a clean
+    // network. (Outside CAL-29's named set; logged for parity, not hardened here.)
     #[test]
     fn simple_proxy_family_skips_unresolvable_host_or_missing_endpoint() {
         let unresolved = build_simple_outbound(&OutboundIR {

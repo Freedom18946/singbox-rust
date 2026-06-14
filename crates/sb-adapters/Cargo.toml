@@ -134,8 +134,10 @@ tun_windows = ["tun", "dep:wintun"]
 # Linux redirect/TProxy inbounds
 redirect = []
 tproxy = []
-# Trojan inbound (TLS server)
-trojan = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:rustls-pemfile"]
+# Trojan inbound (TLS server). Depends on `shadowsocks` because the inbound's
+# `parse_trojan_request` fuzz/test helper reuses `inbound::shadowsocks::parse_ss_addr`
+# (SOCKS-style address parsing); without it `--features trojan` alone fails to compile.
+trojan = ["dep:tokio-rustls", "dep:rustls", "dep:rustls-pki-types", "dep:rustls-pemfile", "shadowsocks"]
 # Shadowsocks inbound (AEAD server)
 shadowsocks = []
 # VMess inbound (AEAD server)

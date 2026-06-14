@@ -310,7 +310,7 @@ async fn observe_sidecar_runtime(
     }
 }
 
-fn sidecar_exit_fields(exit: &SidecarExit) -> (&'static str, Option<&str>) {
+const fn sidecar_exit_fields(exit: &SidecarExit) -> (&'static str, Option<&str>) {
     match exit {
         SidecarExit::CleanShutdown => ("clean_shutdown", None),
         SidecarExit::StartFailed(error) => ("start_failed", Some(error.as_str())),

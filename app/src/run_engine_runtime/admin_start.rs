@@ -190,7 +190,12 @@ pub struct ClashShutdownHandle {
 
 #[cfg(all(feature = "router", feature = "clash_api"))]
 impl ClashShutdownHandle {
-    /// Subscribe to this Clash generation's runtime snapshot.
+    /// Subscribe to this Clash generation's runtime snapshot. Symmetric to the `V2Ray`
+    /// server's `subscribe_runtime_state` (which has production consumers); the Clash
+    /// variant is currently exercised only by the reload-snapshot tests below, so a
+    /// non-test build would otherwise flag it dead. Kept as the GUI/sidecar observability
+    /// hook. (package09 / CAL-27: this was the lone `--all-features` check warning.)
+    #[cfg_attr(not(test), allow(dead_code))]
     pub(crate) fn subscribe_runtime_state(&self) -> watch::Receiver<SidecarRuntimeSnapshot> {
         self.runtime.subscribe()
     }

@@ -917,14 +917,18 @@ mod tests {
             rdrc_timeout: None,
         };
 
-        // Store data
-        {
-            let svc = CacheFileService::new(&config);
-            let ip: IpAddr = "198.18.0.1".parse().unwrap();
-            svc.store_fakeip_mapping("example.com", ip);
-            svc.store_fakeip_counters(100, 200);
-            svc.flush();
-        }
+        // Store data, then drop the service explicitly before reopening the same path.
+        // sled holds a directory lock for the lifetime of its `Db` handle and flushes on
+        // drop, and the fakeip meta debouncer owns a background worker thread that is
+        // joined on drop. Making the drop explicit (instead of relying on end-of-block
+        // scope) pins the "fully release the first handle before the second sled::open on
+        // the same dir" ordering this test previously raced on. (package09 / CAL-29)
+        let writer = CacheFileService::new(&config);
+        let ip: IpAddr = "198.18.0.1".parse().unwrap();
+        writer.store_fakeip_mapping("example.com", ip);
+        writer.store_fakeip_counters(100, 200);
+        writer.flush();
+        drop(writer);
 
         // Reload and verify
         {

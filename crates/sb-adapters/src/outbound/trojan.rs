@@ -471,7 +471,13 @@ impl OutboundConnector for TrojanConnector {
             );
 
             // Step 1: Establish base connection via dialer (handles transport layer + multiplex)
-            let timeout = std::time::Duration::from_secs(config.connect_timeout_sec.unwrap_or(30));
+            // Honor the caller's DialOpts.connect_timeout, taking the stricter of it and the
+            // configured connect_timeout_sec (default 30s): a short DialOpts fails fast while a
+            // configured ceiling still applies. `_opts` keeps its underscore name because the
+            // feature-off dial arm above does not use it. (package09; supersedes package08 follow-up #2)
+            let timeout = _opts.connect_timeout.min(std::time::Duration::from_secs(
+                config.connect_timeout_sec.unwrap_or(30),
+            ));
 
             // Parse server endpoint into (host, port). DNS resolution is
             // deferred to the transport layer, so a hostname server no
