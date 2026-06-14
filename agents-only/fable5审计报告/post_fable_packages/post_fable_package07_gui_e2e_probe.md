@@ -90,9 +90,10 @@ does (`run --disable-color -c <abs>/config.json -D <abs>`, kernel at
 - **Config switch = restart, not reload**: static (GUI `restartCore` = stop→start; only
   `mode` is a Clash-API hot switch; no SIGHUP/reload) + runtime (restart cycle: port
   released then same-port rebind, no EADDRINUSE, pid changed).
-- **Non-TUN traffic**: PASS over SOCKS5 (200) + HTTP CONNECT (200); plain-HTTP forward GET
-  → 405 (F-3, CONNECT-only). Local origin used (sandbox egress); full inbound→route→direct
-  path exercised.
+- **Non-TUN traffic**: PASS over SOCKS5 (200), HTTP CONNECT (200), and package13
+  plain-HTTP forward GET (200). Local origin used (sandbox egress); full
+  inbound→route→direct path exercised. F-3 is closed by package13; interactive
+  Wails E2E remains blocked.
 - **Clash API (node selection/telemetry)**: PASS — `/configs` + `/proxies` return real
   json with Bearer; 401 without token. (feature-gated; not required for startup.)
 - **TUN toggle**: not run (needs OS TUN + root; package03 dataplane scope).
@@ -109,8 +110,9 @@ does (`run --disable-color -c <abs>/config.json -D <abs>`, kernel at
   needs a dedicated schema-parity package. Corrects the prior "run is lenient" assumption.
 - **F-2 (build profile)**: default `cargo build -p app` has no runtime adapters and cannot
   run a proxy; GUI drop-in requires `--features adapters` (or `parity`). For package11 doc.
-- **F-3 (parity gap)**: HTTP inbound is CONNECT-only (`http.rs:448` → 405 for non-CONNECT);
-  Go supports plain-HTTP forward. Lower priority.
+- **F-3 (parity gap)**: CLOSED by package13. HTTP inbound now supports
+  absolute-form plain HTTP GET forwarding while preserving CONNECT. This does
+  not change package07's interactive Wails E2E BLOCKED status.
 
 ### Verification
 

@@ -23,6 +23,7 @@ use tokio::time::timeout;
 use std::sync::atomic::AtomicU64;
 
 use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
+use sb_adapters::inbound::mixed::{serve_mixed, MixedInboundConfig};
 use sb_adapters::inbound::socks::{serve_socks, SocksInboundConfig};
 use sb_core::outbound::{OutboundImpl, OutboundKind, OutboundRegistry, OutboundRegistryHandle};
 use sb_core::router::{Router, RouterHandle};
@@ -55,6 +56,52 @@ fn start_echo_server() -> Option<SocketAddr> {
     // Wait for server to be ready
     thread::sleep(Duration::from_millis(50));
     Some(addr)
+}
+
+struct CapturedOrigin {
+    addr: SocketAddr,
+    request_rx: std::sync::mpsc::Receiver<String>,
+}
+
+fn start_http_origin(body: &'static str) -> Option<CapturedOrigin> {
+    let listener = match StdListener::bind("127.0.0.1:0") {
+        Ok(listener) => listener,
+        Err(err) if err.kind() == ErrorKind::PermissionDenied => return None,
+        Err(err) => panic!("failed to bind HTTP origin: {err}"),
+    };
+    let addr = listener.local_addr().unwrap();
+    let (tx, rx) = std::sync::mpsc::channel();
+
+    thread::spawn(move || {
+        if let Ok((mut s, _)) = listener.accept() {
+            let _ = s.set_read_timeout(Some(Duration::from_secs(2)));
+            let mut req = Vec::new();
+            let mut buf = [0u8; 512];
+            loop {
+                match s.read(&mut buf) {
+                    Ok(0) | Err(_) => break,
+                    Ok(n) => {
+                        req.extend_from_slice(&buf[..n]);
+                        if req.windows(4).any(|w| w == b"\r\n\r\n") {
+                            break;
+                        }
+                    }
+                }
+            }
+            let _ = tx.send(String::from_utf8_lossy(&req).to_string());
+            let resp = format!(
+                "HTTP/1.1 200 OK\r\nContent-Length: {}\r\nConnection: close\r\n\r\n{}",
+                body.len(),
+                body
+            );
+            let _ = s.write_all(resp.as_bytes());
+        }
+    });
+
+    Some(CapturedOrigin {
+        addr,
+        request_rx: rx,
+    })
 }
 
 /// Build outbound registry and router with direct connection
@@ -166,6 +213,53 @@ async fn start_http_inbound(
         .await
         .expect("Server failed to start")
         .expect("server bind failed");
+
+    Some((addr, stop_tx))
+}
+
+/// Start Mixed inbound server
+async fn start_mixed_inbound(
+    router: Arc<RouterHandle>,
+    outbounds: Arc<OutboundRegistryHandle>,
+) -> Option<(SocketAddr, mpsc::Sender<()>)> {
+    let (stop_tx, stop_rx) = mpsc::channel(1);
+    let (ready_tx, ready_rx) = oneshot::channel();
+
+    let temp_listener = match tokio::net::TcpListener::bind("127.0.0.1:0").await {
+        Ok(listener) => listener,
+        Err(err) if err.kind() == ErrorKind::PermissionDenied => return None,
+        Err(err) => panic!("failed to bind Mixed inbound: {err}"),
+    };
+    let addr = temp_listener.local_addr().unwrap();
+    drop(temp_listener);
+    tokio::time::sleep(Duration::from_millis(200)).await;
+
+    let cfg = MixedInboundConfig {
+        tag: None,
+        listen: addr,
+        router,
+        outbounds,
+        read_timeout: Some(Duration::from_secs(1)),
+        tls: None,
+        users: None,
+        set_system_proxy: false,
+        allow_private_network: true,
+        udp_timeout: None,
+        domain_strategy: None,
+        stats: None,
+        conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
+        sniff: false,
+        sniff_override_destination: false,
+    };
+
+    tokio::spawn(async move {
+        let _ = serve_mixed(cfg, stop_rx, Some(ready_tx)).await;
+    });
+
+    ready_rx
+        .await
+        .expect("Mixed server failed to start")
+        .expect("mixed server bind failed");
 
     Some((addr, stop_tx))
 }
@@ -294,6 +388,56 @@ async fn test_e2e_http_to_direct() {
         .unwrap();
 
     assert_eq!(&echo_back[..], test_data);
+}
+
+/// Test plain HTTP forward through mixed inbound → direct outbound flow
+#[tokio::test(flavor = "multi_thread")]
+async fn test_e2e_mixed_plain_http_forward_to_direct() {
+    let Some(origin) = start_http_origin("mixed-forward-ok") else {
+        eprintln!("skipping mixed plain forward test: PermissionDenied binding origin");
+        return;
+    };
+
+    let (outbounds, router) = build_direct_proxy();
+    let Some((mixed_addr, _stop_handle)) = start_mixed_inbound(router, outbounds).await else {
+        eprintln!("skipping mixed plain forward test: PermissionDenied binding inbound listener");
+        return;
+    };
+
+    let mut stream = TcpStream::connect(mixed_addr).await.unwrap();
+    let request = format!(
+        "GET http://{}:{}/via-mixed?q=1 HTTP/1.1\r\nHost: {}:{}\r\nProxy-Connection: keep-alive\r\nConnection: close\r\n\r\n",
+        origin.addr.ip(),
+        origin.addr.port(),
+        origin.addr.ip(),
+        origin.addr.port()
+    );
+    stream.write_all(request.as_bytes()).await.unwrap();
+
+    let mut resp_buf = Vec::new();
+    timeout(Duration::from_secs(3), stream.read_to_end(&mut resp_buf))
+        .await
+        .expect("mixed plain forward response timed out")
+        .expect("read mixed plain forward response");
+    let response = String::from_utf8_lossy(&resp_buf);
+    assert!(response.contains("200 OK"), "response: {response}");
+    assert!(
+        response.ends_with("mixed-forward-ok"),
+        "response: {response}"
+    );
+
+    let seen = origin
+        .request_rx
+        .recv_timeout(Duration::from_secs(2))
+        .expect("origin captured mixed forward request");
+    assert!(
+        seen.starts_with("GET /via-mixed?q=1 HTTP/1.1\r\n"),
+        "origin request: {seen}"
+    );
+    assert!(
+        !seen.to_ascii_lowercase().contains("proxy-connection:"),
+        "origin request leaked Proxy-Connection: {seen}"
+    );
 }
 
 /// Test large data transfer through proxy

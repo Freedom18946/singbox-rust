@@ -1,5 +1,5 @@
-//! HTTP CONNECT Inbound (Routing + Outbound Registry)
-//! HTTP CONNECT 入站（路由+出站注册表）
+//! HTTP proxy inbound (CONNECT + plain HTTP forward, routing + outbound registry)
+//! HTTP 代理入站（CONNECT + plain HTTP 转发，路由+出站注册表）
 //! - P1.4: Read header timeout
 //! - P1.4：读头超时
 //! - P1.5: Unified IO metering via sb_core::net::metered
@@ -443,6 +443,35 @@ fn apply_health_fallback_policy(decision: RDecision, proxy_health_up: Option<boo
     decision
 }
 
+struct RoutedConnection {
+    host: String,
+    port: u16,
+    decision: RDecision,
+    rule: Option<String>,
+    outbound_tag: Option<String>,
+    upstream: IoStream,
+    sniff_prefix: Vec<u8>,
+    sniff_reply_sent: bool,
+}
+
+struct PlainForwardRequest {
+    host: String,
+    port: u16,
+    head: Vec<u8>,
+}
+
+struct RelayContext<'a> {
+    cfg: &'a HttpProxyConfig,
+    peer: SocketAddr,
+    host: &'a str,
+    port: u16,
+    decision: &'a RDecision,
+    outbound_tag: Option<String>,
+    rule: Option<String>,
+    auth_user: Option<&'a str>,
+    sniff_prefix: Vec<u8>,
+}
+
 pub async fn serve_conn<S>(mut cli: S, peer: SocketAddr, cfg: &HttpProxyConfig) -> Result<()>
 where
     S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
@@ -468,7 +497,19 @@ where
 
     info!(?peer, method=%method, target=%target, "http: request line");
 
-    if method != "CONNECT" {
+    let auth_user = match authenticate_proxy(&headers, cfg.users.as_deref()) {
+        Ok(user) => user,
+        Err(()) => {
+            respond_407(&mut cli).await?;
+            return Ok(());
+        }
+    };
+
+    if method == "CONNECT" {
+        return serve_connect(cli, peer, cfg, target, auth_user).await;
+    }
+
+    if method != "GET" {
         #[cfg(feature = "metrics")]
         {
             metrics::counter!("http_respond_total", "code" => "405").increment(1);
@@ -482,57 +523,69 @@ where
         return respond_405_stream(&mut cli).await.map(|_| ());
     }
 
-    // Handle Authentication
-    let mut auth_user: Option<String> = None;
-    if let Some(users) = &cfg.users {
-        if !users.is_empty() {
-            let mut authenticated = false;
-            // Parse headers for Proxy-Authorization
-            let headers_str = String::from_utf8_lossy(&headers);
-            for line in headers_str.lines() {
-                if line.to_lowercase().starts_with("proxy-authorization:") {
-                    let val = line.split_once(':').map(|(_, v)| v.trim()).unwrap_or("");
-                    if let Some(cred) = val.strip_prefix("Basic ") {
-                        if let Ok(decoded) = general_purpose::STANDARD.decode(cred) {
-                            if let Ok(auth_str) = String::from_utf8(decoded) {
-                                if let Some((u, p)) = auth_str.split_once(':') {
-                                    for user in users {
-                                        let expected_u = user
-                                            .username
-                                            .as_deref()
-                                            .or(user.username_env.as_deref())
-                                            .unwrap_or("");
-                                        let expected_p = user
-                                            .password
-                                            .as_deref()
-                                            .or(user.password_env.as_deref())
-                                            .unwrap_or("");
-                                        if u == expected_u && p == expected_p {
-                                            authenticated = true;
-                                            auth_user = Some(u.to_string());
-                                            break;
-                                        }
-                                    }
-                                }
-                            }
-                        }
-                    }
-                }
-                if authenticated {
-                    break;
-                }
-            }
+    let forward = match build_plain_forward_request(&method, &target, &_version, &headers) {
+        Ok(forward) => forward,
+        Err(e) => {
+            access::log(
+                "http_bad_forward_request",
+                &[("proto", "http".into()), ("reason", e.to_string())],
+            );
+            return respond_400(&mut cli, "plain_forward").await.map(|_| ());
+        }
+    };
 
-            if !authenticated {
-                // Respond 407
-                let resp = b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"proxy\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
-                cli.write_all(resp).await?;
-                cli.flush().await?;
-                return Ok(());
+    if !cfg.allow_private_network {
+        if let Ok(ip) = forward.host.parse::<std::net::IpAddr>() {
+            if is_private_ip(ip) {
+                warn!(?peer, target=%target, "http: blocked private network access");
+                return respond_403(&mut cli).await.map_err(|e| anyhow::anyhow!(e));
             }
         }
     }
+    info!(?peer, host=%forward.host, port=%forward.port, "http: plain forward route");
 
+    let mut routed = connect_routed_upstream(
+        &mut cli,
+        peer,
+        cfg,
+        &forward.host,
+        forward.port,
+        Some("http"),
+        false,
+    )
+    .await?;
+
+    routed.upstream.write_all(&forward.head).await?;
+    routed.upstream.flush().await?;
+
+    relay_with_conntrack(
+        &mut cli,
+        &mut routed.upstream,
+        RelayContext {
+            cfg,
+            peer,
+            host: &routed.host,
+            port: routed.port,
+            decision: &routed.decision,
+            outbound_tag: routed.outbound_tag,
+            rule: routed.rule,
+            auth_user: auth_user.as_deref(),
+            sniff_prefix: routed.sniff_prefix,
+        },
+    )
+    .await
+}
+
+async fn serve_connect<S>(
+    mut cli: S,
+    peer: SocketAddr,
+    cfg: &HttpProxyConfig,
+    target: String,
+    auth_user: Option<String>,
+) -> Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+{
     // Parse host:port (keep original parsing function/error handling in project)
     // 解析 host:port（保持项目里原有的解析函数/错误处理）
     let (host, port) = split_host_port(&target).ok_or_else(|| anyhow!("bad CONNECT target"))?;
@@ -548,6 +601,46 @@ where
     }
     info!(?peer, host=%host, port=%port, "http: CONNECT route");
 
+    let mut routed = connect_routed_upstream(&mut cli, peer, cfg, host, port, None, true).await?;
+
+    // Respond 200, then tunnel forwarding
+    // 应答 200，然后做隧道转发
+    if !routed.sniff_reply_sent {
+        let resp = b"HTTP/1.1 200 Connection Established\r\n\r\n";
+        cli.write_all(resp).await?;
+        cli.flush().await?;
+    }
+
+    relay_with_conntrack(
+        &mut cli,
+        &mut routed.upstream,
+        RelayContext {
+            cfg,
+            peer,
+            host: &routed.host,
+            port: routed.port,
+            decision: &routed.decision,
+            outbound_tag: routed.outbound_tag,
+            rule: routed.rule,
+            auth_user: auth_user.as_deref(),
+            sniff_prefix: routed.sniff_prefix,
+        },
+    )
+    .await
+}
+
+async fn connect_routed_upstream<S>(
+    cli: &mut S,
+    peer: SocketAddr,
+    cfg: &HttpProxyConfig,
+    host: &str,
+    port: u16,
+    protocol: Option<&str>,
+    allow_sniff: bool,
+) -> Result<RoutedConnection>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+{
     // Routing via cfg.router (from config IR) with minimal matched rule metadata.
     // 路由统一走 cfg.router（来自配置 IR），并携带最小命中规则标识。
     let route_ctx = RouteCtx {
@@ -556,6 +649,7 @@ where
         port: Some(port),
         transport: Transport::Tcp,
         network: "tcp",
+        protocol,
         inbound_tag: cfg.tag.as_deref(),
         inbound_sniff: cfg.sniff,
         inbound_sniff_override: cfg.sniff_override_destination,
@@ -573,7 +667,7 @@ where
         override_destination,
     } = decision
     {
-        if sb_core::router::sniff::skip_sniff(port) {
+        if !allow_sniff || sb_core::router::sniff::skip_sniff(port) {
             decision = RDecision::Direct;
         } else {
             // Send 200 Connection Established early so client starts sending data
@@ -638,10 +732,10 @@ where
         }
     }
     // Apply sniff override: use sniffed domain as outbound target
-    let host: &str = if let Some(ref oh) = override_host {
+    let dial_host: String = if let Some(oh) = override_host {
         oh
     } else {
-        host
+        host.to_string()
     };
 
     // Only Direct/Proxy left here; default direct
@@ -661,10 +755,10 @@ where
     // Establish TCP with upstream first (based on decision and default proxy)
     // 先与上游建立 TCP（根据决策与默认代理）
     let outbound_tag: Option<String>;
-    let mut upstream: IoStream = match &decision {
+    let upstream: IoStream = match &decision {
         RDecision::Direct => {
             outbound_tag = Some("direct".to_string());
-            let s = direct_connect_hostport(host, port, &opts).await?;
+            let s = direct_connect_hostport(&dial_host, port, &opts).await?;
             Box::new(s)
         }
         RDecision::Proxy(pool_name) => {
@@ -675,7 +769,7 @@ where
                     .outbounds
                     .connect_io(
                         &OutRouteTarget::Named(name.clone()),
-                        OutEndpoint::Domain(host.to_string(), port),
+                        OutEndpoint::Domain(dial_host.clone(), port),
                     )
                     .await
                 {
@@ -692,13 +786,13 @@ where
                     if let Some(reg) = registry::global() {
                         if let Some(_pool) = reg.pools.get(name) {
                             if let Some(ep) =
-                                sel.select(name, peer, &format!("{}:{}", host, port), &())
+                                sel.select(name, peer, &format!("{}:{}", dial_host, port), &())
                             {
                                 match ep.kind {
                                     sb_core::outbound::endpoint::ProxyKind::Http => {
                                         let s = http_proxy_connect_through_proxy(
                                             &ep.addr.to_string(),
-                                            host,
+                                            &dial_host,
                                             port,
                                             &opts,
                                         )
@@ -708,7 +802,7 @@ where
                                     sb_core::outbound::endpoint::ProxyKind::Socks5 => {
                                         let s = socks5_connect_through_socks5(
                                             &ep.addr.to_string(),
-                                            host,
+                                            &dial_host,
                                             port,
                                             &opts,
                                         )
@@ -751,55 +845,68 @@ where
         | RDecision::HijackDns => {
             tracing::warn!("http inbound: unsupported routing decision in adapter path; direct fallback is disabled; use explicit direct/proxy decision");
             outbound_tag = Some("direct".to_string());
-            let s = direct_connect_hostport(host, port, &opts).await?;
+            let s = direct_connect_hostport(&dial_host, port, &opts).await?;
             Box::new(s)
         }
     };
-    // Respond 200, then tunnel forwarding
-    // 应答 200，然后做隧道转发
-    if !sniff_reply_sent {
-        let resp = b"HTTP/1.1 200 Connection Established\r\n\r\n";
-        cli.write_all(resp).await?;
-        cli.flush().await?;
-    }
 
+    Ok(RoutedConnection {
+        host: dial_host,
+        port,
+        decision,
+        rule,
+        outbound_tag,
+        upstream,
+        sniff_prefix,
+        sniff_reply_sent,
+    })
+}
+
+async fn relay_with_conntrack<S>(
+    cli: &mut S,
+    upstream: &mut IoStream,
+    relay: RelayContext<'_>,
+) -> Result<()>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send,
+{
     // Tunnel forwarding (metered copy; label=http), unified read/write timeout (from env, optional)
     // 隧道转发（计量 copy；label=http），统一读/写超时（来自环境变量，可选）
     let rt = opt_duration_ms_from_env("SB_TCP_READ_TIMEOUT_MS");
     let wt = opt_duration_ms_from_env("SB_TCP_WRITE_TIMEOUT_MS");
-    let traffic = cfg.stats.as_ref().and_then(|stats| {
+    let traffic = relay.cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(
-            cfg.tag.as_deref(),
-            outbound_tag.as_deref(),
-            auth_user.as_deref(),
+            relay.cfg.tag.as_deref(),
+            relay.outbound_tag.as_deref(),
+            relay.auth_user,
         )
     });
 
     let chains = sb_core::outbound::chain::compute_chain_for_decision(
-        Some(cfg.outbounds.as_ref()),
-        &decision,
-        outbound_tag.as_deref(),
+        Some(relay.cfg.outbounds.as_ref()),
+        relay.decision,
+        relay.outbound_tag.as_deref(),
     );
     let wiring = sb_core::conntrack::register_inbound_tcp_with_tracker(
-        cfg.conn_tracker.clone(),
-        peer,
-        host.to_string(),
-        port,
-        host.to_string(),
+        relay.cfg.conn_tracker.clone(),
+        relay.peer,
+        relay.host.to_string(),
+        relay.port,
+        relay.host.to_string(),
         "http",
-        cfg.tag.clone(),
-        outbound_tag.clone(),
+        relay.cfg.tag.clone(),
+        relay.outbound_tag.clone(),
         chains,
-        rule.clone(),
+        relay.rule.clone(),
         None,
         None,
         traffic,
     );
     let _guard = wiring.guard;
-    let copy_res = if sniff_prefix.is_empty() {
+    let copy_res = if relay.sniff_prefix.is_empty() {
         sb_core::net::metered::copy_bidirectional_streaming_ctl(
-            &mut cli,
-            &mut upstream,
+            cli,
+            upstream,
             "http",
             std::time::Duration::from_secs(1),
             rt,
@@ -809,10 +916,10 @@ where
         )
         .await
     } else {
-        let mut sniffed = crate::inbound::sniff_util::SniffedStream::new(&mut cli, sniff_prefix);
+        let mut sniffed = crate::inbound::sniff_util::SniffedStream::new(cli, relay.sniff_prefix);
         sb_core::net::metered::copy_bidirectional_streaming_ctl(
             &mut sniffed,
-            &mut upstream,
+            upstream,
             "http",
             std::time::Duration::from_secs(1),
             rt,
@@ -827,6 +934,161 @@ where
         Err(e) if e.kind() == std::io::ErrorKind::Interrupted => {}
         Err(e) => return Err(e.into()),
     }
+    Ok(())
+}
+
+fn authenticate_proxy(
+    headers: &[u8],
+    users: Option<&[Credentials]>,
+) -> std::result::Result<Option<String>, ()> {
+    let Some(users) = users else {
+        return Ok(None);
+    };
+    if users.is_empty() {
+        return Ok(None);
+    }
+
+    let Some(value) = proxy_authorization_value(headers) else {
+        return Err(());
+    };
+    let Some(cred) = value.strip_prefix("Basic ") else {
+        return Err(());
+    };
+    let decoded = general_purpose::STANDARD.decode(cred).map_err(|_| ())?;
+    let auth_str = String::from_utf8(decoded).map_err(|_| ())?;
+    let (u, p) = auth_str.split_once(':').ok_or(())?;
+
+    for user in users {
+        let expected_u = user
+            .username
+            .as_deref()
+            .or(user.username_env.as_deref())
+            .unwrap_or("");
+        let expected_p = user
+            .password
+            .as_deref()
+            .or(user.password_env.as_deref())
+            .unwrap_or("");
+        if u == expected_u && p == expected_p {
+            return Ok(Some(u.to_string()));
+        }
+    }
+    Err(())
+}
+
+fn proxy_authorization_value(headers: &[u8]) -> Option<&str> {
+    for line in header_lines_after_request_line(headers) {
+        let Some((name, value)) = split_header_line(line) else {
+            continue;
+        };
+        if header_name_eq(name, "Proxy-Authorization") {
+            return std::str::from_utf8(trim_ascii(value)).ok();
+        }
+    }
+    None
+}
+
+fn build_plain_forward_request(
+    method: &str,
+    target: &str,
+    version: &str,
+    headers: &[u8],
+) -> Result<PlainForwardRequest> {
+    let url = url::Url::parse(target).map_err(|e| anyhow!("invalid absolute URI: {e}"))?;
+    if url.scheme() != "http" {
+        return Err(anyhow!("unsupported plain proxy scheme '{}'", url.scheme()));
+    }
+    let host = url
+        .host_str()
+        .filter(|h| !h.is_empty())
+        .ok_or_else(|| anyhow!("plain proxy URI has no host"))?
+        .to_string();
+    let port = url
+        .port_or_known_default()
+        .ok_or_else(|| anyhow!("plain proxy URI has no port"))?;
+
+    let mut origin_form = url.path().to_string();
+    if origin_form.is_empty() {
+        origin_form.push('/');
+    }
+    if let Some(query) = url.query() {
+        origin_form.push('?');
+        origin_form.push_str(query);
+    }
+
+    let mut out = Vec::with_capacity(headers.len());
+    out.extend_from_slice(format!("{method} {origin_form} {version}\r\n").as_bytes());
+    for line in header_lines_after_request_line(headers) {
+        let Some((name, _value)) = split_header_line(line) else {
+            continue;
+        };
+        if header_name_eq(name, "Proxy-Authorization") || header_name_eq(name, "Proxy-Connection") {
+            continue;
+        }
+        out.extend_from_slice(line);
+        out.extend_from_slice(b"\r\n");
+    }
+    out.extend_from_slice(b"\r\n");
+
+    Ok(PlainForwardRequest {
+        host,
+        port,
+        head: out,
+    })
+}
+
+fn header_lines_after_request_line(headers: &[u8]) -> impl Iterator<Item = &[u8]> {
+    let mut lines = headers.split(|b| *b == b'\n');
+    let _ = lines.next();
+    lines.filter_map(|raw| {
+        let line = trim_cr(trim_trailing_lf(raw));
+        if line.is_empty() {
+            None
+        } else {
+            Some(line)
+        }
+    })
+}
+
+fn split_header_line(line: &[u8]) -> Option<(&[u8], &[u8])> {
+    let pos = line.iter().position(|b| *b == b':')?;
+    Some((&line[..pos], &line[pos + 1..]))
+}
+
+fn header_name_eq(name: &[u8], expected: &str) -> bool {
+    let name = trim_ascii(name);
+    name.len() == expected.len()
+        && name
+            .iter()
+            .zip(expected.bytes())
+            .all(|(a, b)| a.eq_ignore_ascii_case(&b))
+}
+
+fn trim_ascii(mut s: &[u8]) -> &[u8] {
+    while matches!(s.first(), Some(b' ' | b'\t')) {
+        s = &s[1..];
+    }
+    while matches!(s.last(), Some(b' ' | b'\t' | b'\r')) {
+        s = &s[..s.len() - 1];
+    }
+    s
+}
+
+fn trim_trailing_lf(s: &[u8]) -> &[u8] {
+    if let Some(&b'\n') = s.last() {
+        &s[..s.len() - 1]
+    } else {
+        s
+    }
+}
+
+async fn respond_407<S>(stream: &mut S) -> Result<()>
+where
+    S: tokio::io::AsyncWrite + Unpin,
+{
+    let resp = b"HTTP/1.1 407 Proxy Authentication Required\r\nProxy-Authenticate: Basic realm=\"proxy\"\r\nContent-Length: 0\r\nConnection: close\r\n\r\n";
+    stream.write_all(resp).await?;
+    stream.flush().await?;
     Ok(())
 }
 

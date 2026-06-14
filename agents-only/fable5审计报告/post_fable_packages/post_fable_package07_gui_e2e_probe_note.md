@@ -87,10 +87,11 @@ egress, but a local target still exercises inbound → route → direct outbound
 | **SOCKS5** via mixed | **200** | full data path works |
 | **SOCKS5h** (remote-resolve) via mixed | **200** | works |
 | **HTTP CONNECT tunnel** via mixed | **200** | `http: CONNECT route host=127.0.0.1 port=18080` |
-| plain-HTTP forward GET via mixed | **405** | CONNECT-only by design (F-3) |
+| plain-HTTP forward GET via mixed | **200** | F-3 closed by package13; absolute-form GET reaches local origin |
 
 Non-TUN proxying **works** over the two methods browsers / system-proxy actually use
-(SOCKS5 for all; HTTP CONNECT for HTTPS). Plain-HTTP forward proxy returns 405 — see F-3.
+(SOCKS5 for all; HTTP CONNECT for HTTPS), and package13 adds the basic Go-parity
+plain-HTTP forward path for `http://` requests.
 
 ## Clash API Telemetry (GUI reads these after start)
 
@@ -166,21 +167,17 @@ Start phase order (`box.go`, `adapter/lifecycle.go:12-17`):
   startup rollback). A GUI drop-in kernel must be built `--features adapters` (or `parity`,
   which adds dns_*/services/clash_api/v2ray_api). Should be documented as the official
   build profile for GUI use (doc-calibration package11 candidate).
-- **F-3 (parity gap) — HTTP inbound is CONNECT-only.** `crates/sb-adapters/src/inbound/http.rs:448`
-  returns 405 for any non-CONNECT method; Go's mixed/http inbound supports plain-HTTP
-  forward proxying. `http://` sites via the Rust HTTP proxy get 405; SOCKS5 and HTTPS
-  (CONNECT) are unaffected. Lower priority (http:// is a shrinking minority; system proxy
-  uses CONNECT for https), but a real Go-parity gap — candidate follow-up.
+- **F-3 (parity gap) — CLOSED by package13.** HTTP inbound now supports
+  absolute-form plain HTTP GET forwarding through the same router/outbound
+  registry path as CONNECT, with proxy-only headers stripped before origin.
+  HTTPS remains CONNECT-only; interactive Wails E2E is still blocked.
 - **(info) selector/urltest** outbounds are handled via the bridge/registry, not the
   switchboard direct-register path (a benign `Using 501 degraded mode` WARN at register;
   `/proxies` still reports the selector correctly). No action.
 
 ## Final Recommendation
 
-Next priority: **F-1 (DNS server schema parity)** — it is the remaining hard blocker for
-GUI's *default* config to start the Rust kernel, directly on the highest-goal path and the
-same class as the already-closed package02. Then **package03 (TUN dataplane)** for the TUN
-inbound path. **package05 (reload continuity)** is **not** a GUI prerequisite (GUI uses
-process restart, which the kernel already survives cleanly — restart cycle PASS); keep it
-as kernel-internal robustness work. Record F-2 in package11 (build profile) and F-3 as a
-lower-priority HTTP-proxy parity follow-up.
+Next priority has moved past F-1 and F-3: DNS schema parity is closed by
+package12, and plain HTTP proxy parity is closed by package13. package03 remains
+PARTIAL for privileged TUN dataplane proof, while package07 itself remains
+PARTIAL until an interactive Wails desktop-window E2E can be driven.

@@ -41,6 +41,7 @@ reload/config switching does not silently break service.
 | post_fable_package09 | Lint, test, and gate policy | P1/P2/P3 | CAL-08, CAL-19, CAL-27, CAL-29 | DONE (selector tests rewritten + 2 stubs removed; trojan feature/DialOpts follow-ups closed; lint inventory closed, enforcement deferred; clippy gate → 0; 09b hardened DNS resolver-hijack flakes) |
 | post_fable_package10 | Runtime and config hygiene | P2/P3 | CAL-11, CAL-20, CAL-21, CAL-22, CAL-23, CAL-24, CAL-25 | DONE (stderr tracing cleanup; FakeIP/experimental validation hardened; explicit unsupported system_proxy; HTTP heartbeat lifecycle guard; runtime entrypoint ownership pinned) |
 | post_fable_package11 | Documentation calibration | P3 | CAL-26 | DONE (external docs marked as current-state unsafe snapshots; capabilities ledger staleness recorded) |
+| post_fable_package13 | HTTP inbound plain forward parity | P2 | F-3 | DONE (absolute-form GET forwards through router/outbound; CONNECT preserved) |
 
 ## Recommended Execution Order
 
@@ -62,8 +63,8 @@ reload/config switching does not silently break service.
    the GUI TUN config and GUI default DNS config must first parse. Package03 is
    now PARTIAL: runtime wiring/loud failure are fixed, but privileged dataplane
    traffic proof remains open.
-8. Packages 08-11 are lower-risk support work and can be scheduled around the P0/P1
-   path.
+8. Package13 closes package07 F-3 HTTP plain-forward parity. Packages 08-11 are
+   lower-risk support work and can be scheduled around the P0/P1 path.
 
 ## CAL Coverage Matrix
 
@@ -99,6 +100,7 @@ reload/config switching does not silently break service.
 | CAL-28 | post_fable_package08 | Deep trojan handshake tests remain ignored. |
 | CAL-29 | post_fable_package09 | Flake group root causes need hardening or clearer isolation. |
 | F-1 | post_fable_package12 | GUI default DNS type-based server fields were rejected by strict schema. |
+| F-3 | post_fable_package13 | HTTP inbound plain-forward GET parity gap from package07. |
 
 ## Unknowns Coverage
 
@@ -113,6 +115,7 @@ reload/config switching does not silently break service.
 | H-7 Go BoltDB cache versus Rust sled cache | Future package if needed | Migration or compatibility posture. |
 | H-9 Go reload semantic details | post_fable_package07 and 05 | Exact reload design target. |
 | H-10 Subscription format coverage | post_fable_package08 | Additional fixture set and parser backlog. |
+| F-3 HTTP inbound plain-forward parity gap | post_fable_package13 | CLOSED: absolute-form GET forwards through existing router/outbound path. |
 
 ## File Index
 
@@ -130,3 +133,5 @@ reload/config switching does not silently break service.
 - `post_fable_package11_doc_calibration.md`
 - `post_fable_package11_doc_calibration_evidence.md`
 - `post_fable_package12_dns_schema_parity_gui_default.md`
+- `post_fable_package13_http_inbound_plain_forward_parity.md`
+- `post_fable_package13_http_inbound_plain_forward_parity_evidence.md`

@@ -93,7 +93,7 @@ s5=$(curl -s -o /dev/null -w "%{http_code}" --socks5 127.0.0.1:$MIXED_PORT http:
 ct=$(curl -s -o /dev/null -w "%{http_code}" -p -x http://127.0.0.1:$MIXED_PORT http://127.0.0.1:$ORIGIN_PORT/ --max-time 5)
 [ "$ct" = 200 ] && ok "HTTP CONNECT tunnel 200" || no "CONNECT tunnel $ct"
 fwd=$(curl -s -o /dev/null -w "%{http_code}" -x http://127.0.0.1:$MIXED_PORT http://127.0.0.1:$ORIGIN_PORT/ --max-time 5)
-[ "$fwd" = 405 ] && ok "plain-HTTP forward GET -> 405 (CONNECT-only by design; Go-parity gap F-3)" || echo "  [INFO] plain-HTTP forward GET -> $fwd"
+[ "$fwd" = 200 ] && ok "plain-HTTP forward GET 200 (F-3 closed by package13)" || no "plain-HTTP forward GET -> $fwd (expected 200)"
 
 echo "== clash api telemetry (GUI reads these) =="
 cfg=$(curl -s -H "Authorization: Bearer $SECRET" http://127.0.0.1:$CLASH_PORT/configs --max-time 5)
