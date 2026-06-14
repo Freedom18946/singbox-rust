@@ -6,7 +6,7 @@ license.workspace = true
 default-run = "app"
 
 [features]
-## 默认最小构建：不启用任何可选特性，降低默认噪声
+## 默认最小构建：保留 router-only 低噪声；不是 GUI drop-in 代理运行构建
 default = ["router"]
 minimal = []
 ## 验收构建聚合特性集（便于一次性开启验收所需能力）
@@ -20,6 +20,13 @@ acceptance = [
     "rate_limit",
     "prom",
     "preview_route"
+]
+## GUI.for SingBox drop-in runtime profile: proxy-capable process-contract build.
+## Intentionally narrower than parity; add `v2ray_api` explicitly when needed.
+gui_runtime = [
+    "router",
+    "adapters",
+    "clash_api",
 ]
 ## Go parity 构建聚合特性集
 parity = [

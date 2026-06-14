@@ -12,18 +12,20 @@
   Wails-injected bridge. GUI **build environment** is ready (wails doctor SUCCESS), but
   driving the window is out of reach. The contract-equivalence probe + static source
   reading substitute for it (and are stronger evidence for the *kernel* side).
-- **One headline blocker found** for the GUI's *actual default config* (F-1, DNS).
+- The probe originally found follow-ups F-1/F-2/F-3; they are now closed by
+  packages 12/14/13. package07 remains PARTIAL only because the real interactive
+  Wails desktop-window flow is still not agent-drivable.
 
 This is probe/docs-only — no product code, no GUI source changed.
 
 ## Environment
 
 - macOS 26.5.1 (darwin/arm64, Apple M1), 2026-06-13, repo at commit `1a110996`.
-- Rust kernel built `cargo build -p app --bin app --features adapters,clash_api`.
+- Rust kernel built `cargo build -p app --bin app --features gui_runtime`.
 - Toolchain: wails v2.11.0 (`~/go/bin/wails`, not on PATH), go 1.26.4, node v26.3.0,
   pnpm 10.30.2. `wails doctor` → SUCCESS (Xcode CLT / Node / npm Installed).
 - Harness: `post_fable_package07_probe_harness.sh` (same directory). Reproduce:
-  `cargo build -p app --bin app --features adapters,clash_api && \
+  `cargo build -p app --bin app --features gui_runtime && \
    WORK=/tmp/pf07run bash <harness>`.
 
 ## GUI Launch Harness
@@ -95,8 +97,8 @@ plain-HTTP forward path for `http://` requests.
 
 ## Clash API Telemetry (GUI reads these after start)
 
-Built with `--features clash_api`; config carries `experimental.clash_api`
-(`127.0.0.1:20123`, secret). **Runtime: PASS.**
+Built with `--features gui_runtime` (which includes `clash_api`); config carries
+`experimental.clash_api` (`127.0.0.1:20123`, secret). **Runtime: PASS.**
 - `GET /configs` (Bearer) → real json (`"mixed-port":20122,"mode":"rule",...`).
 - `GET /proxies` (Bearer) → real proxy set (`DIRECT/GLOBAL/select/direct/block`, node selection).
 - `GET /configs` **without** token → **401** (auth enforced).
@@ -150,23 +152,18 @@ Start phase order (`box.go`, `adapter/lifecycle.go:12-17`):
 
 ## New Follow-Ups
 
-- **F-1 (P0, blocks real GUI default config) — DNS server schema parity.** GUI 1.19.0's
-  default DNS uses Go 1.12 type-based servers with `domain_resolver` / `server_port` /
-  `path` / `interface`; Rust strict validator (`config_from_raw_value` →
-  `validate_v2`, run **and** `--check`) rejects them →
-  `schema validation failed at /dns/servers/0/domain_resolver: unknown field` → kernel
-  exits → GUI never sees `sing-box started`. Scope isolated: stripping those 4 fields makes
-  the full GUI-shape config pass. This is the DNS sibling of package02's TUN schema parity;
-  propose a new package (e.g. `post_fable_package08`-adjacent or a dedicated DNS-schema
-  package). **Until fixed, GUI's out-of-the-box config cannot start the Rust kernel.**
-  Note: the earlier "run is lenient, doesn't call validate_v2" assumption is FALSE — the
-  production load path is strict; this corrects H-1/H-4 understanding.
-- **F-2 (build-profile) — default build is not a runnable kernel.** `cargo build -p app`
-  (default `["router"]`) produces a binary with **no inbound/outbound builders**
-  (`no inbound builder available for mixed`, `no selector/urltest builder available` →
-  startup rollback). A GUI drop-in kernel must be built `--features adapters` (or `parity`,
-  which adds dns_*/services/clash_api/v2ray_api). Should be documented as the official
-  build profile for GUI use (doc-calibration package11 candidate).
+- **F-1 (P0) — CLOSED by package12.** GUI 1.19.0's default DNS uses Go 1.12
+  type-based servers with `domain_resolver` / `server_port` / `path` /
+  `interface`; Rust strict validator originally rejected that shape on the
+  production load path. package12 accepts and lowers the focused GUI DNS fields
+  while preserving strict unknown-field rejection. The earlier "run is lenient,
+  doesn't call validate_v2" assumption remains corrected: the production load
+  path is strict.
+- **F-2 (build-profile) — CLOSED by package14.** `cargo build -p app` remains a
+  default `["router"]` minimal binary, not a GUI drop-in proxy runtime. The
+  official process-contract build is now `--features gui_runtime`, which pins
+  `router`, `adapters`, and `clash_api`. Configs that need the V2Ray API should
+  build with `--features gui_runtime,v2ray_api`.
 - **F-3 (parity gap) — CLOSED by package13.** HTTP inbound now supports
   absolute-form plain HTTP GET forwarding through the same router/outbound
   registry path as CONNECT, with proxy-only headers stripped before origin.
@@ -177,7 +174,8 @@ Start phase order (`box.go`, `adapter/lifecycle.go:12-17`):
 
 ## Final Recommendation
 
-Next priority has moved past F-1 and F-3: DNS schema parity is closed by
-package12, and plain HTTP proxy parity is closed by package13. package03 remains
-PARTIAL for privileged TUN dataplane proof, while package07 itself remains
-PARTIAL until an interactive Wails desktop-window E2E can be driven.
+Next priority has moved past F-1, F-2, and F-3: DNS schema parity is closed by
+package12, the GUI runtime build profile is closed by package14, and plain HTTP
+proxy parity is closed by package13. package03 remains PARTIAL for privileged
+TUN dataplane proof, while package07 itself remains PARTIAL until an interactive
+Wails desktop-window E2E can be driven.

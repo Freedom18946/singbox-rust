@@ -42,6 +42,7 @@ reload/config switching does not silently break service.
 | post_fable_package10 | Runtime and config hygiene | P2/P3 | CAL-11, CAL-20, CAL-21, CAL-22, CAL-23, CAL-24, CAL-25 | DONE (stderr tracing cleanup; FakeIP/experimental validation hardened; explicit unsupported system_proxy; HTTP heartbeat lifecycle guard; runtime entrypoint ownership pinned) |
 | post_fable_package11 | Documentation calibration | P3 | CAL-26 | DONE (external docs marked as current-state unsafe snapshots; capabilities ledger staleness recorded) |
 | post_fable_package13 | HTTP inbound plain forward parity | P2 | F-3 | DONE (absolute-form GET forwards through router/outbound; CONNECT preserved) |
+| post_fable_package14 | GUI runtime build profile | P2 | F-2 | DONE (`gui_runtime` pins router+adapters+clash_api; default build remains non-drop-in) |
 
 ## Recommended Execution Order
 
@@ -63,8 +64,9 @@ reload/config switching does not silently break service.
    the GUI TUN config and GUI default DNS config must first parse. Package03 is
    now PARTIAL: runtime wiring/loud failure are fixed, but privileged dataplane
    traffic proof remains open.
-8. Package13 closes package07 F-3 HTTP plain-forward parity. Packages 08-11 are
-   lower-risk support work and can be scheduled around the P0/P1 path.
+8. Package13 closes package07 F-3 HTTP plain-forward parity, and package14 closes
+   F-2 with an explicit GUI runtime build profile. Packages 08-11 are lower-risk
+   support work and can be scheduled around the P0/P1 path.
 
 ## CAL Coverage Matrix
 
@@ -100,6 +102,7 @@ reload/config switching does not silently break service.
 | CAL-28 | post_fable_package08 | Deep trojan handshake tests remain ignored. |
 | CAL-29 | post_fable_package09 | Flake group root causes need hardening or clearer isolation. |
 | F-1 | post_fable_package12 | GUI default DNS type-based server fields were rejected by strict schema. |
+| F-2 | post_fable_package14 | GUI runtime/drop-in build profile was ambiguous; default build has no adapters. |
 | F-3 | post_fable_package13 | HTTP inbound plain-forward GET parity gap from package07. |
 
 ## Unknowns Coverage
@@ -112,6 +115,7 @@ reload/config switching does not silently break service.
 | H-4 Other Go 1.12 fields rejected by strict schema | post_fable_package02 | Whether package 02 expands beyond TUN. |
 | H-5 TUN smoltcp quality | post_fable_package03 | Whether TUN data path can be closed or must be de-scoped. |
 | F-1 GUI default DNS schema blocker | post_fable_package12 | CLOSED: default DNS shape passes strict production load path. |
+| F-2 GUI runtime build profile | post_fable_package14 | CLOSED: build with app feature `gui_runtime`; default build is not proxy runtime. |
 | H-7 Go BoltDB cache versus Rust sled cache | Future package if needed | Migration or compatibility posture. |
 | H-9 Go reload semantic details | post_fable_package07 and 05 | Exact reload design target. |
 | H-10 Subscription format coverage | post_fable_package08 | Additional fixture set and parser backlog. |
@@ -135,3 +139,5 @@ reload/config switching does not silently break service.
 - `post_fable_package12_dns_schema_parity_gui_default.md`
 - `post_fable_package13_http_inbound_plain_forward_parity.md`
 - `post_fable_package13_http_inbound_plain_forward_parity_evidence.md`
+- `post_fable_package14_gui_runtime_build_profile.md`
+- `post_fable_package14_gui_runtime_build_profile_evidence.md`

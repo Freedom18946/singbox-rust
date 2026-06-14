@@ -28,8 +28,8 @@
 - **package03 PARTIAL** (`edf42095`, 03b boxed): GUI stacks map to real/loud policy;
   normal-user TUN fails before `started`; privileged smoke blocked here by sudo/password.
 - **package12 DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape passes strict load path.
-- **package07 PARTIAL / package13 DONE**: process-contract probe PASS; interactive Wails
-  E2E BLOCKED. F-2 needs `--features adapters`; F-3 plain HTTP forward CLOSED.
+- **package07 PARTIAL / package13-14 DONE**: process-contract probe PASS; interactive Wails
+  E2E BLOCKED. F-2 build profile + F-3 HTTP forward CLOSED.
 - **package01/package02 DONE**: startup keyword (`0a4cae74`); GUI flat TUN parses/lowers (`e3defcdf`).
 
 ## Resume (2026-06-10) — closed (detail in baseline/archive)

@@ -14,10 +14,10 @@
 #
 # NOT a fix; product code is untouched. See the companion note for findings.
 #
-# Requirements: a kernel built WITH runtime adapters + clash api, e.g.
-#   cargo build -p app --bin app --features adapters,clash_api
-# (the default `cargo build -p app` binary has NO inbound/outbound builders and
-#  cannot run a proxy — see note finding F-2.)
+# Requirements: a kernel built with the GUI runtime profile, e.g.
+#   cargo build -p app --bin app --features gui_runtime
+# (the default `cargo build -p app` binary remains router-only and is NOT a
+#  GUI drop-in proxy runtime — see note finding F-2.)
 set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
@@ -31,7 +31,11 @@ PASS=0; FAIL=0
 ok(){ echo "  [PASS] $*"; PASS=$((PASS+1)); }
 no(){ echo "  [FAIL] $*"; FAIL=$((FAIL+1)); }
 
-[ -x "$KERNEL" ] || { echo "kernel not found/executable: $KERNEL"; exit 2; }
+[ -x "$KERNEL" ] || {
+  echo "kernel not found/executable: $KERNEL"
+  echo "build GUI runtime with: cargo build -p app --bin app --features gui_runtime"
+  exit 2
+}
 
 # --- GUI working-config (passes Rust strict validator; mirrors GUI default shape
 #     minus the DNS `domain_resolver` gap recorded as finding F-1) ---

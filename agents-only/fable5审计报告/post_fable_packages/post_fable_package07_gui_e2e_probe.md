@@ -3,9 +3,10 @@
 
 ## Status
 
-PARTIAL (2026-06-13). Process-contract equivalence probe PASS (14/14); interactive Wails
-desktop-window E2E = BLOCKED (not agent-drivable). Headline blocker F-1 found. Full
-evidence: `post_fable_package07_gui_e2e_probe_note.md` + harness
+PARTIAL (2026-06-14). Process-contract equivalence probe PASS (14/14); interactive Wails
+desktop-window E2E = BLOCKED (not agent-drivable). Follow-ups F-1/F-2/F-3 are closed by
+packages 12/14/13; package07 remains PARTIAL only for the real interactive Wails window.
+Full evidence: `post_fable_package07_gui_e2e_probe_note.md` + harness
 `post_fable_package07_probe_harness.sh` (same directory).
 
 ## Source Findings
@@ -103,18 +104,17 @@ does (`run --disable-color -c <abs>/config.json -D <abs>`, kernel at
 
 ### New follow-ups raised
 
-- **F-1 (P0, NEW BLOCKER)**: GUI default DNS config (type-based servers with
-  `domain_resolver`/`server_port`/`path`/`interface`) rejected by Rust strict validator on
-  the production load path (`run` and `--check`) → kernel exits → GUI never starts. Isolated
-  to DNS server fields (rest of full GUI-shape config passes). DNS sibling of package02;
-  needs a dedicated schema-parity package. Corrects the prior "run is lenient" assumption.
-- **F-2 (build profile)**: default `cargo build -p app` has no runtime adapters and cannot
-  run a proxy; GUI drop-in requires `--features adapters` (or `parity`). For package11 doc.
+- **F-1 (P0)**: CLOSED by package12. GUI default DNS config (type-based servers with
+  `domain_resolver`/`server_port`/`path`/`interface`) now passes the strict production
+  load path; this corrected the prior "run is lenient" assumption.
+- **F-2 (build profile)**: CLOSED by package14. Default `cargo build -p app` remains a
+  router-only/minimal build and is not a GUI drop-in proxy runtime; GUI process-contract
+  harnesses build with `--features gui_runtime`.
 - **F-3 (parity gap)**: CLOSED by package13. HTTP inbound now supports
   absolute-form plain HTTP GET forwarding while preserving CONNECT. This does
   not change package07's interactive Wails E2E BLOCKED status.
 
 ### Verification
 
-`git diff --check` clean; `cargo build -p app --bin app --features adapters,clash_api` OK;
+`git diff --check` clean; `cargo build -p app --bin app --features gui_runtime` OK;
 `./target/debug/app version` OK; harness 14/14 PASS (`WORK=/tmp/pf07run bash <harness>`).
