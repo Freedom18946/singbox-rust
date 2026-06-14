@@ -12,10 +12,13 @@
 
 ## Resume (2026-06-14) - POST-FABLE wave
 
+- **package09 (lint/test/gate discipline) DONE** (`f2dcc34b`): selector tests rewritten + 2
+  stubs rm; both package08 trojan follow-ups CLOSED (feature→shadowsocks; dial honors DialOpts);
+  CAL-08 inventory closed/deferred; clippy all-features all-targets → 0; flakes hardened/documented.
 - **package08 (long-tail outbound + subscription) DONE** (`c31e9d1d`): tor/tailscale/ssr
   feature-OFF stubs now loud (type+feature+rebuild via InvalidConfigConnector); dns confirmed
   real in parity (audit stale); 2 deepest trojan tests enabled → 0 ignored + UDP units;
-  sb-subscribe fixtures (Clash/sing-box/URI) pin unknown-type baselines. Follow-ups: adapter-trojan↔shadowsocks gap; trojan `dial` ignores DialOpts → pkg09.
+  sb-subscribe fixtures (Clash/sing-box/URI) pin unknown-type baselines.
 - **package06 (Inbound liveness/observability) DONE** (`bbc00416`): inbound monitors
   classify exits; Clash `StartFailed` sidecar snapshots; DNS warning helper; V2Ray same-port retry.
 - **package05 DONE** (`a9236205`): reload waits for activation/readiness before commit;
@@ -30,8 +33,7 @@
 - **package01/package02 DONE**: startup keyword (`0a4cae74`); GUI flat TUN parses/lowers (`e3defcdf`).
 
 ## Resume (2026-06-10) — closed (detail in baseline/archive)
-T3-2 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed. Known flakes:
-`cache_file::test_fakeip_persistence_sled`, `dns_steady::{udp_pool_timeout_is_handled, bad_domain_returns_err}`.
+T3-2 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed.
 
 ## Strategic State
 
@@ -45,7 +47,7 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
   (lint relaxed 2026-06-03: warnings/dead_code deny→warn, safety kept deny).
 - cargo check --workspace --all-features: **PASS**. strict check-boundaries.sh: **exit 0**.
 - python3 unittest (reality_probe_tools / clienthello_family /
-  dual_kernel_verification): **PASS**. trojan_integration: **19 PASS, 0 ignored**.
+  dual_kernel_verification): **PASS**. trojan_integration: **20 PASS, 0 ignored**.
 
 ## T3 ClientHello Fingerprint Parity — T3-0…T3-2 DONE (2026-06-08)
 
