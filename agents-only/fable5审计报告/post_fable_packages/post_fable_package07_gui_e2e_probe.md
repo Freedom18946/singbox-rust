@@ -118,3 +118,8 @@ does (`run --disable-color -c <abs>/config.json -D <abs>`, kernel at
 
 `git diff --check` clean; `cargo build -p app --bin app --features gui_runtime` OK;
 `./target/debug/app version` OK; harness 14/14 PASS (`WORK=/tmp/pf07run bash <harness>`).
+
+Package15 closeout: `post_fable_package15_acceptance_closeout_manual_gates.sh`
+indexes this process-contract harness and records the remaining real Wails
+desktop-window E2E as a manual gate. package07 remains PARTIAL until that
+interactive run is actually performed and documented.

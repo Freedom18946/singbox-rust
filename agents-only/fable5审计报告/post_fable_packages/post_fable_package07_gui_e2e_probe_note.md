@@ -179,3 +179,8 @@ package12, the GUI runtime build profile is closed by package14, and plain HTTP
 proxy parity is closed by package13. package03 remains PARTIAL for privileged
 TUN dataplane proof, while package07 itself remains PARTIAL until an interactive
 Wails desktop-window E2E can be driven.
+
+Package15 adds the closeout/manual-gate index
+`post_fable_package15_acceptance_closeout_manual_gates.sh`. It reruns this
+process-contract harness and keeps the real Wails desktop-window flow as manual
+acceptance evidence, not an automated DONE claim.

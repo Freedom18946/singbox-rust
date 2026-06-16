@@ -108,3 +108,9 @@ config exited before `sing-box started`; log showed
   records exact rerun instructions for a root/admin run.
 - Result: package03 remains PARTIAL, but the remaining privileged dataplane proof
   is now boxed behind a reproducible one-command harness.
+
+Package15 closeout:
+
+- `post_fable_package15_acceptance_closeout_manual_gates.sh` indexes the same
+  03b normal/privileged gates and records non-root privileged runs as
+  `BLOCKED_PRIVILEGE` instead of promoting package03 to DONE.

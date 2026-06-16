@@ -241,3 +241,13 @@ dataplane proof did not run. The closure state is now better boxed:
   criteria;
 - the local blocker is specific: no root/admin privilege is available through
   noninteractive sudo in this agent session.
+
+---
+
+## package15 closeout pointer
+
+Package15 adds
+`post_fable_package15_acceptance_closeout_manual_gates.sh` as the post-FABLE
+manual-gate index. It reruns/captures the 03b normal-user and privileged gates
+under a shared `WORK` directory, preserving package03 as PARTIAL unless the
+privileged dataplane proof actually passes.
