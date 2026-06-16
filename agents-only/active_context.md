@@ -28,8 +28,8 @@
 - **package03 PARTIAL** (`edf42095`, 03b boxed): GUI stacks map to real/loud policy;
   normal-user TUN fails before `started`; privileged smoke blocked here by sudo/password.
 - **package12 DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape passes strict load path.
-- **post_fable closeout / package15 DONE**: auto-closable path boxed; package03 remains
-  PARTIAL for root TUN proof and package07 remains PARTIAL for manual Wails E2E.
+- **post_fable closeout / packages15-16 DONE**: auto path boxed; capability
+  refresh path restored; root TUN + manual Wails remain external gates.
 - **package01/package02 DONE**: startup keyword (`0a4cae74`); GUI flat TUN parses/lowers (`e3defcdf`).
 
 ## Resume (2026-06-10) — closed (detail in baseline/archive)

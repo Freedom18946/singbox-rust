@@ -59,12 +59,20 @@ EXPLICIT_CAPABILITY_RE = re.compile(
 )
 
 
-def locate_line(path: Path, needle: str) -> int:
+class EvidenceAnchorError(RuntimeError):
+    """Raised when a generated evidence anchor cannot be resolved."""
+
+
+def locate_line(path: Path, needle: str, *, required: bool = False) -> int:
     if not path.exists():
+        if required:
+            raise EvidenceAnchorError(f"evidence path does not exist: {path}")
         return 1
     for idx, line in enumerate(path.read_text(encoding="utf-8").splitlines(), start=1):
         if needle in line:
             return idx
+    if required:
+        raise EvidenceAnchorError(f"needle not found in {path}: {needle!r}")
     return 1
 
 
@@ -238,7 +246,7 @@ def discover_evidence_manifests(root: Path) -> list[str]:
 
 def build_acceptance_closure(root: Path, manifests: list[str]) -> dict:
     def ev(kind: str, rel_path: str, needle: str, note: str) -> dict:
-        line = locate_line(root / rel_path, needle)
+        line = locate_line(root / rel_path, needle, required=True)
         return {
             "kind": kind,
             "path": rel_path,
@@ -249,14 +257,14 @@ def build_acceptance_closure(root: Path, manifests: list[str]) -> dict:
     evidence = [
         ev(
             "doc",
-            "agents-only/planning/L18-PHASE4.md",
-            "Wave A: 证据模型收口",
-            "Phase 4 explicitly separates closure narrative from per-capability facts.",
+            "docs/capabilities.md",
+            "closure narrative is tracked separately from per-capability facts",
+            "Capability docs explicitly separate closure narrative from per-capability facts.",
         ),
         ev(
             "doc",
             "reports/L18_REPLACEMENT_CERTIFICATION.md",
-            "Status: `UNVERIFIED (slim snapshot)`",
+            "slim snapshot",
             "Replacement-certification report now treats missing batch artifacts as unverified.",
         ),
     ]
@@ -289,7 +297,7 @@ def build_acceptance_closure(root: Path, manifests: list[str]) -> dict:
 
 def build_capabilities(root: Path, runtime_probes: dict[str, dict]) -> list[dict]:
     def ev(kind: str, rel_path: str, needle: str, note: str) -> dict:
-        line = locate_line(root / rel_path, needle)
+        line = locate_line(root / rel_path, needle, required=True)
         return {
             "kind": kind,
             "path": rel_path,
@@ -485,7 +493,7 @@ def build_capabilities(root: Path, runtime_probes: dict[str, dict]) -> list[dict
                 ),
                 ev(
                     "code",
-                    "app/src/run_engine.rs",
+                    "app/src/run_engine_runtime/supervisor.rs",
                     "tls provider decision",
                     "Startup logs provider decision alongside ECH runtime probe status.",
                 ),
@@ -508,7 +516,7 @@ def build_capabilities(root: Path, runtime_probes: dict[str, dict]) -> list[dict
             "evidence": [
                 ev(
                     "code",
-                    "crates/sb-config/src/validator/v2.rs",
+                    "crates/sb-config/src/validator/v2/outbound.rs",
                     "QUIC + ECH is not supported in the current Rust implementation",
                     "Config validator defaults to reject mode; explicit experimental mode allows QUIC+ECH with warning.",
                 ),
@@ -539,6 +547,21 @@ def build_capabilities(root: Path, runtime_probes: dict[str, dict]) -> list[dict
             capability["runtime_probe"] = probe
 
     return capabilities
+
+
+def build_staleness() -> dict:
+    return {
+        "status": "refreshed_docs_only_snapshot",
+        "calibrated_at": "2026-06-16",
+        "calibration_source": "post_fable_package16_capabilities_generator_refresh_path",
+        "current_status_source": "agents-only/active_context.md",
+        "package_state_source": "agents-only/fable5审计报告/post_fable_packages/README.md",
+        "notes": [
+            "Package16 restored the generator refresh path and validates evidence anchors before output.",
+            "This report remains docs-only and is not GUI readiness, drop-in readiness, or full runtime parity proof.",
+            "Current gates and recommended next step must be read from agents-only/active_context.md.",
+        ],
+    }
 
 
 def extract_claims(root: Path) -> list[dict]:
@@ -600,6 +623,7 @@ def main() -> int:
         "generated_at": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
         "source_commit": git_short_sha(root),
         "profile": args.profile,
+        "staleness": build_staleness(),
         "acceptance_closure": build_acceptance_closure(root, evidence_manifests),
         "capabilities": build_capabilities(root, runtime_probes),
         "claims": extract_claims(root),

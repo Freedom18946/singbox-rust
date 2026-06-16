@@ -40,10 +40,11 @@ reload/config switching does not silently break service.
 | post_fable_package08 | Long-tail protocols and subscription | P2 | CAL-18, CAL-28, H-10 | DONE (loud unsupported tor/tailscale/ssr; dns confirmed real; trojan tests enabled → 0 ignored; subscription fixtures) |
 | post_fable_package09 | Lint, test, and gate policy | P1/P2/P3 | CAL-08, CAL-19, CAL-27, CAL-29 | DONE (selector tests rewritten + 2 stubs removed; trojan feature/DialOpts follow-ups closed; lint inventory closed, enforcement deferred; clippy gate → 0; 09b hardened DNS resolver-hijack flakes) |
 | post_fable_package10 | Runtime and config hygiene | P2/P3 | CAL-11, CAL-20, CAL-21, CAL-22, CAL-23, CAL-24, CAL-25 | DONE (stderr tracing cleanup; FakeIP/experimental validation hardened; explicit unsupported system_proxy; HTTP heartbeat lifecycle guard; runtime entrypoint ownership pinned) |
-| post_fable_package11 | Documentation calibration | P3 | CAL-26 | DONE (external docs marked as current-state unsafe snapshots; capabilities ledger staleness recorded) |
+| post_fable_package11 | Documentation calibration | P3 | CAL-26 | DONE (external docs marked as current-state unsafe snapshots; generator residual closed by package16) |
 | post_fable_package13 | HTTP inbound plain forward parity | P2 | F-3 | DONE (absolute-form GET forwards through router/outbound; CONNECT preserved) |
 | post_fable_package14 | GUI runtime build profile | P2 | F-2 | DONE (`gui_runtime` pins router+adapters+clash_api; default build remains non-drop-in) |
 | post_fable_package15 | Acceptance closeout/manual gates | P2 | package03/package07 manual gates | DONE (automatic path indexed; root TUN + interactive Wails remain manual evidence) |
+| post_fable_package16 | Capabilities generator refresh path | P3 | package11 residual | DONE (validated generator anchors; tracked capabilities docs/report refreshed as docs-only) |
 
 ## Recommended Execution Order
 
@@ -70,6 +71,8 @@ reload/config switching does not silently break service.
    support work and can be scheduled around the P0/P1 path.
 9. Package15 is the closeout index: automatic post-FABLE packages are closed,
    while package03 root TUN proof and package07 real Wails E2E remain manual gates.
+10. Package16 closes the package11 doc-tool residual by restoring a validated
+    `reports/capabilities.json` / `docs/capabilities.md` refresh path.
 
 ## CAL Coverage Matrix
 
@@ -120,6 +123,7 @@ reload/config switching does not silently break service.
 | F-1 GUI default DNS schema blocker | post_fable_package12 | CLOSED: default DNS shape passes strict production load path. |
 | F-2 GUI runtime build profile | post_fable_package14 | CLOSED: build with app feature `gui_runtime`; default build is not proxy runtime. |
 | Manual acceptance closeout | post_fable_package15 | DONE: root TUN and interactive Wails gates are indexed without marking package03/package07 DONE. |
+| Capabilities generator stale anchors | post_fable_package16 | CLOSED: static evidence anchors are validated and tracked docs/report refresh is restored. |
 | H-7 Go BoltDB cache versus Rust sled cache | Future package if needed | Migration or compatibility posture. |
 | H-9 Go reload semantic details | post_fable_package07 and 05 | Exact reload design target. |
 | H-10 Subscription format coverage | post_fable_package08 | Additional fixture set and parser backlog. |
@@ -148,3 +152,5 @@ reload/config switching does not silently break service.
 - `post_fable_package15_acceptance_closeout_manual_gates.md`
 - `post_fable_package15_acceptance_closeout_manual_gates_evidence.md`
 - `post_fable_package15_acceptance_closeout_manual_gates.sh`
+- `post_fable_package16_capabilities_generator_refresh_path.md`
+- `post_fable_package16_capabilities_generator_refresh_path_evidence.md`

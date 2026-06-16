@@ -9,9 +9,9 @@
 > package state lives in the
 > [package map](../agents-only/fable5审计报告/post_fable_packages/README.md).
 >
-> Package11 calibration note: a generator dry-run at HEAD `226581b7` succeeded,
-> but the generated evidence map still includes a stale validator path. The
-> tracked JSON is therefore marked stale rather than regenerated.
+> Package16 refresh note: the generator refresh path is restored and validates
+> evidence anchors before output. The tracked JSON is refreshed, but this remains
+> a docs-only capability snapshot, not runtime, GUI, or drop-in readiness proof.
 
 This is the human-readable entry for the docs-only capability snapshot.
 Machine snapshot: [`reports/capabilities.json`](../reports/capabilities.json)
@@ -25,7 +25,7 @@ Machine snapshot: [`reports/capabilities.json`](../reports/capabilities.json)
 - `generated_at` (RFC3339)
 - `source_commit` (git sha)
 - `profile` (`docs-only` in Batch A)
-- `staleness` (package11 calibration metadata for stale docs-only snapshots)
+- `staleness` (package16 refresh metadata for docs-only snapshots)
 - `acceptance_closure`
 - `capabilities[]`
 - `runtime_probe` (optional, present when runtime probe report is available)
@@ -203,7 +203,7 @@ Current rule:
 - `runtime_state`: `unsupported`
 - `verification_state`: `no_evidence`
 - `overall_state`: `scaffold_stub`
-- Evidence anchors: `crates/sb-config/src/validator/v2.rs`, `crates/sb-transport/src/quic.rs`, `crates/sb-tls/docs/ech_usage.md`
+- Evidence anchors: `crates/sb-config/src/validator/v2/outbound.rs`, `crates/sb-transport/src/quic.rs`, `crates/sb-tls/docs/ech_usage.md`
 - Guardrail: QUIC+ECH defaults to `experimental.quic_ech_mode=reject` (hard error); explicit `experimental` mode downgrades to warning for controlled interop tests.
 - Suggested path: use TCP-based TLS ECH outbounds (`vless`/`vmess`/`trojan` over `tcp+tls`).
 

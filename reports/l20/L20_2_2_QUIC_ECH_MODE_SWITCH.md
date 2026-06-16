@@ -7,7 +7,7 @@
 
 1. `crates/sb-config/src/ir/experimental.rs`
    - `ExperimentalIR` 新增 `quic_ech_mode: Option<String>`。
-2. `crates/sb-config/src/validator/v2.rs`
+2. `crates/sb-config/src/validator/v2/outbound.rs`
    - QUIC+ECH 校验新增模式机：
      - 默认（未配置或 `reject`）：硬拒绝（`error`）
      - `experimental`：放行为 `warning`（明确风险提示）
@@ -39,7 +39,7 @@
 
 ## 证据路径
 
-1. `crates/sb-config/src/validator/v2.rs`
+1. `crates/sb-config/src/validator/v2/outbound.rs`
 2. `crates/sb-config/src/ir/experimental.rs`
 3. `docs/capabilities.md`
 4. `reports/capabilities.json`

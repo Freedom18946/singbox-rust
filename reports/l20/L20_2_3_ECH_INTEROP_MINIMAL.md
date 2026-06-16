@@ -42,4 +42,4 @@
 1. `reports/security/ech_interop_minimal.json`
 2. `reports/security/ech_interop_minimal_logs/`
 3. `scripts/test/ech_interop_minimal.sh`
-4. `crates/sb-config/src/validator/v2.rs`
+4. `crates/sb-config/src/validator/v2/outbound.rs`

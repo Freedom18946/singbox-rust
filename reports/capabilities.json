@@ -1,17 +1,17 @@
 {
   "schema_version": "1.1.0",
-  "generated_at": "2026-03-21T06:09:04Z",
-  "source_commit": "c36d29d3",
+  "generated_at": "2026-06-16T03:33:43.110409Z",
+  "source_commit": "46461d3b",
   "profile": "docs-only",
   "staleness": {
-    "status": "stale_docs_only_snapshot",
-    "calibrated_at": "2026-06-14",
-    "calibration_source": "post_fable_package11_doc_calibration",
+    "status": "refreshed_docs_only_snapshot",
+    "calibrated_at": "2026-06-16",
+    "calibration_source": "post_fable_package16_capabilities_generator_refresh_path",
     "current_status_source": "agents-only/active_context.md",
     "package_state_source": "agents-only/fable5审计报告/post_fable_packages/README.md",
     "notes": [
-      "This report is retained as a docs-only snapshot and is not current GUI readiness, drop-in readiness, or full runtime parity proof.",
-      "Package11 did not overwrite this file with generator output because a dry-run at HEAD 226581b7 still produced stale static evidence anchors.",
+      "Package16 restored the generator refresh path and validates evidence anchors before output.",
+      "This report remains docs-only and is not GUI readiness, drop-in readiness, or full runtime parity proof.",
       "Current gates and recommended next step must be read from agents-only/active_context.md."
     ]
   },
@@ -23,8 +23,8 @@
       {
         "kind": "doc",
         "path": "docs/capabilities.md",
-        "line": 74,
-        "note": "Capability docs explicitly separate acceptance closure from per-capability facts."
+        "line": 109,
+        "note": "Capability docs explicitly separate closure narrative from per-capability facts."
       },
       {
         "kind": "doc",
@@ -47,7 +47,7 @@
         {
           "kind": "code",
           "path": "crates/sb-adapters/Cargo.toml",
-          "line": 127,
+          "line": 129,
           "note": "macOS tun path defaults to stub tun2socks mode unless real mode is requested."
         },
         {
@@ -87,7 +87,7 @@
         {
           "kind": "code",
           "path": "app/src/inbound_starter.rs",
-          "line": 296,
+          "line": 314,
           "note": "Runtime warns redirect is not supported in this build."
         }
       ],
@@ -117,7 +117,7 @@
         {
           "kind": "code",
           "path": "app/src/inbound_starter.rs",
-          "line": 296,
+          "line": 314,
           "note": "Runtime warns tproxy is not supported in this build."
         }
       ],
@@ -141,7 +141,7 @@
         {
           "kind": "code",
           "path": "crates/sb-tls/src/utls.rs",
-          "line": 605,
+          "line": 613,
           "note": "Unsupported suites are skipped; behavior is best-effort."
         },
         {
@@ -249,19 +249,19 @@
         {
           "kind": "code",
           "path": "crates/sb-transport/src/tls.rs",
-          "line": 673,
+          "line": 670,
           "note": "Rustls ECH mode is wired for TLS client config path."
         },
         {
           "kind": "code",
           "path": "app/src/tls_provider.rs",
-          "line": 40,
+          "line": 36,
           "note": "TLS provider selection is centralized with deterministic fallback behavior."
         },
         {
           "kind": "code",
-          "path": "app/src/run_engine.rs",
-          "line": 800,
+          "path": "app/src/run_engine_runtime/supervisor.rs",
+          "line": 182,
           "note": "Startup logs provider decision alongside ECH runtime probe status."
         },
         {
@@ -299,14 +299,14 @@
       "evidence": [
         {
           "kind": "code",
-          "path": "crates/sb-config/src/validator/v2.rs",
-          "line": 1171,
+          "path": "crates/sb-config/src/validator/v2/outbound.rs",
+          "line": 1224,
           "note": "Config validator defaults to reject mode; explicit experimental mode allows QUIC+ECH with warning."
         },
         {
           "kind": "code",
           "path": "crates/sb-transport/src/quic.rs",
-          "line": 231,
+          "line": 235,
           "note": "Current QUIC path is explicitly marked as simplified integration point."
         },
         {

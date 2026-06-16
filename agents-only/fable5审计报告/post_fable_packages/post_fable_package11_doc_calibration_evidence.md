@@ -67,5 +67,6 @@ Result: PASS.
 
 ## Residual Follow-Up
 
-- Repair or replace the capabilities generator's static evidence map before using
-  it as a tracked refresh path.
+- CLOSED by package16: the capabilities generator static evidence map now points
+  at existing semantic anchors, validates evidence paths/needles before output,
+  and can refresh tracked `reports/capabilities.json` as a docs-only snapshot.
