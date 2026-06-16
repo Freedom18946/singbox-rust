@@ -32,11 +32,11 @@ reload/config switching does not silently break service.
 | post_fable_package01 | GUI contract | P0 | CAL-02, CAL-17 | DONE (`0a4cae74`) |
 | post_fable_package02 | Schema parity, TUN first | P0 | CAL-01, H-4 | DONE (`e3defcdf`) |
 | post_fable_package12 | DNS schema parity, GUI default | P0 | F-1 | DONE (`349eecf3`) |
-| post_fable_package03 | TUN dataplane | P1 | CAL-10, H-5 | PARTIAL (`edf42095`; 03b harness boxed; package15 runbook keeps privileged root proof explicit) |
+| post_fable_package03 | TUN dataplane | P1 | CAL-10, H-5 | PARTIAL (`edf42095`; 03b harness boxed; package17 privileged rerun blocked by UID 501/no noninteractive sudo) |
 | post_fable_package04 | WireGuard dataplane | P0/P1 | CAL-03, CAL-09 | DONE (`f70bf5ef`; endpoint route target + legacy feature wiring) |
 | post_fable_package05 | Reload continuity and atomicity | P1 | CAL-04, CAL-05, CAL-07, CAL-12, CAL-14 | DONE (`a9236205`; atomic reload + safe same-port rejection) |
 | post_fable_package06 | Inbound liveness and observability | P1/P2 | CAL-06, CAL-13, CAL-15, CAL-16 | DONE (`bbc00416`; inbound/sidecar/DNS/V2Ray visibility) |
-| post_fable_package07 | GUI E2E probe | Probe | H-1, H-2, H-3, H-9 | PARTIAL (probe PASS; package15 runbook keeps interactive Wails E2E manual) |
+| post_fable_package07 | GUI E2E probe | Probe | H-1, H-2, H-3, H-9 | PARTIAL (probe PASS; package17 built/launched real Wails window, but Start/core/API/traffic proof remains blocked) |
 | post_fable_package08 | Long-tail protocols and subscription | P2 | CAL-18, CAL-28, H-10 | DONE (loud unsupported tor/tailscale/ssr; dns confirmed real; trojan tests enabled → 0 ignored; subscription fixtures) |
 | post_fable_package09 | Lint, test, and gate policy | P1/P2/P3 | CAL-08, CAL-19, CAL-27, CAL-29 | DONE (selector tests rewritten + 2 stubs removed; trojan feature/DialOpts follow-ups closed; lint inventory closed, enforcement deferred; clippy gate → 0; 09b hardened DNS resolver-hijack flakes) |
 | post_fable_package10 | Runtime and config hygiene | P2/P3 | CAL-11, CAL-20, CAL-21, CAL-22, CAL-23, CAL-24, CAL-25 | DONE (stderr tracing cleanup; FakeIP/experimental validation hardened; explicit unsupported system_proxy; HTTP heartbeat lifecycle guard; runtime entrypoint ownership pinned) |
@@ -45,6 +45,7 @@ reload/config switching does not silently break service.
 | post_fable_package14 | GUI runtime build profile | P2 | F-2 | DONE (`gui_runtime` pins router+adapters+clash_api; default build remains non-drop-in) |
 | post_fable_package15 | Acceptance closeout/manual gates | P2 | package03/package07 manual gates | DONE (automatic path indexed; root TUN + interactive Wails remain manual evidence) |
 | post_fable_package16 | Capabilities generator refresh path | P3 | package11 residual | DONE (validated generator anchors; tracked capabilities docs/report refreshed as docs-only) |
+| post_fable_package17 | External acceptance execution | P1 | package03/package07 external gates | DONE (real external gates attempted; package03/package07 remain PARTIAL without required PASS evidence) |
 
 ## Recommended Execution Order
 
@@ -73,6 +74,9 @@ reload/config switching does not silently break service.
    while package03 root TUN proof and package07 real Wails E2E remain manual gates.
 10. Package16 closes the package11 doc-tool residual by restoring a validated
     `reports/capabilities.json` / `docs/capabilities.md` refresh path.
+11. Package17 executes the external acceptance gates. The current machine still
+    lacks noninteractive root for TUN, and the Wails desktop window did not reach
+    GUI-driven Start/core/API/traffic proof, so package03/package07 stay PARTIAL.
 
 ## CAL Coverage Matrix
 
@@ -124,6 +128,7 @@ reload/config switching does not silently break service.
 | F-2 GUI runtime build profile | post_fable_package14 | CLOSED: build with app feature `gui_runtime`; default build is not proxy runtime. |
 | Manual acceptance closeout | post_fable_package15 | DONE: root TUN and interactive Wails gates are indexed without marking package03/package07 DONE. |
 | Capabilities generator stale anchors | post_fable_package16 | CLOSED: static evidence anchors are validated and tracked docs/report refresh is restored. |
+| External acceptance execution | post_fable_package17 | DONE as an execution record: root TUN is BLOCKED by no noninteractive sudo; Wails window reached a visible profile but no GUI-driven core/traffic proof. |
 | H-7 Go BoltDB cache versus Rust sled cache | Future package if needed | Migration or compatibility posture. |
 | H-9 Go reload semantic details | post_fable_package07 and 05 | Exact reload design target. |
 | H-10 Subscription format coverage | post_fable_package08 | Additional fixture set and parser backlog. |
@@ -154,3 +159,5 @@ reload/config switching does not silently break service.
 - `post_fable_package15_acceptance_closeout_manual_gates.sh`
 - `post_fable_package16_capabilities_generator_refresh_path.md`
 - `post_fable_package16_capabilities_generator_refresh_path_evidence.md`
+- `post_fable_package17_external_acceptance_execution.md`
+- `post_fable_package17_external_acceptance_execution_evidence.md`

@@ -12,9 +12,8 @@
 
 ## Resume (2026-06-14) - POST-FABLE wave
 
-- **package10 (runtime/config hygiene) DONE**: CAL-11/20-25 closed via tracing cleanup,
-  config validation errors, explicit unsupported system_proxy, HTTP heartbeat guard, and
-  runtime entrypoint ownership pins.
+- **package10 DONE**: CAL-11/20-25 closed via tracing cleanup, config validation,
+  explicit unsupported system_proxy, HTTP heartbeat guard, and entrypoint pins.
 - **package09 DONE** (`f2dcc34b` + 09b): selector/proxy-pool tests restored; DNS
   resolver-hijack flakes hardened; CAL-08 inventory closed/deferred; clippy gate → 0.
 - **package08 DONE** (`c31e9d1d`): long-tail stubs loud; dns real in parity; deepest trojan
@@ -25,11 +24,11 @@
   failed reload keeps old listeners/registries; same-port in-process reload is rejected.
 - **package04 DONE** (`f70bf5ef`): endpoint tags enter outbound namespace; app
   `adapters`/`parity` wire legacy `wireguard`; public WG peer proof remains out of scope.
-- **package03 PARTIAL** (`edf42095`, 03b boxed): GUI stacks map to real/loud policy;
-  normal-user TUN fails before `started`; privileged smoke blocked here by sudo/password.
+- **package03 PARTIAL** (`edf42095`, 03b boxed + package17 rerun): GUI TUN is loud;
+  normal-user proof PASS; privileged dataplane remains blocked by UID 501/no sudo.
 - **package12 DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape passes strict load path.
-- **post_fable closeout / packages15-16 DONE**: auto path boxed; capability
-  refresh path restored; root TUN + manual Wails remain external gates.
+- **post_fable closeout / packages15-17 DONE**: auto/docs path boxed and external
+  gates attempted; package07 Wails Start/core/traffic still lacks agent-drivable proof.
 - **package01/package02 DONE**: startup keyword (`0a4cae74`); GUI flat TUN parses/lowers (`e3defcdf`).
 
 ## Resume (2026-06-10) — closed (detail in baseline/archive)

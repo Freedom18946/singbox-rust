@@ -251,3 +251,81 @@ Package15 adds
 manual-gate index. It reruns/captures the 03b normal-user and privileged gates
 under a shared `WORK` directory, preserving package03 as PARTIAL unless the
 privileged dataplane proof actually passes.
+
+---
+
+## package17 external acceptance execution
+
+Date: 2026-06-16.
+
+Artifact roots:
+
+- `/tmp/pf17_external_acceptance/`
+- `/tmp/pf17_tun_normal/`
+- `/tmp/pf17_tun_privileged/`
+
+Environment:
+
+- macOS arm64 (`Darwin ... arm64`).
+- UID 501 (`bob`).
+- `sudo -n true` failed with `sudo: a password is required`.
+
+Commands:
+
+| Command | Result |
+|---|---|
+| `cargo build -p app --bin app --features gui_runtime` | PASS |
+| `./target/debug/app version` | PASS: `sing-box version 0.1.0 (0d1cbe7b1426)` observed |
+| `PF03B_SKIP_BUILD=1 WORK=/tmp/pf17_tun_normal PF03B_MODE=normal bash .../post_fable_package03b_tun_smoke_harness.sh` | PASS |
+| `PF03B_SKIP_BUILD=1 WORK=/tmp/pf17_tun_privileged PF03B_MODE=privileged bash .../post_fable_package03b_tun_smoke_harness.sh` | BLOCKED, exit 3 |
+
+Normal-user result excerpt:
+
+```json
+{
+  "status": "PASS",
+  "message": "normal-user TUN startup failed before 'sing-box started' with a loud permission/backend error",
+  "stages": {
+    "config_validation": "pass",
+    "tun_startup": "permission_failed_before_started",
+    "sing_box_started_seen": false,
+    "cleanup": "complete",
+    "configured_outbound_hit": false,
+    "curl_success": false
+  },
+  "uid": 501
+}
+```
+
+Normal-user app log excerpt:
+
+```text
+ERROR sb_adapters::register: failed to prepare TUN runtime backend inbound=pf03b-tun-in error=Operation not permitted (os error 1)
+runtime startup blocked by adapter errors: tun inbound 'pf03b-tun-in' failed to prepare runtime backend
+```
+
+Privileged result excerpt:
+
+```json
+{
+  "status": "BLOCKED",
+  "exit_code": 3,
+  "message": "privileged mode requires root/admin privileges; rerun with sudo -E after building the kernel",
+  "stages": {
+    "config_validation": "pass",
+    "tun_startup": "not_run_missing_privilege",
+    "sing_box_started_seen": false,
+    "cleanup": "complete",
+    "configured_outbound_hit": false,
+    "curl_success": false
+  },
+  "uid": 501
+}
+```
+
+Conclusion:
+
+Package17 did not obtain the required privileged TUN dataplane PASS. package03
+therefore remains PARTIAL. The residual gate is exactly the root/admin rerun of
+the 03b harness; success still requires `configured_outbound_hit=true`, curl
+HTTP 200, `sing-box started`, and cleanup complete.

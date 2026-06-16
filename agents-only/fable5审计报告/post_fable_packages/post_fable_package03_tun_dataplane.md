@@ -3,7 +3,8 @@
 
 ## Status
 
-PARTIAL (2026-06-14, code commit `edf42095` + 03b harness boxed).
+PARTIAL (2026-06-16, code commit `edf42095` + 03b harness boxed; package17
+privileged rerun blocked by missing root/admin privilege).
 
 Runtime wiring and startup honesty are fixed for GUI-default-ish TUN configs:
 `mixed`/default/`smoltcp` enter Enhanced/smoltcp, `gvisor` enters the same backend
@@ -114,3 +115,16 @@ Package15 closeout:
 - `post_fable_package15_acceptance_closeout_manual_gates.sh` indexes the same
   03b normal/privileged gates and records non-root privileged runs as
   `BLOCKED_PRIVILEGE` instead of promoting package03 to DONE.
+
+Package17 external acceptance execution:
+
+- `cargo build -p app --bin app --features gui_runtime` PASS.
+- `PF03B_MODE=normal` PASS again under `/tmp/pf17_tun_normal`: config validation
+  passed; TUN startup failed before `sing-box started` with
+  `Operation not permitted (os error 1)`.
+- `PF03B_MODE=privileged` under `/tmp/pf17_tun_privileged` returned exit 3 with
+  `status: "BLOCKED"` because this session is UID 501 and `sudo -n true`
+  requires a password.
+- No root/admin dataplane PASS evidence was obtained, so package03 remains
+  PARTIAL. The root rerun command stays:
+  `sudo -E PF03B_SKIP_BUILD=1 PF03B_MODE=privileged WORK=/tmp/pf17_tun_privileged bash agents-only/fable5审计报告/post_fable_packages/post_fable_package03b_tun_smoke_harness.sh`.

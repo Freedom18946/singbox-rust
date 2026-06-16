@@ -181,6 +181,82 @@ TUN dataplane proof, while package07 itself remains PARTIAL until an interactive
 Wails desktop-window E2E can be driven.
 
 Package15 adds the closeout/manual-gate index
-`post_fable_package15_acceptance_closeout_manual_gates.sh`. It reruns this
-process-contract harness and keeps the real Wails desktop-window flow as manual
-acceptance evidence, not an automated DONE claim.
+`post_fable_package15_acceptance_closeout_manual_gates.sh`. Package17 then ran a
+real Wails desktop attempt: the app built and the seeded profile was visible, but
+Start did not yield core/API/traffic evidence. package07 therefore remains
+PARTIAL/BLOCKED until a human operator or stronger desktop automation completes
+the interactive desktop-window flow.
+
+## package17 External Wails Attempt
+
+Date: 2026-06-16.
+
+Artifact root: `/tmp/pf17_external_acceptance/`.
+
+Supporting baseline:
+
+- `cargo build -p app --bin app --features gui_runtime` PASS.
+- `./target/debug/app version` PASS; observed
+  `sing-box version 0.1.0 (0d1cbe7b1426)`.
+- `WORK=/tmp/pf17_gui_contract bash post_fable_package07_probe_harness.sh`
+  PASS: 14/14 process-contract checks, including SOCKS5, HTTP CONNECT,
+  package13 plain HTTP forward GET, Clash API auth, SIGINT stop, and same-port
+  rebind.
+
+Wails environment:
+
+- `~/go/bin/wails doctor` PASS: Wails v2.11.0, Go 1.26.1, Node 26.3.0, Xcode
+  CLT present.
+- `~/go/bin/wails build -clean` with the default Go proxy failed on a
+  `proxy.golang.org` TLS handshake timeout.
+- `GOPROXY=https://goproxy.cn,direct ~/go/bin/wails build -clean` PASS and
+  produced a fresh
+  `GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app`.
+
+Desktop-window attempt:
+
+- The attempt backed up `~/Library/Application Support/GUI.for.SingBox`, seeded
+  controlled test data only under that directory, copied `target/debug/app` to
+  the GUI kernel path, and restored the original App Support directory during
+  cleanup.
+- Seeded profile: `PF17 Local Direct`, mixed inbound `127.0.0.1:20122`, Clash API
+  `127.0.0.1:20123` with secret `pf17probe`, local DNS, direct/select/block
+  outbounds, TUN disabled.
+- The first direct Mach-O launch exited early without exposing a desktop window.
+- Launching the app bundle with `open -n` exposed a real `GUI.for.SingBox`
+  desktop process to System Events. The AX UI tree contained the seeded
+  `PF17 Local Direct` profile and `Click to Start` text.
+- Start was attempted through AppleScript/System Events plus a coordinate
+  fallback, but no core pid, generated config, Clash API response, or local
+  proxy traffic artifact was produced.
+- Cleanup restored App Support and left ports `20122`/`20123` closed.
+
+Latest attempt result excerpt:
+
+```json
+{
+  "status": "BLOCKED",
+  "message": "Wails desktop attempt did not satisfy full interactive PASS criteria",
+  "stages": {
+    "fresh_wails_build": "pass_fresh_goproxy_cn",
+    "app_support_backup": "pass",
+    "seed_test_data": "pass",
+    "desktop_launch": "open_invoked",
+    "desktop_window": "process_visible_to_system_events",
+    "start_click": "attempted",
+    "core_started": "not_run",
+    "clash_api": "not_run_core_not_run",
+    "loopback_proxy_traffic": "not_run_core_not_run",
+    "stop_click": "pass_ports_released",
+    "cleanup_restore": "restored_app_support"
+  }
+}
+```
+
+Status decision:
+
+This is a real Wails desktop-window attempt, but it is not a package07 DONE
+signal. The required GUI-driven Start -> Rust `gui_runtime` core -> Clash API ->
+local traffic -> Stop sequence was not proven. package07 remains PARTIAL/BLOCKED
+until a human operator or stronger desktop automation can activate Start and
+capture the complete flow.

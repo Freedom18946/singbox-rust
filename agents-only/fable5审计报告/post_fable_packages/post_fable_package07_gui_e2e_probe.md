@@ -3,10 +3,12 @@
 
 ## Status
 
-PARTIAL (2026-06-14). Process-contract equivalence probe PASS (14/14); interactive Wails
-desktop-window E2E = BLOCKED (not agent-drivable). Follow-ups F-1/F-2/F-3 are closed by
-packages 12/14/13; package07 remains PARTIAL only for the real interactive Wails window.
-Full evidence: `post_fable_package07_gui_e2e_probe_note.md` + harness
+PARTIAL (2026-06-16). Process-contract equivalence probe PASS (14/14);
+package17 built a fresh Wails app and observed the real desktop window/profile,
+but GUI Start did not activate the Rust core, so Clash API/traffic/Stop proof was
+not obtained. Follow-ups F-1/F-2/F-3 are closed by packages 12/14/13; package07
+remains PARTIAL only for the real interactive Wails window. Full evidence:
+`post_fable_package07_gui_e2e_probe_note.md` + harness
 `post_fable_package07_probe_harness.sh` (same directory).
 
 ## Source Findings
@@ -123,3 +125,18 @@ Package15 closeout: `post_fable_package15_acceptance_closeout_manual_gates.sh`
 indexes this process-contract harness and records the remaining real Wails
 desktop-window E2E as a manual gate. package07 remains PARTIAL until that
 interactive run is actually performed and documented.
+
+Package17 external acceptance execution:
+
+- `WORK=/tmp/pf17_gui_contract bash post_fable_package07_probe_harness.sh`
+  reran the process-contract baseline and passed 14/14.
+- `wails doctor` PASS; a fresh Wails build succeeded with
+  `GOPROXY=https://goproxy.cn,direct` after the default Go proxy timed out.
+- The built app was launched with controlled App Support data, the real Wails
+  desktop process was visible to System Events, and the seeded `PF17 Local
+  Direct` profile plus `Click to Start` text were present in the AX UI tree.
+- Agent UI automation attempted Start, but no GUI-started Rust core, pid file,
+  generated config, Clash API, local proxy traffic, or GUI-driven Stop proof was
+  obtained.
+- package07 remains PARTIAL/BLOCKED; package17 is an execution record, not a
+  successful interactive GUI E2E closure.
