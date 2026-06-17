@@ -3,11 +3,12 @@
 
 ## Status
 
-PARTIAL (2026-06-16). Process-contract equivalence probe PASS (14/14);
-package17 built a fresh Wails app and observed the real desktop window/profile,
-but GUI Start did not activate the Rust core, so Clash API/traffic/Stop proof was
-not obtained. Follow-ups F-1/F-2/F-3 are closed by packages 12/14/13; package07
-remains PARTIAL only for the real interactive Wails window. Full evidence:
+PARTIAL (2026-06-17). Process-contract equivalence probe PASS (14/14);
+package18 built/launched the real Wails app and reached GUI-owned Rust
+core/API/loopback-traffic proof with `start_click=native_sent`, but the run
+ended `BLOCKED_STOP`. Follow-ups F-1/F-2/F-3 are closed by packages 12/14/13;
+package07 remains PARTIAL only for the full real interactive Wails Stop closure.
+Full evidence:
 `post_fable_package07_gui_e2e_probe_note.md` + harness
 `post_fable_package07_probe_harness.sh` (same directory).
 
@@ -140,3 +141,16 @@ Package17 external acceptance execution:
   obtained.
 - package07 remains PARTIAL/BLOCKED; package17 is an execution record, not a
   successful interactive GUI E2E closure.
+
+Package18 Wails desktop click automation:
+
+- Added `post_fable_package18_wails_desktop_click_automation.sh` plus docs and
+  evidence.
+- Latest artifact root: `/tmp/pf18_wails_click_automation/`.
+- The real Wails app launched from the built app bundle with controlled App
+  Support data and a seeded `PF18 Local Direct` profile.
+- The run produced GUI-owned Rust `pid.txt`, `config.json`, a GUI app-bundle
+  `core_command.txt`, successful Bearer `pf18probe` `/configs` and `/proxies`,
+  and loopback HTTP `200` through the mixed proxy.
+- Status remains PARTIAL because result was `BLOCKED_STOP`: Stop did not
+  complete through GUI automation.

@@ -7,14 +7,14 @@
 - **Process-contract equivalence probe: PASS** (14/14, reproducible) — the Rust kernel
   satisfies every process-level contract GUI.for SingBox 1.19.0 imposes on the kernel,
   exercised with GUI's exact launch arg vector + config layout.
-- **Interactive Wails desktop-window E2E: BLOCKED — not agent-drivable.** An automated
-  agent cannot click the GUI's Start/Stop/toggle buttons; `pnpm dev` alone lacks the
-  Wails-injected bridge. GUI **build environment** is ready (wails doctor SUCCESS), but
-  driving the window is out of reach. The contract-equivalence probe + static source
-  reading substitute for it (and are stronger evidence for the *kernel* side).
+- **Interactive Wails desktop-window E2E: PARTIAL/BLOCKED.** package17 could only
+  observe the real Wails window/profile. package18 improved this with desktop
+  automation plus external assist and reached GUI-owned core/API/loopback-traffic
+  proof with `start_click=native_sent`, but the run ended `BLOCKED_STOP`.
+  `pnpm dev` alone still lacks the Wails-injected bridge.
 - The probe originally found follow-ups F-1/F-2/F-3; they are now closed by
   packages 12/14/13. package07 remains PARTIAL only because the real interactive
-  Wails desktop-window flow is still not agent-drivable.
+  Wails desktop-window Start/Stop flow is not fully proven.
 
 This is probe/docs-only — no product code, no GUI source changed.
 
@@ -260,3 +260,54 @@ signal. The required GUI-driven Start -> Rust `gui_runtime` core -> Clash API ->
 local traffic -> Stop sequence was not proven. package07 remains PARTIAL/BLOCKED
 until a human operator or stronger desktop automation can activate Start and
 capture the complete flow.
+
+## package18 Wails Desktop Click Automation
+
+Date: 2026-06-17.
+
+Artifact root: `/tmp/pf18_wails_click_automation/`.
+
+New package18 artifacts:
+
+- `post_fable_package18_wails_desktop_click_automation.sh`
+- `post_fable_package18_wails_desktop_click_automation.md`
+- `post_fable_package18_wails_desktop_click_automation_evidence.md`
+
+Latest result:
+
+```json
+{
+  "status": "BLOCKED_STOP",
+  "drive_method": "computer_use_mcp",
+  "stages": {
+    "desktop_window": "external_confirmed",
+    "profile_visible": "external_confirmed",
+    "core_started": "pid_config_ports_present",
+    "clash_api": "pass",
+    "loopback_proxy_traffic": "pass",
+    "stop_click": "native_attempted_waiting_external",
+    "stop_cleanup": "failed"
+  }
+}
+```
+
+Evidence gained:
+
+- The real Wails app launched from
+  `GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app`.
+- The seeded `PF18 Local Direct` profile was visible in the real Wails window.
+- The GUI-generated `data/sing-box/config.json` existed and used mixed inbound
+  `127.0.0.1:20122`, Clash API `127.0.0.1:20123`, and secret `pf18probe`.
+- The GUI-owned core command pointed to the app bundle's `Contents/MacOS/data`
+  symlink path.
+- `/configs` and `/proxies` passed with Bearer `pf18probe`.
+- Loopback HTTP through the GUI-started mixed proxy returned `200` and body
+  `pf18 origin ok`.
+
+Why package07 is still PARTIAL:
+
+- The latest full package18 run reached Start as `native_sent`, not as a
+  manually clicked Start.
+- The Stop icon in the running Wails view was not successfully clicked by native
+  automation or `computer-use`; cleanup released ports afterward, so Stop was
+  not GUI-proven.

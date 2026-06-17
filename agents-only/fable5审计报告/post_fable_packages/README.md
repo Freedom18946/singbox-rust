@@ -46,6 +46,7 @@ reload/config switching does not silently break service.
 | post_fable_package15 | Acceptance closeout/manual gates | P2 | package03/package07 manual gates | DONE (automatic path indexed; root TUN + interactive Wails remain manual evidence) |
 | post_fable_package16 | Capabilities generator refresh path | P3 | package11 residual | DONE (validated generator anchors; tracked capabilities docs/report refreshed as docs-only) |
 | post_fable_package17 | External acceptance execution | P1 | package03/package07 external gates | DONE (real external gates attempted; package03/package07 remain PARTIAL without required PASS evidence) |
+| post_fable_package18 | Wails desktop click automation | P1 | package07 external gate | DONE (script/docs/evidence package; latest real Wails run reached GUI-owned core/API/traffic, then `BLOCKED_STOP`; package07 remains PARTIAL) |
 
 ## Recommended Execution Order
 
@@ -77,6 +78,9 @@ reload/config switching does not silently break service.
 11. Package17 executes the external acceptance gates. The current machine still
     lacks noninteractive root for TUN, and the Wails desktop window did not reach
     GUI-driven Start/core/API/traffic proof, so package03/package07 stay PARTIAL.
+12. Package18 adds a reproducible Wails desktop-click automation/evidence package.
+    Latest run reached real GUI-owned Rust core/API/traffic proof, but Stop did
+    not complete through GUI automation; package07 remains PARTIAL.
 
 ## CAL Coverage Matrix
 
@@ -129,6 +133,7 @@ reload/config switching does not silently break service.
 | Manual acceptance closeout | post_fable_package15 | DONE: root TUN and interactive Wails gates are indexed without marking package03/package07 DONE. |
 | Capabilities generator stale anchors | post_fable_package16 | CLOSED: static evidence anchors are validated and tracked docs/report refresh is restored. |
 | External acceptance execution | post_fable_package17 | DONE as an execution record: root TUN is BLOCKED by no noninteractive sudo; Wails window reached a visible profile but no GUI-driven core/traffic proof. |
+| Wails desktop click automation | post_fable_package18 | DONE as a script/docs/evidence package: real Wails core/API/traffic proof reached; latest run `BLOCKED_STOP`, package07 remains PARTIAL. |
 | H-7 Go BoltDB cache versus Rust sled cache | Future package if needed | Migration or compatibility posture. |
 | H-9 Go reload semantic details | post_fable_package07 and 05 | Exact reload design target. |
 | H-10 Subscription format coverage | post_fable_package08 | Additional fixture set and parser backlog. |
@@ -161,3 +166,6 @@ reload/config switching does not silently break service.
 - `post_fable_package16_capabilities_generator_refresh_path_evidence.md`
 - `post_fable_package17_external_acceptance_execution.md`
 - `post_fable_package17_external_acceptance_execution_evidence.md`
+- `post_fable_package18_wails_desktop_click_automation.md`
+- `post_fable_package18_wails_desktop_click_automation_evidence.md`
+- `post_fable_package18_wails_desktop_click_automation.sh`
