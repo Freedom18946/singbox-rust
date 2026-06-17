@@ -11,6 +11,12 @@ API responded, and loopback proxy traffic passed. The full package07 gate is
 still not DONE because the GUI Stop control was not successfully clicked by
 script/MCP before cleanup.
 
+package19 now owns the Stop-icon follow-up. Its latest run added stronger
+source-informed Stop targeting, but on this machine blocked earlier at
+`BLOCKED_ACCESSIBILITY`: CGWindow could see the Wails window, while AX/Computer
+Use could not expose the seeded profile/start controls. package07 therefore
+remains PARTIAL.
+
 Evidence: `post_fable_package18_wails_desktop_click_automation_evidence.md`.
 
 ## Objective
@@ -105,5 +111,6 @@ git diff --check
 ## Completion Notes
 
 No product-code changes were made. The remaining real desktop blocker is
-automating the running-view Stop icon reliably enough that the script can observe
-pid exit and port release without cleanup doing the stopping.
+recorded by package19: current-machine desktop accessibility/window exposure
+must allow the real Wails window contents to be driven far enough to reach the
+running-view Stop icon. Cleanup must not contribute to any future PASS.

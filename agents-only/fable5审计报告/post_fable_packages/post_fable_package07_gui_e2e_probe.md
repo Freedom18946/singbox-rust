@@ -3,12 +3,15 @@
 
 ## Status
 
-PARTIAL (2026-06-17). Process-contract equivalence probe PASS (14/14);
+PARTIAL (2026-06-17). Process-contract equivalence probe PASS (14/14).
 package18 built/launched the real Wails app and reached GUI-owned Rust
-core/API/loopback-traffic proof with `start_click=native_sent`, but the run
-ended `BLOCKED_STOP`. Follow-ups F-1/F-2/F-3 are closed by packages 12/14/13;
-package07 remains PARTIAL only for the full real interactive Wails Stop closure.
-Full evidence:
+core/API/loopback-traffic proof with `start_click=native_sent`, but ended
+`BLOCKED_STOP`. package19 added stronger Stop-icon automation and narrowed the
+latest blocker to `BLOCKED_ACCESSIBILITY`: CGWindow sees the Wails window, while
+AX/Computer Use cannot expose the seeded profile/start controls on this machine.
+Follow-ups F-1/F-2/F-3 are closed by packages 12/14/13; package07 remains
+PARTIAL until a real GUI Stop click stops the GUI-owned core and releases ports
+before cleanup. Full evidence:
 `post_fable_package07_gui_e2e_probe_note.md` + harness
 `post_fable_package07_probe_harness.sh` (same directory).
 
@@ -154,3 +157,17 @@ Package18 Wails desktop click automation:
   and loopback HTTP `200` through the mixed proxy.
 - Status remains PARTIAL because result was `BLOCKED_STOP`: Stop did not
   complete through GUI automation.
+
+Package19 Wails Stop icon automation:
+
+- Added `post_fable_package19_wails_stop_icon_automation.sh` plus docs and
+  evidence.
+- Latest artifact root: `/tmp/pf19_wails_stop_icon_automation/`.
+- The script preserves package18's Start/core/API/traffic gates and adds
+  source-informed Stop targeting from the running-view toolbar order
+  `log`, `restart`, `stop`.
+- Latest result is `BLOCKED_ACCESSIBILITY`: Swift/CGWindow confirmed the real
+  Wails window bounds, but AX and Computer Use could not expose the seeded
+  profile/start controls; the script did not reach Start or Stop.
+- package07 remains PARTIAL. No cleanup kill, SIGINT harness path, direct
+  `KillProcess` call, or human/manual click is counted as GUI Stop PASS.

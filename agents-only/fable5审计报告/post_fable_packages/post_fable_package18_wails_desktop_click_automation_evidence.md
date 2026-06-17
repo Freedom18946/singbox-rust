@@ -114,10 +114,18 @@ for the full app path, and System Events coordinate click was blocked by macOS
 assistive-access enforcement (`-25211`). Cleanup then killed the core and
 restored App Support, so package18 ended as `BLOCKED_STOP`.
 
+package19 supersedes this residual as the active Stop-icon automation package.
+It added source-informed Stop coordinates and a Swift/CGEvent helper, but the
+latest package19 run on this machine blocked earlier at `BLOCKED_ACCESSIBILITY`:
+the target Wails window had CGWindow bounds, while AX and Computer Use could not
+expose the seeded profile/start controls. No package07 DONE evidence was
+created.
+
 ## Status Decision
 
 package18 is DONE because the script, documentation, and evidence package now
 reproduce and preserve the real Wails desktop attempt.
 
 package07 remains PARTIAL because the full closure rule requires verified GUI
-Start and GUI Stop without relying on cleanup for Stop.
+Start and GUI Stop without relying on cleanup for Stop. package19 is the current
+follow-up evidence package for that residual.
