@@ -10,6 +10,10 @@
 
 ---
 
+## Resume (2026-06-19) - Go reference refresh
+
+- **Go reference source refreshed**: ignored external snapshot moved to `go_fork_source/sing-box-1.13.13` (`SagerNet/sing-box@v1.13.13`); GUI source untouched.
+
 ## Resume (2026-06-14) - POST-FABLE wave
 
 - **package10 DONE**: CAL-11/20-25 closed via tracing cleanup, config validation,
@@ -30,9 +34,6 @@
 - **post_fable packages15-19 DONE; GUI joint testing PAUSED_INDEFINITE**:
   package07 stays PARTIAL; Wails build artifacts removed and user App Support left on Go kernel/config.
 - **package01/package02 DONE**: startup keyword (`0a4cae74`); GUI flat TUN parses/lowers (`e3defcdf`).
-
-## Resume (2026-06-10) — closed (detail in baseline/archive)
-T3-2 + SVC-* + APP-SIDECAR-* + APP-V2RAY-* + APP-RELOAD-* CLOSED; REALITY boxed.
 
 ## Strategic State
 

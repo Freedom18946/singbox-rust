@@ -15,7 +15,7 @@
 ## 新增工具
 
 - `scripts/tools/reality_go_utls_dump.sh`
-  - 使用本地 `go_fork_source/sing-box-1.12.14`
+  - 使用本地 `go_fork_source/sing-box-1.13.13`
   - 调用 Go `NewRealityClient(... with_utls ...)`
   - 捕获首个 TLS record 并输出 hex
 - `crates/sb-tls/examples/reality_clienthello_dump.rs`
@@ -3055,7 +3055,7 @@
 ### TFO / socket 线索核对
 
 - Go 源码确认：
-  - `go_fork_source/sing-box-1.12.14/common/dialer/tfo.go`
+  - `go_fork_source/sing-box-1.13.13/common/dialer/tfo.go`
     - `slowOpenConn.Write(...)` 在首个 write 时会走：
       - `tfo.Dialer.DialContext(ctx, network, destination.String(), b)`
     - 也就是说，Go 确实具备“首次 ClientHello write 可以直接随 slow-open/TFO 发出”的能力

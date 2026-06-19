@@ -1700,7 +1700,7 @@ pub struct RawTunOptionsIR {
     pub platform: Option<String>,
     #[serde(default)]
     pub name: Option<String>,
-    /// Go 1.12.14 `interface_name` (post_fable_package02).
+    /// Go 1.13.13 `interface_name` (post_fable_package02).
     #[serde(default)]
     pub interface_name: Option<String>,
     #[serde(default)]
@@ -1717,7 +1717,7 @@ pub struct RawTunOptionsIR {
     pub auto_redirect: Option<bool>,
     #[serde(default)]
     pub strict_route: Option<bool>,
-    /// Go 1.12.14 merged `address` list (post_fable_package02).
+    /// Go 1.13.13 merged `address` list (post_fable_package02).
     #[serde(default)]
     pub address: Option<Vec<String>>,
     #[serde(default)]
@@ -1728,10 +1728,10 @@ pub struct RawTunOptionsIR {
     pub table_id: Option<u32>,
     #[serde(default)]
     pub fwmark: Option<u32>,
-    /// Go 1.12.14 `route_address` (post_fable_package02).
+    /// Go 1.13.13 `route_address` (post_fable_package02).
     #[serde(default)]
     pub route_address: Option<Vec<String>>,
-    /// Go 1.12.14 `route_exclude_address` (post_fable_package02).
+    /// Go 1.13.13 `route_exclude_address` (post_fable_package02).
     #[serde(default)]
     pub route_exclude_address: Option<Vec<String>>,
     #[serde(default)]
@@ -4268,7 +4268,7 @@ mod tests {
         assert_eq!(ir, ir2);
     }
 
-    /// post_fable_package02: Go 1.12.14-style fields (`interface_name`,
+    /// post_fable_package02: Go 1.13.13-style fields (`interface_name`,
     /// merged `address`, `route_address`, `route_exclude_address`) roundtrip
     /// through the strict Raw bridge, and serialization skips `None` fields
     /// (the runtime TunInboundConfig re-decode rejects explicit nulls).

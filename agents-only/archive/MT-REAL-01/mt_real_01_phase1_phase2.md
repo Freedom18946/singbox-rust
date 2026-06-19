@@ -120,7 +120,7 @@ FAIL cases and current attribution:
   - Rust stderr shows outbound dial EOF / registry fallback warning
 
 Notable environment/harness notes:
-- `p2_*_dual_dataplane_local` Go launch depended on `${INTEROP_GO_BINARY}`; after setting it to `go_fork_source/sing-box-1.12.14/sing-box`, `shadowsocks` / `shadowtls` / `trojan` local dual cases passed.
+- `p2_*_dual_dataplane_local` Go launch depended on `${INTEROP_GO_BINARY}`; after setting it to `go_fork_source/sing-box-1.13.13/sing-box`, `shadowsocks` / `shadowtls` / `trojan` local dual cases passed.
 - The broad `cargo run -p interop-lab -- case run --env-class strict` command includes Rust-only strict cases and can get dragged by protocol-unit cases; the effective MT-REAL-01 Phase 2 matrix was therefore produced from the explicit `strict && both` subset.
 
 Evidence:

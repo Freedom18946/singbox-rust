@@ -16,7 +16,7 @@
 | Date | 2026-04-10 |
 | Host | macOS (darwin 25.4.0) |
 | Rust binary | `target/release/app` (built with `--features parity`, MT-DEPLOY-01 baseline) |
-| Go binary | `go_fork_source/sing-box-1.12.14/sing-box` (pre-built) |
+| Go binary | `go_fork_source/sing-box-1.13.13/sing-box` (pre-built) |
 | Rust config | `labs/interop-lab/configs/l18_gui_rust.json` |
 | Go config | `labs/interop-lab/configs/l18_gui_go.json` |
 | Rust Clash API | `127.0.0.1:19090` (Bearer `test-secret`) |

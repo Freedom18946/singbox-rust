@@ -24,9 +24,9 @@
 |------|------|
 | GitHub | https://github.com/SagerNet/sing-box |
 | 官方文档 | https://sing-box.sagernet.org/ |
-| **本地源码** | `go_fork_source/sing-box-1.12.14` |
+| **本地源码** | `go_fork_source/sing-box-1.13.13` |
 
-> ⚠️ **注意**：具体版本已由用户指定，位于本地 `go_fork_source/sing-box-1.12.14`，不需要重复下载。以本地文件夹实现为准。
+> ⚠️ **注意**：具体版本已由用户指定，位于本地 `go_fork_source/sing-box-1.13.13`，不需要重复下载。以本地文件夹实现为准。
 
 ### 2.2 GUI.for" SingBox（GUI 前端）
 

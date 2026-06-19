@@ -74,7 +74,7 @@
 ## 环境约束
 
 - **Task subagent 必须用 `model: "opus"`**（haiku/sonnet 返回 403）。
-- **Go 参考源码**：`go_fork_source/sing-box-1.12.14/`
+- **Go 参考源码**：`go_fork_source/sing-box-1.13.13/`
 - **GUI 参考源码**：`GUI_fork_source/`
 - **AI 工作区**：`agents-only/`（启动检查清单：`agents-only/init.md`）
 
@@ -82,7 +82,7 @@
 
 ## 项目概况
 
-- **项目**：singbox-rust — Go sing-box 1.12.14 的 Rust 重写，与 GUI.for SingBox 完全兼容。
+- **项目**：singbox-rust — Go sing-box 1.13.13 的 Rust 重写，与 GUI.for SingBox 完全兼容。
 - **阶段框架**：L1-L25 基线阶段 + 2026-04 一批 MT-* 维护/验收线**全部关闭**；
   **MT-REAL-02（REALITY ClientHello / uTLS 对齐）实验线**（2026-04-16 重开）已 T3 收口、**本地主线封箱**。
   → 这条线的实时状态、轮次、结论一律见 `active_context.md`（**勿在本文件追当前轮次**）。

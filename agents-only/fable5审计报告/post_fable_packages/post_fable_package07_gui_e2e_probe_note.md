@@ -114,7 +114,7 @@ restart). package02 made the GUI flat TUN config pass schema/IR; turning TUN int
 validated dataplane remains **package03** (CAL-10: `mixed/gvisor` stack → real backend).
 No fix attempted here.
 
-## Go 1.12.14 Reload / Start Reference → package05 implications
+## Go 1.13.13 Reload / Start Reference → package05 implications
 
 Start phase order (`box.go`, `adapter/lifecycle.go:12-17`):
 ```

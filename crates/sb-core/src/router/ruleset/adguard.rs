@@ -2,7 +2,7 @@
 //!
 //! Converts AdGuard DNS filter rules into HeadlessRule JSON format compatible
 //! with sing-box rule-set v2. Ported from the Go reference implementation at
-//! `go_fork_source/sing-box-1.12.14/common/convertor/adguard/convertor.go`.
+//! `go_fork_source/sing-box-1.13.13/common/convertor/adguard/convertor.go`.
 //!
 //! # Supported syntax
 //!

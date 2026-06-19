@@ -45,9 +45,9 @@
 ### 1.2 已修复项（对照 Go 行为）
 
 Go 参考：
-- `go_fork_source/sing-box-1.12.14/service/ssmapi/server.go`
-- `go_fork_source/sing-box-1.12.14/service/ssmapi/api.go`
-- `go_fork_source/sing-box-1.12.14/service/ssmapi/cache.go`
+- `go_fork_source/sing-box-1.13.13/service/ssmapi/server.go`
+- `go_fork_source/sing-box-1.13.13/service/ssmapi/api.go`
+- `go_fork_source/sing-box-1.13.13/service/ssmapi/cache.go`
 
 修复点（原差距全部闭合）：
 - **per-endpoint inbound 绑定**：采用全局注册表（tag -> Weak<dyn ManagedSSMServer>）在构建 Shadowsocks inbound 时注册，SSMAPI 启动时按 `servers` 逐条完成 `set_tracker()` + `UserManager::with_server()` 绑定，并在启动前校验 inbound tag 存在且类型为 shadowsocks（配置错误直接失败且包含 endpoint + inbound_tag）。

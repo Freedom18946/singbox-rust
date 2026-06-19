@@ -28,7 +28,7 @@ for a config field whose product meaning is "start a gRPC API listener".
   HTTP/gRPC endpoint in that path. `listen_addr` is only logged at `:157-160`.
 - Config model: `crates/sb-config/src/ir/experimental.rs:58-65` defines
   `V2RayApiIR { listen, stats }`; stats fields are separate at `:96-108`.
-- Go semantics: `go_fork_source/sing-box-1.12.14/box.go:139-140` enables V2Ray API only when
+- Go semantics: `go_fork_source/sing-box-1.13.13/box.go:139-140` enables V2Ray API only when
   `listen` is non-empty; `experimental/v2rayapi/server.go:55-67` calls `net.Listen("tcp", s.listen)`
   and serves gRPC; docs say `listen` is the "gRPC API listening address" and empty disables it
   (`docs/configuration/experimental/v2ray-api.md:28-30`).

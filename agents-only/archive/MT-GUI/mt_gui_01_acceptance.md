@@ -16,7 +16,7 @@
 This card validates whether the project's local GUI integration path (GUI.for.SingBox 1.19.0 ↔
 Clash API ↔ kernel) behaves consistently when driven against:
 
-- **Go kernel** — `go_fork_source/sing-box-1.12.14/sing-box` (existing binary)
+- **Go kernel** — `go_fork_source/sing-box-1.13.13/sing-box` (existing binary)
 - **Rust kernel** — `target/release/app` (built with `--features parity`, MT-DEPLOY-01 baseline)
 
 The test design intentionally exercises only what the GUI itself uses, by reading
@@ -99,7 +99,7 @@ exactly what GUI.for.SingBox profiles look like before the user adds real protoc
 ./target/release/app run -c labs/interop-lab/configs/l18_gui_rust.json
 
 # Go kernel
-go_fork_source/sing-box-1.12.14/sing-box run -c labs/interop-lab/configs/l18_gui_go.json
+go_fork_source/sing-box-1.13.13/sing-box run -c labs/interop-lab/configs/l18_gui_go.json
 ```
 
 ### Reproducible scripts
@@ -229,7 +229,7 @@ cd /Users/bob/Desktop/Projects/ING/sing/singbox-rust
 
 # 1. Confirm both kernels exist
 ls target/release/app
-ls go_fork_source/sing-box-1.12.14/sing-box
+ls go_fork_source/sing-box-1.13.13/sing-box
 
 # 2. Run control-plane comparison (10 scenarios)
 bash agents-only/mt_gui_01_evidence/control_plane_test.sh

@@ -24,7 +24,7 @@ fn allowed_inbound_keys() -> HashSet<String> {
             "up_mbps",
             "down_mbps",
             "tls",
-            // Go 1.12.14 `ListenOptions` socket tuning fields. GUI.for
+            // Go 1.13.13 `ListenOptions` socket tuning fields. GUI.for
             // SingBox emits them on every listen-type inbound (mixed/http/
             // socks), so rejecting them blocks the same GUI launch path as
             // CAL-01. Accepted as schema-valid no-ops for now — not lowered
@@ -38,7 +38,7 @@ fn allowed_inbound_keys() -> HashSet<String> {
     set
 }
 
-/// Flat TUN-only fields (Go 1.12.14 `TunInboundOptions` subset accepted by
+/// Flat TUN-only fields (Go 1.13.13 `TunInboundOptions` subset accepted by
 /// the strict schema). Only valid on `type: "tun"` inbounds — any other
 /// inbound type carrying one of these is rejected as an unknown field.
 /// (post_fable_package02 / CAL-01)
@@ -1162,7 +1162,7 @@ mod tests {
     }
 
     // ========================================================================
-    // post_fable_package02 (CAL-01): GUI/Go 1.12.14 flat TUN schema parity
+    // post_fable_package02 (CAL-01): GUI/Go 1.13.13 flat TUN schema parity
     // ========================================================================
 
     /// GUI.for SingBox 1.19.0 default TUN inbound (generator.ts output),
@@ -1311,7 +1311,7 @@ mod tests {
         );
     }
 
-    /// H-4: GUI.for SingBox emits Go 1.12.14 `ListenOptions` socket tuning
+    /// H-4: GUI.for SingBox emits Go 1.13.13 `ListenOptions` socket tuning
     /// fields on every listen-type inbound — rejecting them blocks the same
     /// GUI launch path as CAL-01. Accepted as schema-valid no-ops.
     #[test]

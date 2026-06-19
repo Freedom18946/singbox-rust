@@ -23,7 +23,7 @@ SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
 BASELINE_LOCK="${L18_BASELINE_LOCK:-${ROOT_DIR}/reports/l18/baseline.lock.json}"
-GO_SOURCE_DIR="${L18_GO_SOURCE_DIR:-${ROOT_DIR}/go_fork_source/sing-box-1.12.14}"
+GO_SOURCE_DIR="${L18_GO_SOURCE_DIR:-${ROOT_DIR}/go_fork_source/sing-box-1.13.13}"
 GUI_PATH="${L18_GUI_PATH:-${ROOT_DIR}/GUI_fork_source/GUI.for.SingBox-1.19.0}"
 REQUIRED_PORTS_CSV="${L18_REQUIRED_PORTS:-9090,19090,11810,11811}"
 REQUIRE_DOCKER="${L18_REQUIRE_DOCKER:-0}"

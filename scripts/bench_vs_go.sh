@@ -53,7 +53,7 @@ for protocol in socks5 shadowsocks trojan; do
     cargo bench -p sb-benches --bench "$bench" -- "${BENCH_ARGS[@]}" 2>&1 | tee "$log_file" || true
 done
 
-GO_SRC_DIR="$PROJECT_ROOT/go_fork_source/sing-box-1.12.14"
+GO_SRC_DIR="$PROJECT_ROOT/go_fork_source/sing-box-1.13.13"
 GO_BINARY="$GO_SRC_DIR/sing-box"
 GO_STATUS="env_limited"
 GO_REASON="go_benchmark_unavailable"

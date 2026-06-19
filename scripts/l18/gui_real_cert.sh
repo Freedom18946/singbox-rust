@@ -28,7 +28,7 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 GUI_APP="${L18_GUI_APP:-}"
 GUI_PROCESS_NAME="${L18_GUI_PROCESS_NAME:-GUI.for.SingBox}"
 
-DEFAULT_GO_BIN="${ROOT_DIR}/go_fork_source/sing-box-1.12.14/sing-box"
+DEFAULT_GO_BIN="${ROOT_DIR}/go_fork_source/sing-box-1.13.13/sing-box"
 GO_BIN="${L18_GO_BIN:-${DEFAULT_GO_BIN}}"
 GO_CONFIG="${L18_GO_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_go.json}"
 GO_API_URL="${L18_GO_API_URL:-http://127.0.0.1:9090}"

@@ -2,7 +2,7 @@
 set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-GO_SRC="${ROOT}/go_fork_source/sing-box-1.12.14"
+GO_SRC="${ROOT}/go_fork_source/sing-box-1.13.13"
 
 SERVER_NAME="${SB_REALITY_SERVER_NAME:-www.apple.com}"
 FINGERPRINT="${SB_REALITY_FINGERPRINT:-chrome}"

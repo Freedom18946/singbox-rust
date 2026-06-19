@@ -66,7 +66,7 @@ and it does **not** touch `make check` / `scripts/ci/local.sh` (the fast path).
 
 ## C. Runner dependency inventory
 
-- **Go toolchain** building `go_fork_source/sing-box-1.12.14` with **`-tags with_utls`**
+- **Go toolchain** building `go_fork_source/sing-box-1.13.13` with **`-tags with_utls`**
   (the prebuilt top-level binary lacks uTLS). Verified locally: `go1.26.4 darwin/arm64`;
   `with_utls` builds fine on a general dev runner. Go is **already a capstone
   prerequisite** (`ORACLE` = `build_go_oracle.sh`).

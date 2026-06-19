@@ -1,6 +1,6 @@
 # L18 外部依赖参考（Go Kernel / GUI.for.SingBox）
 
-> 单页速查。Go 1.12.14 + GUI 1.19.0 锁定版本，不主动升级。
+> 单页速查。Go 1.13.13 + GUI 1.19.0 锁定版本，不主动升级。
 
 ---
 
@@ -66,7 +66,7 @@
 
 ```bash
 # 标准构建（L18 使用）
-cd go_fork_source/sing-box-1.12.14
+cd go_fork_source/sing-box-1.13.13
 go build -tags with_clash_api -ldflags "-s -w" -o sing-box ./cmd/sing-box
 
 # 验证
@@ -87,7 +87,7 @@ go build -tags with_clash_api -ldflags "-s -w" -o sing-box ./cmd/sing-box
 ```bash
 # 自动化构建（带 manifest + run-id）
 scripts/l18/build_go_oracle.sh \
-  --go-source-dir go_fork_source/sing-box-1.12.14 \
+  --go-source-dir go_fork_source/sing-box-1.13.13 \
   --build-tags with_clash_api
 ```
 

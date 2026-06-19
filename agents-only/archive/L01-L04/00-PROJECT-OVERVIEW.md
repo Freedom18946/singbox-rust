@@ -14,7 +14,7 @@ singbox-rust 是 sing-box (Go) 的 Rust 重写版本，设计理念：
 ### 当前状态
 - **Parity**: 100% acceptance baseline (209/209 closed, authoritative as of 2026-02-24)
 - **Remaining**: 0 open blocking items (`PX-015` Linux runtime/system bus runtime validation is accepted limitation)
-- **Baseline**: sing-box Go 1.12.14
+- **Baseline**: sing-box Go 1.13.13
 - **Rust Toolchain**: 1.92+
 
 ---

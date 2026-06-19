@@ -201,7 +201,7 @@ behavior that makes Scenario 12 (resolvable baseline) also return 200 with the s
 
 This is a **design-level divergence**, not a parity bug:
 
-- Go sing-box 1.12.14 has a built-in "fake DNS" answer path that returns synthetic addresses
+- Go sing-box 1.13.13 has a built-in "fake DNS" answer path that returns synthetic addresses
   for GUI-consumer paths, to keep the GUI chart happy even when upstream DNS is unavailable.
 - Rust singbox-rust propagates the lookup error and surfaces 500.
 
@@ -315,7 +315,7 @@ cd /Users/bob/Desktop/Projects/ING/sing/singbox-rust
 
 # 1. Confirm both kernels exist
 ls target/release/app
-ls go_fork_source/sing-box-1.12.14/sing-box
+ls go_fork_source/sing-box-1.13.13/sing-box
 
 # 2. Run full acceptance (mock + 2 kernels + 4 test scripts + cleanup)
 bash agents-only/mt_gui_02_evidence/run_acceptance.sh

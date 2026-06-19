@@ -5,7 +5,7 @@ set -euo pipefail
 cd "$(dirname "$0")/../.."
 
 RUST_BIN=./target/release/app
-GO_BIN=./go_fork_source/sing-box-1.12.14/sing-box
+GO_BIN=./go_fork_source/sing-box-1.13.13/sing-box
 RUST_CFG=labs/interop-lab/configs/l18_gui_rust.json
 GO_CFG=labs/interop-lab/configs/l18_gui_go.json
 MOCK_PY=agents-only/mt_gui_02_evidence/mock_public_infra.py

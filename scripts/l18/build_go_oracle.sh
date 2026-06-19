@@ -7,7 +7,7 @@ Usage:
   scripts/l18/build_go_oracle.sh [--go-source-dir PATH] [--output-root PATH] [--run-id ID] [--ldflags STR] [--build-tags TAGS]
 
 Defaults:
-  go source: go_fork_source/sing-box-1.12.14
+  go source: go_fork_source/sing-box-1.13.13
   output root: reports/l18/oracle/go
   run-id: UTC timestamp + random suffix
   build-tags: with_clash_api
@@ -17,7 +17,7 @@ USAGE
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-GO_SOURCE_DIR="${L18_GO_SOURCE_DIR:-${ROOT_DIR}/go_fork_source/sing-box-1.12.14}"
+GO_SOURCE_DIR="${L18_GO_SOURCE_DIR:-${ROOT_DIR}/go_fork_source/sing-box-1.13.13}"
 OUTPUT_ROOT="${L18_GO_ORACLE_OUTPUT_ROOT:-${ROOT_DIR}/reports/l18/oracle/go}"
 RUN_ID="${L18_RUN_ID:-}"
 LDFLAGS="${L18_GO_ORACLE_LDFLAGS:--s -w}"

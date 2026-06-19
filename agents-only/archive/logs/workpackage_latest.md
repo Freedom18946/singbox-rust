@@ -4858,7 +4858,7 @@
 - 按需清理并重编 3 个关键产物：
   - `target/debug/app`：`cargo build -p app --features parity --bin app`
   - `target/release/run`：`cargo build --release -p app --features parity --bin run`
-  - `go_fork_source/sing-box-1.12.14/sing-box`：`go build -tags with_clash_api`
+  - `go_fork_source/sing-box-1.13.13/sing-box`：`go build -tags with_clash_api`
 - 产物探测：3 个产物启动后 `GET /proxies` 均为 `200`。
 - startup 多轮复验（关闭自动重编）：
   - 命令：`scripts/l18/gui_real_cert.sh --gui-app ... --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1 --go-build-enabled 0 --rust-build-enabled 0`
@@ -4887,7 +4887,7 @@
 - `gui_smoke/canary` 由可选留痕改为必过阻断。
 - `docker` 在本机模式默认非阻断（`--require-docker 0`），在 CI/certify 模式可切回阻断（`--require-docker 1`）。
 - 前置缺失直接 `FAIL`，不再允许 `SKIP/BLOCKED`。
-- Go Oracle 每轮本地现编译（`go_fork_source/sing-box-1.12.14`）。
+- Go Oracle 每轮本地现编译（`go_fork_source/sing-box-1.13.13`）。
 - 认证环境收敛为 macOS（self-hosted runner）。
 
 **沙盒不扰民（新增硬约束）**：

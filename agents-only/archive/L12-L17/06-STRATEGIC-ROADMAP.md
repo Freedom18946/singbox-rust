@@ -207,7 +207,7 @@ cargo check -p sb-adapters                            # 不受影响 ✅
 ## L2: 功能对齐（Tier 1 ✅ 完成，Tier 2 ✅ 完成）
 
 ### 目标
-达成与 Go sing-box 1.12.14 的功能对等。
+达成与 Go sing-box 1.13.13 的功能对等。
 
 ### 缺口分析
 > **详细文档**: `agents-only/05-analysis/L2-PARITY-GAP-ANALYSIS.md`

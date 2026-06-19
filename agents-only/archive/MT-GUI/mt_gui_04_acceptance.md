@@ -230,7 +230,7 @@ cd /Users/bob/Desktop/Projects/ING/sing/singbox-rust
 
 # Confirm prerequisites
 ls target/release/app
-ls go_fork_source/sing-box-1.12.14/sing-box
+ls go_fork_source/sing-box-1.13.13/sing-box
 
 # Run the exhaustive sweep
 bash agents-only/mt_gui_04_evidence/exhaustive_sweep.sh

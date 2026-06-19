@@ -23,7 +23,7 @@ bootstrap:
       base_url: http://127.0.0.1:19290
       secret: test-secret
   go:
-    command: go_fork_source/sing-box-1.12.14/sing-box
+    command: go_fork_source/sing-box-1.13.13/sing-box
     args:
     - run
     - -c

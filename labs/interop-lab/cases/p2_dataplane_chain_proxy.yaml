@@ -20,7 +20,7 @@ bootstrap:
       base_url: http://127.0.0.1:19290
       secret: test-secret
   go:
-    command: go_fork_source/sing-box-1.12.14/sing-box
+    command: go_fork_source/sing-box-1.13.13/sing-box
     args:
       - run
       - -c
@@ -49,7 +49,7 @@ traffic_plan:
       - |
         pkill -f 'labs/interop-lab/configs/go_core_second_hop_socks.json' >/dev/null 2>&1 || true
         rm -f /tmp/interop-chain-hop.pid
-        nohup go_fork_source/sing-box-1.12.14/sing-box run -c labs/interop-lab/configs/go_core_second_hop_socks.json >/tmp/interop-chain-hop.log 2>&1 &
+        nohup go_fork_source/sing-box-1.13.13/sing-box run -c labs/interop-lab/configs/go_core_second_hop_socks.json >/tmp/interop-chain-hop.log 2>&1 &
         echo $! >/tmp/interop-chain-hop.pid
         sleep 1
         kill -0 "$(cat /tmp/interop-chain-hop.pid)"

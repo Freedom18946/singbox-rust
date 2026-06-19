@@ -51,7 +51,7 @@ DUAL_GO_CONFIG="${L18_DUAL_GO_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_g
 DUAL_RUST_CONFIG="${L18_DUAL_RUST_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_rust.json}"
 DUAL_RUST_BIN="${L18_DUAL_RUST_BIN:-${ROOT_DIR}/target/release/run}"
 DUAL_RUST_APP_BIN="${L18_DUAL_RUST_APP_BIN:-${ROOT_DIR}/target/release/app}"
-DUAL_GO_BIN="${L18_DUAL_GO_BIN:-${ROOT_DIR}/go_fork_source/sing-box-1.12.14/sing-box}"
+DUAL_GO_BIN="${L18_DUAL_GO_BIN:-${ROOT_DIR}/go_fork_source/sing-box-1.13.13/sing-box}"
 GO_PROXY_PORT="${L18_GO_PROXY_PORT:-11811}"
 RUST_PROXY_PORT="${L18_RUST_PROXY_PORT:-11810}"
 

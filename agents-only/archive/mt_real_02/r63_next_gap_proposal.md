@@ -53,7 +53,7 @@ last 4 rows only: BHV-LC-003 and BHV-SV-005 through BHV-SV-007.
 - **Reuses R62 framework?**: partial. The generic health/run outcome
   primitives can classify repeated dual-kernel service-start attempts,
   but service-health schema would need a new evidence adapter.
-- **Reference Go file path**: `go_fork_source/sing-box-1.12.14/service/`
+- **Reference Go file path**: `go_fork_source/sing-box-1.13.13/service/`
   plus service users under `experimental/clashapi/server.go`.
 - **Reference Rust file path**: `crates/sb-core/src/services/`,
   `app/src/bootstrap_runtime/api_services.rs`,
@@ -78,7 +78,7 @@ last 4 rows only: BHV-LC-003 and BHV-SV-005 through BHV-SV-007.
   Provider-list runs can use generic latest_health/run labels, but the
   provider response shape needs a protocol-specific comparer.
 - **Reference Go file path**:
-  `go_fork_source/sing-box-1.12.14/experimental/clashapi/provider.go`.
+  `go_fork_source/sing-box-1.13.13/experimental/clashapi/provider.go`.
 - **Reference Rust file path**: `crates/sb-api/src/clash/handlers.rs`,
   `crates/sb-api/src/managers.rs`,
   `crates/sb-api/tests/clash_http_e2e.rs`.
@@ -100,7 +100,7 @@ last 4 rows only: BHV-LC-003 and BHV-SV-005 through BHV-SV-007.
 - **Reuses R62 framework?**: yes for repeated pass/fail/run-family
   tracking; partial for provider-specific response comparison.
 - **Reference Go file path**:
-  `go_fork_source/sing-box-1.12.14/experimental/clashapi/ruleprovider.go`.
+  `go_fork_source/sing-box-1.13.13/experimental/clashapi/ruleprovider.go`.
 - **Reference Rust file path**: `crates/sb-api/src/clash/handlers.rs`,
   `crates/sb-api/src/managers.rs`,
   `crates/sb-api/tests/clash_http_e2e.rs`.
@@ -122,7 +122,7 @@ last 4 rows only: BHV-LC-003 and BHV-SV-005 through BHV-SV-007.
 - **Reuses R62 framework?**: yes for repeated health/run classification;
   partial for response semantics and provider-health dimensions.
 - **Reference Go file path**:
-  `go_fork_source/sing-box-1.12.14/experimental/clashapi/provider.go`.
+  `go_fork_source/sing-box-1.13.13/experimental/clashapi/provider.go`.
 - **Reference Rust file path**: `crates/sb-api/src/clash/handlers.rs`,
   `crates/sb-api/src/managers.rs`,
   `crates/sb-api/tests/clash_http_e2e.rs`.
@@ -168,8 +168,8 @@ last 4 rows only: BHV-LC-003 and BHV-SV-005 through BHV-SV-007.
   and S6.
 - Cases: `labs/interop-lab/cases/p1_service_failure_isolation.yaml`,
   `labs/interop-lab/cases/p1_optional_endpoints_contract.yaml`.
-- Provider Go paths: `go_fork_source/sing-box-1.12.14/experimental/clashapi/provider.go`,
-  `go_fork_source/sing-box-1.12.14/experimental/clashapi/ruleprovider.go`.
+- Provider Go paths: `go_fork_source/sing-box-1.13.13/experimental/clashapi/provider.go`,
+  `go_fork_source/sing-box-1.13.13/experimental/clashapi/ruleprovider.go`.
 - Provider Rust paths: `crates/sb-api/src/clash/handlers.rs`,
   `crates/sb-api/src/managers.rs`, `crates/sb-api/tests/clash_http_e2e.rs`.
 - Service Rust paths: `crates/sb-core/src/services/`,

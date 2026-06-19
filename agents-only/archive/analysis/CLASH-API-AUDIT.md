@@ -2,7 +2,7 @@
 
 > 生成时间: 2026-02-08
 > 修复完成: 2026-02-08
-> 基于: Go sing-box 1.12.14 · GUI.for.SingBox 1.19.0 · singbox-rust (main HEAD)
+> 基于: Go sing-box 1.13.13 · GUI.for.SingBox 1.19.0 · singbox-rust (main HEAD)
 > 方法: 逐端点读取 Go/GUI/Rust 源码，提取 JSON schema 并交叉对比
 > **状态: ✅ 全部 18 项已修复 (P0×8 + P1×7 + P2×3)**
 

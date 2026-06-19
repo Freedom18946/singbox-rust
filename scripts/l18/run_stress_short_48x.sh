@@ -155,7 +155,7 @@ mkdir -p "${CANARY_RUNTIME_DIR}" "${RUN_DIR}/canary" "${GUI_DIR}" "${INTEROP_ART
 
 RUST_BIN="${ROOT_DIR}/target/release/run"
 RUST_APP_BIN="${ROOT_DIR}/target/release/app"
-GO_BIN="${ROOT_DIR}/go_fork_source/sing-box-1.12.14/sing-box"
+GO_BIN="${ROOT_DIR}/go_fork_source/sing-box-1.13.13/sing-box"
 P2_ROUNDS_TOTAL=4
 WS_PARALLEL_FACTOR=4
 PERF_SAMPLE_FACTOR=3

@@ -11,7 +11,7 @@ SUB_URL="$MOCK_HTTP/sub/clash.json"
 SUB_BEARER="mt-gui-02-sub-bearer"
 REPO="/Users/bob/Desktop/Projects/ING/sing/singbox-rust"
 RUST_BIN="$REPO/target/release/app"
-GO_BIN="$REPO/go_fork_source/sing-box-1.12.14/sing-box"
+GO_BIN="$REPO/go_fork_source/sing-box-1.13.13/sing-box"
 
 echo "=== MT-GUI-02 subscription refresh simulation ==="
 echo "Date: $(date -u +%Y-%m-%dT%H:%M:%SZ)"

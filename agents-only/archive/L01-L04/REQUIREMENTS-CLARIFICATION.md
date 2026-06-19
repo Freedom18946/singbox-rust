@@ -42,7 +42,7 @@ return res.match(/version (\S+)/)?.[1] || ''  // 关键正则
 **兼容性要求**：
 - Rust 版本输出必须包含 `version X.X.X` 格式
 - 示例：`singbox-rust version 0.1.0`（会被解析为 `0.1.0`）
-- Go 输出：`sing-box version 1.12.14 ...`
+- Go 输出：`sing-box version 1.13.13 ...`
 
 ---
 

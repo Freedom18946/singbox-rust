@@ -1,5 +1,5 @@
 <!-- tier: B -->
-# post_fable_package02 — Go 1.12.14 TUN option diff record
+# post_fable_package02 — Go 1.13.13 TUN option diff record
 
 Scope: schema/IR parity only (CAL-01 + H-4). **Not dataplane-ready** — `stack` and all
 route/address semantics are stored, not executed; runtime mapping is package03 scope.
@@ -7,7 +7,7 @@ Code commit: `e3defcdf`.
 
 ## Sources
 
-- Go field inventory: `go_fork_source/sing-box-1.12.14/option/tun.go:13-59`
+- Go field inventory: `go_fork_source/sing-box-1.13.13/option/tun.go:13-59`
   (`TunInboundOptions`), `option/tun_platform.go:5-14`, `option/inbound.go:51-59`
   (embedded `InboundOptions`; TUN does **not** embed `ListenOptions`).
 - GUI emission: `GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/utils/generator.ts:66-93`
@@ -22,7 +22,7 @@ Code commit: `e3defcdf`.
 endpoint_independent_nat:false, stack:"mixed"}`; `route_address`/`route_exclude_address`
 only when non-empty. No listen block / sniff / platform on TUN.
 
-## Field matrix (Go 1.12.14 json tag → status after package02)
+## Field matrix (Go 1.13.13 json tag → status after package02)
 
 | Go field | GUI emits | Rust schema | Rust IR | Notes |
 |---|---|---|---|---|

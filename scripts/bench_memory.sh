@@ -13,7 +13,7 @@ mkdir -p "$REPORT_DIR" "$WORK_DIR"
 
 RUST_BINARY="${SINGBOX_BINARY:-$ROOT_DIR/target/debug/run}"
 RUST_CONFIG="${SINGBOX_CONFIG:-$ROOT_DIR/labs/interop-lab/configs/bench_rust.json}"
-GO_SRC_DIR="$ROOT_DIR/go_fork_source/sing-box-1.12.14"
+GO_SRC_DIR="$ROOT_DIR/go_fork_source/sing-box-1.13.13"
 GO_BINARY="${GO_BINARY:-$GO_SRC_DIR/sing-box}"
 GO_CONFIG="${GO_CONFIG:-$ROOT_DIR/labs/interop-lab/configs/bench_go.json}"
 RUST_PROXY_ADDR="${RUST_PROXY_ADDR:-127.0.0.1:11810}"

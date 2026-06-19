@@ -1,8 +1,8 @@
 # sing-box Go 项目规范文档
 
-> **版本**: 1.12.14  
-> **语言**: Go 1.23.1  
-> **许可证**: GPLv3  
+> **版本**: 1.13.13
+> **语言**: Go 1.23.1
+> **许可证**: GPLv3
 > **官方文档**: https://sing-box.sagernet.org
 
 ---
@@ -53,7 +53,7 @@ sing-box 是一个通用代理平台（The Universal Proxy Platform），由 nek
 ## 2. 目录结构
 
 ```
-sing-box-1.12.14/
+sing-box-1.13.13/
 ├── box.go                    # 主引擎，Box 结构体和生命周期管理
 ├── adapter/                  # 核心接口定义层
 ├── protocol/                 # 协议实现层 (23种协议)

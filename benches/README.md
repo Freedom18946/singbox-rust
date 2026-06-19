@@ -107,7 +107,7 @@ criterion_main!(benches);
 
 ## Performance Goals
 
-Target performance relative to Go sing-box 1.12.14:
+Target performance relative to Go sing-box 1.13.13:
 
 - **Latency**: Within 20% (preferably better)
 - **Throughput**: >= 80% (target: 100%+)
@@ -140,8 +140,8 @@ cargo check --package sb-benches --all-features
 ### Go Comparison Not Available
 
 The Go binary is gitignored. To enable comparison:
-1. Obtain Go sing-box 1.12.14 source
-2. Place in `go_fork_source/sing-box-1.12.14/`
+1. Obtain Go sing-box 1.13.13 source
+2. Place in `go_fork_source/sing-box-1.13.13/`
 3. Build or provide pre-built binary
 
 ## References

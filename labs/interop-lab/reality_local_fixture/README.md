@@ -83,7 +83,7 @@ evidence → tears everything down.
 
 ### Prerequisites
 
-- Go toolchain (builds `go_fork_source/sing-box-1.12.14` with `-tags with_utls`;
+- Go toolchain (builds `go_fork_source/sing-box-1.13.13` with `-tags with_utls`;
   the prebuilt top-level binary lacks uTLS and will not work).
 - Rust / cargo.
 - `curl` and `python3` (stdlib only).

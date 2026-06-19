@@ -3,7 +3,7 @@ set -euo pipefail
 
 REPO="/Users/bob/Desktop/Projects/ING/sing/singbox-rust"
 RUST_BIN="$REPO/target/release/app"
-GO_BIN="$REPO/go_fork_source/sing-box-1.12.14/sing-box"
+GO_BIN="$REPO/go_fork_source/sing-box-1.13.13/sing-box"
 RUST_CFG="$REPO/labs/interop-lab/configs/l18_gui_rust.json"
 GO_CFG="$REPO/labs/interop-lab/configs/l18_gui_go.json"
 RUST_API="http://127.0.0.1:19090"

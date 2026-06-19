@@ -56,7 +56,7 @@ following questions, one divergence at a time:
 | `labs/interop-lab/docs/dual_kernel_golden_spec.md §S4` | Authoritative DIV registry as of this card |
 | `labs/interop-lab/cases/p1_gui_connections_tracking.yaml` | Existing dual-kernel case for `/connections` live counter semantics (reveals what is already asserted and what is not) |
 | `labs/interop-lab/cases/p1_dns_query_endpoint_contract.yaml` | Existing dual-kernel case for `/dns/query` (resolvable only, status-assertion axis) |
-| `go_fork_source/sing-box-1.12.14/experimental/clashapi/dns.go` | Confirms Go's `/dns/query` returns 500 on router.Exchange error — so the CP-13 divergence is not at the HTTP handler level but at the internal DNS router's behavior on an unconfigured resolver |
+| `go_fork_source/sing-box-1.13.13/experimental/clashapi/dns.go` | Confirms Go's `/dns/query` returns 500 on router.Exchange error — so the CP-13 divergence is not at the HTTP handler level but at the internal DNS router's behavior on an unconfigured resolver |
 
 No new reproduction was necessary: the MT-GUI-02 evidence files are dated `Apr 12 05:30–05:31`
 (this morning's re-run) and already contain the raw strings this card is classifying.
@@ -240,7 +240,7 @@ distinct axis.
   the response).
 
 **Root-cause reading** (from Go source at
-`go_fork_source/sing-box-1.12.14/experimental/clashapi/dns.go:22-48`):
+`go_fork_source/sing-box-1.13.13/experimental/clashapi/dns.go:22-48`):
 
 1. Go's `queryDNS` handler would return 500 if `router.Exchange(ctx, &msg, …)` returns an
    error. So the CP-13 divergence is **not** in the Clash API layer — it is in Go's internal

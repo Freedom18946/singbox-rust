@@ -38,7 +38,7 @@ USAGE
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 ROOT_DIR="$(cd "${SCRIPT_DIR}/../.." && pwd)"
 
-GO_BIN="${L18_GO_BIN:-${ROOT_DIR}/go_fork_source/sing-box-1.12.14/sing-box}"
+GO_BIN="${L18_GO_BIN:-${ROOT_DIR}/go_fork_source/sing-box-1.13.13/sing-box}"
 GO_CONFIG="${L18_GO_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_perf_go.json}"
 GO_PROXY_PORT="${L18_GO_PROXY_PORT:-11811}"
 

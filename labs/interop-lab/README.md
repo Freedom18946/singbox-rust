@@ -106,7 +106,7 @@ cargo run -p interop-lab -- case run p2_connections_ws_soak_suite
 Dual-kernel replay with a manually managed Go oracle:
 
 ```bash
-go_fork_source/sing-box-1.12.14/sing-box run -c labs/interop-lab/configs/l18_gui_go.json
+go_fork_source/sing-box-1.13.13/sing-box run -c labs/interop-lab/configs/l18_gui_go.json
 cargo run -p interop-lab -- case run p2_connections_ws_soak_dual_core
 cargo run -p interop-lab -- case diff p2_connections_ws_soak_dual_core
 ```

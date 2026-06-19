@@ -161,7 +161,7 @@ GOEOF
 echo "[tls-fp-baseline] collecting Go ClientHello samples..."
 for profile in "${PROFILES[@]}"; do
   (
-    cd "${ROOT}/go_fork_source/sing-box-1.12.14"
+    cd "${ROOT}/go_fork_source/sing-box-1.13.13"
     go run "${GO_PROBE}" "${profile}"
   ) > "${TMP_DIR}/go_${profile}.json"
 done

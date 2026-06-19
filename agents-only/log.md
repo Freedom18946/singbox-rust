@@ -6516,7 +6516,7 @@
   - 信号处理（SIGTERM/SIGHUP）
 
 **结果**: 成功
-**备注**: 从 go_fork_source/sing-box-1.12.14 和 GUI_fork_source 提取
+**备注**: 从 go_fork_source/sing-box-1.13.13 和 GUI_fork_source 提取
 
 ---
 
@@ -7323,7 +7323,7 @@ L2.8.4-6 Handlers + WebSocket:
 - 删除并重建：
   - `target/debug/app`（`cargo build -p app --features parity --bin app`）
   - `target/release/run`（`cargo build --release -p app --features parity --bin run`）
-  - `go_fork_source/sing-box-1.12.14/sing-box`（`go build -tags with_clash_api`）
+  - `go_fork_source/sing-box-1.13.13/sing-box`（`go build -tags with_clash_api`）
 - 产物探测：三者分别启动后 `GET /proxies` 均返回 `200`。
 
 **稳定性复验**:
@@ -7844,7 +7844,7 @@ L2.8.4-6 Handlers + WebSocket:
 **变更**:
 - 清理工作区：
   - 删除 `target/`、`app/target/`、`.cache/`、`reports/l18/oracle/`、绝大多数 `reports/l18/batches/` 运行产物，以及本地构建/缓存类大目录
-  - 恢复源码级外部依赖：`go_fork_source/sing-box-1.12.14`（`SagerNet/sing-box@v1.12.14`）与 `GUI_fork_source/GUI.for.SingBox-1.19.0`（`GUI-for-Cores/GUI.for.SingBox@v1.19.0`），仅保留源码树，不带各自 `.git`
+  - 恢复源码级外部依赖：`go_fork_source/sing-box-1.13.13`（`SagerNet/sing-box@v1.13.13`）与 `GUI_fork_source/GUI.for.SingBox-1.19.0`（`GUI-for-Cores/GUI.for.SingBox@v1.19.0`），仅保留源码树，不带各自 `.git`
 - 状态校正：
   - 确认 `nightly` 24h 结论已在文档中闭环，`20260307T230356Z-l18-nightly-24h` 为 full PASS
   - 确认当前无活动 `certify` 进程；`20260309T004649Z-l18-certify-7d` 未形成可用结论，不计作有效认证证据

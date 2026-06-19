@@ -2,7 +2,7 @@
 
 Date: 2026-03-11
 
-Goal: produce reproducible protocol parity evidence against Go `sing-box 1.12.14` without relying on historical "production ready" wording.
+Goal: produce reproducible protocol parity evidence against Go `sing-box 1.13.13` without relying on historical "production ready" wording.
 
 ## Current status
 
@@ -43,8 +43,8 @@ Goal: produce reproducible protocol parity evidence against Go `sing-box 1.12.14
     - `cargo build -p interop-lab`
     - `cargo check -p app --features adapters --tests`
     - `cargo run -p interop-lab -- case run p2_shadowtls_dual_dataplane_local --kernel rust`
-    - `INTEROP_GO_BINARY=reports/l18/oracle/go/shadowtls-interop-11214/sing-box cargo run -p interop-lab -- case run p2_shadowtls_dual_dataplane_local --kernel go`
-    - `INTEROP_GO_BINARY=reports/l18/oracle/go/shadowtls-interop-11214/sing-box cargo run -p interop-lab -- case run p2_shadowtls_dual_dataplane_local`
+    - `INTEROP_GO_BINARY=reports/l18/oracle/go/shadowtls-interop-1313/sing-box cargo run -p interop-lab -- case run p2_shadowtls_dual_dataplane_local --kernel go`
+    - `INTEROP_GO_BINARY=reports/l18/oracle/go/shadowtls-interop-1313/sing-box cargo run -p interop-lab -- case run p2_shadowtls_dual_dataplane_local`
   - The current Rust `shadowtls` adapter remains registrable, with parity evidence now limited to the detour-only `version = 1` wrapper path. Standalone leaf dialing remains intentionally out of scope.
   - Minimum dual-kernel Go/Rust parity is now established for the local `Shadowsocks -> detour=ShadowTLS(v1)` wrapper-chain case.
   - New local dual-kernel case exists:
@@ -55,7 +55,7 @@ Goal: produce reproducible protocol parity evidence against Go `sing-box 1.12.14
     - `crates/sb-adapters/src/outbound/shadowtls.rs` now performs a TLS 1.2 handshake for camouflage and returns the raw stream for `version = 1`,
     - `labs/interop-lab/src/upstream.rs` now models the server side as `TLS record relay for handshake -> raw TCP relay for payload`, instead of TLS termination,
     - Rust-only run `20260310T175904Z-9e2ab106-0ad1-4b4f-8f2d-86ea9b0e47ba` passed with `stl_tcp_ok=true`, `stl_tcp_strict_cert=false`, `errors.count=0`,
-    - Go-only run `20260310T180019Z-c0f1a5a0-cb3f-4073-b8ce-b3a33892c8c7` passed with the same outcome against a freshly rebuilt oracle from `go_fork_source/sing-box-1.12.14`,
+    - Go-only run `20260310T180019Z-c0f1a5a0-cb3f-4073-b8ce-b3a33892c8c7` passed with the same outcome against a freshly rebuilt oracle from `go_fork_source/sing-box-1.13.13`,
     - combined dual-kernel run `20260310T180117Z-a452c721-28f9-452d-954f-ceffe0e4e3e6` produced matching Rust/Go snapshots for both the positive path and the strict-cert negative path.
   - Additional runtime/config progress on 2026-03-11:
     - `crates/sb-adapters/src/outbound/shadowtls.rs` now supports outbound `version = 2` in detour mode by preserving the handshake hash prefix and switching the returned stream to ShadowTLS v2 application-data framing after TLS camouflage,

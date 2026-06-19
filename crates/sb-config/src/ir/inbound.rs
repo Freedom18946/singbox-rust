@@ -757,7 +757,7 @@ pub struct TunOptionsIR {
     pub platform: Option<String>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub name: Option<String>,
-    /// Go 1.12.14 `interface_name`. Lowering also mirrors it into `name`
+    /// Go 1.13.13 `interface_name`. Lowering also mirrors it into `name`
     /// (compat alias for the runtime `TunInboundConfig.name` consumer).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub interface_name: Option<String>,
@@ -775,7 +775,7 @@ pub struct TunOptionsIR {
     pub auto_redirect: Option<bool>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub strict_route: Option<bool>,
-    /// Go 1.12.14 merged `address` list (supersedes the deprecated
+    /// Go 1.13.13 merged `address` list (supersedes the deprecated
     /// `inet4_address`/`inet6_address` pair). Kept as-is; no v4/v6 split
     /// at the schema/IR layer (dataplane interpretation = package03).
     #[serde(default, skip_serializing_if = "Option::is_none")]
@@ -788,10 +788,10 @@ pub struct TunOptionsIR {
     pub table_id: Option<u32>,
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub fwmark: Option<u32>,
-    /// Go 1.12.14 `route_address` (supersedes deprecated `inet4/6_route_address`).
+    /// Go 1.13.13 `route_address` (supersedes deprecated `inet4/6_route_address`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route_address: Option<Vec<String>>,
-    /// Go 1.12.14 `route_exclude_address` (supersedes deprecated
+    /// Go 1.13.13 `route_exclude_address` (supersedes deprecated
     /// `inet4/6_route_exclude_address`).
     #[serde(default, skip_serializing_if = "Option::is_none")]
     pub route_exclude_address: Option<Vec<String>>,

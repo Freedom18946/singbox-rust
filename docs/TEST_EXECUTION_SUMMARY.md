@@ -137,7 +137,7 @@ cargo bench --features bench -- --save-baseline m1-baseline
 **Setup:**
 ```bash
 # Build Go sing-box baseline
-cd go_fork_source/sing-box-1.12.14
+cd go_fork_source/sing-box-1.13.13
 go build -o sing-box-go ./cmd/sing-box
 
 # Start Go Trojan server (Go sing-box requires JSON config)

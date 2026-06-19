@@ -396,7 +396,7 @@ sing-box tools synctime [flags]
 sing-box version
 
 # 输出
-sing-box version 1.12.14
+sing-box version 1.13.13
 
 Environment: go1.23.1 darwin/arm64
 Tags: with_gvisor,with_quic,with_wireguard,with_utls,with_reality_server,with_clash_api,with_v2ray_api,with_tailscale

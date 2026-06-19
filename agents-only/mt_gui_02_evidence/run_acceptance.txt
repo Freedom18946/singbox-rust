@@ -2,7 +2,7 @@
 Date: 2026-04-11T21:30:31Z
 Repo: /Users/bob/Desktop/Projects/ING/sing/singbox-rust
 Rust binary: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/app
-Go   binary: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.14/sing-box
+Go   binary: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.13.13/sing-box
 Rust config: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/l18_gui_rust.json
 Go   config: /Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/l18_gui_go.json
 

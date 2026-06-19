@@ -16,10 +16,10 @@ source, and Go source:
    `/connections`, `/providers/*`, `/script`, `/profile`, `/cache`,
    and `/dns`, but no `/services/health`; today's comparable Go
    response is therefore a route miss rather than a health payload
-   (go_fork_source/sing-box-1.12.14/experimental/clashapi/server.go:114).
+   (go_fork_source/sing-box-1.13.13/experimental/clashapi/server.go:114).
    The Go service manager also returns the first service start error
    without a persisted health snapshot
-   (go_fork_source/sing-box-1.12.14/adapter/service/manager.go:36).
+   (go_fork_source/sing-box-1.13.13/adapter/service/manager.go:36).
 2. Rust side: `GET /services/health` is routed, but the handler is a
    static stub returning `{"healthy": true, "services": []}`
    (crates/sb-api/src/clash/server.rs:341,
@@ -132,7 +132,7 @@ the Rust config has no broken service and Rust service health is static
 - **Goal**: Provide the Go side with an equivalent service-health output
   path for LC-003, or land an explicit blocker note if Go fork edits are
   rejected before implementation.
-- **Files to touch**: go_fork_source/sing-box-1.12.14/experimental/clashapi/server.go, go_fork_source/sing-box-1.12.14/adapter/service/manager.go, possible Go handler/test fixture under go_fork_source/.
+- **Files to touch**: go_fork_source/sing-box-1.13.13/experimental/clashapi/server.go, go_fork_source/sing-box-1.13.13/adapter/service/manager.go, possible Go handler/test fixture under go_fork_source/.
 - **Acceptance criteria**:
   - REVIEW BEFORE MERGE: planner reconfirms with user before editing
     go_fork_source.
@@ -206,5 +206,5 @@ the Rust config has no broken service and Rust service health is static
 - Spec: labs/interop-lab/docs/dual_kernel_golden_spec.md S3 LC.1, S4 DIV-H-006, S5.
 - Case: labs/interop-lab/cases/p1_service_failure_isolation.yaml.
 - Rust: crates/sb-core/src/services/, crates/sb-core/src/service.rs, crates/sb-core/src/context.rs, crates/sb-core/src/runtime/supervisor.rs, app/src/bootstrap_runtime/api_services.rs, app/src/run_engine.rs, app/src/run_engine_runtime/admin_start.rs, crates/sb-api/src/clash/server.rs, crates/sb-api/src/clash/handlers.rs.
-- Go: go_fork_source/sing-box-1.12.14/adapter/service.go, go_fork_source/sing-box-1.12.14/adapter/service/manager.go, go_fork_source/sing-box-1.12.14/experimental/clashapi/server.go.
+- Go: go_fork_source/sing-box-1.13.13/adapter/service.go, go_fork_source/sing-box-1.13.13/adapter/service/manager.go, go_fork_source/sing-box-1.13.13/experimental/clashapi/server.go.
 - CLAUDE.md 52/60 vs spec 52/56 mismatch remains open and deferred to the post-LC-003 cleanup round per user-elected order.

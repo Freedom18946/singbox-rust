@@ -1,16 +1,16 @@
-# Migration Guide: sing-box Go 1.12.14 → singbox-rust
+# Migration Guide: sing-box Go 1.13.13 → singbox-rust
 
-> Historical migration snapshot. This guide is useful provenance for Go 1.12.14
+> Historical migration snapshot. This guide is useful provenance for Go 1.13.13
 > migration work, but its tables and coverage counts are not current GUI
 > readiness, drop-in readiness, or full behavior parity certification. Current
 > status and gates live in
 > [`agents-only/active_context.md`](../agents-only/active_context.md); package
 > limitations live in the post-FABLE package map.
 
-This guide helps users migrate from sing-box Go version 1.12.14 to the Rust implementation, documenting configuration compatibility, capability state, and known limitations.
+This guide helps users migrate from sing-box Go version 1.13.13 to the Rust implementation, documenting configuration compatibility, capability state, and known limitations.
 
-**Last Updated:** 2026-01-18  
-**Baseline:** sing-box 1.12.14 (Go)  
+**Last Updated:** 2026-01-18
+**Baseline:** sing-box 1.13.13 (Go)
 **Target:** singbox-rust v0.2.0+
 
 ## Executive Summary
@@ -35,7 +35,7 @@ require self-contained local evidence.
 
 ### Inbound Protocols
 
-| Protocol | Go 1.12.14 | Rust Status | Notes |
+| Protocol | Go 1.13.13 | Rust Status | Notes |
 |----------|-----------|-------------|-------|
 | SOCKS5 | ✅ | ✅ Complete | Full UDP relay support |
 | HTTP/HTTPS | ✅ | ✅ Complete | CONNECT method |
@@ -60,7 +60,7 @@ require self-contained local evidence.
 
 ### Outbound Protocols
 
-| Protocol | Go 1.12.14 | Rust Status | Notes |
+| Protocol | Go 1.13.13 | Rust Status | Notes |
 |----------|-----------|-------------|-------|
 | Direct | ✅ | ✅ Complete | Direct connection |
 | Block | ✅ | ✅ Complete | Connection blocking |
@@ -86,7 +86,7 @@ require self-contained local evidence.
 
 ### DNS Transports
 
-| Transport | Go 1.12.14 | Rust Status | Notes |
+| Transport | Go 1.13.13 | Rust Status | Notes |
 |-----------|-----------|-------------|-------|
 | TCP | ✅ | ✅ Complete | Standard transport |
 | UDP | ✅ | ✅ Complete | Default transport |
@@ -104,14 +104,14 @@ require self-contained local evidence.
 
 ### VPN Endpoints
 
-| Endpoint | Go 1.12.14 | Rust Status | Notes |
+| Endpoint | Go 1.13.13 | Rust Status | Notes |
 |----------|-----------|-------------|-------|
 | WireGuard | ✅ | ◐ Userspace MVP | Boringtun + TUN (UDP listen/reserved unsupported) |
 | Tailscale | ✅ | ⚠️ De-scoped | See [Tailscale Limitations](#tailscale-limitations) |
 
 ### Services
 
-| Service | Go 1.12.14 | Rust Status | Notes |
+| Service | Go 1.13.13 | Rust Status | Notes |
 |---------|-----------|-------------|-------|
 | DERP | ✅ | ✅ Complete | Mesh networking, TLS, PSK auth, rate limiting, metrics |
 | Resolved | ✅ | ◐ Partial | Linux D-Bus implementation, feature-gated |
@@ -321,7 +321,7 @@ docker run -d \
 
 ### Breaking Changes
 
-**None.** The Rust implementation maintains full backward compatibility with sing-box 1.12.14 configurations.
+**None.** The Rust implementation maintains full backward compatibility with sing-box 1.13.13 configurations.
 
 ### Behavior Differences
 
@@ -484,7 +484,7 @@ curl http://127.0.0.1:9090/metrics | grep -E "(cpu|memory|connections)"
 
 ## Performance Comparison
 
-### Benchmarks vs Go 1.12.14
+### Benchmarks vs Go 1.13.13
 
 **Throughput (M1 Mac):**
 - Shadowsocks ChaCha20: 123.6 MiB/s (Rust) vs ~120 MiB/s (Go) ✅
@@ -544,6 +544,6 @@ For issues or questions:
 - Review [examples/configs/](../examples/configs/)
 - File issues on GitHub repository
 
-**Version:** Migration Guide v1.0  
-**Target Audience:** Administrators migrating from sing-box Go 1.12.14  
+**Version:** Migration Guide v1.0
+**Target Audience:** Administrators migrating from sing-box Go 1.13.13
 **Prerequisites:** Basic familiarity with sing-box configuration and Rust toolchain
