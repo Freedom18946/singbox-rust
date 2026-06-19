@@ -22,6 +22,7 @@ agents-only/
 ├── mt_mixed_fresh_intake.md     # 前沿邻接（被 baseline 引用）
 ├── mt_trojan_fresh_sample_intake.md    # 被 trojan.rs 源码引用
 ├── mt_real_02_evidence/         # 前沿轮次证据
+├── post1313/                    # B: Go 1.13.13 / GUI 1.25.1 差异分析与任务包规划
 ├── reference/                   # A: 权威参考（含 Rust_spec_v2.md）
 ├── memory/                      # A: 经验 + C: implementation-history
 ├── 06-scripts/                  # 辅助脚本
@@ -39,6 +40,7 @@ agents-only/
 | 新 AI 开始工作 | [init.md](./init.md) |
 | **当前状态（唯一权威）** | [active_context.md](./active_context.md) |
 | 阶段总览 / 全局位置 | [workpackage_latest.md](./workpackage_latest.md) |
+| Go 1.13.13 / GUI 1.25.1 后续差异规划 | [post1313/README.md](./post1313/README.md) |
 | REALITY 基线长报告（已封箱，历史参考） | [mt_real_02_baseline.md](./mt_real_02_baseline.md) |
 | 稳定约定 / 硬规则 | [../CLAUDE.md](../CLAUDE.md)、[../AGENTS.md](../AGENTS.md) |
 | 后续开发准则 | [reference/AGENT-DEVELOPMENT-GUIDELINES.md](./reference/AGENT-DEVELOPMENT-GUIDELINES.md) |
@@ -55,4 +57,4 @@ agents-only/
 
 ---
 
-*更新时间: 2026-06-08*
+*更新时间: 2026-06-19*

@@ -55,6 +55,8 @@
 ### 下一阶段默认路线
 
 - **最高目标线**：REALITY 本地主线已封箱（T3 收口）；当前推荐下一卡与优先级以 `active_context.md` 为准。
+- **参考内核抬版本后的规划入口**：`agents-only/post1313/`（Go 1.13.13 / GUI 1.25.1
+  差异分析与任务包；规划-only，未实施）。
 - **维护基线**：声明完成能力已逐项验收闭环；不再拆细维护卡，不重开旧 maintenance 线名。
 - **后续 agents 先看**：
   - `agents-only/active_context.md`（当前状态唯一权威）

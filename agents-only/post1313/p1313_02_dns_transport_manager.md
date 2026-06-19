@@ -1,0 +1,72 @@
+<!-- tier: B -->
+# P1313-02 DNS Transport Manager
+
+Priority: P0
+
+Primary evidence:
+
+- `agents-only/reference/GO_PARITY_MATRIX.md` PX-004
+- `go_fork_source/sing-box-1.13.13/dns/client.go`
+- `go_fork_source/sing-box-1.13.13/dns/router.go`
+- `go_fork_source/sing-box-1.13.13/dns/transport_manager.go`
+- `go_fork_source/sing-box-1.13.13/dns/transport_registry.go`
+- `go_fork_source/sing-box-1.13.13/option/dns.go`
+
+## Goal
+
+Replace the current minimal/env-gated DNS execution posture with a Go-style DNS transport
+manager and client path that all later DNS rules, FakeIP, Clash API, and services can share.
+
+## Current Gap
+
+PX-004 says Rust lacks a Go-style `DNSRouter` / `TransportManager` / transport registry
+flow. The Go option surface supports local, hosts, udp, tcp, tls, quic, https, h3, dhcp,
+fakeip, and legacy upgrade behavior, plus client cache options.
+
+## Task Split
+
+1. Transport registry contract.
+   - Define a Rust registry that maps DNS server `type` to parser + runtime transport.
+   - Preserve feature-gated transports without silently accepting unsupported types.
+   - Add a strict unknown type error matching Go's `unknown transport type`.
+
+2. Server option parity.
+   - Local: `prefer_go`, dialer options, legacy client subnet.
+   - Hosts: `path`, `predefined`.
+   - Remote UDP/TCP/TLS/QUIC/HTTPS/H3: `server`, `server_port`, `path`, `method`,
+     `headers`, `domain_resolver`, `detour`, fallback behavior.
+   - DHCP: `interface`.
+   - FakeIP: `inet4_range`, `inet6_range`.
+
+3. Legacy DNS upgrade compatibility.
+   - Convert legacy `address`/scheme forms into typed server options.
+   - Cover `rcode://` legacy rewrite into predefined DNS rule action.
+   - Preserve a controlled "do not upgrade" path only for tests or explicit compatibility.
+
+4. Client options.
+   - `strategy`, `disable_cache`, `disable_expire`, `independent_cache`,
+     `cache_capacity`, `client_subnet`.
+   - Ensure cache keying is ready for per-transport isolation.
+
+5. Runtime manager.
+   - Manager owns transport instances by tag.
+   - Start/close semantics integrate with P1313-05 lifecycle stages.
+   - Missing final server and duplicate DNS server tags have deterministic errors.
+
+6. Tests.
+   - Parser tests for every DNS server type.
+   - Manager construction tests with mixed transports.
+   - Negative tests for unknown type and invalid server address.
+
+## Acceptance
+
+- `cargo test -p sb-config dns`
+- `cargo test -p sb-core dns`
+- `cargo check -p app --features parity`
+- A new evidence note in this package file or a sibling evidence file.
+
+## Non-Goals
+
+- DNS rule action behavior belongs to P1313-03.
+- Clash `/dns/*` API behavior belongs to P1313-08.
+- Public DNS network probing is not required.

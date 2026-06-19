@@ -10,9 +10,9 @@
 
 ---
 
-## Resume (2026-06-19) - External reference refresh
+## Resume (2026-06-19) - External reference refresh + post1313 planning
 
-- **External sources refreshed**: Go snapshot is `go_fork_source/sing-box-1.13.13` (`SagerNet/sing-box@v1.13.13`); GUI snapshot is `GUI_fork_source/GUI.for.SingBox-1.25.1` (`GUI-for-Cores/GUI.for.SingBox@v1.25.1`).
+- **External sources refreshed**: Go `go_fork_source/sing-box-1.13.13`, GUI `GUI_fork_source/GUI.for.SingBox-1.25.1`; planning-only post-1.13.13 work packages live in `agents-only/post1313/`.
 
 ## Resume (2026-06-14) - POST-FABLE wave
 
