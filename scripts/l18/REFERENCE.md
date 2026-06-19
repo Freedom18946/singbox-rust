@@ -1,6 +1,6 @@
 # L18 外部依赖参考（Go Kernel / GUI.for.SingBox）
 
-> 单页速查。Go 1.13.13 + GUI 1.19.0 锁定版本，不主动升级。
+> 单页速查。Go 1.13.13 + GUI 1.25.1 锁定版本，不主动升级。
 
 ---
 
@@ -28,7 +28,7 @@
 
 ## 2. GUI 依赖的 Clash API 最小集合
 
-来源：`GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/api/kernel.ts`
+来源：`GUI_fork_source/GUI.for.SingBox-1.25.1/frontend/src/api/kernel.ts`
 
 ### HTTP 端点
 
@@ -100,7 +100,7 @@ scripts/l18/build_go_oracle.sh \
 go install github.com/wailsapp/wails/v2/cmd/wails@latest
 
 # 构建
-cd GUI_fork_source/GUI.for.SingBox-1.19.0
+cd GUI_fork_source/GUI.for.SingBox-1.25.1
 wails build -clean
 ```
 

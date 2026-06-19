@@ -47,7 +47,7 @@ early-close / RST / dead-port. Design spec:
 ### 2.1 GUI contract as ground truth
 
 The same source-of-truth as MT-GUI-01 applies: the GUI ↔ kernel contract is derived by reading
-[frontend/src/api/kernel.ts](../GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/api/kernel.ts).
+[frontend/src/api/kernel.ts](../GUI_fork_source/GUI.for.SingBox-1.25.1/frontend/src/api/kernel.ts).
 MT-GUI-02 adds the GUI-visible endpoints MT-GUI-01 skipped: `/rules`, `/providers/proxies`,
 `/providers/rules`, `/dns/query`, plus the subscription refresh path that real users hit when
 they pull a profile from a remote URL.

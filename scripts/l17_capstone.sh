@@ -111,7 +111,7 @@ else
 fi
 
 if [[ "${L17_GUI_SMOKE_AUTO:-0}" == "1" ]]; then
-  GUI_ROOT="${L17_GUI_ROOT:-/Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0}"
+  GUI_ROOT="${L17_GUI_ROOT:-/Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.25.1}"
   KERNEL_BIN="${L17_GUI_KERNEL_BIN:-/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/run}"
   GUI_CONFIG="${L17_GUI_CONFIG:-/Users/bob/Desktop/Projects/ING/sing/singbox-rust/configs/example.json}"
   if [[ -d "$GUI_ROOT" && -x "$KERNEL_BIN" && -f "$GUI_CONFIG" ]]; then

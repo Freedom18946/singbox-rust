@@ -10,7 +10,7 @@ Code commit: `e3defcdf`.
 - Go field inventory: `go_fork_source/sing-box-1.13.13/option/tun.go:13-59`
   (`TunInboundOptions`), `option/tun_platform.go:5-14`, `option/inbound.go:51-59`
   (embedded `InboundOptions`; TUN does **not** embed `ListenOptions`).
-- GUI emission: `GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/utils/generator.ts:66-93`
+- GUI emission: `GUI_fork_source/GUI.for.SingBox-1.25.1/frontend/src/utils/generator.ts:66-93`
   (TUN branch :81-90), `constant/profile.ts:113-123` (defaults).
 - Rust support: `crates/sb-config/src/validator/v2/inbound.rs`
   (`TUN_ONLY_INBOUND_KEYS` + `lower_tun_options`), `crates/sb-config/src/ir/inbound.rs`

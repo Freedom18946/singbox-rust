@@ -7,7 +7,7 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 > and recommended next step are tracked in
 > [`agents-only/active_context.md`](agents-only/active_context.md).
 >
-> The highest current goal is a GUI.for SingBox 1.19.0 drop-in replacement path
+> The highest current goal is a GUI.for SingBox 1.25.1 drop-in replacement path
 > for the Rust binary. Package03 and package07 still record limits on that path,
 > so ledger closure, BHV/REALITY/T3 results, and MT-GUI-04 style counts must not
 > be read as GUI-ready or behavior-complete certification. See

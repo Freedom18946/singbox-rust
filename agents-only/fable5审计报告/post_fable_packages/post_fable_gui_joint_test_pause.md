@@ -19,8 +19,8 @@ testing.
 Moved repository-generated Wails artifacts out of the repo:
 
 ```text
-GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin
-GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/dist
+GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin
+GUI_fork_source/GUI.for.SingBox-1.25.1/frontend/dist
 ```
 
 Temporary holding location:
@@ -65,7 +65,7 @@ App Support files were overwritten or deleted.
 Local checks after cleanup:
 
 ```text
-find GUI_fork_source/GUI.for.SingBox-1.19.0 -maxdepth 3 \( -path '*/build/bin' -o -path '*/frontend/dist' \) -print
+find GUI_fork_source/GUI.for.SingBox-1.25.1 -maxdepth 3 \( -path '*/build/bin' -o -path '*/frontend/dist' \) -print
 ```
 
 returned no paths.

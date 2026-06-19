@@ -32,7 +32,7 @@
 ```bash
 scripts/l18/run_capstone_fixed_profile.sh \
   --profile nightly \
-  --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app \
+  --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app \
   --require-docker 0 \
   --workspace-test-threads 1 \
   --allow-existing-system-proxy 1 \
@@ -54,7 +54,7 @@ scripts/l18/run_capstone_fixed_profile.sh \
 ```bash
 scripts/l18/run_capstone_fixed_profile.sh \
   --profile certify \
-  --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app \
+  --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app \
   --require-docker 0 \
   --workspace-test-threads 1 \
   --allow-existing-system-proxy 1 \

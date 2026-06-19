@@ -51,7 +51,7 @@ The script preserves package18's build, App Support backup/restore, Wails
 launch, Start/core/API/traffic checks, and exact app bundle target:
 
 ```bash
-GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app
+GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app
 ```
 
 ## Stop Automation

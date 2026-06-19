@@ -9,7 +9,7 @@ claim DNS dataplane, TUN dataplane, or full GUI readiness.
 
 ## Source Findings
 
-- package07 F-1: GUI.for SingBox 1.19.0 default DNS uses Go 1.12 type-based DNS
+- package07 F-1: GUI.for SingBox 1.25.1 default DNS uses Go 1.12 type-based DNS
   server fields that Rust strict validation rejected on the production load path.
 - Blocking example: `domain_resolver` under `/dns/servers/*` made
   `./target/debug/app run --check -c <config>` exit before GUI could observe

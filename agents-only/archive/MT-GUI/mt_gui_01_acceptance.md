@@ -13,14 +13,14 @@
 
 ## 1. Scope
 
-This card validates whether the project's local GUI integration path (GUI.for.SingBox 1.19.0 ↔
+This card validates whether the project's local GUI integration path (GUI.for.SingBox 1.25.1 ↔
 Clash API ↔ kernel) behaves consistently when driven against:
 
 - **Go kernel** — `go_fork_source/sing-box-1.13.13/sing-box` (existing binary)
 - **Rust kernel** — `target/release/app` (built with `--features parity`, MT-DEPLOY-01 baseline)
 
 The test design intentionally exercises only what the GUI itself uses, by reading
-[GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/api/kernel.ts](../GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/api/kernel.ts)
+[GUI_fork_source/GUI.for.SingBox-1.25.1/frontend/src/api/kernel.ts](../GUI_fork_source/GUI.for.SingBox-1.25.1/frontend/src/api/kernel.ts)
 to enumerate the actual REST + WebSocket surface.
 
 ### Out of scope
@@ -35,7 +35,7 @@ to enumerate the actual REST + WebSocket surface.
 
 ## 2. GUI Integration Surface (Verified by reading GUI source)
 
-[frontend/src/api/kernel.ts](../GUI_fork_source/GUI.for.SingBox-1.19.0/frontend/src/api/kernel.ts) defines the complete GUI ↔ kernel contract:
+[frontend/src/api/kernel.ts](../GUI_fork_source/GUI.for.SingBox-1.25.1/frontend/src/api/kernel.ts) defines the complete GUI ↔ kernel contract:
 
 ### REST endpoints used by the GUI
 

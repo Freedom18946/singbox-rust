@@ -4653,7 +4653,7 @@
 **状态**：✅ PASS（30 分钟预算内完成全链路）
 
 **执行入口**：
-- `scripts/l18/run_stress_short_48x.sh --duration-min 30 --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --require-docker 0 --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+- `scripts/l18/run_stress_short_48x.sh --duration-min 30 --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app --require-docker 0 --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
 
 **批次与汇总**：
 - `batch_root`: `reports/l18/batches/20260227T054642Z-l18-stress-48x`
@@ -4710,7 +4710,7 @@
 - 当前会话结束前状态：24h `nightly` 尚未完成收口（无最终 `l18_capstone_status.json` 结论），端口已确认释放（`9090/19090/11810/11811/29090/12810` 全 free）。
 
 **下次对话建议直接执行命令**：
-- `scripts/l18/run_capstone_fixed_profile.sh --profile nightly --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --require-docker 0 --workspace-test-threads 1 --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+- `scripts/l18/run_capstone_fixed_profile.sh --profile nightly --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app --require-docker 0 --workspace-test-threads 1 --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
 - 完成后回传：
   - `<batch_root>/capstone_nightly_fixedcfg_r1/summary.tsv`
   - `<batch_root>/capstone_nightly_fixedcfg_r1/r1/l18_capstone_status.json`
@@ -4842,7 +4842,7 @@
 
 **验收证据**：
 - GUI 实跑：
-  - 命令：`scripts/l18/gui_real_cert.sh --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+  - 命令：`scripts/l18/gui_real_cert.sh --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
   - 报告：`reports/l18/gui_real_cert.json`（`generated_at=2026-02-25T10:25:20Z`）
   - 结果：`overall=PASS`，Go/Rust `load_config` 均 `PASS`（`/proxies=200`）
 - case 级差分回归：

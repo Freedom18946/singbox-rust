@@ -5,7 +5,7 @@
 
 **PARTIAL.**
 - **Process-contract equivalence probe: PASS** (14/14, reproducible) — the Rust kernel
-  satisfies every process-level contract GUI.for SingBox 1.19.0 imposes on the kernel,
+  satisfies every process-level contract GUI.for SingBox 1.25.1 imposes on the kernel,
   exercised with GUI's exact launch arg vector + config layout.
 - **Interactive Wails desktop-window E2E: PARTIAL/BLOCKED.** package17 could only
   observe the real Wails window/profile. package18 improved this with desktop
@@ -152,7 +152,7 @@ Start phase order (`box.go`, `adapter/lifecycle.go:12-17`):
 
 ## New Follow-Ups
 
-- **F-1 (P0) — CLOSED by package12.** GUI 1.19.0's default DNS uses Go 1.12
+- **F-1 (P0) — CLOSED by package12.** GUI 1.25.1's default DNS uses Go 1.12
   type-based servers with `domain_resolver` / `server_port` / `path` /
   `interface`; Rust strict validator originally rejected that shape on the
   production load path. package12 accepts and lowers the focused GUI DNS fields
@@ -211,7 +211,7 @@ Wails environment:
   `proxy.golang.org` TLS handshake timeout.
 - `GOPROXY=https://goproxy.cn,direct ~/go/bin/wails build -clean` PASS and
   produced a fresh
-  `GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app`.
+  `GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app`.
 
 Desktop-window attempt:
 
@@ -294,7 +294,7 @@ Latest result:
 Evidence gained:
 
 - The real Wails app launched from
-  `GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app`.
+  `GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app`.
 - The seeded `PF18 Local Direct` profile was visible in the real Wails window.
 - The GUI-generated `data/sing-box/config.json` existed and used mixed inbound
   `127.0.0.1:20122`, Clash API `127.0.0.1:20123`, and secret `pf18probe`.

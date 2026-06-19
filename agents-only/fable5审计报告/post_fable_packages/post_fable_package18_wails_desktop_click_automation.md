@@ -22,7 +22,7 @@ Evidence: `post_fable_package18_wails_desktop_click_automation_evidence.md`.
 ## Objective
 
 Build a reproducible Wails desktop-click automation package that operates the
-real GUI.for SingBox 1.19.0 app instead of substituting a process-contract
+real GUI.for SingBox 1.25.1 app instead of substituting a process-contract
 harness.
 
 The package is evidence-first and docs/script-only. It does not change Rust
@@ -51,7 +51,7 @@ The script phases are:
 - backup/restore of `~/Library/Application Support/GUI.for.SingBox`;
 - controlled App Support seed with one `PF18 Local Direct` profile;
 - real Wails app launch from
-  `GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app`;
+  `GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app`;
 - desktop driving through native AX/coordinate attempts, with real-desktop
   `computer-use`/external assist checkpoints;
 - pid/config/API/proxy-traffic verification;

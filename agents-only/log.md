@@ -7301,7 +7301,7 @@ L2.8.4-6 Handlers + WebSocket:
 
 **复验结果**:
 - GUI 真实认证（允许并存模式）：
-  - 命令：`scripts/l18/gui_real_cert.sh --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+  - 命令：`scripts/l18/gui_real_cert.sh --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
   - 报告：`reports/l18/gui_real_cert.json`（`generated_at=2026-02-25T10:25:20Z`）
   - 结果：`overall=PASS`；Go/Rust `load_config` 均 `PASS`（`/proxies=200`）
 - 差分回归复验：
@@ -7419,7 +7419,7 @@ L2.8.4-6 Handlers + WebSocket:
 **任务**: 按用户指令执行“短时高压 48x 复合压力”预演（目标 30 分钟），覆盖 `workspace/gui/canary/dual/perf` 全链路并持续回报进度。
 
 **执行入口**:
-- `scripts/l18/run_stress_short_48x.sh --duration-min 30 --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.19.0/build/bin/GUI.for.SingBox.app --require-docker 0 --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
+- `scripts/l18/run_stress_short_48x.sh --duration-min 30 --gui-app /Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.25.1/build/bin/GUI.for.SingBox.app --require-docker 0 --allow-existing-system-proxy 1 --allow-real-proxy-coexist 1`
 - `batch_root`: `reports/l18/batches/20260227T054642Z-l18-stress-48x`
 
 **关键结果**:
@@ -7844,7 +7844,7 @@ L2.8.4-6 Handlers + WebSocket:
 **变更**:
 - 清理工作区：
   - 删除 `target/`、`app/target/`、`.cache/`、`reports/l18/oracle/`、绝大多数 `reports/l18/batches/` 运行产物，以及本地构建/缓存类大目录
-  - 恢复源码级外部依赖：`go_fork_source/sing-box-1.13.13`（`SagerNet/sing-box@v1.13.13`）与 `GUI_fork_source/GUI.for.SingBox-1.19.0`（`GUI-for-Cores/GUI.for.SingBox@v1.19.0`），仅保留源码树，不带各自 `.git`
+  - 恢复源码级外部依赖：`go_fork_source/sing-box-1.13.13`（`SagerNet/sing-box@v1.13.13`）与 `GUI_fork_source/GUI.for.SingBox-1.25.1`（`GUI-for-Cores/GUI.for.SingBox@v1.25.1`），仅保留源码树，不带各自 `.git`
 - 状态校正：
   - 确认 `nightly` 24h 结论已在文档中闭环，`20260307T230356Z-l18-nightly-24h` 为 full PASS
   - 确认当前无活动 `certify` 进程；`20260309T004649Z-l18-certify-7d` 未形成可用结论，不计作有效认证证据

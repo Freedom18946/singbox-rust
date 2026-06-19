@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # post_fable_package07 — GUI.for.SingBox process-contract equivalence probe
 #
-# Reproduces EXACTLY what GUI.for SingBox 1.19.0 does to the kernel at the
+# Reproduces EXACTLY what GUI.for SingBox 1.25.1 does to the kernel at the
 # process level, minus the desktop window (an agent cannot click a Wails GUI):
 #   - lays out  <work>/data/sing-box/sing-box  + config.json  (GUI's path contract)
 #   - launches with GUI's exact arg vector: run --disable-color -c <abs>/config.json -D <abs>

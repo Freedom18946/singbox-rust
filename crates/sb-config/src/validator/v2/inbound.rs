@@ -1165,7 +1165,7 @@ mod tests {
     // post_fable_package02 (CAL-01): GUI/Go 1.13.13 flat TUN schema parity
     // ========================================================================
 
-    /// GUI.for SingBox 1.19.0 default TUN inbound (generator.ts output),
+    /// GUI.for SingBox 1.25.1 default TUN inbound (generator.ts output),
     /// verbatim including the "unset" defaults `interface_name: ""` and
     /// `mtu: 0` and the deprecated `endpoint_independent_nat`.
     fn gui_default_tun_inbound() -> Value {

@@ -26,7 +26,7 @@ Use these in order:
 
 ## Current Status Summary
 
-- L1-L25 are closed, but the repository remains on the GUI.for SingBox 1.19.0
+- L1-L25 are closed, but the repository remains on the GUI.for SingBox 1.25.1
   drop-in replacement path rather than pure maintenance.
 - `GO_PARITY_MATRIX.md` expresses closure status, not blanket proof that every closed item has full behavior-level parity evidence.
 - `reports/capabilities.json` remains `docs-only` / `snapshot_unverified`; it is a capability ledger, not a substitute for runtime proof.

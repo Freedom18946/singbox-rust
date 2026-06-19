@@ -6,7 +6,7 @@
 set -u
 
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
-GUI_DIR="$REPO/GUI_fork_source/GUI.for.SingBox-1.19.0"
+GUI_DIR="$REPO/GUI_fork_source/GUI.for.SingBox-1.25.1"
 APP_BUNDLE="$GUI_DIR/build/bin/GUI.for.SingBox.app"
 APP_EXEC="$APP_BUNDLE/Contents/MacOS/GUI.for.SingBox"
 KERNEL="${KERNEL:-$REPO/target/debug/app}"
@@ -1109,7 +1109,7 @@ autoSetSystemProxy: false
 proxyBypassList: ""
 autoStartKernel: false
 autoRestartKernel: false
-userAgent: GUI.for.SingBox/v1.19.0
+userAgent: GUI.for.SingBox/v1.25.1
 startupDelay: 30
 connections:
   visibility: {}

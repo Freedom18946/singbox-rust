@@ -1,6 +1,6 @@
 # Go 设计参考（Go Design Reference）
 
-> **来源**：从 `go_fork_source/sing-box-1.13.13` 和 `GUI_fork_source/GUI.for.SingBox-1.19.0` 提取
+> **来源**：从 `go_fork_source/sing-box-1.13.13` 和 `GUI_fork_source/GUI.for.SingBox-1.25.1` 提取
 > **目的**：为 Rust 实现提供设计层面的参考和兼容性要求
 
 ---

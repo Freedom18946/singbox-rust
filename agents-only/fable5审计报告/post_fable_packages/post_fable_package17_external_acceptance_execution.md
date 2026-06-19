@@ -76,7 +76,7 @@ sudo -E PF03B_SKIP_BUILD=1 WORK=/tmp/pf17_tun_privileged PF03B_MODE=privileged \
 Manual Wails acceptance checklist:
 
 - Build/copy the Rust `gui_runtime` binary into the GUI kernel path.
-- Launch GUI.for SingBox 1.19.0 as a desktop app.
+- Launch GUI.for SingBox 1.25.1 as a desktop app.
 - Select/start a controlled profile through the GUI UI.
 - Confirm the GUI-started Rust core writes pid/config artifacts and prints
   `sing-box started`.

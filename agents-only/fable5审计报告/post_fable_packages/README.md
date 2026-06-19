@@ -9,7 +9,7 @@
 ## Highest Goal
 
 Deliver a Rust binary that can replace Go sing-box 1.13.13 for GUI.for SingBox
-1.19.0 users: GUI can launch it, generated configs validate, mainstream proxy
+1.25.1 users: GUI can launch it, generated configs validate, mainstream proxy
 traffic works, TUN/system-proxy flows are usable, node selection persists, and
 reload/config switching does not silently break service.
 

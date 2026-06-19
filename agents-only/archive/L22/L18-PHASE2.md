@@ -778,7 +778,7 @@ ls go_fork_source/sing-box-1.13.13/main.go
 | # | 预期阻塞 | 概率 | 降级策略 |
 |---|----------|------|----------|
 | B1 | Docker daemon 不可用 | 高 | `--require-docker 0`，docker 门禁标记 `ENV_LIMITED` |
-| B2 | GUI.for.SingBox 版本不匹配 | 低 | 使用已验证版本（1.19.0），不升级 |
+| B2 | GUI.for.SingBox 版本不匹配 | 低 | 使用已验证版本（1.25.1），不升级 |
 | B3 | Capstone canary 内联 config 缺少 `route.final` | 中 | WP-F1 中修复，补入 `"final": "direct"` |
 | B4 | 外网不可达导致 SOCKS 代理功能测试失败 | 中 | 标记 `ENV_LIMITED`，不阻塞认证 |
 | B5 | GUI 交互超时（`gui_or_kernel_not_ready`） | 低 | 已有 120s 超时 + 就绪轮询，Phase 1 已消除此 flake |

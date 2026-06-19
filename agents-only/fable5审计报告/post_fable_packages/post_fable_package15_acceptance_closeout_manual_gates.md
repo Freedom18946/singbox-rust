@@ -64,7 +64,7 @@ sudo -E PF03B_SKIP_BUILD=1 WORK=/tmp/pf15_tun_privileged PF03B_MODE=privileged \
 Real Wails GUI checklist:
 
 - Build/copy Rust `gui_runtime` binary into GUI's expected kernel path.
-- Launch GUI.for SingBox 1.19.0 desktop window.
+- Launch GUI.for SingBox 1.25.1 desktop window.
 - Start core and confirm GUI reaches running state after `sing-box started`.
 - Confirm Clash API telemetry/proxy list loads and node selection is usable.
 - Confirm system proxy/non-TUN traffic works through a local or controlled target.
