@@ -3,7 +3,7 @@
 
 ## Status
 
-PARTIAL (2026-06-17). Process-contract equivalence probe PASS (14/14).
+PARTIAL, PAUSED_INDEFINITE (2026-06-19). Process-contract equivalence probe PASS (14/14).
 package18 built/launched the real Wails app and reached GUI-owned Rust
 core/API/loopback-traffic proof with `start_click=native_sent`, but ended
 `BLOCKED_STOP`. package19 added stronger Stop-icon automation and narrowed the
@@ -14,6 +14,13 @@ PARTIAL until a real GUI Stop click stops the GUI-owned core and releases ports
 before cleanup. Full evidence:
 `post_fable_package07_gui_e2e_probe_note.md` + harness
 `post_fable_package07_probe_harness.sh` (same directory).
+
+Strategic pause: as of 2026-06-19, real Wails/GUI joint testing and package20
+style automation follow-ups are paused indefinitely. The current priority is to
+preserve the user's installed GUI.for.SingBox app state: do not seed App
+Support, do not launch the repository-built Wails app, and do not install the
+Rust `target/debug/app` as the user's GUI kernel unless the user explicitly
+resumes this line. Cleanup/details: `post_fable_gui_joint_test_pause.md`.
 
 ## Source Findings
 

@@ -27,8 +27,8 @@
 - **package03 PARTIAL** (`edf42095`, 03b boxed + package17 rerun): GUI TUN is loud;
   normal-user proof PASS; privileged dataplane remains blocked by UID 501/no sudo.
 - **package12 DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape passes strict load path.
-- **post_fable packages15-19 DONE**: closeout/external/Wails automation boxed; package07
-  has real Wails Start/core/API/traffic proof, latest package19 blocker `BLOCKED_ACCESSIBILITY`.
+- **post_fable packages15-19 DONE; GUI joint testing PAUSED_INDEFINITE**:
+  package07 stays PARTIAL; Wails build artifacts removed and user App Support left on Go kernel/config.
 - **package01/package02 DONE**: startup keyword (`0a4cae74`); GUI flat TUN parses/lowers (`e3defcdf`).
 
 ## Resume (2026-06-10) — closed (detail in baseline/archive)
