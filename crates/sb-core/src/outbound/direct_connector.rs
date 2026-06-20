@@ -441,8 +441,16 @@ impl DirectUdpTransport {
 #[async_trait]
 impl UdpTransport for DirectUdpTransport {
     async fn send_to(&self, buf: &[u8], dst: &Endpoint) -> SbResult<usize> {
-        // For connected UDP socket, we can use send instead of send_to
-        // But we'll implement send_to for flexibility
+        // `DirectConnector::connect_udp` returns a *connected* UDP socket. On a
+        // connected socket `send_to` fails with EISCONN ("Socket is already
+        // connected", os error 56) on macOS/BSD, so use `send` when a peer is set.
+        if self.socket.peer_addr().is_ok() {
+            return self.socket.send(buf).await.map_err(|e| {
+                SbError::network(ErrorClass::Connection, format!("UDP send failed: {e}"))
+            });
+        }
+
+        // Unconnected socket: resolve the destination and use send_to.
         let addr = match &dst.host {
             Host::Ip(ip) => SocketAddr::new(*ip, dst.port),
             Host::Name(domain) => super::resolve_host_for_direct(domain, dst.port)

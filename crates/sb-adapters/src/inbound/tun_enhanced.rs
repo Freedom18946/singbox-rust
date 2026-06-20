@@ -24,6 +24,7 @@ use crate::inbound::tun::TunInboundConfig;
 use crate::inbound::tun_session::{
     build_tcp_response_packet, CleanupMode, FourTuple, TcpSession, TcpSessionManager, TunWriter,
 };
+use crate::inbound::tun_udp::EnhancedUdpNat;
 
 const INITIAL_SERVER_SEQ: u32 = 1000;
 
@@ -294,12 +295,99 @@ fn parse_ipv6_tcp(packet: &[u8]) -> Option<ParsedTcpPacket<'_>> {
     })
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(crate) struct ParsedUdpPacket<'a> {
+    pub tuple: FourTuple,
+    pub payload: &'a [u8],
+}
+
+pub(crate) fn parse_raw_udp(packet: &[u8]) -> Option<ParsedUdpPacket<'_>> {
+    if packet.is_empty() {
+        return None;
+    }
+    match (packet[0] >> 4) & 0x0f {
+        4 => parse_ipv4_udp(packet),
+        6 => parse_ipv6_udp(packet),
+        _ => None,
+    }
+}
+
+fn parse_ipv4_udp(packet: &[u8]) -> Option<ParsedUdpPacket<'_>> {
+    if packet.len() < 20 || packet[9] != 17 {
+        return None;
+    }
+    let ihl = ((packet[0] & 0x0f) as usize) * 4;
+    if ihl < 20 || packet.len() < ihl + 8 {
+        return None;
+    }
+
+    let src_ip = IpAddr::V4(Ipv4Addr::new(
+        packet[12], packet[13], packet[14], packet[15],
+    ));
+    let dst_ip = IpAddr::V4(Ipv4Addr::new(
+        packet[16], packet[17], packet[18], packet[19],
+    ));
+    let udp_offset = ihl;
+    let src_port = u16::from_be_bytes([packet[udp_offset], packet[udp_offset + 1]]);
+    let dst_port = u16::from_be_bytes([packet[udp_offset + 2], packet[udp_offset + 3]]);
+    let payload = udp_payload(packet, udp_offset)?;
+
+    Some(ParsedUdpPacket {
+        tuple: FourTuple::new(src_ip, src_port, dst_ip, dst_port),
+        payload,
+    })
+}
+
+fn parse_ipv6_udp(packet: &[u8]) -> Option<ParsedUdpPacket<'_>> {
+    // Only handles a bare IPv6 header with UDP directly following (no extension headers).
+    if packet.len() < 48 || packet[6] != 17 {
+        return None;
+    }
+
+    let mut src = [0u8; 16];
+    src.copy_from_slice(&packet[8..24]);
+    let mut dst = [0u8; 16];
+    dst.copy_from_slice(&packet[24..40]);
+
+    let udp_offset = 40;
+    let src_port = u16::from_be_bytes([packet[udp_offset], packet[udp_offset + 1]]);
+    let dst_port = u16::from_be_bytes([packet[udp_offset + 2], packet[udp_offset + 3]]);
+    let payload = udp_payload(packet, udp_offset)?;
+
+    Some(ParsedUdpPacket {
+        tuple: FourTuple::new(
+            IpAddr::V6(Ipv6Addr::from(src)),
+            src_port,
+            IpAddr::V6(Ipv6Addr::from(dst)),
+            dst_port,
+        ),
+        payload,
+    })
+}
+
+/// Slice the UDP payload starting at `udp_offset`, clamping to the declared UDP
+/// length when it is valid (defends against trailing padding / truncation).
+fn udp_payload(packet: &[u8], udp_offset: usize) -> Option<&[u8]> {
+    let udp_len = u16::from_be_bytes([packet[udp_offset + 4], packet[udp_offset + 5]]) as usize;
+    let payload_start = udp_offset + 8;
+    let payload_end = if udp_len >= 8 && udp_offset + udp_len <= packet.len() {
+        udp_offset + udp_len
+    } else {
+        packet.len()
+    };
+    if payload_start > payload_end {
+        return None;
+    }
+    Some(&packet[payload_start..payload_end])
+}
+
 #[derive(Debug, Clone)]
 pub struct EnhancedTunInbound {
     config: EnhancedTunConfig,
     outbounds: Arc<OutboundRegistryHandle>,
     router: Option<Arc<RouterHandle>>,
     session_manager: Arc<TcpSessionManager>,
+    udp_nat: Arc<EnhancedUdpNat>,
 }
 
 pub struct PreparedEnhancedTunRuntime {
@@ -389,11 +477,13 @@ impl PacketIo for UnixPacketIo {
 
 impl EnhancedTunInbound {
     pub fn new(config: EnhancedTunConfig, outbounds: Arc<OutboundRegistryHandle>) -> Self {
+        let udp_nat = Arc::new(EnhancedUdpNat::new(config.udp_timeout_ms, config.mtu as usize));
         Self {
             config,
             outbounds,
             router: None,
             session_manager: Arc::new(TcpSessionManager::new()),
+            udp_nat,
         }
     }
 
@@ -402,11 +492,13 @@ impl EnhancedTunInbound {
         outbounds: Arc<OutboundRegistryHandle>,
         router: Arc<RouterHandle>,
     ) -> Self {
+        let udp_nat = Arc::new(EnhancedUdpNat::new(config.udp_timeout_ms, config.mtu as usize));
         Self {
             config,
             outbounds,
             router: Some(router),
             session_manager: Arc::new(TcpSessionManager::new()),
+            udp_nat,
         }
     }
 
@@ -416,11 +508,13 @@ impl EnhancedTunInbound {
         router: Option<Arc<RouterHandle>>,
     ) -> Self {
         let config = EnhancedTunConfig::from_legacy_config(cfg);
+        let udp_nat = Arc::new(EnhancedUdpNat::new(config.udp_timeout_ms, config.mtu as usize));
         Self {
             config,
             outbounds,
             router,
             session_manager: Arc::new(TcpSessionManager::new()),
+            udp_nat,
         }
     }
 
@@ -430,11 +524,13 @@ impl EnhancedTunInbound {
         router: Option<Arc<RouterHandle>>,
     ) -> io::Result<Self> {
         let config = EnhancedTunConfig::try_from_legacy_config(cfg)?;
+        let udp_nat = Arc::new(EnhancedUdpNat::new(config.udp_timeout_ms, config.mtu as usize));
         Ok(Self {
             config,
             outbounds,
             router,
             session_manager: Arc::new(TcpSessionManager::new()),
+            udp_nat,
         })
     }
 
@@ -451,13 +547,18 @@ impl EnhancedTunInbound {
         let (tx, rx) = mpsc::channel(128);
         let writer: Arc<dyn TunWriter + Send + Sync> = Arc::new(ChannelTunWriter { tx });
 
+        let eviction = self.spawn_udp_eviction_task();
+
         #[cfg(unix)]
         {
-            return self.run_packet_loop_unix(device, rx, writer).await;
+            let result = self.run_packet_loop_unix(device, rx, writer).await;
+            eviction.abort();
+            result
         }
 
         #[cfg(not(unix))]
         {
+            eviction.abort();
             let _ = device;
             let _ = rx;
             let _ = writer;
@@ -466,6 +567,20 @@ impl EnhancedTunInbound {
                 "tun: smoltcp backend runtime loop currently requires unix-style TUN fd support",
             ))
         }
+    }
+
+    /// Periodically evict idle UDP NAT entries for the lifetime of the datapath.
+    fn spawn_udp_eviction_task(&self) -> tokio::task::JoinHandle<()> {
+        let nat = Arc::clone(&self.udp_nat);
+        let period = nat.eviction_period();
+        tokio::spawn(async move {
+            let mut ticker = tokio::time::interval(period);
+            ticker.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+            loop {
+                ticker.tick().await;
+                nat.evict_expired();
+            }
+        })
     }
 
     pub fn prepare_runtime(&self) -> io::Result<PreparedEnhancedTunRuntime> {
@@ -550,9 +665,51 @@ impl EnhancedTunInbound {
             if let Err(err) = self.bootstrap_tcp_session(&tcp, writer).await {
                 debug!(error = %err, tuple = ?tcp.tuple, "tun enhanced: tcp packet handling failed");
             }
+            return Ok(());
+        }
+
+        if let Some(udp) = parse_raw_udp(packet) {
+            if let Err(err) = self.forward_udp(&udp, writer).await {
+                debug!(error = %err, tuple = %udp.tuple, "tun enhanced: udp packet handling failed");
+            }
         }
 
         Ok(())
+    }
+
+    /// Route a parsed UDP datagram and hand it to the UDP NAT for outbound forwarding.
+    pub(crate) async fn forward_udp(
+        &self,
+        packet: &ParsedUdpPacket<'_>,
+        writer: Arc<dyn TunWriter + Send + Sync>,
+    ) -> io::Result<()> {
+        let decision = self.route_udp_tuple(packet);
+        let (target, _tag) = route_target_from_decision(&decision)?;
+        self.udp_nat
+            .forward(
+                packet.tuple,
+                packet.payload,
+                &target,
+                &self.outbounds,
+                writer,
+            )
+            .await
+    }
+
+    fn route_udp_tuple(&self, packet: &ParsedUdpPacket<'_>) -> Decision {
+        let host = packet.tuple.dst_ip.to_string();
+        let ctx = RouteCtx {
+            host: Some(&host),
+            ip: Some(packet.tuple.dst_ip),
+            port: Some(packet.tuple.dst_port),
+            transport: Transport::Udp,
+            ..Default::default()
+        };
+
+        self.router
+            .as_ref()
+            .map(|router| router.decide(&ctx))
+            .unwrap_or(Decision::Direct)
     }
 
     #[cfg(unix)]
@@ -693,7 +850,7 @@ impl EnhancedTunInbound {
             )),
         };
 
-        let stream = match self.outbounds.connect_tcp(&target, endpoint).await {
+        let stream = match self.outbounds.connect_tcp_stream(&target, endpoint).await {
             Ok(stream) => stream,
             Err(err) => {
                 self.send_tcp_reset_packet(packet, writer).await?;
@@ -850,7 +1007,7 @@ fn route_target_from_decision(decision: &Decision) -> io::Result<(RouteTarget, S
 #[cfg(test)]
 mod tests {
     use super::{
-        default_udp_timeout, parse_raw_tcp, ChannelTunWriter, EnhancedTunConfig,
+        default_udp_timeout, parse_raw_tcp, parse_raw_udp, ChannelTunWriter, EnhancedTunConfig,
         EnhancedTunInbound, PacketIo, INITIAL_SERVER_SEQ,
     };
     use crate::inbound::tun::TunInboundConfig;
@@ -2565,5 +2722,139 @@ mod tests {
         );
         // Session must be fully cleaned up
         assert_eq!(inbound.session_count(), 0);
+    }
+
+    fn build_ipv4_udp_packet_for_test(dst: SocketAddr, payload: &[u8]) -> Vec<u8> {
+        let dst_ip = match dst.ip() {
+            std::net::IpAddr::V4(ip) => ip.octets(),
+            std::net::IpAddr::V6(_) => panic!("test helper expects IPv4 socket"),
+        };
+        let total_len = 20 + 8 + payload.len();
+        let mut raw = vec![0u8; total_len];
+        raw[0] = 0x45;
+        raw[2..4].copy_from_slice(&(total_len as u16).to_be_bytes());
+        raw[9] = 17; // UDP
+        raw[12..16].copy_from_slice(&Ipv4Addr::new(10, 0, 0, 2).octets());
+        raw[16..20].copy_from_slice(&dst_ip);
+        let udp = 20;
+        raw[udp..udp + 2].copy_from_slice(&34567u16.to_be_bytes());
+        raw[udp + 2..udp + 4].copy_from_slice(&dst.port().to_be_bytes());
+        raw[udp + 4..udp + 6].copy_from_slice(&((8 + payload.len()) as u16).to_be_bytes());
+        if !payload.is_empty() {
+            raw[udp + 8..].copy_from_slice(payload);
+        }
+        raw
+    }
+
+    #[test]
+    fn parse_raw_udp_ipv4_payload() {
+        let raw =
+            build_ipv4_udp_packet_for_test("1.1.1.1:53".parse().unwrap(), b"\x00\x01query");
+        let parsed = parse_raw_udp(&raw).expect("parse ipv4 udp");
+        assert_eq!(parsed.tuple.src_ip.to_string(), "10.0.0.2");
+        assert_eq!(parsed.tuple.src_port, 34567);
+        assert_eq!(parsed.tuple.dst_ip.to_string(), "1.1.1.1");
+        assert_eq!(parsed.tuple.dst_port, 53);
+        assert_eq!(parsed.payload, b"\x00\x01query");
+    }
+
+    #[test]
+    fn parse_raw_udp_rejects_tcp() {
+        let raw = build_ipv4_tcp_packet_for_test("1.1.1.1:80".parse().unwrap(), 0x02, 1, 0, &[]);
+        assert!(parse_raw_udp(&raw).is_none());
+    }
+
+    #[tokio::test]
+    async fn udp_forward_direct_echo_relays_back() {
+        // A loopback UDP echo server stands in for the configured outbound target.
+        let echo = tokio::net::UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind echo");
+        let echo_addr = echo.local_addr().expect("echo addr");
+        tokio::spawn(async move {
+            let mut b = [0u8; 2048];
+            if let Ok((n, peer)) = echo.recv_from(&mut b).await {
+                let _ = echo.send_to(&b[..n], peer).await;
+            }
+        });
+
+        let inbound = make_direct_inbound();
+        let payload = b"hello-udp";
+        let raw = build_ipv4_udp_packet_for_test(echo_addr, payload);
+        let parsed = parse_raw_udp(&raw).expect("parse udp");
+
+        let writer = Arc::new(RecordingTunWriter::default());
+        inbound
+            .forward_udp(&parsed, writer.clone())
+            .await
+            .expect("forward udp");
+
+        // Allow the echo round-trip and reverse relay to write the reply packet.
+        let mut reply = None;
+        for _ in 0..100 {
+            tokio::time::sleep(std::time::Duration::from_millis(20)).await;
+            if let Some(p) = writer.packets.lock().expect("lock").first().cloned() {
+                reply = Some(p);
+                break;
+            }
+        }
+        let reply = reply.expect("reverse relay wrote a reply packet");
+        let parsed_reply = parse_raw_udp(&reply).expect("parse reply");
+        // Reply is addressed from the echo target back to the original client.
+        assert_eq!(parsed_reply.tuple.src_ip, echo_addr.ip());
+        assert_eq!(parsed_reply.tuple.src_port, echo_addr.port());
+        assert_eq!(parsed_reply.tuple.dst_ip.to_string(), "10.0.0.2");
+        assert_eq!(parsed_reply.tuple.dst_port, 34567);
+        assert_eq!(parsed_reply.payload, payload);
+    }
+
+    #[tokio::test]
+    async fn bootstrap_tcp_session_ipv6_syn_sends_syn_ack() {
+        let listener = TcpListener::bind("[::1]:0").await.expect("bind v6 listener");
+        let addr = listener.local_addr().expect("listener addr");
+        tokio::spawn(async move {
+            let _ = listener.accept().await;
+        });
+
+        let inbound = make_direct_inbound();
+
+        // Build a bare IPv6 TCP SYN from fd00::2 to the loopback listener.
+        let dst_ip = match addr.ip() {
+            std::net::IpAddr::V6(ip) => ip,
+            _ => panic!("expected ipv6 listener"),
+        };
+        let mut raw = vec![0u8; 60];
+        raw[0] = 0x60;
+        raw[4..6].copy_from_slice(&20u16.to_be_bytes()); // payload len = TCP header
+        raw[6] = 6; // TCP
+        raw[7] = 64;
+        raw[8..24].copy_from_slice(&"fd00::2".parse::<std::net::Ipv6Addr>().unwrap().octets());
+        raw[24..40].copy_from_slice(&dst_ip.octets());
+        let tcp = 40;
+        raw[tcp..tcp + 2].copy_from_slice(&40000u16.to_be_bytes());
+        raw[tcp + 2..tcp + 4].copy_from_slice(&addr.port().to_be_bytes());
+        raw[tcp + 4..tcp + 8].copy_from_slice(&42u32.to_be_bytes()); // seq
+        raw[tcp + 12] = 0x50;
+        raw[tcp + 13] = 0x02; // SYN
+
+        let packet = parse_raw_tcp(&raw).expect("parse v6 syn");
+        let writer = Arc::new(RecordingTunWriter::default());
+        inbound
+            .bootstrap_tcp_session(&packet, writer.clone())
+            .await
+            .expect("bootstrap v6 session");
+
+        let first = writer
+            .packets
+            .lock()
+            .expect("lock")
+            .first()
+            .cloned()
+            .expect("syn-ack written");
+        let reply = parse_raw_tcp(&first).expect("parse syn-ack");
+        assert_eq!(reply.flags, 0x12); // SYN+ACK
+        assert_eq!(reply.sequence_number, INITIAL_SERVER_SEQ);
+        assert_eq!(reply.acknowledgment_number, 43);
+        assert!(matches!(reply.tuple.src_ip, std::net::IpAddr::V6(_)));
     }
 }

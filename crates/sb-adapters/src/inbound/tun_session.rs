@@ -13,7 +13,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::atomic::{AtomicU32, Ordering};
 use std::sync::Arc;
 use std::time::Instant;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::mpsc::error::TryRecvError;
 use tokio::sync::{mpsc, oneshot};
@@ -294,21 +294,25 @@ impl TcpSessionManager {
         self.create_session_with_state(tuple, outbound, tun_writer, traffic, 1000, 1000)
     }
 
-    pub fn create_session_with_state(
+    pub fn create_session_with_state<S>(
         &self,
         tuple: FourTuple,
-        outbound: TcpStream,
+        outbound: S,
         tun_writer: Arc<dyn TunWriter + Send + Sync>,
         traffic: Option<Arc<dyn TrafficRecorder>>,
         client_next_seq: u32,
         server_next_seq: u32,
-    ) -> Arc<TcpSession> {
+    ) -> Arc<TcpSession>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
         let (to_outbound_tx, to_outbound_rx) = mpsc::channel::<Bytes>(64);
         let (shutdown_tx, shutdown_rx) = oneshot::channel();
 
-        let outbound_addr = outbound
-            .peer_addr()
-            .unwrap_or_else(|_| SocketAddr::from(([0, 0, 0, 0], 0)));
+        // Boxed/proxied outbound streams (HTTP CONNECT, SOCKS, v2ray transports) have no
+        // single peer_addr, and even for direct TCP the meaningful address is the routed
+        // destination, so derive it from the tuple.
+        let outbound_addr = SocketAddr::new(tuple.dst_ip, tuple.dst_port);
 
         let session = Arc::new(TcpSession {
             tuple,
@@ -324,7 +328,7 @@ impl TcpSessionManager {
             tasks: parking_lot::Mutex::new(Vec::with_capacity(2)),
         });
 
-        let (outbound_read, outbound_write) = outbound.into_split();
+        let (outbound_read, outbound_write) = tokio::io::split(outbound);
 
         // Spawn relay tasks and keep the handles on the session owner.
         let tuple_copy = tuple;
@@ -461,15 +465,17 @@ impl Default for TcpSessionManager {
 
 /// Relay data from TUN to outbound (and spawn outbound->TUN relay)
 #[allow(clippy::too_many_arguments)]
-async fn relay_tun_to_outbound(
+async fn relay_tun_to_outbound<W>(
     mut to_outbound_rx: mpsc::Receiver<Bytes>,
     mut shutdown_rx: oneshot::Receiver<()>,
-    mut outbound_write: tokio::net::tcp::OwnedWriteHalf,
+    mut outbound_write: W,
     tuple: FourTuple,
     active_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
     detached_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
     traffic: Option<Arc<dyn TrafficRecorder>>,
-) {
+) where
+    W: AsyncWrite + Unpin + Send + 'static,
+{
     // TUN -> Outbound relay (this task)
     let mut closing = false;
     loop {
@@ -539,15 +545,17 @@ async fn relay_tun_to_outbound(
 }
 
 /// Relay data from outbound to TUN
-async fn relay_outbound_to_tun(
-    mut outbound_read: tokio::net::tcp::OwnedReadHalf,
+async fn relay_outbound_to_tun<R>(
+    mut outbound_read: R,
     session: Arc<TcpSession>,
     tuple: FourTuple,
     tun_writer: Arc<dyn TunWriter + Send + Sync>,
     active_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
     detached_sessions: Arc<DashMap<FourTuple, Arc<TcpSession>>>,
     traffic: Option<Arc<dyn TrafficRecorder>>,
-) {
+) where
+    R: AsyncRead + Unpin + Send + 'static,
+{
     let mut buf = vec![0u8; 8192];
 
     loop {
@@ -651,13 +659,51 @@ pub fn build_tcp_response_packet(
                 flags,
             ))
         }
+        (IpAddr::V6(src), IpAddr::V6(dst)) => Ok(super::tun_packet::build_ipv6_tcp_packet(
+            src,
+            tuple.src_port,
+            dst,
+            tuple.dst_port,
+            payload,
+            seq,
+            ack,
+            flags,
+        )),
         _ => {
-            // IPv6 not yet implemented
+            // Mixed-family tuples are not valid for a single packet.
             Err(std::io::Error::new(
                 std::io::ErrorKind::Unsupported,
-                "IPv6 not yet supported",
+                "mixed IPv4/IPv6 tuple is not supported",
             ))
         }
+    }
+}
+
+/// Build a UDP response packet for writing back to TUN (bare IP, no AF prefix).
+///
+/// `tuple` must already be oriented as the packet to emit (source = remote/dst of
+/// the original client packet, destination = the client). Callers typically pass
+/// `original_tuple.reverse()`.
+pub fn build_udp_response_packet(tuple: FourTuple, payload: &[u8]) -> std::io::Result<Vec<u8>> {
+    match (tuple.src_ip, tuple.dst_ip) {
+        (IpAddr::V4(src), IpAddr::V4(dst)) => Ok(super::tun_packet::build_ipv4_udp_packet(
+            src,
+            tuple.src_port,
+            dst,
+            tuple.dst_port,
+            payload,
+        )),
+        (IpAddr::V6(src), IpAddr::V6(dst)) => Ok(super::tun_packet::build_ipv6_udp_packet(
+            src,
+            tuple.src_port,
+            dst,
+            tuple.dst_port,
+            payload,
+        )),
+        _ => Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "mixed IPv4/IPv6 tuple is not supported",
+        )),
     }
 }
 
@@ -1044,5 +1090,55 @@ mod tests {
             manager.drain_policy().simultaneous_close_grace,
             std::time::Duration::from_secs(5),
         );
+    }
+
+    #[test]
+    fn test_build_tcp_response_packet_ipv6_roundtrip() {
+        let tuple = FourTuple::new(
+            "fd00::2".parse().unwrap(),
+            443,
+            "fd00::1".parse().unwrap(),
+            40000,
+        );
+        let packet =
+            build_tcp_response_packet(tuple, b"hello", 1000, 2000, 0x12).expect("ipv6 tcp ok");
+        assert_eq!(packet[0] >> 4, 6);
+        assert_eq!(packet[6], 6); // TCP
+        assert_eq!(packet.len(), 40 + 20 + 5);
+    }
+
+    #[test]
+    fn test_build_udp_response_packet_v4_and_v6() {
+        let v4 = FourTuple::new(
+            "1.1.1.1".parse().unwrap(),
+            53,
+            "10.0.0.2".parse().unwrap(),
+            5353,
+        );
+        let p4 = build_udp_response_packet(v4, b"\x00\x01").expect("v4 udp ok");
+        assert_eq!(p4[0] >> 4, 4);
+        assert_eq!(p4[9], 17); // UDP
+
+        let v6 = FourTuple::new(
+            "fd00::1".parse().unwrap(),
+            53,
+            "fd00::2".parse().unwrap(),
+            5353,
+        );
+        let p6 = build_udp_response_packet(v6, b"\x00\x01").expect("v6 udp ok");
+        assert_eq!(p6[0] >> 4, 6);
+        assert_eq!(p6[6], 17); // UDP
+    }
+
+    #[test]
+    fn test_build_response_packet_rejects_mixed_family() {
+        let mixed = FourTuple::new(
+            "1.1.1.1".parse().unwrap(),
+            53,
+            "fd00::2".parse().unwrap(),
+            5353,
+        );
+        assert!(build_udp_response_packet(mixed, b"x").is_err());
+        assert!(build_tcp_response_packet(mixed, b"x", 1, 2, 0x10).is_err());
     }
 }

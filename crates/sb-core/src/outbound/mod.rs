@@ -297,6 +297,127 @@ impl OutboundRegistryHandle {
         }
     }
 
+    /// Establish a UDP transport to `ep` through the selected outbound.
+    ///
+    /// This is the UDP counterpart of [`connect_tcp`](Self::connect_tcp), used by the
+    /// Enhanced TUN datapath's lightweight UDP NAT. Only `direct` is wired today;
+    /// proxy outbounds that could support UDP associate (SOCKS5, Hysteria2) return a
+    /// loud `Unsupported` error so callers can drop the datagram explicitly instead of
+    /// silently black-holing it. A general UDP NAT layer is owned by P1313-09; this
+    /// keeps the surface minimal and reusable.
+    pub async fn connect_udp(
+        &self,
+        target: &RouteTarget,
+        ep: Endpoint,
+    ) -> io::Result<Box<dyn crate::outbound::traits::UdpTransport>> {
+        use crate::outbound::direct_connector::DirectConnector;
+        use crate::outbound::traits::OutboundConnector;
+        use crate::types::{ConnCtx, Endpoint as TypesEndpoint, Host, Network};
+
+        // Bridge the routing-layer Endpoint into the typed ConnCtx the connector expects.
+        let dst: TypesEndpoint = match ep {
+            Endpoint::Ip(sa) => TypesEndpoint::from(sa),
+            Endpoint::Domain(host, port) => TypesEndpoint::new(Host::parse(&host), port),
+        };
+        let src = SocketAddr::from(([0u8, 0, 0, 0], 0));
+        let ctx = ConnCtx::new(0, Network::Udp, src, dst);
+
+        let connect_direct = || async {
+            DirectConnector::new()
+                .connect_udp(&ctx)
+                .await
+                .map_err(|e| io::Error::other(format!("direct udp connect failed: {e}")))
+        };
+
+        match target {
+            RouteTarget::Kind(OutboundKind::Direct) => connect_direct().await,
+            RouteTarget::Kind(OutboundKind::Block) => Err(io::Error::new(
+                io::ErrorKind::PermissionDenied,
+                "blocked by router",
+            )),
+            RouteTarget::Kind(other) => Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("builtin outbound {other:?} does not support UDP"),
+            )),
+            RouteTarget::Named(name) => match self.resolve(name) {
+                Some(OutboundImpl::Direct) => connect_direct().await,
+                Some(OutboundImpl::Block) => Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "blocked by rule",
+                )),
+                Some(_) => Err(io::Error::new(
+                    io::ErrorKind::Unsupported,
+                    format!("outbound '{name}' does not support UDP associate"),
+                )),
+                None => Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "outbound not found",
+                )),
+            },
+        }
+    }
+
+    /// Establish a byte stream to `ep` through the selected outbound, returning a
+    /// boxed `AsyncRead + AsyncWrite` stream.
+    ///
+    /// Unlike [`connect_tcp`](Self::connect_tcp) (which returns a raw `TcpStream` and
+    /// therefore cannot represent proxy/CONNECT-tunnelled or layered transports), this
+    /// uses each outbound's CONNECT-aware path. This is what the TUN datapath uses so
+    /// that TUN traffic can egress through HTTP/SOCKS/adapter outbounds, not only
+    /// `direct`. `Connector` outbounds (the adapter registry, e.g. the GUI's HTTP/SOCKS
+    /// outbounds) are dialed via `connect_io`, which performs the real proxy handshake.
+    pub async fn connect_tcp_stream(
+        &self,
+        target: &RouteTarget,
+        ep: Endpoint,
+    ) -> io::Result<sb_transport::IoStream> {
+        fn boxed<S>(s: S) -> sb_transport::IoStream
+        where
+            S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+        {
+            Box::new(s)
+        }
+
+        match target {
+            RouteTarget::Kind(k) => Ok(boxed(connect_tcp_builtin(k, ep).await?)),
+            RouteTarget::Named(name) => match self.resolve(name) {
+                Some(OutboundImpl::Direct) => Ok(boxed(direct_connect(ep).await?)),
+                Some(OutboundImpl::Block) => Err(io::Error::new(
+                    io::ErrorKind::PermissionDenied,
+                    "blocked by rule",
+                )),
+                Some(OutboundImpl::Socks5(cfg)) => Ok(boxed(socks5_connect(&cfg, ep).await?)),
+                Some(OutboundImpl::HttpProxy(cfg)) => Ok(boxed(http_connect(&cfg, ep).await?)),
+                Some(OutboundImpl::Connector(conn)) => {
+                    let (host, port) = match ep {
+                        Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
+                        Endpoint::Domain(h, p) => (h, p),
+                    };
+                    // connect_io performs the CONNECT-aware proxy handshake and returns
+                    // a boxed stream (e.g. HTTP proxy tunnel, SOCKS, layered transports).
+                    // It only exists with v2ray_transport (always on in adapter/app builds);
+                    // without it, fall back to raw connect (works for direct-style connectors).
+                    #[cfg(feature = "v2ray_transport")]
+                    {
+                        conn.connect_io(&host, port).await
+                    }
+                    #[cfg(not(feature = "v2ray_transport"))]
+                    {
+                        Ok(boxed(conn.connect(&host, port).await?))
+                    }
+                }
+                #[cfg(feature = "out_naive")]
+                Some(OutboundImpl::Naive(cfg)) => Ok(boxed(naive_connect(&cfg, ep).await?)),
+                #[cfg(feature = "out_hysteria2")]
+                Some(OutboundImpl::Hysteria2(cfg)) => Ok(boxed(hysteria2_connect(&cfg, ep).await?)),
+                None => Err(io::Error::new(
+                    io::ErrorKind::NotFound,
+                    "outbound not found",
+                )),
+            },
+        }
+    }
+
     /// Establish a generic AsyncRead/AsyncWrite stream to the endpoint.
     ///
     /// When available (feature `v2ray_transport`), protocols like VMess may

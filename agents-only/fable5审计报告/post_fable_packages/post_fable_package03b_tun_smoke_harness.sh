@@ -6,6 +6,20 @@
 #   PF03B_MODE=normal     expect permission/backend failure before "sing-box started"
 #   PF03B_MODE=privileged require root and prove OS route -> Rust TUN -> configured HTTP outbound
 #
+# Dataplane coverage (post003 UDP/IPv6 extension):
+#   * TCP/IPv4 : live, gating. curl http://198.18.0.2:18080 routed into utun -> HTTP CONNECT outbound.
+#   * TCP/IPv6 : live, gating when PF03B_PROBE_IPV6=1 (default). curl http://[fd00:db8::2]:18080
+#                routed into utun -> exercises the new IPv6 reply-packet path; the outbound dial is
+#                IPv4 loopback to the same stub, so there is no routing loop.
+#   * UDP      : the Enhanced UDP NAT (parse -> route -> outbound send -> reverse relay -> write back)
+#                is verified by the deterministic unit test
+#                `sb-adapters inbound::tun_enhanced::tests::udp_forward_direct_echo_relays_back`
+#                (real DirectConnector UDP socket + reverse relay, no root). A single-host *live*
+#                UDP-through-utun proof with a `direct` outbound is not feasible: `direct` dials the
+#                literal destination, which `auto_route` sends back into utun (routing loop). The
+#                shared utun device read path is proven live by the TCP probes; `parse_raw_udp` is
+#                unit-tested. So UDP is proven by composition, not by a live curl here.
+#
 # Artifacts are written under WORK only; no repo-root scratch files.
 set -u
 
@@ -16,6 +30,10 @@ WORK="${WORK:-/tmp/pf03b-tun-smoke}"
 TARGET_IP="${PF03B_TARGET_IP:-198.18.0.2}"
 TARGET_PORT="${PF03B_TARGET_PORT:-18080}"
 TARGET_CIDR="${PF03B_TARGET_CIDR:-198.18.0.0/16}"
+PROBE_IPV6="${PF03B_PROBE_IPV6:-1}"
+TARGET_IP6="${PF03B_TARGET_IP6:-fd00:db8::2}"
+TARGET_CIDR6="${PF03B_TARGET_CIDR6:-fd00:db8::/32}"
+TUN_ADDR6="${PF03B_TUN_ADDR6:-fd00:19::1/64}"
 SKIP_BUILD="${PF03B_SKIP_BUILD:-0}"
 UID_NOW="$(id -u)"
 PLATFORM="$(uname -s | tr '[:upper:]' '[:lower:]')"
@@ -59,6 +77,9 @@ STARTED_SEEN="false"
 CURL_STATUS_VALUE=""
 CURL_SUCCESS="false"
 OUTBOUND_HIT="false"
+CURL6_STATUS_VALUE=""
+CURL6_SUCCESS="false"
+OUTBOUND6_HIT="false"
 CLEANUP_STATUS="not_run"
 MESSAGE=""
 APP_PID=""
@@ -92,6 +113,12 @@ json_result() {
   PF03B_CURL_STATUS="$CURL_STATUS_VALUE" \
   PF03B_CURL_SUCCESS="$CURL_SUCCESS" \
   PF03B_OUTBOUND_HIT="$OUTBOUND_HIT" \
+  PF03B_PROBE_IPV6="$PROBE_IPV6" \
+  PF03B_TARGET_IP6="$TARGET_IP6" \
+  PF03B_TARGET_CIDR6="$TARGET_CIDR6" \
+  PF03B_CURL6_STATUS="$CURL6_STATUS_VALUE" \
+  PF03B_CURL6_SUCCESS="$CURL6_SUCCESS" \
+  PF03B_OUTBOUND6_HIT="$OUTBOUND6_HIT" \
   PF03B_CLEANUP_STATUS="$CLEANUP_STATUS" \
   python3 - <<'PY' > "$RESULT"
 import json
@@ -99,6 +126,9 @@ import os
 
 def bool_env(name):
     return os.environ.get(name, "").lower() == "true"
+
+def bool_env_int(name):
+    return os.environ.get(name, "0") == "1"
 
 data = {
     "status": os.environ["RESULT_STATUS"],
@@ -114,6 +144,9 @@ data = {
     "target_ip": os.environ["PF03B_TARGET_IP"],
     "target_port": int(os.environ["PF03B_TARGET_PORT"]),
     "target_cidr": os.environ["PF03B_TARGET_CIDR"],
+    "probe_ipv6": bool_env_int("PF03B_PROBE_IPV6"),
+    "target_ip6": os.environ["PF03B_TARGET_IP6"],
+    "target_cidr6": os.environ["PF03B_TARGET_CIDR6"],
     "stages": {
         "binary": os.environ["PF03B_BUILD_STATUS"],
         "config_validation": os.environ["PF03B_CONFIG_STATUS"],
@@ -122,6 +155,9 @@ data = {
         "curl_http_status": os.environ["PF03B_CURL_STATUS"],
         "curl_success": bool_env("PF03B_CURL_SUCCESS"),
         "configured_outbound_hit": bool_env("PF03B_OUTBOUND_HIT"),
+        "curl6_http_status": os.environ["PF03B_CURL6_STATUS"],
+        "curl6_success": bool_env("PF03B_CURL6_SUCCESS"),
+        "configured_outbound6_hit": bool_env("PF03B_OUTBOUND6_HIT"),
         "cleanup": os.environ["PF03B_CLEANUP_STATUS"],
     },
     "artifacts": {
@@ -198,11 +234,21 @@ manual_route_cleanup_if_needed() {
          grep -q "$TARGET_CIDR" "$WORK/after_routes.txt" 2>/dev/null; then
         route delete "$TARGET_CIDR" > "$WORK/manual_route_cleanup.log" 2>&1 || true
       fi
+      if [ "$PROBE_IPV6" = "1" ] && \
+         ! grep -q "$TARGET_CIDR6" "$WORK/before_routes.txt" 2>/dev/null && \
+         grep -q "$TARGET_CIDR6" "$WORK/after_routes.txt" 2>/dev/null; then
+        route -inet6 delete "$TARGET_CIDR6" >> "$WORK/manual_route_cleanup.log" 2>&1 || true
+      fi
       ;;
     linux)
       if ! grep -q "$TARGET_CIDR" "$WORK/before_routes.txt" 2>/dev/null && \
          grep -q "$TARGET_CIDR" "$WORK/after_routes.txt" 2>/dev/null; then
         ip route delete "$TARGET_CIDR" > "$WORK/manual_route_cleanup.log" 2>&1 || true
+      fi
+      if [ "$PROBE_IPV6" = "1" ] && \
+         ! grep -q "$TARGET_CIDR6" "$WORK/before_routes.txt" 2>/dev/null && \
+         grep -q "$TARGET_CIDR6" "$WORK/after_routes.txt" 2>/dev/null; then
+        ip -6 route delete "$TARGET_CIDR6" >> "$WORK/manual_route_cleanup.log" 2>&1 || true
       fi
       ;;
   esac
@@ -335,6 +381,15 @@ start_proxy() {
 
 generate_config() {
   local proxy_port="$1"
+  local address_json="\"172.19.0.1/30\""
+  local route_address_json="\"$TARGET_CIDR\""
+  local rules_json="      { \"ip_cidr\": \"$TARGET_CIDR\", \"outbound\": \"pf03b-http-out\" }"
+  if [ "$PROBE_IPV6" = "1" ]; then
+    address_json="$address_json, \"$TUN_ADDR6\""
+    route_address_json="$route_address_json, \"$TARGET_CIDR6\""
+    rules_json="$rules_json,
+      { \"ip_cidr\": \"$TARGET_CIDR6\", \"outbound\": \"pf03b-http-out\" }"
+  fi
   cat > "$CONFIG" <<EOF
 {
   "log": { "level": "debug", "timestamp": false },
@@ -344,8 +399,8 @@ generate_config() {
       "tag": "pf03b-tun-in",
       "stack": "mixed",
       "interface_name": "$TUN_NAME",
-      "address": ["172.19.0.1/30"],
-      "route_address": ["$TARGET_CIDR"],
+      "address": [$address_json],
+      "route_address": [$route_address_json],
       "route_exclude_address": ["127.0.0.0/8", "::1/128"],
       "auto_route": true,
       "strict_route": true
@@ -357,7 +412,7 @@ generate_config() {
   ],
   "route": {
     "rules": [
-      { "ip_cidr": "$TARGET_CIDR", "outbound": "pf03b-http-out" }
+$rules_json
     ],
     "final": "block"
   }
@@ -479,11 +534,41 @@ run_privileged() {
     OUTBOUND_HIT="true"
   fi
 
-  if [ "$CURL_SUCCESS" = "true" ] && [ "$OUTBOUND_HIT" = "true" ]; then
-    finish "PASS" 0 "privileged TUN traffic reached the configured HTTP outbound and returned through the tunnel"
+  if [ "$PROBE_IPV6" = "1" ]; then
+    log "curling [${TARGET_IP6}]:${TARGET_PORT} without proxy flags (IPv6 TCP)"
+    CURL6_STATUS_VALUE="$(curl -g --noproxy '*' -sS -o "$WORK/curl6.body" -w "%{http_code}" --max-time 10 "http://[${TARGET_IP6}]:${TARGET_PORT}/pf03b" 2> "$WORK/curl6.err" || true)"
+    printf '%s\n' "$CURL6_STATUS_VALUE" > "$WORK/curl6.status"
+    if [ "$CURL6_STATUS_VALUE" = "200" ] && grep -q "PF03B-TUN-OK ${TARGET_IP}:${TARGET_PORT}" "$WORK/curl6.body" 2>/dev/null; then
+      CURL6_SUCCESS="true"
+    fi
+    # The proxy stub logs the CONNECT target host; IPv6 hosts may appear bracketed or bare.
+    if grep -Eq "CONNECT_LINE CONNECT (\[${TARGET_IP6}\]|${TARGET_IP6}):${TARGET_PORT} " "$PROXY_LOG" 2>/dev/null; then
+      OUTBOUND6_HIT="true"
+    fi
   fi
 
-  finish "FAIL" 1 "privileged TUN startup occurred but dataplane/outbound proof failed"
+  local v4_ok="false"
+  local v6_ok="true"
+  if [ "$CURL_SUCCESS" = "true" ] && [ "$OUTBOUND_HIT" = "true" ]; then
+    v4_ok="true"
+  fi
+  if [ "$PROBE_IPV6" = "1" ]; then
+    if [ "$CURL6_SUCCESS" = "true" ] && [ "$OUTBOUND6_HIT" = "true" ]; then
+      v6_ok="true"
+    else
+      v6_ok="false"
+    fi
+  fi
+
+  if [ "$v4_ok" = "true" ] && [ "$v6_ok" = "true" ]; then
+    if [ "$PROBE_IPV6" = "1" ]; then
+      finish "PASS" 0 "privileged TUN traffic (TCP IPv4 + IPv6) reached the configured HTTP outbound and returned through the tunnel"
+    else
+      finish "PASS" 0 "privileged TUN traffic reached the configured HTTP outbound and returned through the tunnel"
+    fi
+  fi
+
+  finish "FAIL" 1 "privileged TUN startup occurred but dataplane/outbound proof failed (v4_ok=$v4_ok v6_ok=$v6_ok)"
 }
 
 log "repo=$REPO"

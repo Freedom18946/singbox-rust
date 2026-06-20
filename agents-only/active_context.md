@@ -10,29 +10,30 @@
 
 ---
 
+## Resume (2026-06-20b) - post003 TUN UDP/IPv6 + proxy egress
+
+- **post_fable_package03 DONE**: Enhanced TUN datapath extended beyond TCP/IPv4 — UDP NAT
+  (`tun_udp.rs` + `OutboundRegistryHandle::connect_udp`) and IPv6 TCP/UDP reply packets
+  (`tun_packet.rs` IPv6 build + pseudo-header checksums). Fixed `DirectUdpTransport`
+  connected-socket send (macOS EISCONN os err 56). Fixed TUN egress through **proxy
+  outbounds** (`connect_tcp_stream` + boxed-stream session relay; datapath was direct-only).
+- **Live root 03b proof PASS** (`/tmp/pf03b_post003_privileged2`): TCP IPv4+IPv6 through HTTP
+  outbound — curl 200 + outbound_hit both stacks + cleanup complete; IPv6 traffic fully
+  round-tripped. UDP proven by unit test (single-host live UDP-through-utun infeasible: direct
+  egress loops back into utun; documented). Limits: SOCKS5/Hyst2 UDP loud-Unsupported; no IP
+  frag. `make boundaries` has 2 PRE-EXISTING failures (W75-01 `bridge.rs`, W199-03 `register.rs`),
+  confirmed on clean HEAD, unrelated to post003 — no new violation. Evidence: the
+  post_fable_package03 TUN dataplane evidence note (post_fable_packages dir).
+
 ## Resume (2026-06-20) - P1313-03 DNS rule actions/cache
 - **P1313-03 DONE**: DNS rule fields/logical rules, route-options/action options, answer cache semantics, ECS/predefined wire response, RDRC rejection, and FakeIP-safe reverse mapping are pinned. Evidence: `agents-only/post1313/p1313_03_dns_rule_actions_and_cache_semantics.md`.
 - **P1313-01/02 DONE**: GUI fixture schema baseline and DNS transport manager remain closed; next is P1313-04 route rule engine/network strategy.
-## Resume (2026-06-14) - POST-FABLE wave
+## Resume (2026-06-14) - POST-FABLE wave (all closed; detail in post_fable README)
 
-- **package10 DONE**: CAL-11/20-25 closed via tracing cleanup, config validation,
-  explicit unsupported system_proxy, HTTP heartbeat guard, and entrypoint pins.
-- **package09 DONE** (`f2dcc34b` + 09b): selector/proxy-pool tests restored; DNS
-  resolver-hijack flakes hardened; CAL-08 inventory closed/deferred; clippy gate → 0.
-- **package08 DONE** (`c31e9d1d`): long-tail stubs loud; dns real in parity; deepest trojan
-  tests enabled; sb-subscribe fixtures pin unknown-type baselines.
-- **package06 (Inbound liveness/observability) DONE** (`bbc00416`): inbound monitors
-  classify exits; Clash `StartFailed` sidecar snapshots; DNS warning helper; V2Ray same-port retry.
-- **package05 DONE** (`a9236205`): reload waits for activation/readiness before commit;
-  failed reload keeps old listeners/registries; same-port in-process reload is rejected.
-- **package04 DONE** (`f70bf5ef`): endpoint tags enter outbound namespace; app
-  `adapters`/`parity` wire legacy `wireguard`; public WG peer proof remains out of scope.
-- **package03 PARTIAL** (`edf42095`, 03b boxed + package17 rerun): GUI TUN is loud;
-  normal-user proof PASS; privileged dataplane remains blocked by UID 501/no sudo.
-- **package12 DONE** (`349eecf3`): F-1 CLOSED; GUI default DNS shape passes strict load path.
-- **post_fable packages15-19 DONE; GUI joint testing PAUSED_INDEFINITE**:
-  package07 stays PARTIAL; Wails build artifacts removed and user App Support left on Go kernel/config.
-- **package01/package02 DONE**: startup keyword (`0a4cae74`); GUI flat TUN parses/lowers (`e3defcdf`).
+- All post_fable packages closed/known: package01-06/08-15 DONE; **package03 now DONE
+  via post003 (see above)**; package07 PARTIAL + GUI joint testing PAUSED_INDEFINITE
+  (Wails artifacts removed, user App Support left on Go kernel/config).
+  Per-package commits/status: `post_fable_packages` README map.
 
 ## Strategic State
 

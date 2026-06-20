@@ -3,17 +3,24 @@
 
 ## Status
 
-PARTIAL (2026-06-16, code commit `edf42095` + 03b harness boxed; package17
-privileged rerun blocked by missing root/admin privilege).
+DONE (2026-06-20, post003 extension). Live privileged proof passed end-to-end for
+TCP IPv4 + IPv6 through a configured HTTP proxy outbound; UDP NAT and IPv6 reply
+packets implemented and verified (UDP by unit test, IPv6 live).
 
-Runtime wiring and startup honesty are fixed for GUI-default-ish TUN configs:
-`mixed`/default/`smoltcp` enter Enhanced/smoltcp, `gvisor` enters the same backend
-with a compatibility warning, unsupported `system` and non-dry-run `manual` fail
-loudly, and TUN open/configure failure blocks startup before `sing-box started`.
+Earlier state was PARTIAL (2026-06-16, code commit `edf42095` + 03b harness boxed;
+privileged rerun blocked by missing root). The post003 extension closed it: it added
+the UDP/IPv6 datapath, fixed `DirectUdpTransport` connected-socket sends (macOS
+EISCONN), and — surfaced by the first live privileged run — fixed TUN egress through
+proxy outbounds (`connect_tcp_stream` + boxed-stream session relay), which had
+silently limited the TUN datapath to `direct` only.
 
-This is not DONE because local privileged TUN traffic proof is still blocked:
-normal-user macOS smoke reliably fails before `sing-box started`, and the 03b
-privileged harness cannot run here without a sudo password/root entitlement.
+Runtime wiring and startup honesty (from `edf42095`) remain: `mixed`/default/`smoltcp`
+enter Enhanced/smoltcp, `gvisor` enters the same backend with a compatibility warning,
+unsupported `system` and non-dry-run `manual` fail loudly, and TUN open/configure failure
+blocks startup before `sing-box started`.
+
+Evidence: `post_fable_package03_tun_dataplane_evidence.md` (see the post003 extension and
+the privileged proof sections).
 
 ## Source Findings
 
