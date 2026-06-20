@@ -10,9 +10,8 @@
 
 ---
 
-## Resume (2026-06-20) - P1313-01 config schema fixtures
-- **P1313-01 DONE**: GUI 1.25.1 `$schema`-only fixtures pass production sb-config;
-  outbound `icon`/`hidden` ignored; Go-style effective tag fallback pinned. post1313 planning remains in `agents-only/post1313/`.
+## Resume (2026-06-20) - P1313-02 DNS transport manager
+- **P1313-02 DONE**: typed DNS lowering + core manager closed; legacy `address`/`rcode://` compat kept. P1313-01 remains DONE. Evidence: `agents-only/post1313/p1313_02_dns_transport_manager.md`.
 
 ## Resume (2026-06-14) - POST-FABLE wave
 

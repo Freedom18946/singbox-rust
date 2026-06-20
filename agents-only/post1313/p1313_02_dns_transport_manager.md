@@ -65,6 +65,39 @@ fakeip, and legacy upgrade behavior, plus client cache options.
 - `cargo check -p app --features parity`
 - A new evidence note in this package file or a sibling evidence file.
 
+## Implementation Evidence (2026-06-20)
+
+Status: DONE.
+
+Implemented:
+
+- `sb-config` DNS IR now preserves Go-style typed server fields: `prefer_go`, `method`,
+  `headers`, per-server `cache_capacity`, and top-level `cache_capacity`.
+- `lower_dns` accepts local, hosts, udp, tcp, tls/dot, quic/doq, https, h3/http3/doh3,
+  dhcp, fakeip/fake-ip, tailscale, and resolved typed servers; unknown types emit the
+  stable error `unknown transport type: <type>`.
+- Legacy `address` compatibility is retained: plain host addresses upgrade to UDP,
+  `local`/`fakeip` stay special, and `rcode://...` servers are removed from runtime
+  upstreams after rewriting referencing rules to `action: predefined` + mapped `rcode`.
+- `sb-core` now builds DNS through `DnsServerManager`, which owns tag-to-upstream
+  construction, deterministic dependency ordering, default selection, fakeip accounting,
+  and loud errors for duplicate tags, missing defaults/dependencies, cycles, fakeip default,
+  multiple fakeip servers, and unknown/invalid server addresses.
+- DNS rule construction now carries predefined `rcode`/answer records through to runtime,
+  including legacy `rcode://...` rule rewrites; IR-built DNS RuleSets also populate the
+  suffix-trie index when that feature is enabled.
+- `resolver_from_ir` remains the external compatibility entry point; internally it uses
+  the manager and applies cache knobs with priority config > env > default.
+
+Verification:
+
+- `cargo test -p sb-config dns`
+- `cargo test -p sb-core dns`
+- `cargo test -p sb-core dns --features router,dns_udp,dns_doh,dns_dot,dns_doq,dns_doh3`
+- `cargo check -p app --features parity`
+- `./agents-only/06-scripts/verify-consistency.sh`
+- `cargo check --workspace --all-features`
+
 ## Non-Goals
 
 - DNS rule action behavior belongs to P1313-03.

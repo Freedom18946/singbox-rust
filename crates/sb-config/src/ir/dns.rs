@@ -16,6 +16,7 @@
 //! also remain outside DNS planning ownership.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use super::dns_raw::{RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR};
 
@@ -90,6 +91,18 @@ pub struct DnsServerIR {
     /// Hosts: predefined domain→IP mappings
     #[serde(default)]
     pub predefined: Option<serde_json::Value>,
+    /// Local DNS transport: prefer Go-style resolver implementation when available.
+    #[serde(default)]
+    pub prefer_go: Option<bool>,
+    /// HTTPS/H3 DNS transport method override.
+    #[serde(default)]
+    pub method: Option<String>,
+    /// HTTPS/H3 DNS transport headers.
+    #[serde(default)]
+    pub headers: BTreeMap<String, Vec<String>>,
+    /// Per-server cache capacity hint.
+    #[serde(default)]
+    pub cache_capacity: Option<u32>,
 }
 
 impl<'de> Deserialize<'de> for DnsServerIR {
@@ -255,6 +268,9 @@ pub struct DnsIR {
     /// only LRU eviction removes them. (Go parity: disable_expire)
     #[serde(default)]
     pub disable_expire: Option<bool>,
+    /// Global DNS cache capacity.
+    #[serde(default)]
+    pub cache_capacity: Option<u32>,
     /// FakeIP settings
     #[serde(default)]
     pub fakeip_enabled: Option<bool>,

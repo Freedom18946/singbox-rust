@@ -273,7 +273,11 @@ impl DnsRuleEngine {
 
                     let rcode = if let Some(rcode_str) = &decision.rcode {
                         match rcode_str.to_ascii_uppercase().as_str() {
+                            "NOERROR" => crate::dns::cache::Rcode::NoError,
+                            "FORMERR" => crate::dns::cache::Rcode::FormErr,
+                            "SERVFAIL" => crate::dns::cache::Rcode::ServFail,
                             "NXDOMAIN" => crate::dns::cache::Rcode::NxDomain,
+                            "NOTIMP" => crate::dns::cache::Rcode::NotImp,
                             "REFUSED" => crate::dns::cache::Rcode::Refused,
                             _ => crate::dns::cache::Rcode::NoError,
                         }

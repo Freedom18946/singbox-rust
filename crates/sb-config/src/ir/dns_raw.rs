@@ -24,8 +24,49 @@
 //! and public compat/re-export paths.
 
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 use super::{DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR};
+
+fn deserialize_header_map<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Vec<String>>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    let value = Option::<serde_json::Value>::deserialize(deserializer)?;
+    Ok(normalize_header_value(value.as_ref()))
+}
+
+fn normalize_header_value(value: Option<&serde_json::Value>) -> BTreeMap<String, Vec<String>> {
+    let mut headers = BTreeMap::new();
+    let Some(obj) = value.and_then(|v| v.as_object()) else {
+        return headers;
+    };
+
+    for (key, value) in obj {
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        let values: Vec<String> = match value {
+            serde_json::Value::String(s) => vec![s.trim().to_string()],
+            serde_json::Value::Array(items) => items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToOwned::to_owned)
+                .collect(),
+            _ => Vec::new(),
+        };
+        if !values.is_empty() {
+            headers.insert(key.to_string(), values);
+        }
+    }
+
+    headers
+}
 
 /// Raw DNS server configuration — strict input boundary for [`DnsServerIR`].
 #[derive(Debug, Clone, Deserialize)]
@@ -87,6 +128,18 @@ pub struct RawDnsServerIR {
     /// Hosts: predefined domain→IP mappings
     #[serde(default)]
     pub predefined: Option<serde_json::Value>,
+    /// Local DNS transport: prefer Go-style resolver implementation when available.
+    #[serde(default)]
+    pub prefer_go: Option<bool>,
+    /// HTTPS/H3 DNS transport method override.
+    #[serde(default)]
+    pub method: Option<String>,
+    /// HTTPS/H3 DNS transport headers.
+    #[serde(default, deserialize_with = "deserialize_header_map")]
+    pub headers: BTreeMap<String, Vec<String>>,
+    /// Per-server cache capacity hint.
+    #[serde(default)]
+    pub cache_capacity: Option<u32>,
 }
 
 impl From<RawDnsServerIR> for DnsServerIR {
@@ -111,6 +164,10 @@ impl From<RawDnsServerIR> for DnsServerIR {
             inet6_range: raw.inet6_range,
             hosts_path: raw.hosts_path,
             predefined: raw.predefined,
+            prefer_go: raw.prefer_go,
+            method: raw.method,
+            headers: raw.headers,
+            cache_capacity: raw.cache_capacity,
         }
     }
 }
@@ -308,6 +365,9 @@ pub struct RawDnsIR {
     /// When true, cached DNS entries never expire based on TTL.
     #[serde(default)]
     pub disable_expire: Option<bool>,
+    /// Global DNS cache capacity.
+    #[serde(default)]
+    pub cache_capacity: Option<u32>,
     /// FakeIP settings
     #[serde(default)]
     pub fakeip_enabled: Option<bool>,
@@ -357,6 +417,7 @@ impl From<RawDnsIR> for DnsIR {
             strategy: raw.strategy,
             independent_cache: raw.independent_cache,
             disable_expire: raw.disable_expire,
+            cache_capacity: raw.cache_capacity,
             fakeip_enabled: raw.fakeip_enabled,
             fakeip_v4_base: raw.fakeip_v4_base,
             fakeip_v4_mask: raw.fakeip_v4_mask,

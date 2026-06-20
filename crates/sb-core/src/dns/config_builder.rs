@@ -1,4 +1,4 @@
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use std::sync::Arc;
 
 use anyhow::Result;
@@ -14,6 +14,207 @@ type DnsComponents = (
     Arc<dyn Resolver>,
     Option<Arc<dyn crate::dns::dns_router::DnsRouter>>,
 );
+
+struct DnsServerManager {
+    registry: Arc<crate::dns::transport::TransportRegistry>,
+    upstreams: HashMap<String, Arc<dyn DnsUpstream>>,
+    ordered_tags: Vec<String>,
+    fakeip_tags: Vec<String>,
+    default_tag: String,
+}
+
+impl DnsServerManager {
+    fn build(dns: &sb_config::ir::DnsIR) -> Result<Self> {
+        let registry = Arc::new(crate::dns::transport::TransportRegistry::new());
+        let mut upstreams = HashMap::<String, Arc<dyn DnsUpstream>>::new();
+        let mut ordered_tags = Vec::<String>::new();
+        let mut fakeip_tags = Vec::<String>::new();
+        let mut seen = HashSet::<String>::new();
+        let mut dependencies = HashMap::<String, Vec<String>>::new();
+
+        for server in &dns.servers {
+            if server.tag.trim().is_empty() {
+                anyhow::bail!("dns server tag must not be empty");
+            }
+            if !seen.insert(server.tag.clone()) {
+                anyhow::bail!("duplicate dns server tag: {}", server.tag);
+            }
+
+            let kind = dns_server_kind(server);
+            let is_fakeip = kind.as_deref() == Some("fakeip");
+            if is_fakeip {
+                if !fakeip_tags.is_empty() {
+                    anyhow::bail!("multiple fakeip server are not supported");
+                }
+                fakeip_tags.push(server.tag.clone());
+            }
+
+            if let Some(dep) = server.address_resolver.as_ref().filter(|s| !s.is_empty()) {
+                dependencies
+                    .entry(server.tag.clone())
+                    .or_default()
+                    .push(dep.clone());
+            }
+
+            let upstream = build_upstream_from_server(server, &registry)?
+                .ok_or_else(|| unknown_dns_transport_error(server))?;
+            upstreams.insert(server.tag.clone(), upstream);
+            ordered_tags.push(server.tag.clone());
+        }
+
+        if upstreams.is_empty() {
+            anyhow::bail!("dns: no servers configured");
+        }
+
+        for (tag, deps) in &dependencies {
+            for dep in deps {
+                if !upstreams.contains_key(dep) {
+                    anyhow::bail!("dependency[{}] not found for server[{}]", dep, tag);
+                }
+            }
+        }
+        let ordered_tags = topological_order(&ordered_tags, &dependencies)?;
+
+        let default_tag = dns
+            .default
+            .as_ref()
+            .or(dns.final_server.as_ref())
+            .cloned()
+            .or_else(|| {
+                ordered_tags
+                    .iter()
+                    .find(|tag| !fakeip_tags.contains(tag))
+                    .cloned()
+            })
+            .ok_or_else(|| anyhow::anyhow!("default server cannot be fakeip"))?;
+
+        if !upstreams.contains_key(&default_tag) {
+            anyhow::bail!("default DNS server not found: {}", default_tag);
+        }
+        if fakeip_tags.contains(&default_tag) {
+            anyhow::bail!("default server cannot be fakeip");
+        }
+
+        Ok(Self {
+            registry,
+            upstreams,
+            ordered_tags,
+            fakeip_tags,
+            default_tag,
+        })
+    }
+
+    fn ordered_upstreams(&self) -> Vec<Arc<dyn DnsUpstream>> {
+        self.ordered_tags
+            .iter()
+            .filter_map(|tag| self.upstreams.get(tag).cloned())
+            .collect()
+    }
+}
+
+fn dns_server_kind(server: &sb_config::ir::DnsServerIR) -> Option<String> {
+    server
+        .server_type
+        .as_ref()
+        .map(|s| normalize_dns_kind(s))
+        .or_else(|| kind_from_address(&server.address))
+}
+
+fn normalize_dns_kind(kind: &str) -> String {
+    match kind.trim().to_ascii_lowercase().as_str() {
+        "dot" => "tls".to_string(),
+        "doq" => "quic".to_string(),
+        "http3" | "doh3" => "h3".to_string(),
+        "fake-ip" => "fakeip".to_string(),
+        other => other.to_string(),
+    }
+}
+
+fn is_supported_dns_kind(kind: &str) -> bool {
+    matches!(
+        normalize_dns_kind(kind).as_str(),
+        "system"
+            | "local"
+            | "hosts"
+            | "udp"
+            | "tcp"
+            | "tls"
+            | "quic"
+            | "https"
+            | "h3"
+            | "dhcp"
+            | "fakeip"
+            | "tailscale"
+            | "resolved"
+    )
+}
+
+fn kind_from_address(address: &str) -> Option<String> {
+    let address = address.trim();
+    if address.is_empty() {
+        return None;
+    }
+    if let Some((scheme, _)) = address.split_once("://") {
+        return Some(normalize_dns_kind(scheme));
+    }
+    match address.to_ascii_lowercase().as_str() {
+        "system" | "local" | "hosts" | "fakeip" | "dhcp" | "tailscale" | "resolved" => {
+            Some(address.to_ascii_lowercase())
+        }
+        _ => Some("udp".to_string()),
+    }
+}
+
+fn unknown_dns_transport_error(server: &sb_config::ir::DnsServerIR) -> anyhow::Error {
+    let kind = dns_server_kind(server).unwrap_or_else(|| server.address.clone());
+    anyhow::anyhow!("unknown transport type: {}", kind)
+}
+
+fn topological_order(
+    ordered_tags: &[String],
+    dependencies: &HashMap<String, Vec<String>>,
+) -> Result<Vec<String>> {
+    fn visit(
+        tag: &str,
+        dependencies: &HashMap<String, Vec<String>>,
+        visited: &mut HashSet<String>,
+        in_progress: &mut Vec<String>,
+        ordered: &mut Vec<String>,
+    ) -> Result<()> {
+        if let Some(pos) = in_progress.iter().position(|item| item == tag) {
+            let mut cycle = in_progress[pos..].to_vec();
+            cycle.push(tag.to_string());
+            anyhow::bail!("circular server dependency: {}", cycle.join(" -> "));
+        }
+        if visited.contains(tag) {
+            return Ok(());
+        }
+
+        in_progress.push(tag.to_string());
+        if let Some(deps) = dependencies.get(tag) {
+            for dep in deps {
+                visit(dep, dependencies, visited, in_progress, ordered)?;
+            }
+        }
+        in_progress.pop();
+        visited.insert(tag.to_string());
+        ordered.push(tag.to_string());
+        Ok(())
+    }
+
+    let mut visited = HashSet::new();
+    let mut ordered = Vec::new();
+    for tag in ordered_tags {
+        visit(
+            tag,
+            dependencies,
+            &mut visited,
+            &mut Vec::new(),
+            &mut ordered,
+        )?;
+    }
+    Ok(ordered)
+}
 
 /// Build DNS components (Resolver and Router) from sb-config IR.
 ///
@@ -51,39 +252,7 @@ pub fn build_dns_components(
         crate::dns::DnsStrategy::default()
     };
 
-    // 0) Initialize TransportRegistry
-    // Note: TransportRegistry is shared across all upstreams to manage shared transports
-    let registry = Arc::new(crate::dns::transport::TransportRegistry::new());
-
-    // 1) Build upstream registry
-    let mut upstreams: HashMap<String, Arc<dyn DnsUpstream>> = HashMap::new();
-    let mut fakeip_tags: Vec<String> = Vec::new();
-    for s in &dns.servers {
-        // Track FakeIP upstreams (L2.10.12)
-        let is_fakeip = s.server_type.as_deref() == Some("fakeip");
-        if let Some(up) = build_upstream_from_server(s, &registry)? {
-            upstreams.insert(s.tag.clone(), up);
-            if is_fakeip {
-                fakeip_tags.push(s.tag.clone());
-            }
-        }
-    }
-
-    // Determine default upstream tag
-    let default_tag = if let Some(d) = dns.default.as_ref() {
-        d.clone()
-    } else if let Some((tag, _)) = upstreams.iter().next() {
-        tag.clone()
-    } else {
-        "system".to_string()
-    };
-    if !upstreams.contains_key(&default_tag) {
-        // Add system upstream as fallback when default not found
-        upstreams.insert(
-            default_tag.clone(),
-            Arc::new(crate::dns::upstream::SystemUpstream::new()),
-        );
-    }
+    let manager = DnsServerManager::build(&dns)?;
 
     // Load GeoIP
     let geoip_db = if let Some(path) = &ir.route.geoip_path {
@@ -148,10 +317,10 @@ pub fn build_dns_components(
                 priority: r.priority.unwrap_or(100),
                 address_limit: r.address_limit,
                 rewrite_ip,
-                rcode: None,
-                answer: None,
-                ns: None,
-                extra: None,
+                rcode: r.rcode.clone(),
+                answer: r.answer.clone(),
+                ns: r.ns.clone(),
+                extra: r.extra.clone(),
                 disable_cache: r.disable_cache,
                 rewrite_ttl: r.rewrite_ttl,
                 client_subnet: r.client_subnet.clone(),
@@ -160,16 +329,16 @@ pub fn build_dns_components(
 
         let engine = DnsRuleEngine::new(
             routing_rules,
-            upstreams,
-            default_tag,
+            manager.upstreams.clone(),
+            manager.default_tag.clone(),
             strategy,
-            registry,
+            manager.registry.clone(),
             geoip_db,
             geosite_db,
         );
         // Mark FakeIP upstreams (L2.10.12)
         let mut engine = engine;
-        for tag in &fakeip_tags {
+        for tag in &manager.fakeip_tags {
             engine.mark_fakeip_upstream(tag);
         }
         let engine_arc = Arc::new(engine);
@@ -184,15 +353,16 @@ pub fn build_dns_components(
             engine: engine_arc.clone(),
         });
         let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
+        let cached = maybe_wrap_cache(&dns, overlay);
 
         // engine_arc implements DnsRouter
         let router: Arc<dyn crate::dns::dns_router::DnsRouter> = engine_arc;
 
-        return Ok((overlay, Some(router)));
+        return Ok((cached, Some(router)));
     }
 
     // 3) No rules: use simple DnsResolver over all upstreams
-    let list: Vec<Arc<dyn DnsUpstream>> = upstreams.into_values().collect();
+    let list: Vec<Arc<dyn DnsUpstream>> = manager.ordered_upstreams();
     let base: Arc<dyn Resolver> = Arc::new(
         DnsResolver::new(list)
             .with_name("dns_ir".to_string())
@@ -246,6 +416,14 @@ pub fn build_upstream(
         let sa = normalize_host_port(rest, 53)?;
         return Ok(Some(Arc::new(crate::dns::upstream::UdpUpstream::new(sa))));
     }
+    if let Some(rest) = a.strip_prefix("tcp://") {
+        let sa = normalize_host_port(rest, 53)?;
+        let transport = crate::dns::transport::TcpTransport::new(sa);
+        return Ok(Some(Arc::new(TransportBackedUpstream::new(
+            format!("tcp::{sa}"),
+            Arc::new(transport),
+        ))));
+    }
     if a.starts_with("https://") || a.starts_with("http://") {
         let up = crate::dns::upstream::DohUpstream::new(a.to_string())?;
         return Ok(Some(Arc::new(up)));
@@ -289,6 +467,10 @@ pub fn build_upstream(
         let up = crate::dns::upstream::Doh3Upstream::new(sa, host.to_string(), path)?;
         return Ok(Some(Arc::new(up)));
     }
+    if a.split_once("://").is_none() {
+        let sa = normalize_host_port(a, 53)?;
+        return Ok(Some(Arc::new(crate::dns::upstream::UdpUpstream::new(sa))));
+    }
     Ok(None)
 }
 
@@ -300,6 +482,10 @@ pub fn build_upstream_from_server(
 ) -> Result<Option<Arc<dyn DnsUpstream>>> {
     // L2.10.11: Check server_type first (GUI generates "type" field)
     if let Some(ref st) = srv.server_type {
+        let st = normalize_dns_kind(st);
+        if !is_supported_dns_kind(&st) {
+            return Ok(None);
+        }
         match st.as_str() {
             "resolved" => {
                 #[cfg(all(target_os = "linux", feature = "service_resolved"))]
@@ -361,7 +547,9 @@ pub fn build_upstream_from_server(
     if a.is_empty() && srv.server_type.is_none() {
         return Ok(None);
     }
-    let a = if a.is_empty() { "system" } else { a };
+    if a.is_empty() {
+        return Ok(None);
+    }
     if a.eq_ignore_ascii_case("system") {
         return Ok(Some(Arc::new(crate::dns::upstream::SystemUpstream::new())));
     }
@@ -387,6 +575,14 @@ pub fn build_upstream_from_server(
         let up = crate::dns::upstream::UdpUpstream::new(sa)
             .with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
+    }
+    if let Some(rest) = a.strip_prefix("tcp://") {
+        let sa = normalize_host_port(rest, 53)?;
+        let transport = crate::dns::transport::TcpTransport::new(sa);
+        return Ok(Some(Arc::new(TransportBackedUpstream::new(
+            format!("tcp::{}", srv.tag),
+            Arc::new(transport),
+        ))));
     }
     if a.starts_with("https://") || a.starts_with("http://") {
         let mut up = crate::dns::upstream::DohUpstream::new(a.to_string())?;
@@ -464,6 +660,186 @@ pub fn build_upstream_from_server(
     }
     // Fallback to address-only builder
     build_upstream(a, _registry)
+}
+
+struct TransportBackedUpstream {
+    name: String,
+    transport: Arc<dyn crate::dns::transport::DnsTransport>,
+}
+
+impl TransportBackedUpstream {
+    fn new(name: String, transport: Arc<dyn crate::dns::transport::DnsTransport>) -> Self {
+        Self { name, transport }
+    }
+}
+
+#[async_trait::async_trait]
+impl DnsUpstream for TransportBackedUpstream {
+    async fn query(
+        &self,
+        domain: &str,
+        record_type: crate::dns::RecordType,
+    ) -> Result<crate::dns::DnsAnswer> {
+        let query_id = 0x1313;
+        let query = build_dns_query_packet(query_id, domain, record_type)?;
+        let response = self.transport.query(&query).await?;
+        parse_dns_answer_packet(&response, query_id, record_type)
+    }
+
+    async fn exchange(&self, packet: &[u8]) -> Result<Vec<u8>> {
+        self.transport.query(packet).await
+    }
+
+    fn name(&self) -> &str {
+        &self.name
+    }
+
+    async fn health_check(&self) -> bool {
+        true
+    }
+
+    async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+        self.transport.start(stage).await
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.transport.close().await
+    }
+}
+
+fn build_dns_query_packet(
+    query_id: u16,
+    domain: &str,
+    record_type: crate::dns::RecordType,
+) -> Result<Vec<u8>> {
+    let mut packet = Vec::new();
+    packet.extend_from_slice(&query_id.to_be_bytes());
+    packet.extend_from_slice(&[0x01, 0x00, 0x00, 0x01, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00]);
+    for label in domain.trim_end_matches('.').split('.') {
+        if label.is_empty() || label.len() > 63 {
+            anyhow::bail!("invalid DNS label in domain: {domain}");
+        }
+        packet.push(label.len() as u8);
+        packet.extend_from_slice(label.as_bytes());
+    }
+    packet.push(0);
+    packet.extend_from_slice(&(record_type as u16).to_be_bytes());
+    packet.extend_from_slice(&1u16.to_be_bytes());
+    Ok(packet)
+}
+
+fn parse_dns_answer_packet(
+    packet: &[u8],
+    expected_id: u16,
+    expected_type: crate::dns::RecordType,
+) -> Result<crate::dns::DnsAnswer> {
+    if packet.len() < 12 {
+        anyhow::bail!("DNS response too short");
+    }
+    if u16::from_be_bytes([packet[0], packet[1]]) != expected_id {
+        anyhow::bail!("DNS response query id mismatch");
+    }
+    let rcode = packet[3] & 0x0f;
+    if rcode != 0 {
+        return Ok(crate::dns::DnsAnswer::new(
+            Vec::new(),
+            std::time::Duration::from_secs(0),
+            crate::dns::cache::Source::Upstream,
+            dns_rcode_from_wire(rcode),
+        ));
+    }
+    let qdcount = u16::from_be_bytes([packet[4], packet[5]]) as usize;
+    let ancount = u16::from_be_bytes([packet[6], packet[7]]) as usize;
+    let mut offset = 12;
+    for _ in 0..qdcount {
+        skip_dns_name(packet, &mut offset)?;
+        offset = offset
+            .checked_add(4)
+            .filter(|n| *n <= packet.len())
+            .ok_or_else(|| anyhow::anyhow!("DNS question truncated"))?;
+    }
+
+    let mut ips = Vec::new();
+    let mut ttl = std::time::Duration::from_secs(300);
+    for _ in 0..ancount {
+        skip_dns_name(packet, &mut offset)?;
+        if offset + 10 > packet.len() {
+            anyhow::bail!("DNS answer truncated");
+        }
+        let rr_type = u16::from_be_bytes([packet[offset], packet[offset + 1]]);
+        let rr_ttl = u32::from_be_bytes([
+            packet[offset + 4],
+            packet[offset + 5],
+            packet[offset + 6],
+            packet[offset + 7],
+        ]);
+        let rdlen = u16::from_be_bytes([packet[offset + 8], packet[offset + 9]]) as usize;
+        offset += 10;
+        if offset + rdlen > packet.len() {
+            anyhow::bail!("DNS rdata truncated");
+        }
+        match (rr_type, expected_type, rdlen) {
+            (1, crate::dns::RecordType::A, 4) => {
+                ips.push(std::net::IpAddr::V4(std::net::Ipv4Addr::new(
+                    packet[offset],
+                    packet[offset + 1],
+                    packet[offset + 2],
+                    packet[offset + 3],
+                )));
+                ttl = ttl.min(std::time::Duration::from_secs(rr_ttl as u64));
+            }
+            (28, crate::dns::RecordType::AAAA, 16) => {
+                let mut octets = [0u8; 16];
+                octets.copy_from_slice(&packet[offset..offset + 16]);
+                ips.push(std::net::IpAddr::V6(std::net::Ipv6Addr::from(octets)));
+                ttl = ttl.min(std::time::Duration::from_secs(rr_ttl as u64));
+            }
+            _ => {}
+        }
+        offset += rdlen;
+    }
+
+    Ok(crate::dns::DnsAnswer::new(
+        ips,
+        ttl,
+        crate::dns::cache::Source::Upstream,
+        crate::dns::cache::Rcode::NoError,
+    ))
+}
+
+fn skip_dns_name(packet: &[u8], offset: &mut usize) -> Result<()> {
+    loop {
+        if *offset >= packet.len() {
+            anyhow::bail!("DNS name truncated");
+        }
+        let len = packet[*offset];
+        if len & 0xc0 == 0xc0 {
+            *offset = offset
+                .checked_add(2)
+                .filter(|n| *n <= packet.len())
+                .ok_or_else(|| anyhow::anyhow!("DNS compression pointer truncated"))?;
+            return Ok(());
+        }
+        *offset += 1;
+        if len == 0 {
+            return Ok(());
+        }
+        *offset = offset
+            .checked_add(len as usize)
+            .filter(|n| *n <= packet.len())
+            .ok_or_else(|| anyhow::anyhow!("DNS label truncated"))?;
+    }
+}
+
+fn dns_rcode_from_wire(rcode: u8) -> crate::dns::cache::Rcode {
+    match rcode {
+        1 => crate::dns::cache::Rcode::FormErr,
+        2 => crate::dns::cache::Rcode::ServFail,
+        3 => crate::dns::cache::Rcode::NxDomain,
+        4 => crate::dns::cache::Rcode::NotImp,
+        5 => crate::dns::cache::Rcode::Refused,
+        other => crate::dns::cache::Rcode::Other(other),
+    }
 }
 
 #[cfg(feature = "dns_dhcp")]
@@ -649,9 +1025,10 @@ fn maybe_wrap_cache(dns: &sb_config::ir::DnsIR, base: Arc<dyn Resolver>) -> Arc<
         return base;
     }
 
-    let cap = std::env::var("SB_DNS_CACHE_SIZE")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
+    let cap = dns
+        .cache_capacity
+        .map(|v| v as usize)
+        .or_else(|| env_u64("SB_DNS_CACHE_SIZE").map(|v| v as usize))
         .unwrap_or(1024);
     let cache =
         Arc::new(DnsCache::new(cap).with_disable_expire(dns.disable_expire.unwrap_or(false)));
@@ -764,6 +1141,9 @@ fn apply_env_from_ir(dns: &sb_config::ir::DnsIR) {
     if let Some(v) = dns.client_subnet.as_ref() {
         set_if_unset("SB_DNS_CLIENT_SUBNET", v);
     }
+    if let Some(v) = dns.cache_capacity {
+        set_if_unset("SB_DNS_CACHE_SIZE", &v.to_string());
+    }
 }
 
 fn hydrate_dns_ir_from_env(dns: &sb_config::ir::DnsIR) -> sb_config::ir::DnsIR {
@@ -819,6 +1199,9 @@ fn hydrate_dns_ir_from_env(dns: &sb_config::ir::DnsIR) -> sb_config::ir::DnsIR {
     if hydrated.client_subnet.is_none() {
         hydrated.client_subnet = env_string("SB_DNS_CLIENT_SUBNET");
     }
+    hydrated.cache_capacity = hydrated
+        .cache_capacity
+        .or_else(|| env_u64("SB_DNS_CACHE_SIZE").map(|v| v as u32));
 
     if hydrated.hosts_ttl_s.is_none() {
         hydrated.hosts_ttl_s = env_u64("SB_DNS_STATIC_TTL_S");
@@ -927,7 +1310,15 @@ fn build_ruleset_from_rule(
         dr.domain = v;
     }
 
-    // Attach fallback domain suffix list for matcher (when suffix_trie disabled)
+    // Attach domain suffix indices for the matcher.
+    #[cfg(feature = "suffix_trie")]
+    let domain_trie = {
+        let mut trie = crate::router::suffix_trie::SuffixTrie::new();
+        for suffix in &dr.domain_suffix {
+            trie.insert(suffix);
+        }
+        trie
+    };
     #[cfg(not(feature = "suffix_trie"))]
     let suffixes = dr.domain_suffix.clone();
 
@@ -949,7 +1340,7 @@ fn build_ruleset_from_rule(
         version: 1,
         rules: vec![Rule::Default(dr)],
         #[cfg(feature = "suffix_trie")]
-        domain_trie: StdArc::new(Default::default()),
+        domain_trie: StdArc::new(domain_trie),
         #[cfg(not(feature = "suffix_trie"))]
         domain_suffixes: StdArc::new(suffixes),
         ip_tree: StdArc::new(ip_tree),
@@ -979,6 +1370,21 @@ mod tests {
     use super::*;
     use crate::dns::DnsAnswer;
     use crate::testutil::EnvVarGuard;
+
+    fn dns_server(tag: &str, address: &str) -> sb_config::ir::DnsServerIR {
+        sb_config::ir::DnsServerIR {
+            tag: tag.to_string(),
+            address: address.to_string(),
+            ..Default::default()
+        }
+    }
+
+    fn dns_ir(servers: Vec<sb_config::ir::DnsServerIR>) -> sb_config::ir::DnsIR {
+        sb_config::ir::DnsIR {
+            servers,
+            ..Default::default()
+        }
+    }
 
     #[test]
     fn resolver_builds_with_mixed_upstreams() {
@@ -1043,6 +1449,165 @@ mod tests {
         };
         let res = resolver_from_ir(&config);
         assert!(res.is_ok());
+    }
+
+    #[test]
+    fn p1313_02_manager_builds_mixed_local_hosts_fakeip_and_tcp() {
+        let mut hosts = dns_server("hosts", "hosts");
+        hosts.server_type = Some("hosts".to_string());
+        hosts.predefined = Some(serde_json::json!({"example.com": ["1.2.3.4"]}));
+
+        let mut fakeip = dns_server("fakeip", "fakeip");
+        fakeip.server_type = Some("fakeip".to_string());
+
+        let mut dns = dns_ir(vec![
+            dns_server("local", "local"),
+            dns_server("udp", "udp://1.1.1.1:53"),
+            dns_server("tcp", "tcp://1.1.1.1:53"),
+            hosts,
+            fakeip,
+        ]);
+        dns.default = Some("local".to_string());
+
+        let manager = DnsServerManager::build(&dns).expect("manager should build");
+        assert_eq!(manager.default_tag, "local");
+        assert!(manager.upstreams.contains_key("tcp"));
+        assert_eq!(manager.fakeip_tags, vec!["fakeip".to_string()]);
+    }
+
+    #[test]
+    fn p1313_02_manager_rejects_missing_default() {
+        let mut dns = dns_ir(vec![dns_server("local", "local")]);
+        dns.default = Some("ghost".to_string());
+
+        let err = DnsServerManager::build(&dns)
+            .err()
+            .expect("manager should reject missing default")
+            .to_string();
+        assert_eq!(err, "default DNS server not found: ghost");
+    }
+
+    #[test]
+    fn p1313_02_manager_rejects_fakeip_default_and_multiple_fakeip() {
+        let mut dns = dns_ir(vec![dns_server("fakeip", "fakeip")]);
+        dns.servers[0].server_type = Some("fakeip".to_string());
+        dns.default = Some("fakeip".to_string());
+        let err = DnsServerManager::build(&dns)
+            .err()
+            .expect("manager should reject fakeip default")
+            .to_string();
+        assert_eq!(err, "default server cannot be fakeip");
+
+        let mut second = dns_server("fakeip2", "fakeip");
+        second.server_type = Some("fakeip".to_string());
+        dns.servers.push(second);
+        dns.default = None;
+        let err = DnsServerManager::build(&dns)
+            .err()
+            .expect("manager should reject multiple fakeip servers")
+            .to_string();
+        assert_eq!(err, "multiple fakeip server are not supported");
+    }
+
+    #[test]
+    fn p1313_02_manager_rejects_missing_dependency_and_cycle() {
+        let mut dns = dns_ir(vec![dns_server("main", "udp://1.1.1.1:53")]);
+        dns.servers[0].address_resolver = Some("missing".to_string());
+        let err = DnsServerManager::build(&dns)
+            .err()
+            .expect("manager should reject missing dependency")
+            .to_string();
+        assert_eq!(err, "dependency[missing] not found for server[main]");
+
+        let mut a = dns_server("a", "udp://1.1.1.1:53");
+        a.address_resolver = Some("b".to_string());
+        let mut b = dns_server("b", "udp://8.8.8.8:53");
+        b.address_resolver = Some("a".to_string());
+        let err = DnsServerManager::build(&dns_ir(vec![a, b]))
+            .err()
+            .expect("manager should reject dependency cycle")
+            .to_string();
+        assert_eq!(err, "circular server dependency: a -> b -> a");
+    }
+
+    #[test]
+    fn p1313_02_manager_dependency_order_is_deterministic() {
+        let mut main = dns_server("main", "udp://1.1.1.1:53");
+        main.address_resolver = Some("bootstrap".to_string());
+        let bootstrap = dns_server("bootstrap", "udp://8.8.8.8:53");
+
+        let manager = DnsServerManager::build(&dns_ir(vec![main, bootstrap])).unwrap();
+        assert_eq!(manager.ordered_tags, vec!["bootstrap", "main"]);
+    }
+
+    #[test]
+    fn p1313_02_manager_rejects_unknown_transport_type() {
+        let mut dns = dns_ir(vec![dns_server("bad", "bogus://1.1.1.1")]);
+        dns.servers[0].server_type = Some("bogus".to_string());
+        let err = DnsServerManager::build(&dns)
+            .err()
+            .expect("manager should reject unknown transport type")
+            .to_string();
+        assert_eq!(err, "unknown transport type: bogus");
+    }
+
+    #[test]
+    fn p1313_02_cache_capacity_prefers_config_and_disable_cache_bypasses() {
+        let config = sb_config::ir::ConfigIR {
+            dns: Some(sb_config::ir::DnsIR {
+                servers: vec![dns_server("local", "local")],
+                default: Some("local".to_string()),
+                cache_capacity: Some(7),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let resolver = resolver_from_ir(&config).unwrap();
+        assert_eq!(resolver.cache_stats(), (0, 7));
+
+        let disabled = sb_config::ir::ConfigIR {
+            dns: Some(sb_config::ir::DnsIR {
+                servers: vec![dns_server("local", "local")],
+                default: Some("local".to_string()),
+                disable_cache: Some(true),
+                cache_capacity: Some(7),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let resolver = resolver_from_ir(&disabled).unwrap();
+        assert_eq!(resolver.cache_stats(), (0, 0));
+    }
+
+    #[tokio::test]
+    async fn p1313_02_legacy_rcode_rule_reaches_runtime() {
+        let doc = serde_json::json!({
+            "schema_version": 2,
+            "dns": {
+                "servers": [
+                    {"tag": "reject-name", "address": "rcode://name_error"},
+                    {"tag": "local", "address": "local"}
+                ],
+                "rules": [
+                    {"domain_suffix": ["blocked.example"], "server": "reject-name"}
+                ],
+                "final": "local"
+            }
+        });
+        let ir = sb_config::validator::v2::to_ir_v1(&doc);
+        let dns = ir.dns.as_ref().expect("dns should lower");
+        assert_eq!(dns.rules[0].action.as_deref(), Some("predefined"));
+        assert_eq!(dns.rules[0].rcode.as_deref(), Some("NXDOMAIN"));
+        assert!(dns.rules[0].server.is_none());
+
+        let (_, router) = build_dns_components(&ir, None).expect("components should build");
+        let query = crate::dns::udp::build_query("blocked.example", 1).unwrap();
+        let response = router
+            .expect("router should be present")
+            .exchange(&crate::dns::dns_router::DnsQueryContext::new(), &query)
+            .await
+            .unwrap();
+        assert_eq!(response[3] & 0x0f, 3);
     }
 
     #[test]

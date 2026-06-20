@@ -1,6 +1,6 @@
 use sb_types::IssueCode;
 use serde_json::{Map, Value};
-use std::collections::HashSet;
+use std::collections::{BTreeMap, HashSet};
 
 use super::{
     emit_issue, extract_string_list, insert_keys, object_keys, parse_u16_field, parse_u32_field,
@@ -28,9 +28,37 @@ fn allowed_dns_server_keys() -> HashSet<String> {
             "server_port",
             "path",
             "interface",
+            "prefer_go",
+            "method",
+            "headers",
+            "cache_capacity",
         ],
     );
     set
+}
+
+fn is_supported_dns_server_type(ty: &str) -> bool {
+    matches!(
+        ty.trim().to_ascii_lowercase().as_str(),
+        "local"
+            | "hosts"
+            | "udp"
+            | "tcp"
+            | "tls"
+            | "dot"
+            | "quic"
+            | "doq"
+            | "https"
+            | "h3"
+            | "http3"
+            | "doh3"
+            | "dhcp"
+            | "fakeip"
+            | "fake-ip"
+            | "tailscale"
+            | "resolved"
+            | "rcode"
+    )
 }
 
 fn allowed_dns_rule_keys() -> HashSet<String> {
@@ -85,6 +113,53 @@ pub(crate) fn validate_dns(doc: &Value, allow_unknown: bool, issues: &mut Vec<Va
                             "unknown field",
                             "remove it",
                         ));
+                    }
+                }
+                if let Some(ty) = map.get("type").and_then(|v| v.as_str()) {
+                    if !is_supported_dns_server_type(ty) {
+                        issues.push(emit_issue(
+                            "error",
+                            IssueCode::InvalidEnum,
+                            &format!("/dns/servers/{}/type", i),
+                            &format!("unknown transport type: {}", ty),
+                            "use a supported DNS server type",
+                        ));
+                    }
+                    if ty.eq_ignore_ascii_case("rcode") {
+                        let rcode = map
+                            .get("server")
+                            .and_then(|v| v.as_str())
+                            .unwrap_or_default();
+                        if !matches!(
+                            rcode,
+                            "success"
+                                | "format_error"
+                                | "server_failure"
+                                | "name_error"
+                                | "not_implemented"
+                                | "refused"
+                        ) {
+                            issues.push(emit_issue(
+                                "error",
+                                IssueCode::InvalidEnum,
+                                &format!("/dns/servers/{}/server", i),
+                                &format!("unknown rcode: {}", rcode),
+                                "use a supported rcode name",
+                            ));
+                        }
+                    }
+                }
+                if let Some(address) = map.get("address").and_then(|v| v.as_str()) {
+                    if let Some(rcode) = address.trim().strip_prefix("rcode://") {
+                        if rcode_name_from_legacy(address).is_none() {
+                            issues.push(emit_issue(
+                                "error",
+                                IssueCode::InvalidEnum,
+                                &format!("/dns/servers/{}/address", i),
+                                &format!("unknown rcode: {}", rcode),
+                                "use a supported rcode name",
+                            ));
+                        }
                     }
                 }
             }
@@ -213,6 +288,27 @@ fn dns_https_path(map: &Map<String, Value>) -> String {
     }
 }
 
+fn has_dns_scheme(address: &str) -> bool {
+    address.split_once("://").is_some()
+}
+
+fn canonical_dns_address_from_legacy(address: &str) -> String {
+    let address = address.trim();
+    if address.is_empty() {
+        return String::new();
+    }
+    if has_dns_scheme(address)
+        || matches!(
+            address.to_ascii_lowercase().as_str(),
+            "local" | "fakeip" | "hosts" | "dhcp" | "tailscale" | "resolved" | "system"
+        )
+    {
+        address.to_string()
+    } else {
+        format!("udp://{address}")
+    }
+}
+
 fn canonical_dns_address_from_type(map: &Map<String, Value>, ty: &str) -> String {
     let ty = ty.trim().to_ascii_lowercase();
     let server = trimmed_string_field(map, "server").unwrap_or_default();
@@ -223,6 +319,13 @@ fn canonical_dns_address_from_type(map: &Map<String, Value>, ty: &str) -> String
         "hosts" => "hosts".to_string(),
         "fakeip" | "fake-ip" => "fakeip".to_string(),
         "resolved" => "resolved".to_string(),
+        "tailscale" => {
+            if server.is_empty() {
+                "tailscale".to_string()
+            } else {
+                format!("tailscale://{}", server_with_port(&server, port))
+            }
+        }
         "dhcp" => trimmed_string_field(map, "interface")
             .map(|iface| format!("dhcp://{iface}"))
             .unwrap_or_else(|| "dhcp".to_string()),
@@ -293,6 +396,50 @@ fn canonical_dns_address_from_type(map: &Map<String, Value>, ty: &str) -> String
     }
 }
 
+fn dns_header_map(map: &Map<String, Value>) -> BTreeMap<String, Vec<String>> {
+    let mut headers = BTreeMap::new();
+    let Some(obj) = map.get("headers").and_then(|v| v.as_object()) else {
+        return headers;
+    };
+    for (key, value) in obj {
+        let key = key.trim();
+        if key.is_empty() {
+            continue;
+        }
+        let values: Vec<String> = match value {
+            Value::String(s) => vec![s.trim().to_string()],
+            Value::Array(items) => items
+                .iter()
+                .filter_map(|item| item.as_str())
+                .map(str::trim)
+                .filter(|s| !s.is_empty())
+                .map(ToOwned::to_owned)
+                .collect(),
+            _ => Vec::new(),
+        };
+        if !values.is_empty() {
+            headers.insert(key.to_string(), values);
+        }
+    }
+    headers
+}
+
+fn rcode_name_from_legacy(address: &str) -> Option<String> {
+    let rcode = address
+        .trim()
+        .strip_prefix("rcode://")?
+        .to_ascii_lowercase();
+    match rcode.as_str() {
+        "success" => Some("NOERROR".to_string()),
+        "format_error" => Some("FORMERR".to_string()),
+        "server_failure" => Some("SERVFAIL".to_string()),
+        "name_error" => Some("NXDOMAIN".to_string()),
+        "not_implemented" => Some("NOTIMP".to_string()),
+        "refused" => Some("REFUSED".to_string()),
+        _ => None,
+    }
+}
+
 /// Lower the `/dns` block from raw JSON into `ConfigIR.dns`.
 ///
 /// This is the single DNS lowering owner — `to_ir_v1()` delegates here.
@@ -334,7 +481,7 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                     .and_then(|v| v.as_str())
                     .map(|s| s.trim().to_string())
                 {
-                    addr
+                    canonical_dns_address_from_legacy(&addr)
                 } else if let Some(ref ty) = ty {
                     canonical_dns_address_from_type(map, ty)
                 } else {
@@ -434,6 +581,13 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                         accept_default_resolvers: map
                             .get("accept_default_resolvers")
                             .and_then(|v| v.as_bool()),
+                        prefer_go: map.get("prefer_go").and_then(|v| v.as_bool()),
+                        method: map
+                            .get("method")
+                            .and_then(|v| v.as_str())
+                            .map(|s| s.to_string()),
+                        headers: dns_header_map(map),
+                        cache_capacity: parse_u32_field(map.get("cache_capacity")),
                         inet4_range: map
                             .get("inet4_range")
                             .and_then(|v| v.as_str())
@@ -554,10 +708,26 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
                     }
                 }
 
+                if let Some(server) = dr.server.as_deref() {
+                    if let Some(rcode) = dd
+                        .servers
+                        .iter()
+                        .find(|srv| srv.tag == server)
+                        .and_then(|srv| rcode_name_from_legacy(&srv.address))
+                    {
+                        dr.action = Some("predefined".to_string());
+                        dr.rcode = Some(rcode);
+                        dr.server = None;
+                    }
+                }
+
                 dd.rules.push(dr);
             }
         }
     }
+
+    dd.servers
+        .retain(|srv| rcode_name_from_legacy(&srv.address).is_none());
 
     // ── global knobs ──
     dd.default = dns
@@ -581,6 +751,7 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
         .map(|s| s.to_string());
     dd.independent_cache = dns.get("independent_cache").and_then(|v| v.as_bool());
     dd.disable_expire = dns.get("disable_expire").and_then(|v| v.as_bool());
+    dd.cache_capacity = parse_u32_field(dns.get("cache_capacity"));
     if let Some(v) = dns.get("timeout_ms").and_then(|x| x.as_u64()) {
         dd.timeout_ms = Some(v);
     }
@@ -925,14 +1096,13 @@ mod tests {
         });
         let ir = to_ir_v1(&doc);
         let dns = ir.dns.expect("dns");
-        assert_eq!(dns.servers.len(), 6);
+        assert_eq!(dns.servers.len(), 5);
         let find = |tag: &str| dns.servers.iter().find(|s| s.tag == tag).unwrap();
         assert_eq!(find("u1").address, "udp://8.8.8.8");
         assert_eq!(find("t1").address, "tcp://8.8.4.4");
         assert_eq!(find("tls1").address, "tls://1.1.1.1");
         assert_eq!(find("dot1").address, "tls://9.9.9.9");
         assert_eq!(find("h1").address, "https://dns.example.com/dns-query");
-        assert_eq!(find("r1").address, "rcode://success");
     }
 
     #[test]
@@ -1493,6 +1663,136 @@ mod tests {
         let ir = to_ir_v1(&doc);
         let dns = ir.dns.expect("dns");
         assert_eq!(dns.servers[0].ca_pem, vec!["PEM_DATA".to_string()]);
+    }
+
+    #[test]
+    fn p1313_02_go_style_typed_server_fields_lower() {
+        let doc = json!({
+            "schema_version": 2,
+            "dns": {
+                "servers": [
+                    {
+                        "tag": "https",
+                        "type": "https",
+                        "server": "dns.example.com",
+                        "server_port": 8443,
+                        "path": "query",
+                        "method": "GET",
+                        "headers": {
+                            "User-Agent": "singbox-rust",
+                            "Accept": ["application/dns-message", "application/json"]
+                        },
+                        "prefer_go": true,
+                        "domain_resolver": "bootstrap",
+                        "detour": "proxy",
+                        "cache_capacity": 64
+                    },
+                    {"tag": "bootstrap", "type": "udp", "server": "1.1.1.1"}
+                ],
+                "cache_capacity": 128,
+                "final": "https"
+            }
+        });
+        let ir = to_ir_v1(&doc);
+        let dns = ir.dns.expect("dns");
+        let server = &dns.servers[0];
+        assert_eq!(server.address, "https://dns.example.com:8443/query");
+        assert_eq!(server.method.as_deref(), Some("GET"));
+        assert_eq!(server.prefer_go, Some(true));
+        assert_eq!(server.address_resolver.as_deref(), Some("bootstrap"));
+        assert_eq!(server.detour.as_deref(), Some("proxy"));
+        assert_eq!(server.cache_capacity, Some(64));
+        assert_eq!(
+            server.headers["User-Agent"],
+            vec!["singbox-rust".to_string()]
+        );
+        assert_eq!(
+            server.headers["Accept"],
+            vec![
+                "application/dns-message".to_string(),
+                "application/json".to_string()
+            ]
+        );
+        assert_eq!(dns.cache_capacity, Some(128));
+    }
+
+    #[test]
+    fn p1313_02_unknown_dns_type_is_stable_error() {
+        let doc = json!({
+            "dns": {
+                "servers": [
+                    {"tag": "bad", "type": "bogus", "server": "1.1.1.1"}
+                ]
+            }
+        });
+        let issues = run_validate(&doc, false);
+        assert!(
+            issues.iter().any(|i| {
+                i["kind"] == "error"
+                    && i["code"] == "InvalidEnum"
+                    && i["ptr"] == "/dns/servers/0/type"
+                    && i["msg"] == "unknown transport type: bogus"
+            }),
+            "unknown type should produce stable error: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn p1313_02_unknown_legacy_rcode_is_stable_error() {
+        let doc = json!({
+            "dns": {
+                "servers": [
+                    {"tag": "bad", "address": "rcode://mystery"}
+                ]
+            }
+        });
+        let issues = run_validate(&doc, false);
+        assert!(
+            issues.iter().any(|i| {
+                i["kind"] == "error"
+                    && i["code"] == "InvalidEnum"
+                    && i["ptr"] == "/dns/servers/0/address"
+                    && i["msg"] == "unknown rcode: mystery"
+            }),
+            "unknown rcode should produce stable error: {issues:?}"
+        );
+    }
+
+    #[test]
+    fn p1313_02_plain_legacy_address_upgrades_to_udp() {
+        let doc = json!({
+            "schema_version": 2,
+            "dns": {
+                "servers": [{"tag": "plain", "address": "1.1.1.1"}],
+                "final": "plain"
+            }
+        });
+        let dns = to_ir_v1(&doc).dns.expect("dns");
+        assert_eq!(dns.servers[0].address, "udp://1.1.1.1");
+        assert_eq!(dns.servers[0].server_type.as_deref(), Some("udp"));
+    }
+
+    #[test]
+    fn p1313_02_legacy_rcode_server_rewrites_rule_to_predefined() {
+        let doc = json!({
+            "schema_version": 2,
+            "dns": {
+                "servers": [
+                    {"tag": "reject-name", "address": "rcode://name_error"},
+                    {"tag": "upstream", "address": "udp://1.1.1.1"}
+                ],
+                "rules": [
+                    {"domain": ["blocked.example"], "server": "reject-name"}
+                ],
+                "final": "upstream"
+            }
+        });
+        let dns = to_ir_v1(&doc).dns.expect("dns");
+        assert_eq!(dns.servers.len(), 1);
+        assert_eq!(dns.servers[0].tag, "upstream");
+        assert_eq!(dns.rules[0].action.as_deref(), Some("predefined"));
+        assert_eq!(dns.rules[0].rcode.as_deref(), Some("NXDOMAIN"));
+        assert!(dns.rules[0].server.is_none());
     }
 
     // DNS rule with action (no server inference)
