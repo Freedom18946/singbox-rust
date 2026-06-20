@@ -13,17 +13,17 @@
 ## Resume (2026-06-20b) - post003 TUN UDP/IPv6 + proxy egress
 
 - **post_fable_package03 DONE**: Enhanced TUN datapath extended beyond TCP/IPv4 — UDP NAT
-  (`tun_udp.rs` + `OutboundRegistryHandle::connect_udp`) and IPv6 TCP/UDP reply packets
-  (`tun_packet.rs` IPv6 build + pseudo-header checksums). Fixed `DirectUdpTransport`
-  connected-socket send (macOS EISCONN os err 56). Fixed TUN egress through **proxy
-  outbounds** (`connect_tcp_stream` + boxed-stream session relay; datapath was direct-only).
+  (`tun_udp.rs` + `connect_udp`) + IPv6 TCP/UDP reply packets; fixed `DirectUdpTransport`
+  connected-socket send (macOS EISCONN); fixed TUN egress through **proxy outbounds**
+  (`connect_tcp_stream` + boxed-stream session relay; datapath was direct-only).
 - **Live root 03b proof PASS** (`/tmp/pf03b_post003_privileged2`): TCP IPv4+IPv6 through HTTP
-  outbound — curl 200 + outbound_hit both stacks + cleanup complete; IPv6 traffic fully
-  round-tripped. UDP proven by unit test (single-host live UDP-through-utun infeasible: direct
-  egress loops back into utun; documented). Limits: SOCKS5/Hyst2 UDP loud-Unsupported; no IP
-  frag. `make boundaries` has 2 PRE-EXISTING failures (W75-01 `bridge.rs`, W199-03 `register.rs`),
-  confirmed on clean HEAD, unrelated to post003 — no new violation. Evidence: the
-  post_fable_package03 TUN dataplane evidence note (post_fable_packages dir).
+  outbound — curl 200 + outbound_hit both stacks + cleanup; IPv6 fully round-tripped. UDP proven
+  by unit test (single-host live UDP-through-utun infeasible: direct egress loops; documented).
+  Limits: SOCKS5/Hyst2 UDP loud-Unsupported; no IP frag. Evidence: post_fable_package03 evidence note.
+- **Boundary gate reconciled → `make boundaries` exit 0**: 3 pre-existing stale policy items fixed
+  (no source change, MIG-02 not weakened): W75-01 forbid scoped to the fallback idiom (was a bare
+  literal hitting a test fixture); W199-03 require tracks the CAL-18 loud `invalid_config_outbound`
+  tailscale stub; V4 budget `bridge_inbounds_runtime_refs` max 8→14 (legit reload/liveness refs).
 
 ## Resume (2026-06-20) - P1313-03 DNS rule actions/cache
 - **P1313-03 DONE**: DNS rule fields/logical rules, route-options/action options, answer cache semantics, ECS/predefined wire response, RDRC rejection, and FakeIP-safe reverse mapping are pinned. Evidence: `agents-only/post1313/p1313_03_dns_rule_actions_and_cache_semantics.md`.

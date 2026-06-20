@@ -247,7 +247,7 @@ forbid|W74-01-no-socks-udp-enhanced-proxy-fallthrough-comment|crates/sb-adapters
 require|W74-02-socks-udp-enhanced-proxy-requires-upstream-msg|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|proxy decision requires SOCKS5 upstream; direct fallback is disabled; packet dropped|socks5-udp enhanced proxy decision without upstream should fail explicitly without direct fallback
 require|W74-03-socks-udp-enhanced-proxy-send-failed-msg|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|proxy send failed; direct fallback is disabled; packet dropped|socks5-udp enhanced proxy send failure should fail explicitly without direct fallback
 require|W74-04-socks-udp-enhanced-proxy-no-fallback-metric|crates/sb-adapters/src/inbound/socks/udp_enhanced.rs|class\" => \"proxy_no_fallback|socks5-udp enhanced proxy decision path should record proxy_no_fallback metric class
-forbid|W75-01-no-adapter-bridge-router-rules-text-direct-default|crates/sb-core/src/adapter/bridge.rs|\"direct\"\.to_string\(\)|adapter bridge router rules text builder should not use silent direct default fallback
+forbid|W75-01-no-adapter-bridge-router-rules-text-direct-default|crates/sb-core/src/adapter/bridge.rs|unwrap_or_else\([^)]*\"direct\"\.to_string\(\)\)|adapter bridge router rules text builder should not use silent direct default fallback (scoped to the fallback idiom, mirrors W76-01; bare literal also appears in test fixtures)
 require|W75-02-adapter-bridge-router-rules-text-unresolved-default|crates/sb-core/src/adapter/bridge.rs|\"unresolved\"\.to_string\(\)|adapter bridge router rules text builder should use explicit unresolved marker instead of silent direct fallback
 forbid|W76-01-no-routing-engine-default-outbound-direct-literal|crates/sb-core/src/routing/engine.rs|unwrap_or_else\([^)]*\"direct\"\.into\(\)\)|routing engine default_outbound should not use silent direct literal fallback
 require|W76-02-routing-engine-default-outbound-unresolved-literal|crates/sb-core/src/routing/engine.rs|unwrap_or_else\([^)]*\"unresolved\"\.into\(\)\)|routing engine default_outbound should use explicit unresolved marker instead of silent direct fallback
@@ -577,7 +577,7 @@ require|W198-06-socks-sticky-explicit-warn|crates/sb-adapters/src/inbound/socks/
 
 forbid|W199-01-no-tailscale-direct-fallback|crates/sb-adapters/src/register.rs|falling back to direct connector|tailscale disabled stub must not fall back to direct connector
 forbid|W199-02-no-tailscale-build-core-direct|crates/sb-adapters/src/register.rs|build_core_direct_connector.*tailscale|tailscale disabled stub must not construct core direct connector
-require|W199-03-tailscale-stub-returns-none|crates/sb-adapters/src/register.rs|stub_outbound\("tailscale"\)|tailscale disabled stub should use standard stub_outbound pattern
+require|W199-03-tailscale-stub-invalid-config|crates/sb-adapters/src/register.rs|unsupported_outbound_feature_reason\("adapter-tailscale"\)|tailscale disabled stub should fail loud via invalid_config_outbound (CAL-18), not silent stub_outbound/None
 
 # --- Wave 200: 8 inbound handlers — rules_global Direct default elimination ---
 forbid|W200-01-no-trojan-direct-default|crates/sb-adapters/src/inbound/trojan.rs|let mut decision = RDecision::Direct|trojan inbound must not default to Direct when router missing

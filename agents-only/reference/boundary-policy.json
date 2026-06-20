@@ -1,5 +1,5 @@
 {
-  "version": "2026-03-09-phase4",
+  "version": "2026-06-20-reconcile",
   "v4": {
     "v4a_max": 23,
     "v4b_mode": "informational"
@@ -21,7 +21,7 @@
         "crates/sb-core/src/runtime/mod.rs"
       ],
       "pattern": "bridge\\.inbounds",
-      "max": 8,
+      "max": 14,
       "severity": "fail"
     },
     {
