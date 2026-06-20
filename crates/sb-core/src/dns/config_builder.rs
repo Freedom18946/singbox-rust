@@ -335,7 +335,8 @@ pub fn build_dns_components(
             manager.registry.clone(),
             geoip_db,
             geosite_db,
-        );
+        )
+        .with_lifecycle_order(manager.ordered_tags.clone());
         // Mark FakeIP upstreams (L2.10.12)
         let mut engine = engine;
         for tag in &manager.fakeip_tags {
@@ -1549,6 +1550,18 @@ mod tests {
             .expect("manager should reject unknown transport type")
             .to_string();
         assert_eq!(err, "unknown transport type: bogus");
+    }
+
+    #[test]
+    fn p1313_02_manager_rejects_invalid_server_address() {
+        let err = DnsServerManager::build(&dns_ir(vec![dns_server("bad", "udp://")]))
+            .err()
+            .expect("manager should reject invalid server address")
+            .to_string();
+        assert!(
+            err.contains("invalid socket address syntax"),
+            "invalid address should be loud and deterministic, got: {err}"
+        );
     }
 
     #[test]

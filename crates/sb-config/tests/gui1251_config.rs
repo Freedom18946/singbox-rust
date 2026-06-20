@@ -71,7 +71,7 @@ fn gui1251_fixtures_pass_production_load_path_without_schema_version() {
             "{name} should carry GUI-generated $schema header"
         );
 
-        let (cfg, ir) = load_production(raw);
+        let (cfg, ir) = load_production(raw.clone());
         assert_eq!(
             cfg.raw().get("schema_version").and_then(|v| v.as_u64()),
             Some(2),
@@ -87,6 +87,22 @@ fn gui1251_fixtures_pass_production_load_path_without_schema_version() {
                 .and_then(|experimental| experimental.cache_file.as_ref())
                 .is_some(),
             "{name} should preserve experimental.cache_file"
+        );
+        let raw_cache_file = raw
+            .get("experimental")
+            .and_then(|experimental| experimental.get("cache_file"))
+            .expect("fixture should carry experimental.cache_file");
+        assert!(
+            raw_cache_file.get("store_rdrc").is_none(),
+            "{name} should model GUI 1.25.1 suppressed cache_file.store_rdrc"
+        );
+        assert_eq!(
+            ir.experimental
+                .as_ref()
+                .and_then(|experimental| experimental.cache_file.as_ref())
+                .map(|cache_file| cache_file.store_rdrc),
+            Some(false),
+            "{name} should keep suppressed store_rdrc false in IR"
         );
 
         let has_tun = ir

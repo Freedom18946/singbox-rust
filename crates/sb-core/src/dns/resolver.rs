@@ -310,7 +310,7 @@ impl Resolver for DnsResolver {
     }
 
     async fn close(&self) -> Result<()> {
-        for up in &self.upstreams {
+        for up in self.upstreams.iter().rev() {
             up.close()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to close upstream {}: {}", up.name(), e))?;
@@ -398,6 +398,66 @@ mod tests {
         async fn health_check(&self) -> bool {
             self.healthy
         }
+    }
+
+    struct LifecycleTraceUpstream {
+        name: String,
+        events: Arc<parking_lot::Mutex<Vec<String>>>,
+    }
+
+    #[async_trait]
+    impl DnsUpstream for LifecycleTraceUpstream {
+        async fn query(&self, _domain: &str, _record_type: RecordType) -> Result<DnsAnswer> {
+            Err(anyhow::anyhow!("not implemented"))
+        }
+
+        fn name(&self) -> &str {
+            &self.name
+        }
+
+        async fn health_check(&self) -> bool {
+            true
+        }
+
+        async fn start(&self, _stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+            self.events.lock().push(format!("start:{}", self.name));
+            Ok(())
+        }
+
+        async fn close(&self) -> Result<()> {
+            self.events.lock().push(format!("close:{}", self.name));
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn p1313_02_resolver_lifecycle_starts_in_order_and_closes_reverse() {
+        let events = Arc::new(parking_lot::Mutex::new(Vec::<String>::new()));
+        let bootstrap = Arc::new(LifecycleTraceUpstream {
+            name: "bootstrap".to_string(),
+            events: events.clone(),
+        }) as Arc<dyn DnsUpstream>;
+        let main = Arc::new(LifecycleTraceUpstream {
+            name: "main".to_string(),
+            events: events.clone(),
+        }) as Arc<dyn DnsUpstream>;
+        let resolver = DnsResolver::new(vec![bootstrap, main]);
+
+        resolver
+            .start(crate::dns::transport::DnsStartStage::Start)
+            .await
+            .unwrap();
+        resolver.close().await.unwrap();
+
+        assert_eq!(
+            events.lock().as_slice(),
+            &[
+                "start:bootstrap".to_string(),
+                "start:main".to_string(),
+                "close:main".to_string(),
+                "close:bootstrap".to_string()
+            ]
+        );
     }
 
     #[tokio::test]

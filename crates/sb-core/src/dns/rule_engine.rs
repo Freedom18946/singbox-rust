@@ -121,6 +121,8 @@ pub struct DnsRuleEngine {
     rules: Vec<CompiledRule>,
     /// Upstream servers by tag
     upstreams: HashMap<String, Arc<dyn DnsUpstream>>,
+    /// Optional deterministic lifecycle order for upstream tags.
+    lifecycle_order: Vec<String>,
     /// Default upstream tag (fallback)
     default_upstream_tag: String,
     /// Routing decision cache
@@ -172,6 +174,7 @@ impl DnsRuleEngine {
         Self {
             rules,
             upstreams,
+            lifecycle_order: Vec::new(),
             default_upstream_tag,
             cache,
             strategy,
@@ -180,6 +183,38 @@ impl DnsRuleEngine {
             geosite,
             reverse_mapping: parking_lot::Mutex::new(lru::LruCache::new(lru_capacity(1024))),
             fakeip_tags: std::collections::HashSet::new(),
+        }
+    }
+
+    /// Set deterministic upstream lifecycle order.
+    ///
+    /// Callers that own dependency ordering, such as the DNS server manager, should pass
+    /// dependency-first tags here. Close runs in the reverse order.
+    pub fn with_lifecycle_order(mut self, lifecycle_order: Vec<String>) -> Self {
+        self.lifecycle_order = lifecycle_order;
+        self
+    }
+
+    fn lifecycle_tags(&self) -> Vec<String> {
+        if self.lifecycle_order.is_empty() {
+            let mut tags: Vec<String> = self.upstreams.keys().cloned().collect();
+            tags.sort();
+            tags
+        } else {
+            let mut tags = self.lifecycle_order.clone();
+            let mut seen: std::collections::HashSet<String> = tags.iter().cloned().collect();
+            let mut remaining: Vec<String> = self
+                .upstreams
+                .keys()
+                .filter(|tag| !seen.contains(*tag))
+                .cloned()
+                .collect();
+            remaining.sort();
+            for tag in remaining {
+                seen.insert(tag.clone());
+                tags.push(tag);
+            }
+            tags
         }
     }
 
@@ -544,7 +579,11 @@ impl DnsRuleEngine {
 
     /// Start the rule engine (and all upstreams)
     pub async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
-        for (tag, up) in &self.upstreams {
+        for tag in self.lifecycle_tags() {
+            let up = self
+                .upstreams
+                .get(&tag)
+                .ok_or_else(|| anyhow::anyhow!("Lifecycle upstream '{}' not found", tag))?;
             up.start(stage)
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to start upstream {}: {}", tag, e))?;
@@ -555,7 +594,11 @@ impl DnsRuleEngine {
 
     /// Close the rule engine
     pub async fn close(&self) -> Result<()> {
-        for (tag, up) in &self.upstreams {
+        for tag in self.lifecycle_tags().into_iter().rev() {
+            let up = self
+                .upstreams
+                .get(&tag)
+                .ok_or_else(|| anyhow::anyhow!("Lifecycle upstream '{}' not found", tag))?;
             up.close()
                 .await
                 .map_err(|e| anyhow::anyhow!("Failed to close upstream {}: {}", tag, e))?;
@@ -920,6 +963,80 @@ mod tests {
         async fn health_check(&self) -> bool {
             true
         }
+    }
+
+    struct LifecycleTraceUpstream {
+        tag: String,
+        events: Arc<parking_lot::Mutex<Vec<String>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl DnsUpstream for LifecycleTraceUpstream {
+        async fn query(&self, _domain: &str, _record_type: RecordType) -> Result<DnsAnswer> {
+            Err(anyhow::anyhow!("not implemented"))
+        }
+
+        fn name(&self) -> &str {
+            &self.tag
+        }
+
+        async fn health_check(&self) -> bool {
+            true
+        }
+
+        async fn start(&self, _stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+            self.events.lock().push(format!("start:{}", self.tag));
+            Ok(())
+        }
+
+        async fn close(&self) -> Result<()> {
+            self.events.lock().push(format!("close:{}", self.tag));
+            Ok(())
+        }
+    }
+
+    #[tokio::test]
+    async fn p1313_02_rule_engine_lifecycle_uses_order_and_reverse_close() {
+        let events = Arc::new(parking_lot::Mutex::new(Vec::<String>::new()));
+        let bootstrap = Arc::new(LifecycleTraceUpstream {
+            tag: "bootstrap".to_string(),
+            events: events.clone(),
+        }) as Arc<dyn DnsUpstream>;
+        let main = Arc::new(LifecycleTraceUpstream {
+            tag: "main".to_string(),
+            events: events.clone(),
+        }) as Arc<dyn DnsUpstream>;
+
+        let mut upstreams = HashMap::new();
+        upstreams.insert("main".to_string(), main);
+        upstreams.insert("bootstrap".to_string(), bootstrap);
+
+        let engine = DnsRuleEngine::new(
+            vec![],
+            upstreams,
+            "main".to_string(),
+            crate::dns::DnsStrategy::default(),
+            Arc::new(crate::dns::transport::TransportRegistry::new()),
+            None,
+            None,
+        )
+        .with_lifecycle_order(vec!["bootstrap".to_string(), "main".to_string()]);
+
+        engine
+            .start(crate::dns::transport::DnsStartStage::Start)
+            .await
+            .unwrap();
+        engine.close().await.unwrap();
+
+        assert_eq!(
+            events.lock().as_slice(),
+            &[
+                "start:bootstrap".to_string(),
+                "start:main".to_string(),
+                "close:main".to_string(),
+                "close:bootstrap".to_string()
+            ]
+        );
     }
 
     #[tokio::test]

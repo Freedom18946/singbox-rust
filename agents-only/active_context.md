@@ -10,8 +10,8 @@
 
 ---
 
-## Resume (2026-06-20) - P1313-02 DNS transport manager
-- **P1313-02 DONE**: typed DNS lowering + core manager closed; legacy `address`/`rcode://` compat kept. P1313-01 remains DONE. Evidence: `agents-only/post1313/p1313_02_dns_transport_manager.md`.
+## Resume (2026-06-20) - P1313-01/02 audit hardening
+- **P1313-01/02 DONE**: GUI fixture schema baseline and DNS transport manager re-audited; suppressed `store_rdrc`, invalid DNS address, and deterministic DNS lifecycle order are pinned. Evidence: `agents-only/post1313/p1313_01_config_schema_and_gui_fixtures.md`, `agents-only/post1313/p1313_02_dns_transport_manager.md`.
 
 ## Resume (2026-06-14) - POST-FABLE wave
 

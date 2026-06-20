@@ -87,6 +87,14 @@ Verified so far:
 - `cargo check -p app --features gui_runtime`
 - `./agents-only/06-scripts/verify-consistency.sh`
 
+Audit hardening (2026-06-20):
+
+- Rechecked P1313-01 against this package definition and pinned the GUI 1.25.1
+  `experimental.cache_file.store_rdrc` suppression explicitly: fixtures omit it and IR keeps
+  `store_rdrc == false`.
+- Re-ran `cargo test -p sb-config gui1251`, `cargo test -p sb-config --test compatibility_matrix`,
+  and `cargo check -p app --features gui_runtime`.
+
 ## Non-Goals
 
 - No GUI desktop automation.

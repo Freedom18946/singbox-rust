@@ -98,6 +98,17 @@ Verification:
 - `./agents-only/06-scripts/verify-consistency.sh`
 - `cargo check --workspace --all-features`
 
+Audit hardening (2026-06-20):
+
+- Rechecked P1313-02 against this package definition and tightened the remaining edge
+  evidence: invalid server addresses now have a deterministic manager test, and resolver /
+  rule-engine lifecycle tests prove dependency-first start with reverse close order.
+- `DnsRuleEngine` now accepts the manager's deterministic lifecycle order while preserving
+  existing direct-construction compatibility.
+- Re-ran `cargo test -p sb-config dns`, `cargo test -p sb-core dns` (sandboxed run hit a
+  local TCP bind permission error; sandbox-external rerun passed), `cargo check -p app
+  --features parity`, and `cargo check --workspace --all-features`.
+
 ## Non-Goals
 
 - DNS rule action behavior belongs to P1313-03.
