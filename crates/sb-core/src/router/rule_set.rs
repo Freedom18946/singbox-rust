@@ -172,18 +172,7 @@ impl RuleSetDb {
         let matchers = self.matchers.read();
         let ctx = MatchContext {
             domain: Some(host.to_string()),
-            destination_ip: None,
-            destination_port: 0,
-            network: None,
-            process_name: None,
-            process_path: None,
-            source_ip: None,
-            clash_mode: None,
-            source_port: None,
-            query_type: None,
-            geosite_codes: Vec::new(),
-            geoip_code: None,
-            inbound_tag: None,
+            ..Default::default()
         };
 
         for (tag, matcher) in matchers.iter() {
@@ -199,17 +188,7 @@ impl RuleSetDb {
         let ctx = MatchContext {
             domain: None,
             destination_ip: Some(ip),
-            destination_port: 0,
-            network: None,
-            process_name: None,
-            process_path: None,
-            source_ip: None,
-            source_port: None,
-            query_type: None,
-            clash_mode: None,
-            inbound_tag: None,
-            geosite_codes: Vec::new(),
-            geoip_code: None,
+            ..Default::default()
         };
 
         for (tag, matcher) in matchers.iter() {

@@ -31,6 +31,24 @@ pub struct DnsQueryContext {
     /// Source user id (Linux, if available).
     /// 源用户 ID（Linux，若可获取）。
     pub user_id: Option<u32>,
+    /// Authenticated inbound user.
+    pub auth_user: Option<String>,
+    /// Sniffed/application protocol.
+    pub protocol: Option<String>,
+    /// Android package name, if available.
+    pub package_name: Option<String>,
+    /// Selected outbound tag, if available.
+    pub outbound_tag: Option<String>,
+    /// Platform network type (wifi/cellular/etc.).
+    pub network_type: Option<String>,
+    /// Platform expensive-network flag.
+    pub network_is_expensive: Option<bool>,
+    /// Platform constrained-network flag.
+    pub network_is_constrained: Option<bool>,
+    /// WiFi SSID, if available.
+    pub wifi_ssid: Option<String>,
+    /// WiFi BSSID, if available.
+    pub wifi_bssid: Option<String>,
     /// Client address.
     /// 客户端地址。
     pub client: Option<std::net::SocketAddr>,
@@ -87,6 +105,57 @@ impl DnsQueryContext {
     #[must_use]
     pub fn with_user_id(mut self, user_id: u32) -> Self {
         self.user_id = Some(user_id);
+        self
+    }
+
+    /// Set the authenticated inbound user.
+    #[must_use]
+    pub fn with_auth_user(mut self, auth_user: impl Into<String>) -> Self {
+        self.auth_user = Some(auth_user.into());
+        self
+    }
+
+    /// Set the sniffed/application protocol.
+    #[must_use]
+    pub fn with_protocol(mut self, protocol: impl Into<String>) -> Self {
+        self.protocol = Some(protocol.into());
+        self
+    }
+
+    /// Set the Android package name.
+    #[must_use]
+    pub fn with_package_name(mut self, package_name: impl Into<String>) -> Self {
+        self.package_name = Some(package_name.into());
+        self
+    }
+
+    /// Set the selected outbound tag.
+    #[must_use]
+    pub fn with_outbound_tag(mut self, outbound_tag: impl Into<String>) -> Self {
+        self.outbound_tag = Some(outbound_tag.into());
+        self
+    }
+
+    /// Set the platform network type.
+    #[must_use]
+    pub fn with_network_type(mut self, network_type: impl Into<String>) -> Self {
+        self.network_type = Some(network_type.into());
+        self
+    }
+
+    /// Set platform network cost flags.
+    #[must_use]
+    pub fn with_network_flags(mut self, expensive: bool, constrained: bool) -> Self {
+        self.network_is_expensive = Some(expensive);
+        self.network_is_constrained = Some(constrained);
+        self
+    }
+
+    /// Set WiFi metadata.
+    #[must_use]
+    pub fn with_wifi(mut self, ssid: impl Into<String>, bssid: impl Into<String>) -> Self {
+        self.wifi_ssid = Some(ssid.into());
+        self.wifi_bssid = Some(bssid.into());
         self
     }
 

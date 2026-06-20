@@ -10,9 +10,9 @@
 
 ---
 
-## Resume (2026-06-20) - P1313-01/02 audit hardening
-- **P1313-01/02 DONE**: GUI fixture schema baseline and DNS transport manager re-audited; suppressed `store_rdrc`, invalid DNS address, and deterministic DNS lifecycle order are pinned. Evidence: `agents-only/post1313/p1313_01_config_schema_and_gui_fixtures.md`, `agents-only/post1313/p1313_02_dns_transport_manager.md`.
-
+## Resume (2026-06-20) - P1313-03 DNS rule actions/cache
+- **P1313-03 DONE**: DNS rule fields/logical rules, route-options/action options, answer cache semantics, ECS/predefined wire response, RDRC rejection, and FakeIP-safe reverse mapping are pinned. Evidence: `agents-only/post1313/p1313_03_dns_rule_actions_and_cache_semantics.md`.
+- **P1313-01/02 DONE**: GUI fixture schema baseline and DNS transport manager remain closed; next is P1313-04 route rule engine/network strategy.
 ## Resume (2026-06-14) - POST-FABLE wave
 
 - **package10 DONE**: CAL-11/20-25 closed via tracing cleanup, config validation,

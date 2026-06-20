@@ -16,6 +16,7 @@ pub mod remote;
 pub mod source;
 
 use crate::error::{SbError, SbResult};
+use std::collections::BTreeMap;
 use std::collections::HashMap;
 use std::net::IpAddr;
 use std::path::PathBuf;
@@ -78,6 +79,8 @@ pub struct DefaultRule {
     pub ip_cidr: Vec<IpCidr>,
     /// GeoIP country codes
     pub geoip: Vec<String>,
+    /// Source GeoIP country codes
+    pub source_geoip: Vec<String>,
     /// Source IP CIDR
     pub source_ip_cidr: Vec<IpCidr>,
     /// Port ranges
@@ -90,6 +93,10 @@ pub struct DefaultRule {
     pub source_port_range: Vec<(u16, u16)>,
     /// Network type (tcp/udp)
     pub network: Vec<String>,
+    /// Authenticated user
+    pub auth_user: Vec<String>,
+    /// Sniffed/application protocol
+    pub protocol: Vec<String>,
     /// Process name
     pub process_name: Vec<String>,
     /// Process path
@@ -98,10 +105,22 @@ pub struct DefaultRule {
     pub process_path_regex: Vec<String>,
     /// Package name (Android)
     pub package_name: Vec<String>,
+    /// User name
+    pub user: Vec<String>,
+    /// User ID
+    pub user_id: Vec<u32>,
+    /// Matched outbound tag
+    pub outbound_tag: Vec<String>,
     /// WiFi SSID
     pub wifi_ssid: Vec<String>,
     /// WiFi BSSID
     pub wifi_bssid: Vec<String>,
+    /// Interface-address matchers keyed by interface name.
+    pub interface_address: BTreeMap<String, Vec<String>>,
+    /// Network-interface-address matchers keyed by network type.
+    pub network_interface_address: BTreeMap<String, Vec<String>>,
+    /// Default-interface address matchers.
+    pub default_interface_address: Vec<String>,
     /// Network Type (Android)
     pub network_type: Vec<String>,
     /// Network is expensive (Android)

@@ -324,8 +324,22 @@ pub fn build_dns_components(
                 disable_cache: r.disable_cache,
                 rewrite_ttl: r.rewrite_ttl,
                 client_subnet: r.client_subnet.clone(),
+                strategy: r.strategy.clone(),
             });
         }
+
+        let answer_cache = if dns.disable_cache.unwrap_or(false) {
+            None
+        } else {
+            let cap = dns
+                .cache_capacity
+                .map(|v| v as usize)
+                .or_else(|| env_u64("SB_DNS_CACHE_SIZE").map(|v| v as usize))
+                .unwrap_or(1024);
+            Some(Arc::new(
+                DnsCache::new(cap).with_disable_expire(dns.disable_expire.unwrap_or(false)),
+            ))
+        };
 
         let engine = DnsRuleEngine::new(
             routing_rules,
@@ -336,7 +350,11 @@ pub fn build_dns_components(
             geoip_db,
             geosite_db,
         )
-        .with_lifecycle_order(manager.ordered_tags.clone());
+        .with_lifecycle_order(manager.ordered_tags.clone())
+        .with_answer_cache(answer_cache, dns.independent_cache.unwrap_or(false))
+        .with_reverse_mapping_enabled(dns.reverse_mapping.unwrap_or(false))
+        .with_global_client_subnet(dns.client_subnet.clone())
+        .with_cache_file(cache_file.clone());
         // Mark FakeIP upstreams (L2.10.12)
         let mut engine = engine;
         for tag in &manager.fakeip_tags {
@@ -354,7 +372,7 @@ pub fn build_dns_components(
             engine: engine_arc.clone(),
         });
         let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
-        let cached = maybe_wrap_cache(&dns, overlay);
+        let cached = overlay;
 
         // engine_arc implements DnsRouter
         let router: Arc<dyn crate::dns::dns_router::DnsRouter> = engine_arc;
@@ -1267,67 +1285,158 @@ fn build_ruleset_from_rule(
     r: &sb_config::ir::DnsRuleIR,
 ) -> std::sync::Arc<crate::router::ruleset::RuleSet> {
     use crate::router::ruleset::{
-        DefaultRule, DomainRule, IpPrefixTree, Rule, RuleSet, RuleSetFormat, RuleSetSource,
+        DefaultRule, DomainRule, IpPrefixTree, LogicalMode, LogicalRule, Rule, RuleSet,
+        RuleSetFormat, RuleSetSource,
     };
     use std::path::PathBuf;
     use std::sync::Arc as StdArc;
     use std::time::SystemTime;
 
-    // Build DefaultRule with suffix/keyword/exact
-    let mut dr = DefaultRule {
-        domain_suffix: r.domain_suffix.clone(),
-        domain_keyword: r.keyword.clone(),
-        domain_regex: r.domain_regex.clone(),
-        geosite: r.geosite.clone(),
-        geoip: r.geoip.clone(),
-        source_ip_cidr: parse_cidrs(&r.source_ip_cidr),
-        ip_cidr: parse_cidrs(&r.ip_cidr),
-        port: parse_ports(&r.port),
-        source_port: parse_ports(&r.source_port),
-        process_name: r.process_name.clone(),
-        process_path: r.process_path.clone(),
-        package_name: r.package_name.clone(),
-        wifi_ssid: r.wifi_ssid.clone(),
-        wifi_bssid: r.wifi_bssid.clone(),
-        query_type: r.query_type.clone(),
-        invert: r.invert,
-
-        ip_is_private: r.ip_is_private.unwrap_or(false),
-        source_ip_is_private: r.source_ip_is_private.unwrap_or(false),
-        ip_accept_any: r.ip_accept_any.unwrap_or(false),
-        rule_set_ip_cidr_match_source: r.rule_set_ip_cidr_match_source.unwrap_or(false),
-        rule_set_ip_cidr_accept_empty: r.rule_set_ip_cidr_accept_empty.unwrap_or(false),
-        clash_mode: r.clash_mode.clone(),
-        network_is_expensive: r.network_is_expensive.unwrap_or(false),
-        network_is_constrained: r.network_is_constrained.unwrap_or(false),
-
-        ..Default::default()
-    };
-    if !r.domain.is_empty() {
-        let mut v = Vec::new();
-        for d in &r.domain {
-            v.push(DomainRule::Exact(d.clone()));
+    fn append_ip_version_query_types(
+        rule: &sb_config::ir::DnsRuleIR,
+        query_type: &mut Vec<String>,
+    ) {
+        for value in &rule.ip_version {
+            match value.trim().to_ascii_lowercase().as_str() {
+                "4" | "ipv4" => {
+                    if !query_type.iter().any(|q| q.eq_ignore_ascii_case("A")) {
+                        query_type.push("A".to_string());
+                    }
+                }
+                "6" | "ipv6" => {
+                    if !query_type.iter().any(|q| q.eq_ignore_ascii_case("AAAA")) {
+                        query_type.push("AAAA".to_string());
+                    }
+                }
+                _ => {}
+            }
         }
-        dr.domain = v;
     }
+
+    fn build_rule(rule: &sb_config::ir::DnsRuleIR) -> Rule {
+        if rule
+            .rule_type
+            .as_deref()
+            .is_some_and(|t| t.eq_ignore_ascii_case("logical"))
+        {
+            let mode = match rule.mode.as_deref().map(str::to_ascii_lowercase).as_deref() {
+                Some("and") => LogicalMode::And,
+                _ => LogicalMode::Or,
+            };
+            return Rule::Logical(LogicalRule {
+                mode,
+                rules: rule.rules.iter().map(build_rule).collect(),
+                invert: rule.invert,
+            });
+        }
+
+        let mut query_type = rule.query_type.clone();
+        append_ip_version_query_types(rule, &mut query_type);
+
+        let mut port_range = parse_port_ranges(&rule.port_range);
+        port_range.extend(parse_port_ranges(&rule.port));
+        let mut source_port_range = parse_port_ranges(&rule.source_port_range);
+        source_port_range.extend(parse_port_ranges(&rule.source_port));
+
+        let mut default_rule = DefaultRule {
+            domain_suffix: rule.domain_suffix.clone(),
+            domain_keyword: rule.keyword.clone(),
+            domain_regex: rule.domain_regex.clone(),
+            geosite: rule.geosite.clone(),
+            geoip: rule.geoip.clone(),
+            source_geoip: rule.source_geoip.clone(),
+            source_ip_cidr: parse_cidrs(&rule.source_ip_cidr),
+            ip_cidr: parse_cidrs(&rule.ip_cidr),
+            port: parse_ports(&rule.port),
+            port_range,
+            source_port: parse_ports(&rule.source_port),
+            source_port_range,
+            network: rule.network.clone(),
+            auth_user: rule.auth_user.clone(),
+            protocol: rule.protocol.clone(),
+            process_name: rule.process_name.clone(),
+            process_path: rule.process_path.clone(),
+            process_path_regex: rule.process_path_regex.clone(),
+            package_name: rule.package_name.clone(),
+            user: rule.user.clone(),
+            user_id: rule.user_id.clone(),
+            outbound_tag: rule.outbound.clone(),
+            network_type: rule.network_type.clone(),
+            wifi_ssid: rule.wifi_ssid.clone(),
+            wifi_bssid: rule.wifi_bssid.clone(),
+            interface_address: rule.interface_address.clone(),
+            network_interface_address: rule.network_interface_address.clone(),
+            default_interface_address: rule.default_interface_address.clone(),
+            inbound: rule.inbound.clone(),
+            query_type,
+            invert: rule.invert,
+            ip_is_private: rule.ip_is_private.unwrap_or(false),
+            source_ip_is_private: rule.source_ip_is_private.unwrap_or(false),
+            ip_accept_any: rule.ip_accept_any.unwrap_or(false),
+            rule_set_ip_cidr_match_source: rule.rule_set_ip_cidr_match_source.unwrap_or(false),
+            rule_set_ip_cidr_accept_empty: rule.rule_set_ip_cidr_accept_empty.unwrap_or(false),
+            clash_mode: rule.clash_mode.clone(),
+            network_is_expensive: rule.network_is_expensive.unwrap_or(false),
+            network_is_constrained: rule.network_is_constrained.unwrap_or(false),
+            ..Default::default()
+        };
+
+        if !rule.domain.is_empty() {
+            default_rule.domain = rule.domain.iter().cloned().map(DomainRule::Exact).collect();
+        }
+
+        Rule::Default(default_rule)
+    }
+
+    fn collect_suffixes(rule: &Rule, suffixes: &mut Vec<String>) {
+        match rule {
+            Rule::Default(default_rule) => suffixes.extend(default_rule.domain_suffix.clone()),
+            Rule::Logical(logical_rule) => {
+                for sub_rule in &logical_rule.rules {
+                    collect_suffixes(sub_rule, suffixes);
+                }
+            }
+        }
+    }
+
+    fn collect_ip_cidrs(rule: &Rule, ip_tree: &mut IpPrefixTree) {
+        match rule {
+            Rule::Default(default_rule) => {
+                for cidr in &default_rule.ip_cidr {
+                    ip_tree.insert(cidr);
+                }
+            }
+            Rule::Logical(logical_rule) => {
+                for sub_rule in &logical_rule.rules {
+                    collect_ip_cidrs(sub_rule, ip_tree);
+                }
+            }
+        }
+    }
+
+    let rule = build_rule(r);
 
     // Attach domain suffix indices for the matcher.
     #[cfg(feature = "suffix_trie")]
     let domain_trie = {
         let mut trie = crate::router::suffix_trie::SuffixTrie::new();
-        for suffix in &dr.domain_suffix {
+        let mut all_suffixes = Vec::new();
+        collect_suffixes(&rule, &mut all_suffixes);
+        for suffix in &all_suffixes {
             trie.insert(suffix);
         }
         trie
     };
     #[cfg(not(feature = "suffix_trie"))]
-    let suffixes = dr.domain_suffix.clone();
+    let suffixes = {
+        let mut all_suffixes = Vec::new();
+        collect_suffixes(&rule, &mut all_suffixes);
+        all_suffixes
+    };
 
     // Build IP prefix tree for validation
     let mut ip_tree = IpPrefixTree::new();
-    for cidr in &dr.ip_cidr {
-        ip_tree.insert(cidr);
-    }
+    collect_ip_cidrs(&rule, &mut ip_tree);
     // Also include source IP CIDRs in tree?
     // Wait, ip_tree in RuleSet is usually for destination IP matching optimization.
     // The Matcher uses it. If we put source IPs in there, it might match destination IPs incorrectly
@@ -1339,7 +1448,7 @@ fn build_ruleset_from_rule(
         source: RuleSetSource::Local(PathBuf::from("dns_rule_ir")),
         format: RuleSetFormat::Binary,
         version: 1,
-        rules: vec![Rule::Default(dr)],
+        rules: vec![rule],
         #[cfg(feature = "suffix_trie")]
         domain_trie: StdArc::new(domain_trie),
         #[cfg(not(feature = "suffix_trie"))]
@@ -1357,6 +1466,20 @@ fn parse_cidrs(list: &[String]) -> Vec<crate::router::ruleset::IpCidr> {
 
 fn parse_ports(list: &[String]) -> Vec<u16> {
     list.iter().filter_map(|s| s.parse().ok()).collect()
+}
+
+fn parse_port_ranges(list: &[String]) -> Vec<(u16, u16)> {
+    list.iter()
+        .filter_map(|raw| {
+            let trimmed = raw.trim();
+            let (start, end) = trimmed
+                .split_once(':')
+                .or_else(|| trimmed.split_once('-'))?;
+            let start = start.trim().parse::<u16>().ok()?;
+            let end = end.trim().parse::<u16>().ok()?;
+            Some((start.min(end), start.max(end)))
+        })
+        .collect()
 }
 
 #[cfg(not(feature = "dns_resolved"))]

@@ -3,6 +3,8 @@
 
 Priority: P0
 
+Status: DONE (2026-06-20)
+
 Primary evidence:
 
 - `agents-only/reference/GO_PARITY_MATRIX.md` PX-003, PX-004, PX-013
@@ -21,6 +23,24 @@ behavior is no longer a high-fanout divergence.
 
 PX-004 records missing EDNS0 subnet, TTL rewrite, RDRC, reverse mapping, and transport-aware
 rule/action flow. PX-003 records rule action/logical/schema mismatch history.
+
+## Closure Notes (2026-06-20)
+
+- DNS IR/Raw/facade lowering now accepts Go DNS rule fields for logical rules and runtime
+  context matchers, while the deprecated `rule_set_ipcidr_match_source` spelling is rejected.
+- DNS rule compilation now emits `Rule::Logical` for logical rules and richer `DefaultRule`
+  matchers for context, source/destination, process/user, network, and interface fields.
+- Rule-engine routing decisions are keyed by full matcher context; destination IP CIDR/GeoIP
+  are ignored pre-query and rechecked against answer IPs after upstream response.
+- `route-options` accumulates strategy, disable-cache, rewrite TTL, and ECS overrides; route
+  actions apply their own options, and FakeIP routes bypass answer-cache writes.
+- A/AAAA answer cache is wired inside `DnsRuleEngine` with `disable_cache`, `disable_expire`,
+  `independent_cache`, `cache_capacity`, and `rewrite_ttl`; rule-engine resolvers are no
+  longer double-wrapped by the generic cached resolver.
+- RDRC rejection checks/saves use the existing `CacheFileService` transport/domain/qtype API;
+  reverse mapping writes require `dns.reverse_mapping=true` and skip FakeIP answers.
+- Wire exchange now returns REFUSED for reject and builds predefined `rcode`/`answer`/`ns`/
+  `extra` responses, including text RR and base64 packed RR inputs with owner-name rewrite.
 
 ## Task Split
 
@@ -64,11 +84,12 @@ rule/action flow. PX-003 records rule action/logical/schema mismatch history.
 
 ## Acceptance
 
-- `cargo test -p sb-config dns_rule_parity`
-- `cargo test -p sb-config route_options_parity`
-- `cargo test -p sb-core dns`
-- Add at least one end-to-end DNS via SOCKS or inbound DNS replay case if existing harness
-  support is sufficient.
+- `cargo test -p sb-config --test dns_rule_parity`
+- `cargo test -p sb-config --test route_options_parity`
+- `cargo test -p sb-core dns --features router,dns_udp,dns_doh,dns_dot,dns_doq,dns_doh3`
+- `cargo check -p app --features parity`
+- `cargo check --workspace --all-features`
+- `./agents-only/06-scripts/verify-consistency.sh`
 
 ## Non-Goals
 

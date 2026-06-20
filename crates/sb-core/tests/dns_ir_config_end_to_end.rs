@@ -44,9 +44,9 @@ async fn dns_ir_hosts_overlay_and_engine_presence() {
     let ir2 = sb_config::validator::v2::to_ir_v1(&json_rules);
     let resolver2 = sb_core::dns::config_builder::resolver_from_ir(&ir2)
         .expect("build resolver from ir with rules");
-    // P1313-02: rule-engine resolvers are cache-wrapped unless disable_cache=true.
-    assert_eq!(resolver2.name(), "cached_resolver");
-    assert_eq!(resolver2.cache_stats().1, 1024);
+    // P1313-03: rule-engine A/AAAA lookups own answer-cache semantics internally.
+    assert_eq!(resolver2.name(), "dns_rule_engine");
+    assert_eq!(resolver2.cache_stats().1, 10000);
 }
 
 #[cfg(all(

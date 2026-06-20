@@ -245,6 +245,19 @@ pub fn pack_rr_uncompressed(
     Some(out)
 }
 
+/// Rewrite a packed RR owner name to `name`, preserving TYPE/CLASS/TTL/RDATA.
+pub fn rewrite_rr_name_uncompressed(rr: &[u8], name: &str) -> Option<Vec<u8>> {
+    let (_old_name, off) = read_name(rr, 0, 0).ok()?;
+    if off > rr.len() {
+        return None;
+    }
+
+    let mut out = Vec::with_capacity(name.len() + rr.len() + 2);
+    out.extend_from_slice(&pack_name_uncompressed(name)?);
+    out.extend_from_slice(&rr[off..]);
+    Some(out)
+}
+
 /// 读取 DNS 名称（支持压缩），返回 (name, `new_off`)
 fn read_name(pkt: &[u8], off: usize, depth: usize) -> Result<(String, usize), ()> {
     if depth > 8 {
@@ -385,6 +398,58 @@ pub fn build_dns_response(query: &[u8], ips: &[IpAddr], ttl: u32, rcode: u8) -> 
                 resp.extend_from_slice(&v6.octets());
             }
         }
+    }
+
+    Some(resp)
+}
+
+/// Build a DNS response from already-packed RR sections.
+///
+/// Each RR must be packed without name compression. The question is copied from
+/// `query`, and the header counts are set from the supplied sections.
+pub fn build_dns_response_with_records(
+    query: &[u8],
+    answers: &[Vec<u8>],
+    authorities: &[Vec<u8>],
+    additionals: &[Vec<u8>],
+    rcode: u8,
+) -> Option<Vec<u8>> {
+    if query.len() < 12 {
+        return None;
+    }
+
+    let qd = u16::from_be_bytes([query[4], query[5]]) as usize;
+    let mut off = 12usize;
+    for _ in 0..qd {
+        let (_name, noff) = read_name(query, off, 0).ok()?;
+        off = noff + 4;
+        if off > query.len() {
+            return None;
+        }
+    }
+
+    let mut resp = Vec::with_capacity(
+        off + answers.iter().map(Vec::len).sum::<usize>()
+            + authorities.iter().map(Vec::len).sum::<usize>()
+            + additionals.iter().map(Vec::len).sum::<usize>(),
+    );
+    resp.extend_from_slice(&query[0..2]);
+    resp.push(0x81);
+    resp.push(0x80 | (rcode & 0x0F));
+    resp.extend_from_slice(&query[4..6]);
+    resp.extend_from_slice(&(answers.len() as u16).to_be_bytes());
+    resp.extend_from_slice(&(authorities.len() as u16).to_be_bytes());
+    resp.extend_from_slice(&(additionals.len() as u16).to_be_bytes());
+    resp.extend_from_slice(&query[12..off]);
+
+    for rr in answers {
+        resp.extend_from_slice(rr);
+    }
+    for rr in authorities {
+        resp.extend_from_slice(rr);
+    }
+    for rr in additionals {
+        resp.extend_from_slice(rr);
     }
 
     Some(resp)

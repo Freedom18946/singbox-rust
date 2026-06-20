@@ -63,16 +63,154 @@ fn is_supported_dns_server_type(ty: &str) -> bool {
 
 fn allowed_dns_rule_keys() -> HashSet<String> {
     let mut set = object_keys(DnsRuleIR::default());
-    insert_keys(
-        &mut set,
-        &[
-            "domain_keyword",
-            "process",
-            "rule_set_ipcidr_match_source",
-            "rule_set_ipcidr_accept_empty",
-        ],
-    );
+    insert_keys(&mut set, &["domain_keyword", "process"]);
     set
+}
+
+fn extract_u32_list(value: Option<&Value>) -> Vec<u32> {
+    match value {
+        Some(Value::Number(n)) => n
+            .as_u64()
+            .and_then(|v| u32::try_from(v).ok())
+            .into_iter()
+            .collect(),
+        Some(Value::String(s)) => s.trim().parse::<u32>().ok().into_iter().collect(),
+        Some(Value::Array(items)) => items
+            .iter()
+            .filter_map(|item| match item {
+                Value::Number(n) => n.as_u64().and_then(|v| u32::try_from(v).ok()),
+                Value::String(s) => s.trim().parse::<u32>().ok(),
+                _ => None,
+            })
+            .collect(),
+        _ => Vec::new(),
+    }
+}
+
+fn extract_string_map(value: Option<&Value>) -> BTreeMap<String, Vec<String>> {
+    let mut out = BTreeMap::new();
+    let Some(obj) = value.and_then(|v| v.as_object()) else {
+        return out;
+    };
+
+    for (key, value) in obj {
+        let values = extract_string_list(Some(value)).unwrap_or_default();
+        if !values.is_empty() {
+            out.insert(key.clone(), values);
+        }
+    }
+    out
+}
+
+fn lower_dns_rule_obj(obj: &Map<String, Value>, priority: Option<u32>) -> DnsRuleIR {
+    let mut rule = DnsRuleIR {
+        rule_type: obj
+            .get("type")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        mode: obj
+            .get("mode")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        rules: obj
+            .get("rules")
+            .and_then(|v| v.as_array())
+            .map(|items| {
+                items
+                    .iter()
+                    .filter_map(|item| item.as_object())
+                    .map(|child| lower_dns_rule_obj(child, None))
+                    .collect()
+            })
+            .unwrap_or_default(),
+        server: obj
+            .get("server")
+            .and_then(|v| v.as_str())
+            .map(|s| s.trim().to_string()),
+        action: obj
+            .get("action")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        priority,
+        strategy: obj
+            .get("strategy")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        rewrite_ttl: parse_u32_field(obj.get("rewrite_ttl")),
+        client_subnet: obj
+            .get("client_subnet")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        disable_cache: obj.get("disable_cache").and_then(|v| v.as_bool()),
+        invert: obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false),
+
+        ip_is_private: obj.get("ip_is_private").and_then(|v| v.as_bool()),
+        source_ip_is_private: obj.get("source_ip_is_private").and_then(|v| v.as_bool()),
+        ip_accept_any: obj.get("ip_accept_any").and_then(|v| v.as_bool()),
+        rule_set_ip_cidr_match_source: obj
+            .get("rule_set_ip_cidr_match_source")
+            .and_then(|v| v.as_bool()),
+        rule_set_ip_cidr_accept_empty: obj
+            .get("rule_set_ip_cidr_accept_empty")
+            .and_then(|v| v.as_bool()),
+        clash_mode: obj
+            .get("clash_mode")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        network_is_expensive: obj.get("network_is_expensive").and_then(|v| v.as_bool()),
+        network_is_constrained: obj.get("network_is_constrained").and_then(|v| v.as_bool()),
+
+        rewrite_ip: extract_string_list(obj.get("rewrite_ip")),
+        rcode: obj
+            .get("rcode")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string()),
+        answer: extract_string_list(obj.get("answer")),
+        ns: extract_string_list(obj.get("ns")),
+        extra: extract_string_list(obj.get("extra")),
+        ..Default::default()
+    };
+
+    rule.domain_suffix = extract_string_list(obj.get("domain_suffix")).unwrap_or_default();
+    rule.domain = extract_string_list(obj.get("domain")).unwrap_or_default();
+    rule.domain_regex = extract_string_list(obj.get("domain_regex")).unwrap_or_default();
+    rule.keyword =
+        extract_string_list(obj.get("domain_keyword").or(obj.get("keyword"))).unwrap_or_default();
+    rule.geosite = extract_string_list(obj.get("geosite")).unwrap_or_default();
+    rule.source_geoip = extract_string_list(obj.get("source_geoip")).unwrap_or_default();
+    rule.geoip = extract_string_list(obj.get("geoip")).unwrap_or_default();
+    rule.source_ip_cidr = extract_string_list(obj.get("source_ip_cidr")).unwrap_or_default();
+    rule.ip_cidr = extract_string_list(obj.get("ip_cidr")).unwrap_or_default();
+    rule.inbound = extract_string_list(obj.get("inbound")).unwrap_or_default();
+    rule.ip_version = extract_string_list(obj.get("ip_version")).unwrap_or_default();
+    rule.query_type = extract_string_list(obj.get("query_type")).unwrap_or_default();
+    rule.rule_set = extract_string_list(obj.get("rule_set")).unwrap_or_default();
+    rule.network = extract_string_list(obj.get("network")).unwrap_or_default();
+    rule.auth_user = extract_string_list(obj.get("auth_user")).unwrap_or_default();
+    rule.protocol = extract_string_list(obj.get("protocol")).unwrap_or_default();
+    rule.port = extract_string_list(obj.get("port")).unwrap_or_default();
+    rule.port_range = extract_string_list(obj.get("port_range")).unwrap_or_default();
+    rule.source_port = extract_string_list(obj.get("source_port")).unwrap_or_default();
+    rule.source_port_range = extract_string_list(obj.get("source_port_range")).unwrap_or_default();
+    rule.process_name =
+        extract_string_list(obj.get("process_name").or(obj.get("process"))).unwrap_or_default();
+    rule.process_path = extract_string_list(obj.get("process_path")).unwrap_or_default();
+    rule.process_path_regex =
+        extract_string_list(obj.get("process_path_regex")).unwrap_or_default();
+    rule.package_name = extract_string_list(obj.get("package_name")).unwrap_or_default();
+    rule.user = extract_string_list(obj.get("user")).unwrap_or_default();
+    rule.user_id = extract_u32_list(obj.get("user_id"));
+    rule.outbound = extract_string_list(obj.get("outbound")).unwrap_or_default();
+    rule.network_type = extract_string_list(obj.get("network_type")).unwrap_or_default();
+    rule.wifi_ssid = extract_string_list(obj.get("wifi_ssid")).unwrap_or_default();
+    rule.wifi_bssid = extract_string_list(obj.get("wifi_bssid")).unwrap_or_default();
+    rule.interface_address = extract_string_map(obj.get("interface_address"));
+    rule.network_interface_address = extract_string_map(obj.get("network_interface_address"));
+    rule.default_interface_address =
+        extract_string_list(obj.get("default_interface_address")).unwrap_or_default();
+    rule.address_limit = parse_u32_field(obj.get("address_limit"));
+
+    rule
 }
 
 /// Validate `/dns` unknown fields for top-level, servers, and rules.
@@ -623,80 +761,7 @@ pub(super) fn lower_dns(doc: &Value, ir: &mut ConfigIR) {
     if let Some(rules) = dns.get("rules").and_then(|v| v.as_array()) {
         for (idx, r) in rules.iter().enumerate() {
             if let Some(obj) = r.as_object() {
-                let server = obj
-                    .get("server")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.trim().to_string());
-                let action = obj
-                    .get("action")
-                    .and_then(|v| v.as_str())
-                    .map(|s| s.to_string());
-
-                let mut dr = DnsRuleIR {
-                    server,
-                    action,
-                    priority: Some(idx as u32 + 1),
-                    rewrite_ttl: parse_u32_field(obj.get("rewrite_ttl")),
-                    client_subnet: obj
-                        .get("client_subnet")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    disable_cache: obj.get("disable_cache").and_then(|v| v.as_bool()),
-                    invert: obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false),
-
-                    ip_is_private: obj.get("ip_is_private").and_then(|v| v.as_bool()),
-                    source_ip_is_private: obj.get("source_ip_is_private").and_then(|v| v.as_bool()),
-                    ip_accept_any: obj.get("ip_accept_any").and_then(|v| v.as_bool()),
-                    rule_set_ip_cidr_match_source: obj
-                        .get("rule_set_ip_cidr_match_source")
-                        .and_then(|v| v.as_bool()),
-                    rule_set_ip_cidr_accept_empty: obj
-                        .get("rule_set_ip_cidr_accept_empty")
-                        .and_then(|v| v.as_bool()),
-                    clash_mode: obj
-                        .get("clash_mode")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    network_is_expensive: obj.get("network_is_expensive").and_then(|v| v.as_bool()),
-                    network_is_constrained: obj
-                        .get("network_is_constrained")
-                        .and_then(|v| v.as_bool()),
-
-                    rewrite_ip: extract_string_list(obj.get("rewrite_ip")),
-                    rcode: obj
-                        .get("rcode")
-                        .and_then(|v| v.as_str())
-                        .map(|s| s.to_string()),
-                    answer: extract_string_list(obj.get("answer")),
-                    ns: extract_string_list(obj.get("ns")),
-                    extra: extract_string_list(obj.get("extra")),
-
-                    ..Default::default()
-                };
-
-                // String list matchers
-                dr.domain_suffix =
-                    extract_string_list(obj.get("domain_suffix")).unwrap_or_default();
-                dr.domain = extract_string_list(obj.get("domain")).unwrap_or_default();
-                dr.domain_regex = extract_string_list(obj.get("domain_regex")).unwrap_or_default();
-                dr.keyword = extract_string_list(obj.get("domain_keyword").or(obj.get("keyword")))
-                    .unwrap_or_default();
-                dr.geosite = extract_string_list(obj.get("geosite")).unwrap_or_default();
-                dr.geoip = extract_string_list(obj.get("geoip")).unwrap_or_default();
-                dr.source_ip_cidr =
-                    extract_string_list(obj.get("source_ip_cidr")).unwrap_or_default();
-                dr.ip_cidr = extract_string_list(obj.get("ip_cidr")).unwrap_or_default();
-                dr.port = extract_string_list(obj.get("port")).unwrap_or_default();
-                dr.source_port = extract_string_list(obj.get("source_port")).unwrap_or_default();
-                dr.process_name =
-                    extract_string_list(obj.get("process_name").or(obj.get("process")))
-                        .unwrap_or_default();
-                dr.process_path = extract_string_list(obj.get("process_path")).unwrap_or_default();
-                dr.package_name = extract_string_list(obj.get("package_name")).unwrap_or_default();
-                dr.wifi_ssid = extract_string_list(obj.get("wifi_ssid")).unwrap_or_default();
-                dr.wifi_bssid = extract_string_list(obj.get("wifi_bssid")).unwrap_or_default();
-                dr.rule_set = extract_string_list(obj.get("rule_set")).unwrap_or_default();
-                dr.query_type = extract_string_list(obj.get("query_type")).unwrap_or_default();
+                let mut dr = lower_dns_rule_obj(obj, Some(idx as u32 + 1));
 
                 // Go parity: rules that omit both `server` and `action` infer
                 // the server tag by rule index, falling back to the last server.

@@ -176,44 +176,86 @@ impl From<RawDnsServerIR> for DnsServerIR {
 #[derive(Debug, Clone, Deserialize)]
 #[serde(deny_unknown_fields)]
 pub struct RawDnsRuleIR {
+    #[serde(default, rename = "type")]
+    pub rule_type: Option<String>,
     #[serde(default)]
+    pub mode: Option<String>,
+    #[serde(default)]
+    pub rules: Vec<RawDnsRuleIR>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub domain_suffix: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub domain: Vec<String>,
-    #[serde(default)]
+    #[serde(
+        default,
+        alias = "domain_keyword",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub keyword: Vec<String>,
     #[serde(default)]
     pub server: Option<String>,
     #[serde(default)]
     pub priority: Option<u32>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub inbound: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub ip_version: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub query_type: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub rule_set: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub domain_regex: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub geosite: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_geoip: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub geoip: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub source_ip_cidr: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub ip_cidr: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub network: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub auth_user: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub protocol: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub port: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub port_range: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub source_port: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_port_range: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub process_name: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub process_path: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub process_path_regex: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub package_name: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub user: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub user_id: Vec<u32>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub outbound: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub network_type: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub wifi_ssid: Vec<String>,
-    #[serde(default)]
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub wifi_bssid: Vec<String>,
+    #[serde(default)]
+    pub interface_address: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub network_interface_address: BTreeMap<String, Vec<String>>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub default_interface_address: Vec<String>,
     #[serde(default)]
     pub invert: bool,
     #[serde(default)]
@@ -234,6 +276,8 @@ pub struct RawDnsRuleIR {
     pub network_is_constrained: Option<bool>,
     #[serde(default)]
     pub action: Option<String>,
+    #[serde(default)]
+    pub strategy: Option<String>,
     #[serde(default)]
     pub rewrite_ttl: Option<u32>,
     #[serde(default)]
@@ -257,25 +301,44 @@ pub struct RawDnsRuleIR {
 impl From<RawDnsRuleIR> for DnsRuleIR {
     fn from(raw: RawDnsRuleIR) -> Self {
         Self {
+            rule_type: raw.rule_type,
+            mode: raw.mode,
+            rules: raw.rules.into_iter().map(Into::into).collect(),
             domain_suffix: raw.domain_suffix,
             domain: raw.domain,
             keyword: raw.keyword,
             server: raw.server,
             priority: raw.priority,
+            inbound: raw.inbound,
+            ip_version: raw.ip_version,
             query_type: raw.query_type,
             rule_set: raw.rule_set,
             domain_regex: raw.domain_regex,
             geosite: raw.geosite,
+            source_geoip: raw.source_geoip,
             geoip: raw.geoip,
             source_ip_cidr: raw.source_ip_cidr,
             ip_cidr: raw.ip_cidr,
+            network: raw.network,
+            auth_user: raw.auth_user,
+            protocol: raw.protocol,
             port: raw.port,
+            port_range: raw.port_range,
             source_port: raw.source_port,
+            source_port_range: raw.source_port_range,
             process_name: raw.process_name,
             process_path: raw.process_path,
+            process_path_regex: raw.process_path_regex,
             package_name: raw.package_name,
+            user: raw.user,
+            user_id: raw.user_id,
+            outbound: raw.outbound,
+            network_type: raw.network_type,
             wifi_ssid: raw.wifi_ssid,
             wifi_bssid: raw.wifi_bssid,
+            interface_address: raw.interface_address,
+            network_interface_address: raw.network_interface_address,
+            default_interface_address: raw.default_interface_address,
             invert: raw.invert,
             ip_is_private: raw.ip_is_private,
             source_ip_is_private: raw.source_ip_is_private,
@@ -286,6 +349,7 @@ impl From<RawDnsRuleIR> for DnsRuleIR {
             network_is_expensive: raw.network_is_expensive,
             network_is_constrained: raw.network_is_constrained,
             action: raw.action,
+            strategy: raw.strategy,
             rewrite_ttl: raw.rewrite_ttl,
             client_subnet: raw.client_subnet,
             disable_cache: raw.disable_cache,

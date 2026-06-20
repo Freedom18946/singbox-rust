@@ -6613,6 +6613,7 @@ dependencies = [
  "h3",
  "h3-quinn",
  "hex",
+ "hickory-proto",
  "hkdf",
  "hmac",
  "http 1.4.0",

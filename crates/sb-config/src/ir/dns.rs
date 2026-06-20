@@ -117,6 +117,15 @@ impl<'de> Deserialize<'de> for DnsServerIR {
 /// DNS routing rule (IR)
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct DnsRuleIR {
+    /// Rule type: default (empty/default) or logical.
+    #[serde(default, rename = "type")]
+    pub rule_type: Option<String>,
+    /// Logical rule mode: and/or.
+    #[serde(default)]
+    pub mode: Option<String>,
+    /// Nested DNS rules for logical rules.
+    #[serde(default)]
+    pub rules: Vec<DnsRuleIR>,
     /// Domain suffix list for this rule
     #[serde(default)]
     pub domain_suffix: Vec<String>,
@@ -135,6 +144,10 @@ pub struct DnsRuleIR {
 
     // Additional Match Fields
     #[serde(default)]
+    pub inbound: Vec<String>,
+    #[serde(default)]
+    pub ip_version: Vec<String>,
+    #[serde(default)]
     pub query_type: Vec<String>,
     #[serde(default)]
     pub rule_set: Vec<String>,
@@ -143,25 +156,53 @@ pub struct DnsRuleIR {
     #[serde(default)]
     pub geosite: Vec<String>,
     #[serde(default)]
+    pub source_geoip: Vec<String>,
+    #[serde(default)]
     pub geoip: Vec<String>,
     #[serde(default)]
     pub source_ip_cidr: Vec<String>,
     #[serde(default)]
     pub ip_cidr: Vec<String>,
     #[serde(default)]
+    pub network: Vec<String>,
+    #[serde(default)]
+    pub auth_user: Vec<String>,
+    #[serde(default)]
+    pub protocol: Vec<String>,
+    #[serde(default)]
     pub port: Vec<String>,
     #[serde(default)]
+    pub port_range: Vec<String>,
+    #[serde(default)]
     pub source_port: Vec<String>,
+    #[serde(default)]
+    pub source_port_range: Vec<String>,
     #[serde(default)]
     pub process_name: Vec<String>,
     #[serde(default)]
     pub process_path: Vec<String>,
     #[serde(default)]
+    pub process_path_regex: Vec<String>,
+    #[serde(default)]
     pub package_name: Vec<String>,
+    #[serde(default)]
+    pub user: Vec<String>,
+    #[serde(default)]
+    pub user_id: Vec<u32>,
+    #[serde(default)]
+    pub outbound: Vec<String>,
+    #[serde(default)]
+    pub network_type: Vec<String>,
     #[serde(default)]
     pub wifi_ssid: Vec<String>,
     #[serde(default)]
     pub wifi_bssid: Vec<String>,
+    #[serde(default)]
+    pub interface_address: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub network_interface_address: BTreeMap<String, Vec<String>>,
+    #[serde(default)]
+    pub default_interface_address: Vec<String>,
     #[serde(default)]
     pub invert: bool,
 
@@ -186,6 +227,8 @@ pub struct DnsRuleIR {
     // Actions
     #[serde(default)]
     pub action: Option<String>,
+    #[serde(default)]
+    pub strategy: Option<String>,
     #[serde(default)]
     pub rewrite_ttl: Option<u32>,
     #[serde(default)]

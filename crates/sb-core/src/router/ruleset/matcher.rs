@@ -18,15 +18,28 @@ pub struct MatchContext {
     pub destination_ip: Option<IpAddr>,
     pub destination_port: u16,
     pub network: Option<String>,
+    pub auth_user: Option<String>,
+    pub protocol: Option<String>,
     pub process_name: Option<String>,
     pub process_path: Option<String>,
+    pub package_name: Option<String>,
+    pub user: Option<String>,
+    pub user_id: Option<u32>,
+    pub outbound_tag: Option<String>,
     pub source_ip: Option<IpAddr>,
     pub source_port: Option<u16>,
     pub query_type: Option<String>,
     pub geosite_codes: Vec<String>,
     pub geoip_code: Option<String>,
+    pub source_geoip_code: Option<String>,
     pub clash_mode: Option<String>,
     pub inbound_tag: Option<String>,
+    pub network_type: Option<String>,
+    pub network_is_expensive: Option<bool>,
+    pub network_is_constrained: Option<bool>,
+    pub wifi_ssid: Option<String>,
+    pub wifi_bssid: Option<String>,
+    pub ignore_destination_ip_cidr: bool,
 }
 
 /// Compiled regex cache
@@ -53,6 +66,24 @@ struct MatchKey {
     query_type: Option<String>,
     clash_mode: Option<String>,
     inbound_tag: Option<String>,
+    auth_user: Option<String>,
+    protocol: Option<String>,
+    process_name: Option<String>,
+    process_path: Option<String>,
+    package_name: Option<String>,
+    user: Option<String>,
+    user_id: Option<u32>,
+    outbound_tag: Option<String>,
+    source_ip: Option<IpAddr>,
+    source_port: Option<u16>,
+    geoip_code: Option<String>,
+    source_geoip_code: Option<String>,
+    network_type: Option<String>,
+    network_is_expensive: Option<bool>,
+    network_is_constrained: Option<bool>,
+    wifi_ssid: Option<String>,
+    wifi_bssid: Option<String>,
+    ignore_destination_ip_cidr: bool,
 }
 
 impl RuleMatcher {
@@ -78,6 +109,24 @@ impl RuleMatcher {
             query_type: ctx.query_type.clone(),
             clash_mode: ctx.clash_mode.clone(),
             inbound_tag: ctx.inbound_tag.clone(),
+            auth_user: ctx.auth_user.clone(),
+            protocol: ctx.protocol.clone(),
+            process_name: ctx.process_name.clone(),
+            process_path: ctx.process_path.clone(),
+            package_name: ctx.package_name.clone(),
+            user: ctx.user.clone(),
+            user_id: ctx.user_id,
+            outbound_tag: ctx.outbound_tag.clone(),
+            source_ip: ctx.source_ip,
+            source_port: ctx.source_port,
+            geoip_code: ctx.geoip_code.clone(),
+            source_geoip_code: ctx.source_geoip_code.clone(),
+            network_type: ctx.network_type.clone(),
+            network_is_expensive: ctx.network_is_expensive,
+            network_is_constrained: ctx.network_is_constrained,
+            wifi_ssid: ctx.wifi_ssid.clone(),
+            wifi_bssid: ctx.wifi_bssid.clone(),
+            ignore_destination_ip_cidr: ctx.ignore_destination_ip_cidr,
         };
 
         // Check cache
@@ -197,7 +246,9 @@ impl RuleMatcher {
         }
 
         // IP CIDR matching
-        if !rule.ip_cidr.is_empty() {
+        if !rule.ip_cidr.is_empty()
+            && (!ctx.ignore_destination_ip_cidr || rule.rule_set_ip_cidr_match_source)
+        {
             let target_ip = if rule.rule_set_ip_cidr_match_source {
                 ctx.source_ip
             } else {
@@ -226,6 +277,20 @@ impl RuleMatcher {
             }
         }
 
+        if !rule.source_geoip.is_empty() {
+            if let Some(ref code) = ctx.source_geoip_code {
+                if !rule
+                    .source_geoip
+                    .iter()
+                    .any(|c| c.eq_ignore_ascii_case(code))
+                {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
         // Port matching
         if !rule.port.is_empty() && !rule.port.contains(&ctx.destination_port) {
             return false;
@@ -243,10 +308,61 @@ impl RuleMatcher {
             }
         }
 
+        if !rule.source_port.is_empty() {
+            if let Some(port) = ctx.source_port {
+                if !rule.source_port.contains(&port) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if !rule.source_port_range.is_empty() {
+            let Some(port) = ctx.source_port else {
+                return false;
+            };
+            let in_range = rule
+                .source_port_range
+                .iter()
+                .any(|(start, end)| port >= *start && port <= *end);
+            if !in_range {
+                return false;
+            }
+        }
+
         // Network matching
         if !rule.network.is_empty() {
             if let Some(ref network) = ctx.network {
                 if !rule.network.iter().any(|n| n == network) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if !rule.auth_user.is_empty() {
+            if let Some(ref auth_user) = ctx.auth_user {
+                if !rule
+                    .auth_user
+                    .iter()
+                    .any(|u| u.eq_ignore_ascii_case(auth_user))
+                {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if !rule.protocol.is_empty() {
+            if let Some(ref protocol) = ctx.protocol {
+                if !rule
+                    .protocol
+                    .iter()
+                    .any(|p| p.eq_ignore_ascii_case(protocol))
+                {
                     return false;
                 }
             } else {
@@ -292,6 +408,46 @@ impl RuleMatcher {
             }
         }
 
+        if !rule.package_name.is_empty() {
+            if let Some(ref package) = ctx.package_name {
+                if !rule.package_name.iter().any(|p| p == package) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if !rule.user.is_empty() {
+            if let Some(ref user) = ctx.user {
+                if !rule.user.iter().any(|u| u == user) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if !rule.user_id.is_empty() {
+            if let Some(user_id) = ctx.user_id {
+                if !rule.user_id.contains(&user_id) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if !rule.outbound_tag.is_empty() {
+            if let Some(ref outbound_tag) = ctx.outbound_tag {
+                if !rule.outbound_tag.iter().any(|t| t == outbound_tag) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
         // Query type matching
         if !rule.query_type.is_empty() {
             if let Some(ref qt) = ctx.query_type {
@@ -301,6 +457,58 @@ impl RuleMatcher {
             } else {
                 return false;
             }
+        }
+
+        if !rule.network_type.is_empty() {
+            if let Some(ref network_type) = ctx.network_type {
+                if !rule
+                    .network_type
+                    .iter()
+                    .any(|t| t.eq_ignore_ascii_case(network_type))
+                {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if rule.network_is_expensive && ctx.network_is_expensive != Some(true) {
+            return false;
+        }
+
+        if rule.network_is_constrained && ctx.network_is_constrained != Some(true) {
+            return false;
+        }
+
+        if !rule.wifi_ssid.is_empty() {
+            if let Some(ref wifi_ssid) = ctx.wifi_ssid {
+                if !rule.wifi_ssid.iter().any(|s| s == wifi_ssid) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        if !rule.wifi_bssid.is_empty() {
+            if let Some(ref wifi_bssid) = ctx.wifi_bssid {
+                if !rule.wifi_bssid.iter().any(|s| s == wifi_bssid) {
+                    return false;
+                }
+            } else {
+                return false;
+            }
+        }
+
+        // DNS runtime contexts currently do not carry interface address
+        // snapshots. Keep these Go-shaped fields loud-by-behavior: a rule that
+        // asks for them must not match by accident.
+        if !rule.interface_address.is_empty()
+            || !rule.network_interface_address.is_empty()
+            || !rule.default_interface_address.is_empty()
+        {
+            return false;
         }
 
         // Inbound matching
@@ -326,7 +534,7 @@ impl RuleMatcher {
         }
 
         // IP Is Private matching
-        if rule.ip_is_private {
+        if rule.ip_is_private && !ctx.ignore_destination_ip_cidr {
             if let Some(ip) = ctx.destination_ip {
                 if !is_private_ip(&ip) {
                     return false;
@@ -348,7 +556,7 @@ impl RuleMatcher {
         }
 
         // IP Accept Any matching
-        if rule.ip_accept_any && ctx.destination_ip.is_none() {
+        if rule.ip_accept_any && ctx.destination_ip.is_none() && !ctx.ignore_destination_ip_cidr {
             return false;
         }
 
@@ -517,18 +725,9 @@ mod tests {
 
         let ctx = MatchContext {
             domain: Some("test.example.com".to_string()),
-            destination_ip: None,
             destination_port: 443,
             network: Some("tcp".to_string()),
-            process_name: None,
-            process_path: None,
-            source_ip: None,
-            source_port: None,
-            query_type: None,
-            geosite_codes: Vec::new(),
-            geoip_code: None,
-            clash_mode: None,
-            inbound_tag: None,
+            ..Default::default()
         };
 
         assert!(matcher.matches(&ctx));
@@ -540,19 +739,10 @@ mod tests {
         let matcher = RuleMatcher::new(ruleset);
 
         let ctx = MatchContext {
-            domain: None,
             destination_ip: Some("192.168.1.1".parse().unwrap()),
             destination_port: 80,
             network: Some("tcp".to_string()),
-            process_name: None,
-            process_path: None,
-            source_ip: None,
-            source_port: None,
-            query_type: None,
-            geosite_codes: Vec::new(),
-            geoip_code: None,
-            clash_mode: None,
-            inbound_tag: None,
+            ..Default::default()
         };
 
         assert!(matcher.matches(&ctx));
@@ -568,15 +758,7 @@ mod tests {
             destination_ip: Some("10.0.0.1".parse().unwrap()),
             destination_port: 80,
             network: Some("tcp".to_string()),
-            process_name: None,
-            process_path: None,
-            source_ip: None,
-            source_port: None,
-            query_type: None,
-            geosite_codes: Vec::new(),
-            geoip_code: None,
-            clash_mode: None,
-            inbound_tag: None,
+            ..Default::default()
         };
 
         assert!(!matcher.matches(&ctx));
@@ -589,18 +771,9 @@ mod tests {
 
         let ctx = MatchContext {
             domain: Some("test.example.com".to_string()),
-            destination_ip: None,
             destination_port: 443,
             network: Some("tcp".to_string()),
-            process_name: None,
-            process_path: None,
-            source_ip: None,
-            source_port: None,
-            query_type: None,
-            geosite_codes: Vec::new(),
-            geoip_code: None,
-            clash_mode: None,
-            inbound_tag: None,
+            ..Default::default()
         };
 
         // First match (cache miss)
