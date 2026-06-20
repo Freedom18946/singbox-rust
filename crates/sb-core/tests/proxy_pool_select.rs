@@ -114,9 +114,7 @@ fn no_healthy_endpoints_selects_none() {
     sel.record_observation("main", 1, 0, false);
 
     assert!(!sel.has_healthy_endpoints("main"));
-    assert!(sel
-        .select("main", peer(), "example.com:443", &())
-        .is_none());
+    assert!(sel.select("main", peer(), "example.com:443", &()).is_none());
 }
 
 /// Basic pool bookkeeping: known pools are listed; an unknown pool reports no health and

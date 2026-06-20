@@ -21,9 +21,18 @@ fn clash_yaml_parses_known_types_and_passes_unknown_through() {
         .expect("clash fixture must parse");
     let kinds = profile.outbounds_kinds();
     // Mainstream types are preserved as-is.
-    assert!(kinds.contains(&"clash-trojan:trojan".to_string()), "{kinds:?}");
-    assert!(kinds.contains(&"clash-vmess:vmess".to_string()), "{kinds:?}");
-    assert!(kinds.contains(&"clash-vless:vless".to_string()), "{kinds:?}");
+    assert!(
+        kinds.contains(&"clash-trojan:trojan".to_string()),
+        "{kinds:?}"
+    );
+    assert!(
+        kinds.contains(&"clash-vmess:vmess".to_string()),
+        "{kinds:?}"
+    );
+    assert!(
+        kinds.contains(&"clash-vless:vless".to_string()),
+        "{kinds:?}"
+    );
     assert!(kinds.contains(&"clash-ss:ss".to_string()), "{kinds:?}");
     // BASELINE: an unknown type ("brook") is silently passed through, NOT skipped.
     // Records current behavior — there is no unknown counter for the caller.
@@ -32,7 +41,10 @@ fn clash_yaml_parses_known_types_and_passes_unknown_through() {
         "unknown clash type is currently passed through verbatim: {kinds:?}"
     );
     assert_eq!(profile.outbounds.len(), 5);
-    assert!(profile.rules_len() >= 1, "clash rules should map to DSL lines");
+    assert!(
+        profile.rules_len() >= 1,
+        "clash rules should map to DSL lines"
+    );
 }
 
 #[cfg(feature = "subs_singbox")]
@@ -43,7 +55,10 @@ fn singbox_json_preserves_outbound_kinds_and_route_rules() {
     let kinds = profile.outbounds_kinds();
     assert!(kinds.contains(&"sb-trojan:trojan".to_string()), "{kinds:?}");
     assert!(kinds.contains(&"sb-vmess:vmess".to_string()), "{kinds:?}");
-    assert!(kinds.contains(&"sb-ss:shadowsocks".to_string()), "{kinds:?}");
+    assert!(
+        kinds.contains(&"sb-ss:shadowsocks".to_string()),
+        "{kinds:?}"
+    );
     assert!(kinds.contains(&"select:selector".to_string()), "{kinds:?}");
     assert_eq!(profile.outbounds.len(), 5);
     assert!(

@@ -3650,7 +3650,10 @@ mod tests {
         for feature in ["adapter-tor", "adapter-tailscale", "legacy_shadowsocksr"] {
             let reason = unsupported_outbound_feature_reason(feature);
             let msg = reason.as_ref();
-            assert!(msg.contains(feature), "reason must name the cargo feature: {msg}");
+            assert!(
+                msg.contains(feature),
+                "reason must name the cargo feature: {msg}"
+            );
             assert!(
                 msg.contains("not compiled"),
                 "reason must state it is not compiled in: {msg}"
@@ -3673,7 +3676,10 @@ mod tests {
         let err = futures::executor::block_on(connector.connect("example.com", 443))
             .expect_err("disabled long-tail outbound must reject dials");
         let msg = err.to_string();
-        assert!(msg.contains("tor"), "error must name the outbound type: {msg}");
+        assert!(
+            msg.contains("tor"),
+            "error must name the outbound type: {msg}"
+        );
         assert!(
             msg.contains("adapter-tor"),
             "error must name the cargo feature: {msg}"

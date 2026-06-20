@@ -316,14 +316,13 @@ async fn test_trojan_hostname_server_does_not_fail_at_local_parse() {
     let opts = DialOpts::new().with_connect_timeout(Duration::from_millis(500));
     let result = connector.dial(target, opts).await;
     let err = match result {
-        Ok(_) => panic!(
-            "dial unexpectedly succeeded against a non-routable .invalid hostname"
-        ),
+        Ok(_) => panic!("dial unexpectedly succeeded against a non-routable .invalid hostname"),
         Err(e) => e,
     };
     let msg = format!("{err}");
     assert!(
-        !msg.to_ascii_lowercase().contains("invalid socket address syntax"),
+        !msg.to_ascii_lowercase()
+            .contains("invalid socket address syntax"),
         "hostname server must not produce a SocketAddr parse error; got: {}",
         msg
     );
@@ -365,8 +364,8 @@ mod fresh13_tls_verifier_loopback {
         )
     }
 
-    async fn start_self_signed_tls_listener()
-    -> (std::net::SocketAddr, tokio::task::JoinHandle<()>) {
+    async fn start_self_signed_tls_listener() -> (std::net::SocketAddr, tokio::task::JoinHandle<()>)
+    {
         init_crypto();
         let (certs, key) = generate_cert();
         let server_config = rustls::ServerConfig::builder()
@@ -460,9 +459,9 @@ mod fresh13_tls_verifier_loopback {
         let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(2));
         let result = connector.dial(target, opts).await;
         let err = match result {
-            Ok(_) => panic!(
-                "skip_cert_verify=false unexpectedly accepted a self-signed localhost cert"
-            ),
+            Ok(_) => {
+                panic!("skip_cert_verify=false unexpectedly accepted a self-signed localhost cert")
+            }
             Err(e) => e,
         };
         let lower = format!("{err}").to_ascii_lowercase();

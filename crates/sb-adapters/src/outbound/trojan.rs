@@ -505,13 +505,13 @@ impl OutboundConnector for TrojanConnector {
                     )
                     .await?
                 } else if let Some(ref dialer) = self.dialer {
-                    let stream = tokio::time::timeout(
-                        timeout,
-                        dialer.connect(&server_host, server_port),
-                    )
-                    .await
-                    .map_err(|_| AdapterError::Timeout(timeout))?
-                    .map_err(|e| AdapterError::Other(format!("Transport dial failed: {}", e)))?;
+                    let stream =
+                        tokio::time::timeout(timeout, dialer.connect(&server_host, server_port))
+                            .await
+                            .map_err(|_| AdapterError::Timeout(timeout))?
+                            .map_err(|e| {
+                                AdapterError::Other(format!("Transport dial failed: {}", e))
+                            })?;
                     crate::traits::from_transport_stream(stream)
                 } else {
                     // Fallback to direct TCP connection (resolves hostname via DNS)
@@ -932,7 +932,10 @@ mod tests {
 
     #[test]
     fn sni_fallback_handles_domain_without_sni() {
-        assert_eq!(sni_for_test(None, "trojan.example.invalid:443"), "trojan.example.invalid");
+        assert_eq!(
+            sni_for_test(None, "trojan.example.invalid:443"),
+            "trojan.example.invalid"
+        );
     }
 
     #[test]
@@ -991,7 +994,11 @@ mod tests {
         let packet = sock.encode_packet(b"payload", &target).unwrap();
         assert_eq!(packet[0], 0x03);
         assert_eq!(packet[1], 0x03, "ATYP must be Domain (0x03)");
-        assert_eq!(packet[2] as usize, "example.com".len(), "domain length prefix");
+        assert_eq!(
+            packet[2] as usize,
+            "example.com".len(),
+            "domain length prefix"
+        );
         assert_eq!(sock.decode_packet(&packet).unwrap(), b"payload".to_vec());
     }
 

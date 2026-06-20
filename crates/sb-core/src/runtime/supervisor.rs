@@ -2427,10 +2427,8 @@ mod tests {
             classify_inbound_exit(Ok(Ok(())), false),
             (InboundExitKind::UnexpectedCompletion, None)
         );
-        let (kind, error) = classify_inbound_exit(
-            Ok(Err(std::io::Error::other("serve exploded"))),
-            false,
-        );
+        let (kind, error) =
+            classify_inbound_exit(Ok(Err(std::io::Error::other("serve exploded"))), false);
         assert_eq!(kind, InboundExitKind::ServeError);
         assert_eq!(error.as_deref(), Some("serve exploded"));
         assert_eq!(

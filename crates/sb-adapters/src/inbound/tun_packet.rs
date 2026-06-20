@@ -337,7 +337,7 @@ mod tests {
         let dst: Ipv4Addr = "1.1.1.1".parse().unwrap();
         let packet = build_ipv4_udp_packet(src, 5000, dst, 53, b"\x00\x01query");
         assert_eq!(packet[9], 17); // UDP protocol
-        // IPv4 UDP checksum is optional and emitted as 0.
+                                   // IPv4 UDP checksum is optional and emitted as 0.
         assert_eq!(&packet[20 + 6..20 + 8], &[0x00, 0x00]);
         // Length field = udp header + payload
         assert_eq!(

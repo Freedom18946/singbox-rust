@@ -121,13 +121,8 @@ impl EnhancedUdpNat {
             .await
             .map_err(|e| io::Error::other(format!("udp send failed: {e}")))?;
 
-        let relay_task = spawn_udp_reverse_relay(
-            tuple,
-            Arc::clone(&transport),
-            writer,
-            self.ttl,
-            self.mtu,
-        );
+        let relay_task =
+            spawn_udp_reverse_relay(tuple, Arc::clone(&transport), writer, self.ttl, self.mtu);
 
         self.sessions.insert(
             tuple,

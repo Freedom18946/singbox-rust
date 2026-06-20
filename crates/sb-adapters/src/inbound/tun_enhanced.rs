@@ -477,7 +477,10 @@ impl PacketIo for UnixPacketIo {
 
 impl EnhancedTunInbound {
     pub fn new(config: EnhancedTunConfig, outbounds: Arc<OutboundRegistryHandle>) -> Self {
-        let udp_nat = Arc::new(EnhancedUdpNat::new(config.udp_timeout_ms, config.mtu as usize));
+        let udp_nat = Arc::new(EnhancedUdpNat::new(
+            config.udp_timeout_ms,
+            config.mtu as usize,
+        ));
         Self {
             config,
             outbounds,
@@ -492,7 +495,10 @@ impl EnhancedTunInbound {
         outbounds: Arc<OutboundRegistryHandle>,
         router: Arc<RouterHandle>,
     ) -> Self {
-        let udp_nat = Arc::new(EnhancedUdpNat::new(config.udp_timeout_ms, config.mtu as usize));
+        let udp_nat = Arc::new(EnhancedUdpNat::new(
+            config.udp_timeout_ms,
+            config.mtu as usize,
+        ));
         Self {
             config,
             outbounds,
@@ -508,7 +514,10 @@ impl EnhancedTunInbound {
         router: Option<Arc<RouterHandle>>,
     ) -> Self {
         let config = EnhancedTunConfig::from_legacy_config(cfg);
-        let udp_nat = Arc::new(EnhancedUdpNat::new(config.udp_timeout_ms, config.mtu as usize));
+        let udp_nat = Arc::new(EnhancedUdpNat::new(
+            config.udp_timeout_ms,
+            config.mtu as usize,
+        ));
         Self {
             config,
             outbounds,
@@ -524,7 +533,10 @@ impl EnhancedTunInbound {
         router: Option<Arc<RouterHandle>>,
     ) -> io::Result<Self> {
         let config = EnhancedTunConfig::try_from_legacy_config(cfg)?;
-        let udp_nat = Arc::new(EnhancedUdpNat::new(config.udp_timeout_ms, config.mtu as usize));
+        let udp_nat = Arc::new(EnhancedUdpNat::new(
+            config.udp_timeout_ms,
+            config.mtu as usize,
+        ));
         Ok(Self {
             config,
             outbounds,
@@ -2748,8 +2760,7 @@ mod tests {
 
     #[test]
     fn parse_raw_udp_ipv4_payload() {
-        let raw =
-            build_ipv4_udp_packet_for_test("1.1.1.1:53".parse().unwrap(), b"\x00\x01query");
+        let raw = build_ipv4_udp_packet_for_test("1.1.1.1:53".parse().unwrap(), b"\x00\x01query");
         let parsed = parse_raw_udp(&raw).expect("parse ipv4 udp");
         assert_eq!(parsed.tuple.src_ip.to_string(), "10.0.0.2");
         assert_eq!(parsed.tuple.src_port, 34567);
@@ -2810,7 +2821,9 @@ mod tests {
 
     #[tokio::test]
     async fn bootstrap_tcp_session_ipv6_syn_sends_syn_ack() {
-        let listener = TcpListener::bind("[::1]:0").await.expect("bind v6 listener");
+        let listener = TcpListener::bind("[::1]:0")
+            .await
+            .expect("bind v6 listener");
         let addr = listener.local_addr().expect("listener addr");
         tokio::spawn(async move {
             let _ = listener.accept().await;
