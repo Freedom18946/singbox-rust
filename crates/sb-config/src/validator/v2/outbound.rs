@@ -44,6 +44,8 @@ fn allowed_outbound_keys() -> HashSet<String> {
             "timeout_ms",
             "tolerance",
             "tolerance_ms",
+            "icon",
+            "hidden",
             "outbounds",
             "default",
         ],
@@ -245,7 +247,7 @@ pub(super) fn lower_outbounds(doc: &Value, ir: &mut ConfigIR) {
         return;
     };
 
-    for o in outs {
+    for (idx, o) in outs.iter().enumerate() {
         let mut ob = crate::ir::OutboundIR {
             ty: outbound_type_for(o),
             server: o
@@ -258,11 +260,11 @@ pub(super) fn lower_outbounds(doc: &Value, ir: &mut ConfigIR) {
                 .and_then(|v| v.as_u64())
                 .map(|x| x as u16),
             udp: o.get("udp").and_then(|v| v.as_str()).map(|s| s.to_string()),
-            name: o
-                .get("tag")
-                .or_else(|| o.get("name"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
+            name: Some(crate::effective_tag::effective_tag(
+                o.get("tag").and_then(|v| v.as_str()),
+                o.get("name").and_then(|v| v.as_str()),
+                idx,
+            )),
             members: None,
             default_member: None,
             domain_strategy: o

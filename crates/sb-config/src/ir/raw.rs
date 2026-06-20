@@ -2192,6 +2192,10 @@ pub struct RawOutboundIR {
     #[serde(default)]
     pub name: Option<String>,
     #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
+    #[serde(default)]
     pub members: Option<Vec<String>>,
     #[serde(default)]
     pub default_member: Option<String>,
@@ -2423,6 +2427,7 @@ pub struct RawOutboundIR {
 
 impl From<RawOutboundIR> for OutboundIR {
     fn from(raw: RawOutboundIR) -> Self {
+        let _ignored_gui_metadata = (raw.icon, raw.hidden);
         Self {
             ty: raw.ty,
             server: raw.server,
@@ -4286,9 +4291,17 @@ mod tests {
         assert_eq!(ir.interface_name.as_deref(), Some("utun9"));
         assert_eq!(
             ir.address.as_deref(),
-            Some(&["172.18.0.1/30".to_string(), "fdfe:dcba:9876::1/126".to_string()][..])
+            Some(
+                &[
+                    "172.18.0.1/30".to_string(),
+                    "fdfe:dcba:9876::1/126".to_string()
+                ][..]
+            )
         );
-        assert_eq!(ir.route_address.as_deref(), Some(&["10.0.0.0/8".to_string()][..]));
+        assert_eq!(
+            ir.route_address.as_deref(),
+            Some(&["10.0.0.0/8".to_string()][..])
+        );
         assert_eq!(
             ir.route_exclude_address.as_deref(),
             Some(&["192.168.0.0/16".to_string()][..])
@@ -4297,7 +4310,10 @@ mod tests {
         let json = serde_json::to_value(&ir).unwrap();
         // None fields must be absent, not null (runtime re-decode contract).
         let obj = json.as_object().unwrap();
-        assert!(!obj.contains_key("mtu"), "None fields must be skipped, got: {json}");
+        assert!(
+            !obj.contains_key("mtu"),
+            "None fields must be skipped, got: {json}"
+        );
         assert!(!obj.contains_key("name"));
 
         let ir2: TunOptionsIR = serde_json::from_value(json).unwrap();

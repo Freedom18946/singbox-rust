@@ -116,19 +116,17 @@ impl TagNamespace {
     fn scan(ir: &ConfigIR) -> Result<Self> {
         let mut tags = HashSet::new();
 
-        for ob in &ir.outbounds {
-            if let Some(name) = &ob.name {
-                if !name.is_empty() && !tags.insert(name.clone()) {
-                    return Err(anyhow!("duplicate outbound/endpoint tag: {}", name));
-                }
+        for (idx, ob) in ir.outbounds.iter().enumerate() {
+            let name = crate::effective_tag::effective_tag(ob.name.as_deref(), None, idx);
+            if !tags.insert(name.clone()) {
+                return Err(anyhow!("duplicate outbound/endpoint tag: {}", name));
             }
         }
 
-        for ep in &ir.endpoints {
-            if let Some(tag) = &ep.tag {
-                if !tag.is_empty() && !tags.insert(tag.clone()) {
-                    return Err(anyhow!("duplicate outbound/endpoint tag: {}", tag));
-                }
+        for (idx, ep) in ir.endpoints.iter().enumerate() {
+            let tag = crate::effective_tag::effective_tag(ep.tag.as_deref(), None, idx);
+            if !tags.insert(tag.clone()) {
+                return Err(anyhow!("duplicate outbound/endpoint tag: {}", tag));
             }
         }
 
@@ -155,11 +153,10 @@ impl InboundNamespace {
     /// NOT merged with the outbound/endpoint shared namespace.
     fn scan(ir: &ConfigIR) -> Result<Self> {
         let mut tags = HashSet::new();
-        for ib in &ir.inbounds {
-            if let Some(tag) = &ib.tag {
-                if !tag.is_empty() && !tags.insert(tag.clone()) {
-                    return Err(anyhow!("duplicate inbound tag: {}", tag));
-                }
+        for (idx, ib) in ir.inbounds.iter().enumerate() {
+            let tag = crate::effective_tag::effective_tag(ib.tag.as_deref(), None, idx);
+            if !tags.insert(tag.clone()) {
+                return Err(anyhow!("duplicate inbound tag: {}", tag));
             }
         }
         Ok(Self { tags })

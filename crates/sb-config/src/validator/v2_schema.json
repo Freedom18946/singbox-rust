@@ -56,7 +56,9 @@
     },"required":["type","listen"]},
     "outbound":{"type":"object","additionalProperties": false,"properties":{
       "name":{"type":"string"},
-      "type":{"enum":["direct","http","socks","block","shadowsocks","vmess","vless","hysteria","hysteria2","tuic","ssh"]},
+      "type":{"enum":["direct","http","socks","block","selector","urltest","shadowsocks","vmess","vless","hysteria","hysteria2","tuic","ssh"]},
+      "icon":{"type":"string"},
+      "hidden":{"type":"boolean"},
       "server":{"type":"string"},
       "port":{"type":"integer","minimum":1,"maximum":65535},
       "udp":{"type":["boolean","string"]},

@@ -38,6 +38,7 @@ pub mod compat;
 pub mod de;
 pub mod defaults;
 pub mod deprecation;
+mod effective_tag;
 pub mod inbound;
 pub mod ir;
 pub mod json_norm;

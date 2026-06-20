@@ -38,6 +38,10 @@ pub(super) enum RawOutbound {
 pub(super) struct RawDirectConfig {
     #[serde(default)]
     pub tag: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -46,6 +50,10 @@ pub(super) struct RawHttpProxyConfig {
     pub server: String,
     #[serde(default)]
     pub tag: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
     #[serde(default)]
     pub username: Option<String>,
     #[serde(default)]
@@ -63,6 +71,10 @@ pub(super) struct RawSocks5Config {
     #[serde(default)]
     pub tag: Option<String>,
     #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
+    #[serde(default)]
     pub username: Option<String>,
     #[serde(default)]
     pub password: Option<String>,
@@ -79,6 +91,10 @@ pub(super) struct RawSocks4Config {
     #[serde(default)]
     pub tag: Option<String>,
     #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
+    #[serde(default)]
     pub user_id: Option<String>,
     #[serde(default)]
     pub connect_timeout_sec: Option<u64>,
@@ -90,6 +106,10 @@ pub(super) struct RawVmessConfig {
     pub server: String,
     #[serde(default)]
     pub tag: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
     pub uuid: String,
     #[serde(default = "super::default_vmess_security")]
     pub security: String,
@@ -119,6 +139,10 @@ pub(super) struct RawVlessConfig {
     pub server: String,
     #[serde(default)]
     pub tag: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
     pub uuid: String,
     #[serde(default)]
     pub flow: Option<String>,
@@ -142,6 +166,10 @@ pub(super) struct RawTuicConfig {
     pub server: String,
     #[serde(default)]
     pub tag: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
     pub uuid: String,
     pub password: String,
     #[serde(default = "super::default_tuic_congestion_control")]
@@ -169,6 +197,10 @@ pub(super) struct RawTuicConfig {
 pub(super) struct RawSelectorConfig {
     #[serde(default)]
     pub tag: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
     pub outbounds: Vec<String>,
     #[serde(default)]
     pub default: Option<String>,
@@ -181,6 +213,10 @@ pub(super) struct RawSelectorConfig {
 pub(super) struct RawUrlTestConfig {
     #[serde(default)]
     pub tag: Option<String>,
+    #[serde(default)]
+    pub icon: Option<String>,
+    #[serde(default)]
+    pub hidden: Option<bool>,
     pub outbounds: Vec<String>,
     #[serde(default = "super::default_url_test_url")]
     pub url: String,

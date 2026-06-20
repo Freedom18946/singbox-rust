@@ -10,9 +10,9 @@
 
 ---
 
-## Resume (2026-06-19) - External reference refresh + post1313 planning
-
-- **External sources refreshed**: Go `go_fork_source/sing-box-1.13.13`, GUI `GUI_fork_source/GUI.for.SingBox-1.25.1`; planning-only post-1.13.13 work packages live in `agents-only/post1313/`.
+## Resume (2026-06-20) - P1313-01 config schema fixtures
+- **P1313-01 DONE**: GUI 1.25.1 `$schema`-only fixtures pass production sb-config;
+  outbound `icon`/`hidden` ignored; Go-style effective tag fallback pinned. post1313 planning remains in `agents-only/post1313/`.
 
 ## Resume (2026-06-14) - POST-FABLE wave
 

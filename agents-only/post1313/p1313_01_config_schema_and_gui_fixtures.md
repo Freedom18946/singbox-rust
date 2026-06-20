@@ -62,6 +62,31 @@ default outbound ids, and option-object generation controls.
 - `cargo check -p app --features gui_runtime`
 - `./agents-only/06-scripts/verify-consistency.sh`
 
+## Implementation Evidence (2026-06-20)
+
+Status: DONE and verified locally.
+
+Implemented:
+
+- GUI 1.25.1 outbound `icon` / `hidden` are accepted by strict outbound validation and
+  serde raw boundaries, then ignored before runtime IR.
+- `$schema`-only GUI fixtures pass `sb_config::config_from_raw_value`; direct `validate_v2`
+  still reports explicit wrong `schema_version` as an error.
+- Go-style effective tag fallback is crate-private and shared by inbound/outbound lowering
+  plus planned duplicate checks: explicit `tag`/`name` wins, empty/missing falls back to
+  the array index string.
+- Added `crates/sb-config/tests/golden/gui1251/` fixtures for default mixed, TUN
+  system/gvisor/mixed, HTTP-only auth, SOCKS-only auth, and mixed auth shapes.
+
+Verified so far:
+
+- `cargo test -p sb-config gui1251`
+- `cargo test -p sb-config --test compatibility_matrix`
+- `cargo test -p sb-config --test schema_version_check`
+- `cargo test -p sb-config`
+- `cargo check -p app --features gui_runtime`
+- `./agents-only/06-scripts/verify-consistency.sh`
+
 ## Non-Goals
 
 - No GUI desktop automation.

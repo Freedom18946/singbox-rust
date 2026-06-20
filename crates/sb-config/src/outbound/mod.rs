@@ -90,6 +90,7 @@ impl<'de> Deserialize<'de> for DirectConfig {
 
 impl From<raw::RawDirectConfig> for DirectConfig {
     fn from(r: raw::RawDirectConfig) -> Self {
+        let _ignored_gui_metadata = (r.icon, r.hidden);
         Self { tag: r.tag }
     }
 }
@@ -116,6 +117,7 @@ impl<'de> Deserialize<'de> for HttpProxyConfig {
 
 impl From<raw::RawHttpProxyConfig> for HttpProxyConfig {
     fn from(r: raw::RawHttpProxyConfig) -> Self {
+        let _ignored_gui_metadata = (r.icon, r.hidden);
         Self {
             server: r.server,
             tag: r.tag,
@@ -146,6 +148,7 @@ impl<'de> Deserialize<'de> for Socks5Config {
 
 impl From<raw::RawSocks5Config> for Socks5Config {
     fn from(r: raw::RawSocks5Config) -> Self {
+        let _ignored_gui_metadata = (r.icon, r.hidden);
         Self {
             server: r.server,
             tag: r.tag,
@@ -176,6 +179,7 @@ impl<'de> Deserialize<'de> for Socks4Config {
 
 impl From<raw::RawSocks4Config> for Socks4Config {
     fn from(r: raw::RawSocks4Config) -> Self {
+        let _ignored_gui_metadata = (r.icon, r.hidden);
         Self {
             server: r.server,
             tag: r.tag,
@@ -222,6 +226,7 @@ impl<'de> Deserialize<'de> for VmessConfig {
 
 impl From<raw::RawVmessConfig> for VmessConfig {
     fn from(r: raw::RawVmessConfig) -> Self {
+        let _ignored_gui_metadata = (r.icon, r.hidden);
         Self {
             server: r.server,
             tag: r.tag,
@@ -275,6 +280,7 @@ impl<'de> Deserialize<'de> for VlessConfig {
 
 impl From<raw::RawVlessConfig> for VlessConfig {
     fn from(r: raw::RawVlessConfig) -> Self {
+        let _ignored_gui_metadata = (r.icon, r.hidden);
         Self {
             server: r.server,
             tag: r.tag,
@@ -331,6 +337,7 @@ impl<'de> Deserialize<'de> for TuicConfig {
 
 impl From<raw::RawTuicConfig> for TuicConfig {
     fn from(r: raw::RawTuicConfig) -> Self {
+        let _ignored_gui_metadata = (r.icon, r.hidden);
         Self {
             server: r.server,
             tag: r.tag,
@@ -376,6 +383,7 @@ impl<'de> Deserialize<'de> for SelectorConfig {
 
 impl From<raw::RawSelectorConfig> for SelectorConfig {
     fn from(r: raw::RawSelectorConfig) -> Self {
+        let _ignored_gui_metadata = (r.icon, r.hidden);
         Self {
             tag: r.tag,
             outbounds: r.outbounds,
@@ -410,6 +418,7 @@ impl<'de> Deserialize<'de> for UrlTestConfig {
 
 impl From<raw::RawUrlTestConfig> for UrlTestConfig {
     fn from(r: raw::RawUrlTestConfig) -> Self {
+        let _ignored_gui_metadata = (r.icon, r.hidden);
         Self {
             tag: r.tag,
             outbounds: r.outbounds,

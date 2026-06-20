@@ -172,8 +172,7 @@ pub(crate) fn validate_inbounds(doc: &Value, allow_unknown: bool, issues: &mut V
         // exactly as strict as the flat form. (post_fable_package02)
         if is_tun {
             if let Some(tun_val) = ib.get("tun") {
-                if let Err(err) =
-                    serde_json::from_value::<crate::ir::TunOptionsIR>(tun_val.clone())
+                if let Err(err) = serde_json::from_value::<crate::ir::TunOptionsIR>(tun_val.clone())
                 {
                     let kind = if allow_unknown { "warning" } else { "error" };
                     issues.push(emit_issue(
@@ -305,7 +304,7 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
     let Some(ins) = doc.get("inbounds").and_then(|v| v.as_array()) else {
         return;
     };
-    for i in ins {
+    for (idx, i) in ins.iter().enumerate() {
         let ty = match i.get("type").and_then(|v| v.as_str()).unwrap_or("socks") {
             "socks" => InboundType::Socks,
             "http" => InboundType::Http,
@@ -404,11 +403,11 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
             // config_from_raw_value), which silently breaks ssmapi tag
             // lookup and any other consumer that relies on the configured
             // inbound tag.
-            tag: i
-                .get("tag")
-                .or_else(|| i.get("name"))
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
+            tag: Some(crate::effective_tag::effective_tag(
+                i.get("tag").and_then(|v| v.as_str()),
+                i.get("name").and_then(|v| v.as_str()),
+                idx,
+            )),
             ty,
             listen,
             port,
@@ -1210,13 +1209,21 @@ mod tests {
 
         assert_eq!(
             tun.address.as_deref(),
-            Some(&["172.18.0.1/30".to_string(), "fdfe:dcba:9876::1/126".to_string()][..])
+            Some(
+                &[
+                    "172.18.0.1/30".to_string(),
+                    "fdfe:dcba:9876::1/126".to_string()
+                ][..]
+            )
         );
         assert_eq!(tun.auto_route, Some(true));
         assert_eq!(tun.strict_route, Some(true));
         assert_eq!(tun.endpoint_independent_nat, Some(false));
         assert_eq!(tun.stack.as_deref(), Some("mixed"));
-        assert_eq!(tun.route_address.as_deref(), Some(&["10.0.0.0/8".to_string()][..]));
+        assert_eq!(
+            tun.route_address.as_deref(),
+            Some(&["10.0.0.0/8".to_string()][..])
+        );
         assert_eq!(
             tun.route_exclude_address.as_deref(),
             Some(&["192.168.0.0/16".to_string()][..])
@@ -1247,9 +1254,11 @@ mod tests {
         let doc = json!({"inbounds": [inbound]});
         let issues = run_validate(&doc, false);
         assert!(
-            issues.iter().any(|i| i["ptr"] == "/inbounds/0/bogus_tun_field"
-                && i["code"] == "UnknownField"
-                && i["kind"] == "error"),
+            issues
+                .iter()
+                .any(|i| i["ptr"] == "/inbounds/0/bogus_tun_field"
+                    && i["code"] == "UnknownField"
+                    && i["kind"] == "error"),
             "strict unknown-field rejection must survive the TUN whitelist, got: {issues:?}"
         );
     }
@@ -1262,9 +1271,11 @@ mod tests {
             let doc = json!({"inbounds": [inbound]});
             let issues = run_validate(&doc, false);
             assert!(
-                issues.iter().any(|i| i["ptr"] == format!("/inbounds/0/{key}")
-                    && i["code"] == "UnknownField"
-                    && i["kind"] == "error"),
+                issues
+                    .iter()
+                    .any(|i| i["ptr"] == format!("/inbounds/0/{key}")
+                        && i["code"] == "UnknownField"
+                        && i["kind"] == "error"),
                 "TUN-only key `{key}` must be rejected on non-tun inbounds"
             );
         }
