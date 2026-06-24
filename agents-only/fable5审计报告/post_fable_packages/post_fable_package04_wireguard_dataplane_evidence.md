@@ -96,3 +96,82 @@ the active runtime thread.
   WireGuard-specific and explicit.
 - package04 does not cover TUN privileged dataplane proof, reload atomicity,
   subscription import behavior, or WireGuard protocol-stack rewrites.
+
+---
+
+## post004 extension: WireGuard userspace TCP/IP netstack — Phase 1
+
+Date: 2026-06-21.
+
+Scope decision (user-directed): package04 closed *resolution/registration* but the
+data plane was never real — `WireGuardStream` fed raw application bytes straight
+into `Tunn::encapsulate` (which expects a full IP packet) and `connect` ignored the
+target, so traffic was silently dropped (a "looks-successful, semantically-broken"
+stream). post004 deepens this to a real data plane, mirroring Go sing-box's
+wireguard-go + gVisor `netstack` with a pure-Rust equivalent. Like post003 for TUN,
+the bar is end-to-end correctness + live proof, not a re-label.
+
+### Engine decision (smoltcp), with evidence
+
+- **Chosen: smoltcp over boringtun** (user-confirmed). Functionally proven by
+  `onetun` (github.com/aramperes/onetun), which is exactly boringtun+smoltcp for
+  userspace WireGuard TCP/UDP forwarding, no root — same architecture as ours.
+- **netstack choice does not affect Go interop**: interop is at the WG/Noise layer
+  (boringtun ↔ wireguard-go + `reserved`); inner IP packets are terminated by the
+  *remote peer's* kernel, which does not care which stack synthesized them. There is
+  no production-grade Rust gVisor, and "aligning gVisor at the netstack layer" is
+  neither possible nor necessary.
+- **Honest caveat (logged for the future)**: Cloudflare used smoltcp for the same
+  L4↔L3 WireGuard job in their SASE client and hit a performance ceiling on
+  high-BDP / many-connection browsing (smoltcp lacks mature window scaling / SACK),
+  then moved to lwIP. For functional drop-in this is acceptable; if performance
+  parity becomes a hard requirement, the migration path is `netstack-lwip` (C FFI).
+  The netstack lives behind `WireGuardTransport`, so it is swappable.
+
+### Phase 1 delivered (real logic, no stubs)
+
+- `crates/sb-transport/src/wireguard.rs` → split into `wireguard/mod.rs` +
+  `wireguard/netstack.rs`; `transport_wireguard` now also pulls `smoltcp`.
+- `netstack.rs`: a smoltcp `Device` (`WgPhy`) bridged to the tunnel (egress →
+  `encapsulate` → UDP; UDP → `decapsulate` → ingress); a single driver task owns
+  `Tunn`/UDP/`Interface`/`SocketSet` (no locking); established-gated TCP `connect`
+  to arbitrary in-tunnel targets via a default route (gateway unused on `Medium::Ip`,
+  no `set_any_ip`); self-allocated ephemeral source ports (smoltcp rejects port 0);
+  `WgTcpStream` (mpsc + `Notify`) as the proxyable `AsyncRead`/`AsyncWrite`.
+- `reserved` handled per Go `transport/wireguard/client_bind.go`: written into
+  `packet[1..4]` on send, cleared on receive — at the UDP boundary, outside boringtun.
+- `mod.rs`: `WireGuardTransport` is netstack-backed; the broken `WireGuardStream` /
+  `get_stream` / `send` / `recv` / `timer_loop` are removed. `WireGuardConfig` gains
+  `local_addrs: Vec<IpAddr>` + `reserved: [u8;3]`.
+- Outbound (`sb-adapters/src/outbound/wireguard.rs`): `dial` now does a real
+  `connect(target)` through the netstack (was target-ignoring `get_stream`); pulls
+  `local_addrs` from `wireguard_local_address` + `wireguard_source_v4/v6`.
+- Endpoint (`sb-core/src/endpoint/wireguard.rs`): per-peer config feeds `local_addrs`
+  (from interface `address`) + `reserved`; `reserved` is parsed to 3 bytes instead of
+  being rejected.
+
+### Verification snapshot
+
+| Command | Result |
+|---|---|
+| `cargo test -p sb-transport --features transport_wireguard --lib wireguard` | PASS: 10 passed (reserved set/clear, WgPhy queue, connect wrong-family loud-fail, non-IP loud-fail, no-peer timeout) |
+| `cargo test -p sb-adapters --features adapter-wireguard-outbound,adapter-wireguard-endpoint --lib wireguard` | PASS: 5 passed |
+| `cargo test -p app --features adapters --test wireguard_endpoint_test --test wireguard_endpoint_e2e` | PASS: 10 passed |
+| `cargo check -p sb-transport` (default; netstack absent) | PASS (Phase 0 intact) |
+| `cargo check -p sb-transport --features transport_wireguard` | PASS |
+| `cargo check -p sb-adapters --features adapter-wireguard-outbound,adapter-wireguard-endpoint` | PASS |
+| `cargo clippy -p sb-transport --features transport_wireguard --all-targets` | PASS: 0 warnings |
+| `cargo fmt --all -- --check` | clean |
+
+### Remaining (post004 roadmap)
+
+- **Phase 2**: UDP-over-WG (smoltcp `udp::Socket`; endpoint `listen_packet` factory).
+- **Phase 3**: multi-socket concurrency hardening on one tunnel.
+- **Phase 4**: MIG-02 — make the disabled-feature outbound builder loud
+  (`invalid_config_outbound`) instead of silent `None`; consume islanded `mtu` /
+  `allowed_ips`.
+- **Phase 5**: live round-trip proof vs a real Go sing-box WG peer (ordinary user,
+  no root), double-sided assertion + `result.json`, as the `04b` harness.
+- Not yet exercised live: a real TCP/UDP round-trip through the tunnel (that is the
+  Phase 5 gate). Phase 1 proves the stack mechanics + wiring + loud failure modes.
+

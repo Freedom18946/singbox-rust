@@ -10,30 +10,30 @@
 
 ---
 
+## Resume (2026-06-21) - post004 WireGuard userspace netstack (Phase 1)
+
+- **post004 Phase 1 DONE**: WireGuard data plane gets a real userspace TCP/IP stack — smoltcp over
+  boringtun `Tunn` (`crates/sb-transport/src/wireguard/netstack.rs`), replacing the broken
+  raw-bytes→`encapsulate` stream. `connect` = established-gated in-tunnel TCP; `reserved`
+  applied/cleared at the UDP boundary per Go `client_bind.go`; outbound+endpoint feed
+  `local_addrs`+reserved. Engine=smoltcp (user-confirmed; onetun-proven; netstack≠Go-interop axis,
+  interop is WG/Noise). Verified: netstack 10 + adapters-wg 5 + app-endpoint 10 tests PASS; default
+  & transport_wireguard both compile (Phase 0 intact); clippy 0; fmt clean.
+- Next: P2 UDP-over-WG; P3 multi-socket; P4 MIG-02 loud stub + islanded mtu/allowed_ips; P5 live proof vs Go.
+
 ## Resume (2026-06-20b) - post003 TUN UDP/IPv6 + proxy egress
 
-- **post_fable_package03 DONE**: Enhanced TUN datapath extended beyond TCP/IPv4 — UDP NAT
-  (`tun_udp.rs` + `connect_udp`) + IPv6 TCP/UDP reply packets; fixed `DirectUdpTransport`
-  connected-socket send (macOS EISCONN); fixed TUN egress through **proxy outbounds**
-  (`connect_tcp_stream` + boxed-stream session relay; datapath was direct-only).
+- **post_fable_package03 DONE**: Enhanced TUN datapath beyond TCP/IPv4 — UDP NAT + IPv6 TCP/UDP
+  reply packets; macOS EISCONN fix; TUN egress through **proxy outbounds** (`connect_tcp_stream`
+  + boxed-stream session relay; was direct-only).
 - **Live root 03b proof PASS** (`/tmp/pf03b_post003_privileged2`): TCP IPv4+IPv6 through HTTP
   outbound — curl 200 + outbound_hit both stacks + cleanup; IPv6 fully round-tripped. UDP proven
   by unit test (single-host live UDP-through-utun infeasible: direct egress loops; documented).
   Limits: SOCKS5/Hyst2 UDP loud-Unsupported; no IP frag. Evidence: post_fable_package03 evidence note.
-- **Boundary gate reconciled → `make boundaries` exit 0**: 3 pre-existing stale policy items fixed
-  (no source change, MIG-02 not weakened): W75-01 forbid scoped to the fallback idiom (was a bare
-  literal hitting a test fixture); W199-03 require tracks the CAL-18 loud `invalid_config_outbound`
-  tailscale stub; V4 budget `bridge_inbounds_runtime_refs` max 8→14 (legit reload/liveness refs).
 
 ## Resume (2026-06-20) - P1313-03 DNS rule actions/cache
 - **P1313-03 DONE**: DNS rule fields/logical rules, route-options/action options, answer cache semantics, ECS/predefined wire response, RDRC rejection, and FakeIP-safe reverse mapping are pinned. Evidence: `agents-only/post1313/p1313_03_dns_rule_actions_and_cache_semantics.md`.
 - **P1313-01/02 DONE**: GUI fixture schema baseline and DNS transport manager remain closed; next is P1313-04 route rule engine/network strategy.
-## Resume (2026-06-14) - POST-FABLE wave (all closed; detail in post_fable README)
-
-- All post_fable packages closed/known: package01-06/08-15 DONE; **package03 now DONE
-  via post003 (see above)**; package07 PARTIAL + GUI joint testing PAUSED_INDEFINITE
-  (Wails artifacts removed, user App Support left on Go kernel/config).
-  Per-package commits/status: `post_fable_packages` README map.
 
 ## Strategic State
 

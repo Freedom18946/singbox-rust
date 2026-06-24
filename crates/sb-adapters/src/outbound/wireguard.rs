@@ -11,7 +11,7 @@
 //! - Full IPv4/IPv6 support
 
 use crate::outbound::prelude::*;
-use std::net::SocketAddr;
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
@@ -43,6 +43,10 @@ pub struct WireGuardOutboundConfig {
     pub connect_timeout: Duration,
     /// Tag for this outbound.
     pub tag: Option<String>,
+    /// WireGuard interface addresses (source for in-tunnel connections).
+    pub local_addrs: Vec<IpAddr>,
+    /// WireGuard `reserved` bytes (applied per Go client_bind.go).
+    pub reserved: [u8; 3],
 }
 
 impl Default for WireGuardOutboundConfig {
@@ -59,8 +63,15 @@ impl Default for WireGuardOutboundConfig {
             mtu: 1420,
             connect_timeout: Duration::from_secs(10),
             tag: None,
+            local_addrs: Vec::new(),
+            reserved: [0, 0, 0],
         }
     }
+}
+
+/// Parse a WireGuard interface address ("10.0.0.2" or "10.0.0.2/32") to an IpAddr.
+fn parse_wg_local_addr(s: &str) -> Option<IpAddr> {
+    s.split('/').next()?.trim().parse::<IpAddr>().ok()
 }
 
 /// WireGuard outbound connector.
@@ -88,8 +99,10 @@ impl WireGuardOutbound {
             pre_shared_key: config.pre_shared_key.clone(),
             peer_endpoint,
             local_addr: config.local_addr,
+            local_addrs: config.local_addrs.clone(),
             persistent_keepalive: config.persistent_keepalive,
             mtu: config.mtu,
+            reserved: config.reserved,
             connect_timeout: config.connect_timeout,
         };
 
@@ -130,12 +143,15 @@ impl OutboundConnector for WireGuardOutbound {
 
     async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
         debug!("WireGuard dial request to {}:{}", target.host, target.port);
-
-        // Get a stream from the existing tunnel
-        let stream = self.transport.get_stream();
-
-        // Wrap in Box to satisfy BoxedStream
-        Ok(Box::new(stream))
+        use sb_transport::Dialer;
+        // Establish a real TCP connection to the in-tunnel target through the
+        // userspace netstack (boringtun + smoltcp), not a raw tunnel stream.
+        let stream = self
+            .transport
+            .connect(&target.host, target.port)
+            .await
+            .map_err(|e| AdapterError::other(format!("WireGuard dial failed: {e}")))?;
+        Ok(crate::traits::from_transport_stream(stream))
     }
 }
 
@@ -240,6 +256,30 @@ impl TryFrom<&sb_config::ir::OutboundIR> for WireGuardOutboundConfig {
             .map(|s| Duration::from_secs(s as u64))
             .unwrap_or(Duration::from_secs(10));
 
+        // WireGuard interface (source) addresses: explicit source_v4/v6 first, then
+        // the interface local addresses. The netstack uses these to source in-tunnel
+        // connections; without a match for the target family the dial fails loudly.
+        let mut local_addrs: Vec<IpAddr> = Vec::new();
+        if let Some(s) = ir
+            .wireguard_source_v4
+            .as_deref()
+            .and_then(parse_wg_local_addr)
+        {
+            local_addrs.push(s);
+        }
+        if let Some(s) = ir
+            .wireguard_source_v6
+            .as_deref()
+            .and_then(parse_wg_local_addr)
+        {
+            local_addrs.push(s);
+        }
+        for a in &ir.wireguard_local_address {
+            if let Some(ip) = parse_wg_local_addr(a) {
+                local_addrs.push(ip);
+            }
+        }
+
         Ok(Self {
             server,
             port,
@@ -247,9 +287,11 @@ impl TryFrom<&sb_config::ir::OutboundIR> for WireGuardOutboundConfig {
             peer_public_key,
             pre_shared_key,
             local_addr: None,
+            local_addrs,
             allowed_ips,
             persistent_keepalive,
             mtu: 1420,
+            reserved: [0, 0, 0],
             connect_timeout,
             tag: ir.name.clone(),
         })

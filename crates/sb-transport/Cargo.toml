@@ -24,7 +24,7 @@ transport_uot = []        # UDP over TCP support
 transport_sip003 = []     # SIP003 plugin protocol
 transport_trojan = ["dep:sha2", "dep:hex"]     # Trojan transport
 transport_grpc_lite = []  # Lightweight gRPC without tonic
-transport_wireguard = ["dep:boringtun"]  # WireGuard transport
+transport_wireguard = ["dep:boringtun", "dep:smoltcp"]  # WireGuard transport (boringtun crypto + smoltcp userspace netstack)
 transport_tailscale = []  # Tailscale MagicDNS and coordination
 failpoints = ["dep:fail"]
 
@@ -65,6 +65,7 @@ async-stream = { version = "0.3", optional = true }
 yamux = { version = "0.13", optional = true }
 prometheus = { workspace = true, optional = true }
 boringtun = { git = "https://github.com/cloudflare/boringtun", branch = "master", optional = true }
+smoltcp = { version = "0.11", optional = true, default-features = false, features = ["std", "medium-ip", "proto-ipv4", "proto-ipv6", "socket-tcp", "socket-udp"] }
 
 [target.'cfg(target_os = "android")'.dependencies]
 sb-platform = { path = "../sb-platform" }

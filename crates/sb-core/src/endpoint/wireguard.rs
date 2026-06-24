@@ -46,6 +46,7 @@ struct PeerConfig {
     pre_shared_key: Option<String>,
     persistent_keepalive: Option<u16>,
     allowed_ips: Vec<IpNet>,
+    reserved: [u8; 3],
 }
 
 struct PeerTransport {
@@ -174,18 +175,16 @@ impl WireGuardEndpoint {
                     allowed_ips.push(net);
                 }
 
-                if let Some(reserved) = peer.reserved.as_ref() {
-                    if !reserved.is_empty() {
-                        if reserved.len() != 3 {
-                            return Err(format!(
-                                "wireguard endpoint '{tag}' peer[{peer_index}] reserved must be 3 bytes"
-                            ));
-                        }
-                        return Err(format!(
-                            "wireguard endpoint '{tag}' peer[{peer_index}] reserved bytes are not supported by the userspace transport"
-                        ));
-                    }
-                }
+                // WireGuard `reserved` bytes: parsed and applied at the UDP boundary
+                // by the netstack (Go `client_bind.go` parity). Empty → [0,0,0].
+                let reserved: [u8; 3] = match peer.reserved.as_ref() {
+                    Some(r) if !r.is_empty() => r.as_slice().try_into().map_err(|_| {
+                        format!(
+                            "wireguard endpoint '{tag}' peer[{peer_index}] reserved must be 3 bytes"
+                        )
+                    })?,
+                    _ => [0, 0, 0],
+                };
 
                 Ok(PeerConfig {
                     endpoint,
@@ -193,6 +192,7 @@ impl WireGuardEndpoint {
                     pre_shared_key,
                     persistent_keepalive: keepalive,
                     allowed_ips,
+                    reserved,
                 })
             })
             .collect::<Result<Vec<_>, _>>()
@@ -277,8 +277,10 @@ impl WireGuardEndpoint {
                     pre_shared_key: peer.pre_shared_key.clone(),
                     peer_endpoint: endpoint,
                     local_addr: self.local_addr,
+                    local_addrs: self.local_addresses.iter().map(|n| n.addr()).collect(),
                     persistent_keepalive: peer.persistent_keepalive,
                     mtu: self.mtu,
+                    reserved: peer.reserved,
                     connect_timeout: Duration::from_secs(10),
                 };
                 let transport = block_on_wireguard_task(async move {
