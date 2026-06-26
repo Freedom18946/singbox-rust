@@ -10,6 +10,21 @@
 
 ---
 
+## Resume (2026-06-26d) - post004 WireGuard MIG-02 (Phase 4)
+
+- **post004 Phase 4 DONE**: loud disabled-feature outbound builder + islanded
+  mtu/reserved/allowed_ips consumption. Disabled `adapter-wireguard-outbound` branch now
+  returns `invalid_config_outbound` (loud) instead of silent `None`. `OutboundIR` +
+  `RawOutboundIR` gained `wireguard_mtu` / `wireguard_reserved`; v2 validator extracts
+  them; `WireGuardOutboundConfig::try_from` consumes `mtu` (unwrap_or 1420) + `reserved`
+  (3-byte loud validation) + validates `allowed_ips` CIDRs loudly. Replaces hardcoded
+  1420 / [0,0,0] / opaque-string allowed_ips.
+- Verified: sb-config outbound 104, sb-config wireguard 16, compatibility_matrix 6,
+  sb-adapters wireguard 12 (5+7), sb-adapters register 15 (incl disabled-loud),
+  transport-wg 16, core endpoint 29, clippy 0 warn (sb-adapters+sb-config), fmt clean,
+  all-features PASS. Phase 1 `8f976824`, Phase 2 `069c1e96`, Phase 3 `9dadcd10` sealed.
+  Next: P5 live proof vs Go.
+
 ## Resume (2026-06-26c) - post004 WireGuard multi-socket concurrency (Phase 3)
 
 - **post004 Phase 3 DONE**: multi-peer UDP socket routing (per-peer `HashMap` bucketing, no

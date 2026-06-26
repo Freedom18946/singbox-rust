@@ -244,3 +244,53 @@ the bar is end-to-end correctness + live proof, not a re-label.
 - Not yet exercised live: a real TCP/UDP round-trip through the tunnel (that is the
   Phase 5 gate). Phase 1/2/3 prove stack mechanics + TCP/UDP wiring + loud failure modes
   + multi-socket concurrency + idle reap.
+
+### Phase 4 delivered (MIG-02 WireGuard loud-disabled + islanded mtu/reserved/allowed_ips)
+
+- **P4-1 loud disabled builder**: `build_wireguard_outbound` `#[cfg(not(feature =
+  "adapter-wireguard-outbound"))]` branch changed from `stub_outbound("wireguard"); None`
+  (silent — bridge turns None into a misleading "outbound not found") to
+  `invalid_config_outbound("wireguard", unsupported_outbound_feature_reason(...))`, so a
+  dial through a feature-disabled WireGuard outbound fails loudly carrying the outbound
+  type, the missing cargo feature, and a `--features` rebuild hint. Mirrors the Tor
+  long-tail pattern (`register.rs:2770-2773`).
+- **P4-2 mtu consumed**: `OutboundIR` + `RawOutboundIR` gained `wireguard_mtu:
+  Option<u32>`; raw→IR lowering passes it through; v2 validator extracts `mtu` from raw
+  JSON in the Wireguard branch; `WireGuardOutboundConfig::try_from` now uses
+  `ir.wireguard_mtu.unwrap_or(1420)` instead of hardcoded `1420`. Mirrors Go
+  `WireGuardEndpointOptions.MTU`.
+- **P4-3 reserved consumed**: `OutboundIR` + `RawOutboundIR` gained
+  `wireguard_reserved: Option<Vec<u8>>`; lowering + v2 validator extract `reserved`;
+  `try_from` parses to `[u8;3]` with a loud `InvalidConfig` when not exactly 3 bytes
+  (mirrors endpoint-side parsing at `crates/sb-core/src/endpoint/wireguard.rs:370-377`).
+  Replaces hardcoded `[0,0,0]`. Mirrors Go `WireGuardPeer.Reserved`.
+- **P4-4 allowed_ips CIDR validation**: `try_from` now validates every `allowed_ips`
+  entry via `IpNet::parse`, failing loudly on malformed CIDRs. For single-peer outbound
+  the list is informational (the netstack uses a default route; allowed_ips do not
+  participate in peer selection), but malformed CIDRs must no longer pass through
+  silently as opaque strings.
+
+### Phase 4 verification snapshot
+
+| Command | Result |
+|---|---|
+| `cargo test -p sb-config --lib outbound` | PASS: 104 passed (103 + v2 mtu/reserved extraction) |
+| `cargo test -p sb-config --lib wireguard` | PASS: 16 passed (roundtrip extended with mtu/reserved) |
+| `cargo test -p sb-config --test compatibility_matrix` | PASS: 6 passed |
+| `cargo test -p sb-adapters --features adapter-wireguard-outbound,adapter-wireguard-endpoint,router --lib wireguard` | PASS: 12 passed (5 original + 7 new: mtu consumed/default, reserved consumed/default/reject, allowed_ips invalid, disabled loud) |
+| `cargo test -p sb-adapters --lib register` | PASS: 15 passed (includes wireguard_disabled_outbound_connect_fails_loudly) |
+| `cargo test -p sb-transport --features transport_wireguard --lib wireguard` | PASS: 16 passed |
+| `cargo test -p sb-core endpoint` | PASS: 29 passed |
+| `cargo clippy -p sb-adapters --all-targets` | 0 warnings |
+| `cargo clippy -p sb-config --all-targets` | 0 warnings |
+| `cargo fmt --all -- --check` | clean |
+| `cargo check --workspace --all-features` | PASS |
+
+### Remaining (post004 roadmap after Phase 4)
+
+- **Phase 5**: live round-trip proof vs a real Go sing-box WG peer (ordinary user, no
+  root), double-sided assertion + `result.json`, as the `04b` harness.
+- Not yet exercised live: a real TCP/UDP round-trip through the tunnel (that is the
+  Phase 5 gate). Phase 1/2/3/4 prove stack mechanics + TCP/UDP wiring + loud failure
+  modes + multi-socket concurrency + idle reap + loud disabled builder + islanded
+  mtu/reserved/allowed_ips consumption.

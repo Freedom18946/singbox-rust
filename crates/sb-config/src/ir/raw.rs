@@ -2408,6 +2408,10 @@ pub struct RawOutboundIR {
     #[serde(default)]
     pub wireguard_persistent_keepalive: Option<u16>,
     #[serde(default)]
+    pub wireguard_mtu: Option<u32>,
+    #[serde(default)]
+    pub wireguard_reserved: Option<Vec<u8>>,
+    #[serde(default)]
     pub tor_proxy_addr: Option<String>,
     #[serde(default)]
     pub tor_options: Option<std::collections::HashMap<String, String>>,
@@ -2544,6 +2548,8 @@ impl From<RawOutboundIR> for OutboundIR {
             wireguard_peer_public_key: raw.wireguard_peer_public_key,
             wireguard_pre_shared_key: raw.wireguard_pre_shared_key,
             wireguard_persistent_keepalive: raw.wireguard_persistent_keepalive,
+            wireguard_mtu: raw.wireguard_mtu,
+            wireguard_reserved: raw.wireguard_reserved,
             tor_proxy_addr: raw.tor_proxy_addr,
             tor_options: raw.tor_options,
             test_url: raw.test_url,

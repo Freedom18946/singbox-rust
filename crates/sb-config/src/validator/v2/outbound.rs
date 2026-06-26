@@ -472,6 +472,8 @@ pub(super) fn lower_outbounds(doc: &Value, ir: &mut ConfigIR) {
             wireguard_peer_public_key: None,
             wireguard_pre_shared_key: None,
             wireguard_persistent_keepalive: None,
+            wireguard_mtu: None,
+            wireguard_reserved: None,
             anytls_padding: extract_string_list(o.get("anytls_padding")),
             bind_interface: o
                 .get("bind_interface")
@@ -751,6 +753,17 @@ pub(super) fn lower_outbounds(doc: &Value, ir: &mut ConfigIR) {
                     .get("persistent_keepalive_interval")
                     .and_then(|v| v.as_u64())
                     .and_then(|x| u16::try_from(x).ok());
+            }
+            if ob.wireguard_mtu.is_none() {
+                ob.wireguard_mtu = o.get("mtu").and_then(|v| v.as_u64()).map(|x| x as u32);
+            }
+            if ob.wireguard_reserved.is_none() {
+                ob.wireguard_reserved = o.get("reserved").and_then(|v| v.as_array()).map(|arr| {
+                    arr.iter()
+                        .filter_map(|v| v.as_u64())
+                        .map(|x| x as u8)
+                        .collect::<Vec<u8>>()
+                });
             }
 
             if ob.wireguard_allowed_ips.is_empty() || ob.wireguard_peer_public_key.is_none() {
@@ -2243,5 +2256,30 @@ mod tests {
         let mut ir_via_lower = ConfigIR::default();
         lower_outbounds(&doc, &mut ir_via_lower);
         assert_eq!(ir_via_to_ir.outbounds, ir_via_lower.outbounds);
+    }
+
+    #[test]
+    fn wireguard_outbound_mtu_and_reserved_extracted_by_v2_validator() {
+        // P4-2/P4-3: v2 lowering extracts `mtu` and `reserved` from the raw
+        // WireGuard outbound JSON into OutboundIR fields (previously islanded —
+        // the outbound TryFrom hardcoded 1420 / [0,0,0]).
+        let doc = json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "wireguard",
+                "name": "wg",
+                "server": "198.51.100.1",
+                "port": 51820,
+                "private_key": "YAnz5TF+lXXJte14tji3zlbzbm+JFHYa74LLQDzOjG0=",
+                "peer_public_key": "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=",
+                "mtu": 1280,
+                "reserved": [1, 2, 3]
+            }]
+        });
+        let ir = to_ir_v1(&doc);
+        assert_eq!(ir.outbounds.len(), 1);
+        let ob = &ir.outbounds[0];
+        assert_eq!(ob.wireguard_mtu, Some(1280));
+        assert_eq!(ob.wireguard_reserved.as_deref(), Some(&[1u8, 2, 3][..]));
     }
 }

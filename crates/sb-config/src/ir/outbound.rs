@@ -526,6 +526,16 @@ pub struct OutboundIR {
     /// 可选的持久保活间隔（秒）。
     #[serde(default)]
     pub wireguard_persistent_keepalive: Option<u16>,
+    /// Optional tunnel MTU (default: 1420). Mirrors Go `WireGuardEndpointOptions.MTU`.
+    /// 可选隧道 MTU（默认 1420）。对应 Go `WireGuardEndpointOptions.MTU`。
+    #[serde(default)]
+    pub wireguard_mtu: Option<u32>,
+    /// Optional WireGuard `reserved` bytes (exactly 3 when present). Mirrors Go
+    /// `WireGuardPeer.Reserved`.
+    /// 可选 WireGuard `reserved` 字节（存在时必须为 3 字节）。对应 Go
+    /// `WireGuardPeer.Reserved`。
+    #[serde(default)]
+    pub wireguard_reserved: Option<Vec<u8>>,
 
     /// Tor SOCKS5 proxy address (default: 127.0.0.1:9050).
     /// Tor SOCKS5 代理地址（默认：127.0.0.1:9050）。
@@ -769,6 +779,8 @@ mod tests {
         ir.wireguard_local_address = vec!["10.0.0.2/32".to_string(), "fd00::2/64".to_string()];
         ir.wireguard_allowed_ips = vec!["0.0.0.0/0".to_string()];
         ir.wireguard_persistent_keepalive = Some(25);
+        ir.wireguard_mtu = Some(1280);
+        ir.wireguard_reserved = Some(vec![1, 2, 3]);
 
         let json = serde_json::to_value(&ir).unwrap();
         assert_eq!(json.get("ty").unwrap(), "wireguard");
@@ -784,11 +796,26 @@ mod tests {
             .and_then(|v| v.as_array())
             .expect("allowed ips");
         assert_eq!(allowed[0], "0.0.0.0/0");
+        assert_eq!(
+            json.get("wireguard_mtu").and_then(|v| v.as_u64()),
+            Some(1280)
+        );
+        assert_eq!(
+            json.get("wireguard_reserved")
+                .and_then(|v| v.as_array())
+                .map(|a| a.len()),
+            Some(3)
+        );
 
         let roundtrip: OutboundIR = serde_json::from_value(json).unwrap();
         assert_eq!(roundtrip.wireguard_interface.as_deref(), Some("wg0"));
         assert_eq!(roundtrip.wireguard_local_address.len(), 2);
         assert_eq!(roundtrip.wireguard_persistent_keepalive, Some(25));
+        assert_eq!(roundtrip.wireguard_mtu, Some(1280));
+        assert_eq!(
+            roundtrip.wireguard_reserved.as_deref(),
+            Some(&[1u8, 2, 3][..])
+        );
     }
 
     // ── detour + version deserialization ──────────────────────────────────

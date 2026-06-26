@@ -11,6 +11,7 @@
 //! - Full IPv4/IPv6 support
 
 use crate::outbound::prelude::*;
+use ipnet::IpNet;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
@@ -262,8 +263,30 @@ impl TryFrom<&sb_config::ir::OutboundIR> for WireGuardOutboundConfig {
         } else {
             vec!["0.0.0.0/0".to_string(), "::/0".to_string()]
         };
+        // Validate allowed_ips are legal CIDRs. For single-peer outbound the
+        // list is informational (the netstack uses a default route; allowed_ips
+        // do not participate in peer selection), but malformed CIDRs must fail
+        // loudly rather than silently passing through as opaque strings.
+        for cidr in &allowed_ips {
+            if cidr.parse::<IpNet>().is_err() {
+                return Err(AdapterError::network(format!(
+                    "WireGuard outbound has invalid allowed_ips CIDR: '{cidr}'"
+                )));
+            }
+        }
 
         let persistent_keepalive = ir.wireguard_persistent_keepalive.or(Some(25));
+
+        // WireGuard `reserved` bytes: exactly 3 when present, else [0,0,0].
+        // Mirrors endpoint-side parsing (crates/sb-core/src/endpoint/wireguard.rs).
+        let reserved: [u8; 3] = match ir.wireguard_reserved.as_ref() {
+            Some(r) if !r.is_empty() => r.as_slice().try_into().map_err(|_| {
+                AdapterError::InvalidConfig("WireGuard outbound 'reserved' must be exactly 3 bytes")
+            })?,
+            _ => [0, 0, 0],
+        };
+
+        let mtu = ir.wireguard_mtu.unwrap_or(1420) as u16;
 
         let connect_timeout = ir
             .connect_timeout_sec
@@ -304,8 +327,8 @@ impl TryFrom<&sb_config::ir::OutboundIR> for WireGuardOutboundConfig {
             local_addrs,
             allowed_ips,
             persistent_keepalive,
-            mtu: 1420,
-            reserved: [0, 0, 0],
+            mtu,
+            reserved,
             connect_timeout,
             tag: ir.name.clone(),
         })
@@ -352,5 +375,81 @@ mod tests {
         let config = WireGuardOutboundConfig::try_from(&ir).unwrap();
         assert_eq!(config.server, "vpn.example.com");
         assert_eq!(config.port, 51820);
+    }
+
+    fn valid_wg_ir() -> sb_config::ir::OutboundIR {
+        use sb_config::ir::{OutboundIR, OutboundType};
+        OutboundIR {
+            ty: OutboundType::Wireguard,
+            name: Some("wg-test".to_string()),
+            server: Some("198.51.100.1".to_string()),
+            port: Some(51820),
+            wireguard_private_key: Some("YAnz5TF+lXXJte14tji3zlbzbm+JFHYa74LLQDzOjG0=".to_string()),
+            wireguard_peer_public_key: Some(
+                "bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=".to_string(),
+            ),
+            ..Default::default()
+        }
+    }
+
+    #[test]
+    fn wireguard_outbound_mtu_consumed_from_ir() {
+        // P4-2: `wireguard_mtu` flows from IR into the config instead of being
+        // hardcoded to 1420.
+        let mut ir = valid_wg_ir();
+        ir.wireguard_mtu = Some(1280);
+        let config = WireGuardOutboundConfig::try_from(&ir).unwrap();
+        assert_eq!(config.mtu, 1280);
+    }
+
+    #[test]
+    fn wireguard_outbound_mtu_defaults_to_1420_when_absent() {
+        let ir = valid_wg_ir();
+        let config = WireGuardOutboundConfig::try_from(&ir).unwrap();
+        assert_eq!(config.mtu, 1420);
+    }
+
+    #[test]
+    fn wireguard_outbound_reserved_consumed_from_ir() {
+        // P4-3: `wireguard_reserved` flows from IR into the config instead of
+        // being hardcoded to [0,0,0].
+        let mut ir = valid_wg_ir();
+        ir.wireguard_reserved = Some(vec![1, 2, 3]);
+        let config = WireGuardOutboundConfig::try_from(&ir).unwrap();
+        assert_eq!(config.reserved, [1, 2, 3]);
+    }
+
+    #[test]
+    fn wireguard_outbound_reserved_defaults_to_zero_when_absent() {
+        let ir = valid_wg_ir();
+        let config = WireGuardOutboundConfig::try_from(&ir).unwrap();
+        assert_eq!(config.reserved, [0, 0, 0]);
+    }
+
+    #[test]
+    fn wireguard_outbound_reserved_rejects_wrong_length() {
+        // P4-3: a `reserved` vector that is not exactly 3 bytes fails loudly.
+        let mut ir = valid_wg_ir();
+        ir.wireguard_reserved = Some(vec![1, 2]);
+        let err = WireGuardOutboundConfig::try_from(&ir).expect_err("2-byte reserved must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("reserved") && msg.contains("3 bytes"),
+            "error must explain the 3-byte requirement: {msg}"
+        );
+    }
+
+    #[test]
+    fn wireguard_outbound_allowed_ips_invalid_cidr_rejected() {
+        // P4-4: malformed allowed_ips CIDRs fail loudly instead of passing
+        // through as opaque strings.
+        let mut ir = valid_wg_ir();
+        ir.wireguard_allowed_ips = vec!["not-a-cidr".to_string()];
+        let err = WireGuardOutboundConfig::try_from(&ir).expect_err("invalid CIDR must fail");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("not-a-cidr"),
+            "error must name the offending CIDR: {msg}"
+        );
     }
 }

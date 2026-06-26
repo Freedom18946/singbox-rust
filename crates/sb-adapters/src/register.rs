@@ -2899,8 +2899,13 @@ fn build_wireguard_outbound(
     _ir: &OutboundIR,
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
-    stub_outbound("wireguard");
-    None
+    // Loud failure: register an InvalidConfigConnector so any dial surfaces the
+    // missing cargo feature and a rebuild hint, instead of silently returning
+    // None (which the bridge turns into a misleading "outbound not found").
+    invalid_config_outbound(
+        "wireguard",
+        unsupported_outbound_feature_reason("adapter-wireguard-outbound"),
+    )
 }
 
 #[cfg(feature = "adapter-tailscale")]
@@ -3748,6 +3753,34 @@ mod tests {
         );
         assert!(
             msg.contains("adapter-tor"),
+            "error must name the cargo feature: {msg}"
+        );
+        assert!(
+            msg.contains("--features"),
+            "error must give a rebuild hint: {msg}"
+        );
+    }
+
+    #[test]
+    fn wireguard_disabled_outbound_connect_fails_loudly() {
+        // P4-1: a feature-disabled WireGuard outbound registers an
+        // InvalidConfigConnector (instead of silently returning None), so a dial
+        // fails loudly carrying the outbound type, the missing cargo feature, and
+        // a rebuild hint.
+        let (connector, _udp) = invalid_config_outbound(
+            "wireguard",
+            unsupported_outbound_feature_reason("adapter-wireguard-outbound"),
+        )
+        .expect("invalid_config_outbound always returns Some");
+        let err = futures::executor::block_on(connector.connect("example.com", 443))
+            .expect_err("disabled WireGuard outbound must reject dials");
+        let msg = err.to_string();
+        assert!(
+            msg.contains("wireguard"),
+            "error must name the outbound type: {msg}"
+        );
+        assert!(
+            msg.contains("adapter-wireguard-outbound"),
             "error must name the cargo feature: {msg}"
         );
         assert!(
