@@ -1117,4 +1117,35 @@ mod tests {
         assert_eq!(err.kind(), io::ErrorKind::AddrNotAvailable);
         assert!(err.to_string().contains("IPv6"), "unexpected error: {err}");
     }
+
+    #[tokio::test]
+    async fn udp_dual_stack_send_to_both_families_queues() {
+        // A dual-source WG interface (v4 + v6) must accept datagrams to both
+        // families, exercising both `local_v4` and `local_v6` flags on the happy
+        // path. Existing tests only cover the v4-positive and v4-only→v6-negative
+        // cases; this pins the dual-stack positive path.
+        let stack = build_stack(&[
+            IpAddr::V4(Ipv4Addr::new(10, 7, 0, 2)),
+            IpAddr::V6(Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 2)),
+        ])
+        .await;
+        let sock = stack.connect_udp().await.expect("dual-stack udp socket");
+
+        let n4 = sock
+            .send_to(b"v4", "10.7.0.1:53".parse().unwrap())
+            .await
+            .expect("v4 datagram queued");
+        assert_eq!(n4, 2);
+
+        let n6 = sock
+            .send_to(b"v6", "[fd00::1]:53".parse().unwrap())
+            .await
+            .expect("v6 datagram queued");
+        assert_eq!(n6, 2);
+
+        // No peer answers → recv must not return prematurely.
+        let mut buf = [0u8; 64];
+        let r = tokio::time::timeout(Duration::from_millis(200), sock.recv_from(&mut buf)).await;
+        assert!(r.is_err(), "recv_from should time out with no peer");
+    }
 }

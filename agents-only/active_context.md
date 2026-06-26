@@ -17,8 +17,10 @@
   `connect_udp`; registry stores named UDP factories and routes connector detours through them;
   WireGuard endpoints expose endpoint-backed UDP outbound sessions. During test hardening, endpoint
   WG driver lifetime moved to a persistent runtime instead of a dropped temporary runtime.
-- Verified: transport-wg 13, adapters-wg 5, core endpoint 23, core registry 8, all-features PASS.
-  Phase 1 was already `origin/main`-sealed (`8f976824`). Next: P3 multi-socket concurrency
+- Verified: transport-wg 14 (13 + dual-stack accept stress), adapters-wg 5, core endpoint 23, core registry 8,
+  all-features PASS, fmt/clippy clean. Acceptance re-run 2026-06-26 independently reproduced all claimed
+  commands; added `udp_dual_stack_send_to_both_families_queues` to pin the v4+v6 happy path. Phase 1 was
+  already `origin/main`-sealed (`8f976824`). Next: P3 multi-socket concurrency
   hardening; P4 MIG-02 loud disabled builder + mtu/allowed_ips; P5 live proof vs Go.
 
 ## Resume (2026-06-20b) - post003 TUN UDP/IPv6 + proxy egress

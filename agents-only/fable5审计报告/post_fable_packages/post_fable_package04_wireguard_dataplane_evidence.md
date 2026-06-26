@@ -193,7 +193,7 @@ the bar is end-to-end correctness + live proof, not a re-label.
 
 | Command | Result |
 |---|---|
-| `cargo test -p sb-transport --features transport_wireguard --lib wireguard` | PASS: 13 passed |
+| `cargo test -p sb-transport --features transport_wireguard --lib wireguard` | PASS: 14 passed (13 + dual-stack accept stress added 2026-06-26) |
 | `cargo test -p sb-adapters --features adapter-wireguard-outbound,adapter-wireguard-endpoint,router --lib wireguard` | PASS: 5 passed |
 | `cargo test -p sb-core endpoint` | PASS: 23 matched tests passed |
 | `cargo test -p sb-core registry_` | PASS: 8 matched tests passed |
