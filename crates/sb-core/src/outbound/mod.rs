@@ -244,11 +244,13 @@ impl OutboundRegistry {
 #[derive(Clone, Debug)]
 pub struct OutboundRegistryHandle {
     inner: Arc<RwLock<OutboundRegistry>>,
+    udp_factories: Arc<RwLock<HashMap<String, Arc<dyn crate::adapter::UdpOutboundFactory>>>>,
 }
 impl Default for OutboundRegistryHandle {
     fn default() -> Self {
         Self {
             inner: Arc::new(RwLock::new(OutboundRegistry::default())),
+            udp_factories: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -256,10 +258,29 @@ impl OutboundRegistryHandle {
     pub fn new(reg: OutboundRegistry) -> Self {
         Self {
             inner: Arc::new(RwLock::new(reg)),
+            udp_factories: Arc::new(RwLock::new(HashMap::new())),
+        }
+    }
+    pub fn new_with_udp_factories(
+        reg: OutboundRegistry,
+        udp_factories: HashMap<String, Arc<dyn crate::adapter::UdpOutboundFactory>>,
+    ) -> Self {
+        Self {
+            inner: Arc::new(RwLock::new(reg)),
+            udp_factories: Arc::new(RwLock::new(udp_factories)),
         }
     }
     pub fn replace(&self, reg: OutboundRegistry) {
         *self.inner.write() = reg;
+        self.udp_factories.write().clear();
+    }
+    pub fn replace_with_udp_factories(
+        &self,
+        reg: OutboundRegistry,
+        udp_factories: HashMap<String, Arc<dyn crate::adapter::UdpOutboundFactory>>,
+    ) {
+        *self.inner.write() = reg;
+        *self.udp_factories.write() = udp_factories;
     }
     pub fn read(&self) -> parking_lot::RwLockReadGuard<'_, OutboundRegistry> {
         self.inner.read()
@@ -267,6 +288,28 @@ impl OutboundRegistryHandle {
     pub fn resolve(&self, name: &str) -> Option<OutboundImpl> {
         self.inner.read().get(name).cloned()
     }
+    pub fn resolve_udp_factory(
+        &self,
+        name: &str,
+    ) -> Option<Arc<dyn crate::adapter::UdpOutboundFactory>> {
+        self.udp_factories.read().get(name).cloned()
+    }
+
+    async fn connect_udp_factory(
+        &self,
+        name: &str,
+    ) -> io::Result<Box<dyn crate::outbound::traits::UdpTransport>> {
+        let factory = self.resolve_udp_factory(name).ok_or_else(|| {
+            io::Error::new(
+                io::ErrorKind::Unsupported,
+                format!("outbound '{name}' does not support UDP associate"),
+            )
+        })?;
+        let session = factory.open_session().await?;
+        Ok(Box::new(UdpFactoryTransport { session })
+            as Box<dyn crate::outbound::traits::UdpTransport>)
+    }
+
     pub async fn connect_tcp(&self, target: &RouteTarget, ep: Endpoint) -> io::Result<TcpStream> {
         match target {
             RouteTarget::Kind(k) => connect_tcp_builtin(k, ep).await,
@@ -345,6 +388,7 @@ impl OutboundRegistryHandle {
                     io::ErrorKind::PermissionDenied,
                     "blocked by rule",
                 )),
+                Some(OutboundImpl::Connector(_)) => self.connect_udp_factory(name).await,
                 Some(_) => Err(io::Error::new(
                     io::ErrorKind::Unsupported,
                     format!("outbound '{name}' does not support UDP associate"),
@@ -540,6 +584,42 @@ impl OutboundRegistryHandle {
     }
 }
 
+struct UdpFactoryTransport {
+    session: Arc<dyn crate::adapter::UdpOutboundSession>,
+}
+
+#[async_trait::async_trait]
+impl crate::outbound::traits::UdpTransport for UdpFactoryTransport {
+    async fn send_to(
+        &self,
+        buf: &[u8],
+        dst: &crate::types::Endpoint,
+    ) -> crate::error::SbResult<usize> {
+        self.session
+            .send_to(buf, &dst.host.to_string(), dst.port)
+            .await
+            .map_err(|e| {
+                crate::error::SbError::network(
+                    crate::error::ErrorClass::Connection,
+                    format!("UDP send failed: {e}"),
+                )
+            })?;
+        Ok(buf.len())
+    }
+
+    async fn recv_from(&self, buf: &mut [u8]) -> crate::error::SbResult<(usize, SocketAddr)> {
+        let (data, addr) = self.session.recv_from().await.map_err(|e| {
+            crate::error::SbError::network(
+                crate::error::ErrorClass::Connection,
+                format!("UDP recv failed: {e}"),
+            )
+        })?;
+        let n = data.len().min(buf.len());
+        buf[..n].copy_from_slice(&data[..n]);
+        Ok((n, addr))
+    }
+}
+
 async fn connect_tcp_builtin(kind: &OutboundKind, ep: Endpoint) -> io::Result<TcpStream> {
     match kind {
         OutboundKind::Direct => direct_connect(ep).await,
@@ -567,6 +647,9 @@ async fn connect_tcp_builtin(kind: &OutboundKind, ep: Endpoint) -> io::Result<Tc
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::adapter::{OutboundConnector as AdapterOutboundConnector, UdpOutboundFactory};
+    use crate::types::{Endpoint as TypesEndpoint, Host};
+    use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
     fn registry_handle_resolve_uses_dedicated_query_seam() {
@@ -589,6 +672,108 @@ mod tests {
         assert!(src
             .contains("pub fn read(&self) -> parking_lot::RwLockReadGuard<'_, OutboundRegistry>"));
         assert!(src.contains("RouteTarget::Named(name) => match self.resolve(name)"));
+    }
+
+    #[derive(Debug)]
+    struct DummyConnector;
+
+    #[async_trait::async_trait]
+    impl AdapterOutboundConnector for DummyConnector {
+        async fn connect(&self, _host: &str, _port: u16) -> io::Result<TcpStream> {
+            Err(io::Error::new(io::ErrorKind::Unsupported, "tcp unused"))
+        }
+    }
+
+    #[derive(Debug)]
+    struct MockUdpFactory {
+        opened: Arc<AtomicUsize>,
+    }
+
+    impl UdpOutboundFactory for MockUdpFactory {
+        fn open_session(&self) -> crate::adapter::UdpOutboundFuture {
+            let opened = self.opened.clone();
+            Box::pin(async move {
+                opened.fetch_add(1, Ordering::SeqCst);
+                Ok(Arc::new(MockUdpSession) as Arc<dyn crate::adapter::UdpOutboundSession>)
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct MockUdpSession;
+
+    #[async_trait::async_trait]
+    impl crate::adapter::UdpOutboundSession for MockUdpSession {
+        async fn send_to(&self, _data: &[u8], _host: &str, _port: u16) -> io::Result<()> {
+            Ok(())
+        }
+
+        async fn recv_from(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
+            Ok((b"ok".to_vec(), "127.0.0.1:53".parse().unwrap()))
+        }
+    }
+
+    #[tokio::test]
+    async fn registry_connect_udp_uses_named_udp_factory_for_connector() {
+        let opened = Arc::new(AtomicUsize::new(0));
+        let mut registry = OutboundRegistry::default();
+        registry.insert(
+            "wg".to_string(),
+            OutboundImpl::Connector(Arc::new(DummyConnector)),
+        );
+        let mut factories = HashMap::new();
+        factories.insert(
+            "wg".to_string(),
+            Arc::new(MockUdpFactory {
+                opened: opened.clone(),
+            }) as Arc<dyn crate::adapter::UdpOutboundFactory>,
+        );
+        let handle = OutboundRegistryHandle::new_with_udp_factories(registry, factories);
+
+        let transport = handle
+            .connect_udp(
+                &RouteTarget::Named("wg".to_string()),
+                Endpoint::Ip("10.7.0.1:53".parse().unwrap()),
+            )
+            .await
+            .expect("named connector should use UDP factory");
+
+        let n = transport
+            .send_to(
+                b"hello",
+                &TypesEndpoint::new(Host::ip("10.7.0.1".parse().unwrap()), 53),
+            )
+            .await
+            .expect("factory transport send");
+        assert_eq!(n, 5);
+
+        let mut buf = [0u8; 8];
+        let (n, src) = transport
+            .recv_from(&mut buf)
+            .await
+            .expect("factory transport recv");
+        assert_eq!(&buf[..n], b"ok");
+        assert_eq!(src, "127.0.0.1:53".parse().unwrap());
+        assert_eq!(opened.load(Ordering::SeqCst), 1);
+    }
+
+    #[test]
+    fn registry_replace_clears_udp_factories() {
+        let opened = Arc::new(AtomicUsize::new(0));
+        let mut factories = HashMap::new();
+        factories.insert(
+            "wg".to_string(),
+            Arc::new(MockUdpFactory { opened }) as Arc<dyn crate::adapter::UdpOutboundFactory>,
+        );
+        let handle =
+            OutboundRegistryHandle::new_with_udp_factories(OutboundRegistry::default(), factories);
+
+        assert!(handle.resolve_udp_factory("wg").is_some());
+        handle.replace(OutboundRegistry::default());
+        assert!(
+            handle.resolve_udp_factory("wg").is_none(),
+            "plain replace must not leave stale UDP factory mappings"
+        );
     }
 }
 

@@ -370,6 +370,8 @@ impl TailscaleConnector {
             mtu: 1420,
             connect_timeout: Duration::from_secs(10),
             tag: self.config.tag.clone(),
+            local_addrs: Vec::new(),
+            reserved: [0, 0, 0],
         };
 
         let wg = crate::outbound::wireguard::WireGuardOutbound::new(wg_config).await?;

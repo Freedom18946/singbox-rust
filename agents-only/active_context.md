@@ -10,16 +10,16 @@
 
 ---
 
-## Resume (2026-06-21) - post004 WireGuard userspace netstack (Phase 1)
+## Resume (2026-06-26) - post004 WireGuard UDP-over-WG (Phase 2)
 
-- **post004 Phase 1 DONE**: WireGuard data plane gets a real userspace TCP/IP stack — smoltcp over
-  boringtun `Tunn` (`crates/sb-transport/src/wireguard/netstack.rs`), replacing the broken
-  raw-bytes→`encapsulate` stream. `connect` = established-gated in-tunnel TCP; `reserved`
-  applied/cleared at the UDP boundary per Go `client_bind.go`; outbound+endpoint feed
-  `local_addrs`+reserved. Engine=smoltcp (user-confirmed; onetun-proven; netstack≠Go-interop axis,
-  interop is WG/Noise). Verified: netstack 10 + adapters-wg 5 + app-endpoint 10 tests PASS; default
-  & transport_wireguard both compile (Phase 0 intact); clippy 0; fmt clean.
-- Next: P2 UDP-over-WG; P3 multi-socket; P4 MIG-02 loud stub + islanded mtu/allowed_ips; P5 live proof vs Go.
+- **post004 Phase 2 DONE**: UDP now rides the same userspace WG netstack: `WgUdpSocket`
+  wraps smoltcp `udp::Socket` with `send_to/recv_from`; transport + legacy outbound expose
+  `connect_udp`; registry stores named UDP factories and routes connector detours through them;
+  WireGuard endpoints expose endpoint-backed UDP outbound sessions. During test hardening, endpoint
+  WG driver lifetime moved to a persistent runtime instead of a dropped temporary runtime.
+- Verified: transport-wg 13, adapters-wg 5, core endpoint 23, core registry 8, all-features PASS.
+  Phase 1 was already `origin/main`-sealed (`8f976824`). Next: P3 multi-socket concurrency
+  hardening; P4 MIG-02 loud disabled builder + mtu/allowed_ips; P5 live proof vs Go.
 
 ## Resume (2026-06-20b) - post003 TUN UDP/IPv6 + proxy egress
 

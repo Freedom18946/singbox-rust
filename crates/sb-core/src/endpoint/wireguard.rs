@@ -4,14 +4,15 @@ use super::{
 };
 use ipnet::IpNet;
 use sb_config::ir::{EndpointIR, EndpointType, WireGuardPeerIR};
-use sb_transport::wireguard::{WireGuardConfig, WireGuardTransport};
+use sb_transport::wireguard::{WgUdpSocket, WireGuardConfig, WireGuardTransport};
 use std::future::Future;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::Arc;
+use std::sync::{Arc, OnceLock};
 use std::time::Duration;
 use tokio::net::UdpSocket;
 use tokio::runtime::Handle;
+use tokio::sync::{Mutex, Notify};
 use tracing::{debug, info, warn};
 
 /// WireGuard endpoint backed by sb-transport's userspace WireGuard.
@@ -49,9 +50,119 @@ struct PeerConfig {
     reserved: [u8; 3],
 }
 
+#[derive(Clone)]
 struct PeerTransport {
     allowed_ips: Vec<IpNet>,
     transport: Arc<WireGuardTransport>,
+}
+
+struct WireGuardEndpointUdpSession {
+    peers: Vec<PeerTransport>,
+    dns_resolver: Option<Arc<dyn crate::dns::Resolver>>,
+    socket: Mutex<Option<Arc<WgUdpSocket>>>,
+    socket_ready: Notify,
+}
+
+impl std::fmt::Debug for WireGuardEndpointUdpSession {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WireGuardEndpointUdpSession")
+            .field("peer_count", &self.peers.len())
+            .finish_non_exhaustive()
+    }
+}
+
+impl WireGuardEndpointUdpSession {
+    fn new(peers: Vec<PeerTransport>, dns_resolver: Option<Arc<dyn crate::dns::Resolver>>) -> Self {
+        Self {
+            peers,
+            dns_resolver,
+            socket: Mutex::new(None),
+            socket_ready: Notify::new(),
+        }
+    }
+
+    async fn resolve_target(&self, host: &str, port: u16) -> io::Result<SocketAddr> {
+        if let Ok(ip) = host.parse::<IpAddr>() {
+            return Ok(SocketAddr::new(ip, port));
+        }
+
+        if let Some(resolver) = &self.dns_resolver {
+            let answer = resolver
+                .resolve(host)
+                .await
+                .map_err(|error| io::Error::other(error.to_string()))?;
+            if let Some(ip) = answer.ips.first().copied() {
+                return Ok(SocketAddr::new(ip, port));
+            }
+        }
+
+        tokio::net::lookup_host(format!("{host}:{port}"))
+            .await?
+            .next()
+            .ok_or_else(|| {
+                io::Error::new(
+                    io::ErrorKind::AddrNotAvailable,
+                    format!("wireguard endpoint udp could not resolve {host}:{port}"),
+                )
+            })
+    }
+
+    fn select_peer(&self, target_ip: IpAddr) -> Option<Arc<WireGuardTransport>> {
+        self.peers
+            .iter()
+            .find(|peer| peer.allowed_ips.iter().any(|net| net.contains(&target_ip)))
+            .or_else(|| self.peers.first())
+            .map(|peer| peer.transport.clone())
+    }
+
+    async fn socket_for(&self, target_ip: IpAddr) -> io::Result<Arc<WgUdpSocket>> {
+        if let Some(socket) = self.socket.lock().await.as_ref().cloned() {
+            return Ok(socket);
+        }
+
+        let transport = self.select_peer(target_ip).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::NotConnected, "no WireGuard peer available")
+        })?;
+        let opened = Arc::new(
+            transport
+                .connect_udp()
+                .await
+                .map_err(|error| io::Error::other(error.to_string()))?,
+        );
+
+        let mut guard = self.socket.lock().await;
+        let socket = match guard.as_ref() {
+            Some(existing) => existing.clone(),
+            None => {
+                *guard = Some(opened.clone());
+                self.socket_ready.notify_waiters();
+                opened
+            }
+        };
+        Ok(socket)
+    }
+}
+
+#[async_trait::async_trait]
+impl crate::adapter::UdpOutboundSession for WireGuardEndpointUdpSession {
+    async fn send_to(&self, data: &[u8], host: &str, port: u16) -> io::Result<()> {
+        let dst = self.resolve_target(host, port).await?;
+        let socket = self.socket_for(dst.ip()).await?;
+        socket.send_to(data, dst).await?;
+        Ok(())
+    }
+
+    async fn recv_from(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
+        loop {
+            if let Some(socket) = self.socket.lock().await.as_ref().cloned() {
+                let mut buf = vec![0u8; 65_535];
+                let (n, src) = socket.recv_from(&mut buf).await?;
+                buf.truncate(n);
+                return Ok((buf, src));
+            }
+            self.socket_ready.notified().await;
+        }
+    }
 }
 
 fn block_on_wireguard_task<T, F>(future: F) -> Result<T, String>
@@ -59,16 +170,31 @@ where
     T: Send + 'static,
     F: Future<Output = Result<T, String>> + Send + 'static,
 {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+    fn runtime() -> Result<&'static tokio::runtime::Runtime, String> {
+        if let Some(runtime) = RUNTIME.get() {
+            return Ok(runtime);
+        }
+
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .worker_threads(1)
+            .thread_name("sb-wireguard-endpoint")
+            .enable_all()
+            .build()
+            .map_err(|error| format!("wireguard endpoint runtime init failed: {error}"))?;
+        let _ = RUNTIME.set(runtime);
+        RUNTIME
+            .get()
+            .ok_or_else(|| "wireguard endpoint runtime unavailable".to_string())
+    }
+
     fn run<T, F>(future: F) -> Result<T, String>
     where
         T: Send + 'static,
         F: Future<Output = Result<T, String>> + Send + 'static,
     {
-        let runtime = tokio::runtime::Builder::new_current_thread()
-            .enable_all()
-            .build()
-            .map_err(|error| format!("wireguard endpoint runtime init failed: {error}"))?;
-        runtime.block_on(future)
+        runtime()?.block_on(future)
     }
 
     if Handle::try_current().is_ok() {
@@ -469,6 +595,40 @@ impl Endpoint for WireGuardEndpoint {
         })
     }
 
+    fn supports_udp_outbound(&self) -> bool {
+        true
+    }
+
+    fn open_udp_outbound_session(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = io::Result<Arc<dyn crate::adapter::UdpOutboundSession>>,
+                > + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async move {
+            self.ensure_started(false)
+                .map_err(|error| io::Error::other(error.to_string()))?;
+            self.ensure_started(true)
+                .map_err(|error| io::Error::other(error.to_string()))?;
+            let peers = self.transports.lock().clone();
+            if peers.is_empty() {
+                return Err(io::Error::new(
+                    io::ErrorKind::NotConnected,
+                    "no WireGuard peer transport available",
+                ));
+            }
+            Ok(Arc::new(WireGuardEndpointUdpSession::new(
+                peers,
+                self.dns_resolver.clone(),
+            ))
+                as Arc<dyn crate::adapter::UdpOutboundSession>)
+        })
+    }
+
     fn prepare_connection(
         &self,
         network: Network,
@@ -667,5 +827,72 @@ pub fn build_wireguard_endpoint(
             tracing::error!(target: "sb_core::endpoint", error = %e, "failed to build WireGuard endpoint");
             None
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn wireguard_endpoint_ir(addresses: Option<Vec<String>>) -> EndpointIR {
+        EndpointIR {
+            ty: EndpointType::Wireguard,
+            tag: Some("wg-ep".to_string()),
+            network: None,
+            wireguard_system: None,
+            wireguard_name: None,
+            wireguard_mtu: Some(1420),
+            wireguard_address: addresses,
+            wireguard_private_key: Some("YAnz5TF+lXXJte14tji3zlbzbm+JFHYa74LLQDzOjG0=".to_string()),
+            wireguard_listen_port: None,
+            wireguard_peers: Some(vec![WireGuardPeerIR {
+                address: Some("127.0.0.1".to_string()),
+                port: Some(1),
+                public_key: Some("bmXOC+F1FxEMF9dyiK2H5/1SUtzH0JuVo51h2wPfgyo=".to_string()),
+                pre_shared_key: None,
+                allowed_ips: Some(vec!["0.0.0.0/0".to_string()]),
+                persistent_keepalive_interval: Some(25),
+                reserved: None,
+            }]),
+            wireguard_udp_timeout: None,
+            wireguard_workers: None,
+            tailscale_state_directory: None,
+            tailscale_auth_key: None,
+            tailscale_control_url: None,
+            tailscale_ephemeral: None,
+            tailscale_hostname: None,
+            tailscale_accept_routes: None,
+            tailscale_exit_node: None,
+            tailscale_exit_node_allow_lan_access: None,
+            tailscale_advertise_routes: None,
+            tailscale_advertise_exit_node: None,
+            tailscale_udp_timeout: None,
+        }
+    }
+
+    #[tokio::test]
+    async fn endpoint_udp_session_fails_loudly_without_local_source_address() {
+        let ir = wireguard_endpoint_ir(None);
+        let endpoint = WireGuardEndpoint::new(
+            &ir,
+            None,
+            #[cfg(feature = "router")]
+            None,
+        )
+        .expect("wireguard endpoint");
+
+        assert!(endpoint.supports_udp_outbound());
+        let session = endpoint
+            .open_udp_outbound_session()
+            .await
+            .expect("udp outbound session surface");
+        let err = session
+            .send_to(b"hello", "10.7.0.1", 53)
+            .await
+            .expect_err("missing local WG address must loud-fail");
+        assert!(
+            err.to_string().contains("source UDP") || err.to_string().contains("local address"),
+            "unexpected error: {err}"
+        );
     }
 }

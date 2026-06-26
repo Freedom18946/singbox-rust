@@ -15,7 +15,7 @@ use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
-use sb_transport::wireguard::{WireGuardConfig, WireGuardTransport};
+use sb_transport::wireguard::{WgUdpSocket, WireGuardConfig, WireGuardTransport};
 use tracing::{debug, warn};
 
 /// WireGuard outbound configuration.
@@ -133,6 +133,14 @@ impl WireGuardOutbound {
     pub async fn set_peer_endpoint(&self, addr: SocketAddr) {
         self.transport.set_peer_endpoint(addr).await;
     }
+
+    /// Open a UDP datagram socket through the WireGuard tunnel.
+    pub async fn connect_udp(&self) -> Result<WgUdpSocket> {
+        self.transport
+            .connect_udp()
+            .await
+            .map_err(|e| AdapterError::other(format!("WireGuard UDP open failed: {e}")))
+    }
 }
 
 #[async_trait]
@@ -189,6 +197,12 @@ impl LazyWireGuardConnector {
                 Ok(Arc::new(outbound))
             })
             .await
+    }
+
+    /// Open a UDP datagram socket through the lazily-initialized tunnel.
+    pub async fn connect_udp(&self) -> Result<WgUdpSocket> {
+        let inner = self.get_or_init().await?;
+        inner.connect_udp().await
     }
 }
 

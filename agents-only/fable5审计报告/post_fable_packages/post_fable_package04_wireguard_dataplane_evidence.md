@@ -163,9 +163,44 @@ the bar is end-to-end correctness + live proof, not a re-label.
 | `cargo clippy -p sb-transport --features transport_wireguard --all-targets` | PASS: 0 warnings |
 | `cargo fmt --all -- --check` | clean |
 
-### Remaining (post004 roadmap)
+### Phase 2 delivered (UDP-over-WG)
 
-- **Phase 2**: UDP-over-WG (smoltcp `udp::Socket`; endpoint `listen_packet` factory).
+- Transport: `WireGuardTransport::connect_udp()` opens a caller-facing `WgUdpSocket`
+  backed by smoltcp `udp::Socket` entries in the same boringtun-owned driver. It
+  supports `send_to(buf, dst)` and `recv_from(buf)` for in-tunnel datagrams, loud-fails
+  when no WG interface source address exists or the target address family has no matching
+  local source, and keeps the no-peer receive path bounded by caller timeout rather than
+  hanging.
+- Outbound registry: `OutboundRegistryHandle` now carries named UDP outbound factories.
+  A named connector detour can therefore route UDP through its real adapter factory
+  instead of falling back to the old unsupported connector path.
+- Legacy WireGuard outbound: the lazy WireGuard connector exposes `connect_udp()` and
+  `register` returns a `UdpOutboundFactory` alongside the TCP connector when the
+  WireGuard outbound feature is enabled.
+- Endpoint-as-outbound: endpoints gained an optional UDP outbound hook and factory.
+  WireGuard endpoints expose `WireGuardEndpointUdpSession`, select peers by `allowed_ips`
+  (first peer fallback), resolve FQDNs through the internal resolver when available, and
+  use `WgUdpSocket` for datagrams. `listen_packet` remains explicitly unsupported for
+  userspace WireGuard because returning an OS `UdpSocket` would bypass/leak around WG.
+- All-features compatibility: the Tailscale direct-WireGuard initializer now supplies
+  the extended WireGuard config fields (`local_addrs` empty, zero `reserved`) instead of
+  failing to compile under combined adapter features.
+- Lifecycle hardening found during Phase 2: WireGuard endpoint transport init now uses a
+  persistent endpoint runtime, so the netstack driver spawned by synchronous lifecycle
+  start is not dropped immediately after initialization.
+
+### Phase 2 verification snapshot
+
+| Command | Result |
+|---|---|
+| `cargo test -p sb-transport --features transport_wireguard --lib wireguard` | PASS: 13 passed |
+| `cargo test -p sb-adapters --features adapter-wireguard-outbound,adapter-wireguard-endpoint,router --lib wireguard` | PASS: 5 passed |
+| `cargo test -p sb-core endpoint` | PASS: 23 matched tests passed |
+| `cargo test -p sb-core registry_` | PASS: 8 matched tests passed |
+| `cargo check --workspace --all-features` | PASS |
+
+### Remaining (post004 roadmap after Phase 2)
+
 - **Phase 3**: multi-socket concurrency hardening on one tunnel.
 - **Phase 4**: MIG-02 — make the disabled-feature outbound builder loud
   (`invalid_config_outbound`) instead of silent `None`; consume islanded `mtu` /
@@ -173,5 +208,4 @@ the bar is end-to-end correctness + live proof, not a re-label.
 - **Phase 5**: live round-trip proof vs a real Go sing-box WG peer (ordinary user,
   no root), double-sided assertion + `result.json`, as the `04b` harness.
 - Not yet exercised live: a real TCP/UDP round-trip through the tunnel (that is the
-  Phase 5 gate). Phase 1 proves the stack mechanics + wiring + loud failure modes.
-
+  Phase 5 gate). Phase 1/2 prove stack mechanics + TCP/UDP wiring + loud failure modes.

@@ -258,6 +258,30 @@ pub trait Endpoint: Send + Sync + Any {
         })
     }
 
+    /// Whether this endpoint can be exposed as a UDP outbound factory.
+    fn supports_udp_outbound(&self) -> bool {
+        false
+    }
+
+    /// Open an endpoint-backed UDP outbound session.
+    fn open_udp_outbound_session(
+        &self,
+    ) -> std::pin::Pin<
+        Box<
+            dyn std::future::Future<
+                    Output = io::Result<Arc<dyn crate::adapter::UdpOutboundSession>>,
+                > + Send
+                + '_,
+        >,
+    > {
+        Box::pin(async {
+            Err(io::Error::new(
+                io::ErrorKind::Unsupported,
+                "udp outbound not implemented for this endpoint",
+            ))
+        })
+    }
+
     /// Prepare a connection for routing (pre-match hook).
     ///
     /// Called before establishing a connection to allow the router to
@@ -651,6 +675,34 @@ impl crate::adapter::OutboundConnector for EndpointAsOutbound {
     }
 }
 
+/// Wrapper to expose endpoint UDP sessions through the outbound UDP factory API.
+pub struct EndpointUdpOutboundFactory {
+    tag: String,
+    endpoint: Arc<dyn Endpoint>,
+}
+
+impl EndpointUdpOutboundFactory {
+    pub fn new(tag: String, endpoint: Arc<dyn Endpoint>) -> Self {
+        Self { tag, endpoint }
+    }
+}
+
+impl std::fmt::Debug for EndpointUdpOutboundFactory {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("EndpointUdpOutboundFactory")
+            .field("tag", &self.tag)
+            .field("endpoint_type", &self.endpoint.endpoint_type())
+            .finish()
+    }
+}
+
+impl crate::adapter::UdpOutboundFactory for EndpointUdpOutboundFactory {
+    fn open_session(&self) -> crate::adapter::UdpOutboundFuture {
+        let endpoint = self.endpoint.clone();
+        Box::pin(async move { endpoint.open_udp_outbound_session().await })
+    }
+}
+
 impl Default for EndpointManager {
     fn default() -> Self {
         Self::new()
@@ -669,7 +721,7 @@ fn stage_rank(stage: StartStage) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapter::OutboundConnector;
+    use crate::adapter::{OutboundConnector, UdpOutboundFactory};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
@@ -904,5 +956,78 @@ mod tests {
         assert_eq!(calls[0].network, Network::Tcp);
         assert_eq!(calls[0].destination.port, 8443);
         assert_eq!(calls[0].destination.fqdn(), Some("example.test"));
+    }
+
+    #[tokio::test]
+    async fn endpoint_udp_factory_delegates_to_endpoint_session_hook() {
+        #[derive(Debug)]
+        struct MockUdpSession;
+
+        #[async_trait::async_trait]
+        impl crate::adapter::UdpOutboundSession for MockUdpSession {
+            async fn send_to(&self, _data: &[u8], _host: &str, _port: u16) -> io::Result<()> {
+                Ok(())
+            }
+
+            async fn recv_from(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
+                Ok((Vec::new(), "127.0.0.1:1".parse().unwrap()))
+            }
+        }
+
+        #[derive(Debug)]
+        struct UdpEndpoint {
+            opened: Arc<AtomicUsize>,
+        }
+
+        impl Endpoint for UdpEndpoint {
+            fn endpoint_type(&self) -> &str {
+                "udp"
+            }
+
+            fn tag(&self) -> &str {
+                "udp-ep"
+            }
+
+            fn start(
+                &self,
+                _stage: StartStage,
+            ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+
+            fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+                Ok(())
+            }
+
+            fn supports_udp_outbound(&self) -> bool {
+                true
+            }
+
+            fn open_udp_outbound_session(
+                &self,
+            ) -> std::pin::Pin<
+                Box<
+                    dyn std::future::Future<
+                            Output = io::Result<Arc<dyn crate::adapter::UdpOutboundSession>>,
+                        > + Send
+                        + '_,
+                >,
+            > {
+                self.opened.fetch_add(1, Ordering::SeqCst);
+                Box::pin(async {
+                    Ok(Arc::new(MockUdpSession) as Arc<dyn crate::adapter::UdpOutboundSession>)
+                })
+            }
+        }
+
+        let opened = Arc::new(AtomicUsize::new(0));
+        let endpoint = Arc::new(UdpEndpoint {
+            opened: opened.clone(),
+        });
+        let factory = EndpointUdpOutboundFactory::new("udp-ep".to_string(), endpoint);
+        let session = factory.open_session().await.expect("udp endpoint session");
+
+        session.send_to(b"x", "127.0.0.1", 53).await.unwrap();
+        assert_eq!(opened.load(Ordering::SeqCst), 1);
     }
 }

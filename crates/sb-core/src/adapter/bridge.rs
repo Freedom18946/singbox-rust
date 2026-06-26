@@ -11,7 +11,9 @@ use crate::adapter::{
     UdpOutboundFactory,
 };
 use crate::context::Context;
-use crate::endpoint::{endpoint_registry, Endpoint, EndpointAsOutbound, EndpointContext};
+use crate::endpoint::{
+    endpoint_registry, Endpoint, EndpointAsOutbound, EndpointContext, EndpointUdpOutboundFactory,
+};
 #[allow(unused_imports)]
 use crate::outbound::selector::Selector;
 #[allow(unused_imports)]
@@ -36,13 +38,14 @@ fn outbound_registry_from_bridge(br: &Bridge) -> OutboundRegistry {
 }
 
 fn outbound_registry_handle_from_bridge(br: &Bridge) -> Arc<OutboundRegistryHandle> {
-    Arc::new(OutboundRegistryHandle::new(outbound_registry_from_bridge(
-        br,
-    )))
+    Arc::new(OutboundRegistryHandle::new_with_udp_factories(
+        outbound_registry_from_bridge(br),
+        br.udp_factories.clone(),
+    ))
 }
 
 fn refresh_outbound_registry_handle(handle: &OutboundRegistryHandle, br: &Bridge) {
-    handle.replace(outbound_registry_from_bridge(br));
+    handle.replace_with_udp_factories(outbound_registry_from_bridge(br), br.udp_factories.clone());
 }
 
 fn add_endpoint_with_outbound(br: &mut Bridge, endpoint: Arc<dyn Endpoint>) {
@@ -88,7 +91,16 @@ fn add_endpoint_with_outbound(br: &mut Bridge, endpoint: Arc<dyn Endpoint>) {
     let kind = format!("endpoint/{}", endpoint.endpoint_type());
     let connector: Arc<dyn OutboundConnector> =
         Arc::new(EndpointAsOutbound::new(tag.clone(), endpoint.clone()));
-    br.add_outbound(tag, kind, connector);
+    br.add_outbound(tag.clone(), kind, connector);
+    if endpoint.supports_udp_outbound() {
+        br.add_outbound_udp_factory(
+            tag.clone(),
+            Arc::new(EndpointUdpOutboundFactory::new(
+                tag.clone(),
+                endpoint.clone(),
+            )),
+        );
+    }
     br.add_endpoint(endpoint);
 }
 

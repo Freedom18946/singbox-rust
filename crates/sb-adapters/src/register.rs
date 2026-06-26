@@ -2804,6 +2804,7 @@ fn build_wireguard_outbound(
     _ctx: &registry::AdapterOutboundContext,
 ) -> OutboundBuilderResult {
     use crate::outbound::wireguard::{LazyWireGuardConnector, WireGuardOutboundConfig};
+    use sb_core::adapter::{UdpOutboundFactory, UdpOutboundSession};
 
     // Parse config from IR
     let cfg = match WireGuardOutboundConfig::try_from(ir) {
@@ -2823,12 +2824,72 @@ fn build_wireguard_outbound(
     let connector_arc = Arc::new(connector);
 
     let bridge = AdapterIoBridge {
-        inner: connector_arc,
+        inner: connector_arc.clone(),
         name: "wireguard",
     };
 
-    // No UDP factory from adapter layer (sb-core's WireGuardOutbound had UdpOutboundFactory)
-    Some((Arc::new(bridge), None))
+    #[derive(Debug)]
+    struct WireGuardUdpFactory {
+        connector: Arc<LazyWireGuardConnector>,
+    }
+
+    impl UdpOutboundFactory for WireGuardUdpFactory {
+        fn open_session(
+            &self,
+        ) -> std::pin::Pin<
+            Box<
+                dyn std::future::Future<Output = std::io::Result<Arc<dyn UdpOutboundSession>>>
+                    + Send,
+            >,
+        > {
+            let connector = self.connector.clone();
+            Box::pin(async move {
+                let socket = connector.connect_udp().await.map_err(|e| {
+                    std::io::Error::other(format!("wireguard udp open failed: {e}"))
+                })?;
+                Ok(Arc::new(WireGuardUdpSession { socket }) as Arc<dyn UdpOutboundSession>)
+            })
+        }
+    }
+
+    #[derive(Debug)]
+    struct WireGuardUdpSession {
+        socket: sb_transport::wireguard::WgUdpSocket,
+    }
+
+    #[async_trait::async_trait]
+    impl UdpOutboundSession for WireGuardUdpSession {
+        async fn send_to(&self, data: &[u8], host: &str, port: u16) -> std::io::Result<()> {
+            let addr = if let Ok(ip) = host.parse::<IpAddr>() {
+                SocketAddr::new(ip, port)
+            } else {
+                tokio::net::lookup_host(format!("{host}:{port}"))
+                    .await?
+                    .next()
+                    .ok_or_else(|| {
+                        std::io::Error::new(
+                            std::io::ErrorKind::AddrNotAvailable,
+                            format!("wireguard udp could not resolve {host}:{port}"),
+                        )
+                    })?
+            };
+            self.socket.send_to(data, addr).await?;
+            Ok(())
+        }
+
+        async fn recv_from(&self) -> std::io::Result<(Vec<u8>, SocketAddr)> {
+            let mut buf = vec![0u8; 65_535];
+            let (n, src) = self.socket.recv_from(&mut buf).await?;
+            buf.truncate(n);
+            Ok((buf, src))
+        }
+    }
+
+    let udp_factory = WireGuardUdpFactory {
+        connector: connector_arc,
+    };
+
+    Some((Arc::new(bridge), Some(Arc::new(udp_factory))))
 }
 
 #[cfg(not(feature = "adapter-wireguard-outbound"))]
@@ -3321,6 +3382,11 @@ mod tests {
         assert!(
             built.is_some(),
             "adapter-wireguard-outbound feature must expose the real WireGuard outbound builder"
+        );
+        let (_connector, udp_factory) = built.unwrap();
+        assert!(
+            udp_factory.is_some(),
+            "adapter-wireguard-outbound feature must expose WireGuard UDP-over-tunnel factory"
         );
     }
 

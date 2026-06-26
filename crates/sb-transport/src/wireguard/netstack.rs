@@ -41,14 +41,14 @@ use std::time::Duration;
 use boringtun::noise::{Tunn, TunnResult};
 use smoltcp::iface::{Config, Interface, SocketHandle, SocketSet};
 use smoltcp::phy::{Device, DeviceCapabilities, Medium, RxToken, TxToken};
-use smoltcp::socket::tcp;
+use smoltcp::socket::{tcp, udp};
 use smoltcp::time::Instant as SmolInstant;
 use smoltcp::wire::{
     HardwareAddress, IpAddress, IpCidr, IpEndpoint, IpListenEndpoint, Ipv4Address, Ipv6Address,
 };
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
 use tokio::net::UdpSocket;
-use tokio::sync::{mpsc, oneshot, Notify};
+use tokio::sync::{mpsc, oneshot, Mutex, Notify};
 use tracing::{debug, trace, warn};
 
 use crate::dialer::DialError;
@@ -67,6 +67,18 @@ fn to_smol_addr(ip: IpAddr) -> IpAddress {
     match ip {
         IpAddr::V4(v4) => IpAddress::Ipv4(Ipv4Address::from_bytes(&v4.octets())),
         IpAddr::V6(v6) => IpAddress::Ipv6(Ipv6Address::from_bytes(&v6.octets())),
+    }
+}
+
+/// Convert a smoltcp `IpAddress` back to a std `IpAddr`.
+fn from_smol_addr(addr: IpAddress) -> IpAddr {
+    let bytes = addr.as_bytes();
+    if bytes.len() == 16 {
+        let mut a = [0u8; 16];
+        a.copy_from_slice(bytes);
+        IpAddr::V6(Ipv6Addr::from(a))
+    } else {
+        IpAddr::V4(Ipv4Addr::new(bytes[0], bytes[1], bytes[2], bytes[3]))
     }
 }
 
@@ -254,6 +266,68 @@ impl AsyncWrite for WgTcpStream {
     }
 }
 
+// ===================== caller-facing UDP datagram socket =====================
+
+/// A UDP datagram socket flowing through the WireGuard tunnel's netstack.
+///
+/// Mirrors the `UdpTransport` / `net.PacketConn` shape: `send_to(buf, dst)` and
+/// `recv_from(buf) -> (n, src)`. One socket talks to many in-tunnel peers.
+pub struct WgUdpSocket {
+    to_driver: mpsc::UnboundedSender<(Vec<u8>, SocketAddr)>,
+    from_driver: Mutex<mpsc::Receiver<(Vec<u8>, SocketAddr)>>,
+    wake: Arc<Notify>,
+    local_v4: bool,
+    local_v6: bool,
+}
+
+impl std::fmt::Debug for WgUdpSocket {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("WgUdpSocket").finish_non_exhaustive()
+    }
+}
+
+impl WgUdpSocket {
+    /// Send a datagram to an in-tunnel destination.
+    pub async fn send_to(&self, buf: &[u8], dst: SocketAddr) -> io::Result<usize> {
+        if dst.is_ipv4() && !self.local_v4 {
+            return Err(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "WireGuard netstack has no local IPv4 address to source UDP",
+            ));
+        }
+        if dst.is_ipv6() && !self.local_v6 {
+            return Err(io::Error::new(
+                io::ErrorKind::AddrNotAvailable,
+                "WireGuard netstack has no local IPv6 address to source UDP",
+            ));
+        }
+        self.to_driver.send((buf.to_vec(), dst)).map_err(|_| {
+            io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "WireGuard netstack driver stopped",
+            )
+        })?;
+        self.wake.notify_one();
+        Ok(buf.len())
+    }
+
+    /// Receive a datagram, returning the payload size and source address.
+    pub async fn recv_from(&self, buf: &mut [u8]) -> io::Result<(usize, SocketAddr)> {
+        let mut rx = self.from_driver.lock().await;
+        match rx.recv().await {
+            Some((data, src)) => {
+                let n = data.len().min(buf.len());
+                buf[..n].copy_from_slice(&data[..n]);
+                Ok((n, src))
+            }
+            None => Err(io::Error::new(
+                io::ErrorKind::BrokenPipe,
+                "WireGuard netstack udp closed",
+            )),
+        }
+    }
+}
+
 // ===================== driver =====================
 
 /// A control message to the driver task.
@@ -267,6 +341,10 @@ enum Control {
     SetPeerEndpoint(SocketAddr),
     /// Proactively (re)initiate the Noise handshake (warm-up).
     Handshake,
+    /// Open a UDP datagram socket sourced at the WG interface address(es).
+    Udp {
+        reply: oneshot::Sender<Result<WgUdpSocket, DialError>>,
+    },
 }
 
 /// Per-socket driver-side bookkeeping.
@@ -282,6 +360,13 @@ struct TcpEntry {
     tx_pending: VecDeque<u8>,
     /// Caller dropped the write half → close the socket once tx_pending drains.
     caller_closed: bool,
+}
+
+/// Per-UDP-socket driver-side bookkeeping.
+struct UdpEntry {
+    handle: SocketHandle,
+    to_caller: mpsc::Sender<(Vec<u8>, SocketAddr)>,
+    from_caller: mpsc::UnboundedReceiver<(Vec<u8>, SocketAddr)>,
 }
 
 /// The single task that owns the tunnel and netstack.
@@ -300,6 +385,7 @@ struct Driver {
     /// Next ephemeral source port to hand out (smoltcp `connect` rejects port 0).
     next_ephemeral: u16,
     entries: Vec<TcpEntry>,
+    udp_entries: Vec<UdpEntry>,
 }
 
 impl Driver {
@@ -339,6 +425,7 @@ impl Driver {
                             self.peer_endpoint = addr;
                         }
                         Some(Control::Handshake) => self.do_handshake(&mut scratch).await,
+                        Some(Control::Udp { reply }) => self.on_open_udp(reply),
                         None => {
                             debug!("WireGuard netstack: all handles dropped, driver exiting");
                             return;
@@ -359,11 +446,13 @@ impl Driver {
             }
 
             self.pump_caller_writes();
+            self.pump_udp_writes();
             let _ = self
                 .iface
                 .poll(SmolInstant::now(), &mut self.device, &mut self.sockets);
             self.flush_tx(&mut scratch).await;
             self.pump_sockets();
+            self.pump_udp_recv();
         }
     }
 
@@ -532,6 +621,53 @@ impl Driver {
         self.wake.notify_one();
     }
 
+    /// Open a UDP datagram socket bound to an ephemeral port at the WG interface.
+    fn on_open_udp(&mut self, reply: oneshot::Sender<Result<WgUdpSocket, DialError>>) {
+        if self.local_v4.is_none() && self.local_v6.is_none() {
+            let _ = reply.send(Err(DialError::Other(
+                "WireGuard netstack has no local address to source UDP".into(),
+            )));
+            return;
+        }
+        let mut sock = udp::Socket::new(
+            udp::PacketBuffer::new(
+                vec![udp::PacketMetadata::EMPTY; 32],
+                vec![0u8; WG_MAX_PACKET],
+            ),
+            udp::PacketBuffer::new(
+                vec![udp::PacketMetadata::EMPTY; 32],
+                vec![0u8; WG_MAX_PACKET],
+            ),
+        );
+        let local_port = self.alloc_ephemeral_port();
+        // Wildcard local address: smoltcp picks the iface source matching each dst family.
+        if let Err(e) = sock.bind(IpListenEndpoint {
+            addr: None,
+            port: local_port,
+        }) {
+            let _ = reply.send(Err(DialError::Other(format!("WireGuard udp bind: {e}"))));
+            return;
+        }
+
+        let handle = self.sockets.add(sock);
+        let (to_caller_tx, to_caller_rx) = mpsc::channel(TO_CALLER_CAP);
+        let (from_caller_tx, from_caller_rx) = mpsc::unbounded_channel();
+        let udp_sock = WgUdpSocket {
+            to_driver: from_caller_tx,
+            from_driver: Mutex::new(to_caller_rx),
+            wake: self.wake.clone(),
+            local_v4: self.local_v4.is_some(),
+            local_v6: self.local_v6.is_some(),
+        };
+        self.udp_entries.push(UdpEntry {
+            handle,
+            to_caller: to_caller_tx,
+            from_caller: from_caller_rx,
+        });
+        let _ = reply.send(Ok(udp_sock));
+        self.wake.notify_one();
+    }
+
     /// Move caller-submitted bytes into each socket's tx ring.
     fn pump_caller_writes(&mut self) {
         let sockets = &mut self.sockets;
@@ -621,6 +757,67 @@ impl Driver {
             self.sockets.remove(entry.handle);
         }
     }
+
+    /// Move caller-submitted datagrams into their UDP sockets; reap closed callers.
+    fn pump_udp_writes(&mut self) {
+        let sockets = &mut self.sockets;
+        let mut reap: Vec<usize> = Vec::new();
+        for (idx, entry) in self.udp_entries.iter_mut().enumerate() {
+            let sock = sockets.get_mut::<udp::Socket>(entry.handle);
+            loop {
+                match entry.from_caller.try_recv() {
+                    Ok((data, dst)) => {
+                        let ep = IpEndpoint::new(to_smol_addr(dst.ip()), dst.port());
+                        if let Err(e) = sock.send_slice(&data, ep) {
+                            trace!("WireGuard udp send_slice: {:?}", e);
+                        }
+                    }
+                    Err(mpsc::error::TryRecvError::Empty) => break,
+                    Err(mpsc::error::TryRecvError::Disconnected) => {
+                        reap.push(idx);
+                        break;
+                    }
+                }
+            }
+        }
+        for idx in reap.into_iter().rev() {
+            let entry = self.udp_entries.swap_remove(idx);
+            self.sockets.remove(entry.handle);
+        }
+    }
+
+    /// Deliver inbound datagrams to callers; reap sockets whose caller is gone.
+    fn pump_udp_recv(&mut self) {
+        let sockets = &mut self.sockets;
+        let mut reap: Vec<usize> = Vec::new();
+        let mut rxbuf = vec![0u8; WG_MAX_PACKET];
+        for (idx, entry) in self.udp_entries.iter_mut().enumerate() {
+            if entry.to_caller.is_closed() {
+                reap.push(idx);
+                continue;
+            }
+            let sock = sockets.get_mut::<udp::Socket>(entry.handle);
+            while sock.can_recv() {
+                match entry.to_caller.try_reserve() {
+                    Ok(permit) => match sock.recv_slice(&mut rxbuf) {
+                        Ok((n, meta)) => {
+                            let src = SocketAddr::new(
+                                from_smol_addr(meta.endpoint.addr),
+                                meta.endpoint.port,
+                            );
+                            permit.send((rxbuf[..n].to_vec(), src));
+                        }
+                        Err(_) => break,
+                    },
+                    Err(_) => break, // caller queue full/gone; leave in socket buffer
+                }
+            }
+        }
+        for idx in reap.into_iter().rev() {
+            let entry = self.udp_entries.swap_remove(idx);
+            self.sockets.remove(entry.handle);
+        }
+    }
 }
 
 // ===================== public handle =====================
@@ -702,6 +899,7 @@ impl WgNetStack {
             local_v6,
             next_ephemeral: 49152,
             entries: Vec::new(),
+            udp_entries: Vec::new(),
         };
 
         tokio::spawn(driver.run());
@@ -737,6 +935,19 @@ impl WgNetStack {
             Ok(Err(_)) => Err(DialError::Other("WireGuard netstack dial cancelled".into())),
             Err(_) => Err(DialError::Other("WireGuard netstack dial timeout".into())),
         }
+    }
+
+    /// Open a UDP datagram socket inside the tunnel (send_to/recv_from to arbitrary
+    /// in-tunnel destinations).
+    pub(crate) async fn connect_udp(&self) -> Result<WgUdpSocket, DialError> {
+        let (reply_tx, reply_rx) = oneshot::channel();
+        self.ctrl_tx
+            .send(Control::Udp { reply: reply_tx })
+            .await
+            .map_err(|_| DialError::Other("WireGuard netstack driver stopped".into()))?;
+        reply_rx
+            .await
+            .map_err(|_| DialError::Other("WireGuard netstack udp open cancelled".into()))?
     }
 
     /// Roaming: update the peer endpoint the tunnel sends to.
@@ -868,5 +1079,42 @@ mod tests {
             DialError::Other(msg) => assert!(msg.contains("timeout"), "got: {msg}"),
             other => panic!("expected Other(timeout), got {other:?}"),
         }
+    }
+
+    #[tokio::test]
+    async fn udp_open_without_local_addr_fails_loudly() {
+        let stack = build_stack(&[]).await;
+        let err = stack
+            .connect_udp()
+            .await
+            .expect_err("no local addr → no UDP source");
+        assert!(matches!(err, DialError::Other(_)));
+    }
+
+    #[tokio::test]
+    async fn udp_send_to_queues_and_recv_times_out_without_peer() {
+        let stack = build_stack(&[IpAddr::V4(Ipv4Addr::new(10, 7, 0, 2))]).await;
+        let sock = stack.connect_udp().await.expect("udp socket");
+        let n = sock
+            .send_to(b"hello", "10.7.0.1:53".parse().unwrap())
+            .await
+            .expect("datagram queued");
+        assert_eq!(n, 5);
+        // No peer answers → recv must not return; proves the socket works without hang/panic.
+        let mut buf = [0u8; 64];
+        let r = tokio::time::timeout(Duration::from_millis(200), sock.recv_from(&mut buf)).await;
+        assert!(r.is_err(), "recv_from should time out with no peer");
+    }
+
+    #[tokio::test]
+    async fn udp_send_to_wrong_family_fails_loudly() {
+        let stack = build_stack(&[IpAddr::V4(Ipv4Addr::new(10, 7, 0, 2))]).await;
+        let sock = stack.connect_udp().await.expect("udp socket");
+        let err = sock
+            .send_to(b"hello", "[fd00::1]:53".parse().unwrap())
+            .await
+            .expect_err("no IPv6 source must fail before queueing");
+        assert_eq!(err.kind(), io::ErrorKind::AddrNotAvailable);
+        assert!(err.to_string().contains("IPv6"), "unexpected error: {err}");
     }
 }

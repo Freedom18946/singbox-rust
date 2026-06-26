@@ -749,7 +749,10 @@ impl Bridge {
             for (name, _kind, conn) in &bridge.outbounds {
                 reg.insert(name.clone(), OutboundImpl::Connector(conn.clone()));
             }
-            Arc::new(OutboundRegistryHandle::new(reg))
+            Arc::new(OutboundRegistryHandle::new_with_udp_factories(
+                reg,
+                bridge.udp_factories.clone(),
+            ))
         };
 
         let endpoints_map: Arc<

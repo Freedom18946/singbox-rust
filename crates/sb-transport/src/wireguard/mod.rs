@@ -36,6 +36,8 @@ use tracing::debug;
 use crate::{DialError, Dialer, IoStream};
 use netstack::WgNetStack;
 
+pub use netstack::WgUdpSocket;
+
 /// WireGuard transport configuration.
 #[derive(Clone, Debug)]
 pub struct WireGuardConfig {
@@ -165,6 +167,11 @@ impl WireGuardTransport {
     /// Update the peer endpoint address (roaming).
     pub async fn set_peer_endpoint(&self, addr: SocketAddr) {
         self.netstack.set_peer_endpoint(addr).await;
+    }
+
+    /// Open a UDP datagram socket through the tunnel.
+    pub async fn connect_udp(&self) -> Result<WgUdpSocket, DialError> {
+        self.netstack.connect_udp().await
     }
 }
 
