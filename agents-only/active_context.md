@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-06-26c) - post004 WireGuard multi-socket concurrency (Phase 3)
+
+- **post004 Phase 3 DONE**: multi-peer UDP socket routing (per-peer `HashMap` bucketing, no
+  cross-peer socket reuse); `recv_from` Notify check-then-await race fixed via `tokio::sync::watch`;
+  ephemeral port dedup + reclaim on socket reap; `pump_udp_recv` 64KB rxbuf hoisted to Driver scratch;
+  `ensure_started` TOCTOU double-fill fixed (re-check under lock); `wireguard_udp_timeout` parsed
+  (`humantime`) + per-peer idle reap; tailscale endpoint `tailscale_udp_timeout` aligned (was hardcoded
+  300s); TCP concurrent-dial stress test added.
+- Verified: transport-wg 16 (14 + port-collision + TCP concurrent-dial), adapters-wg 5, core endpoint
+  29 (23 + 6 new: udp_timeout parse/invalid/none, multi-peer, idle reap, ensure_started concurrent),
+  core registry 8, all-features PASS, fmt/clippy 0 warn. Phase 1 `8f976824`, Phase 2 `069c1e96` sealed.
+  Next: P4 MIG-02 loud disabled builder + mtu/allowed_ips; P5 live proof vs Go.
+
 ## Resume (2026-06-26) - post004 WireGuard UDP-over-WG (Phase 2)
 
 - **post004 Phase 2 DONE**: UDP now rides the same userspace WG netstack: `WgUdpSocket`

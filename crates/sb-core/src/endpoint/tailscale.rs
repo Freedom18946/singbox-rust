@@ -138,7 +138,11 @@ impl TailscaleEndpointConfig {
             advertise_routes: ir.tailscale_advertise_routes.clone().unwrap_or_default(),
             exit_node: ir.tailscale_exit_node.clone(),
             exit_node_allow_lan_access: ir.tailscale_exit_node_allow_lan_access.unwrap_or(false),
-            udp_timeout: Duration::from_secs(300),
+            udp_timeout: ir
+                .tailscale_udp_timeout
+                .as_deref()
+                .and_then(|raw| humantime::parse_duration(raw).ok())
+                .unwrap_or(Duration::from_secs(300)),
         }
     }
 }

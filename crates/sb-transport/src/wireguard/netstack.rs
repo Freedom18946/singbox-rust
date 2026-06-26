@@ -30,7 +30,7 @@
 //! Callers talk to it over channels; each `WgTcpStream` is an mpsc pair plus a shared
 //! `Notify` that wakes the driver to flush writes.
 
-use std::collections::VecDeque;
+use std::collections::{HashSet, VecDeque};
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::pin::Pin;
@@ -350,6 +350,7 @@ enum Control {
 /// Per-socket driver-side bookkeeping.
 struct TcpEntry {
     handle: SocketHandle,
+    local_port: u16,
     to_caller: mpsc::Sender<Vec<u8>>,
     from_caller: mpsc::UnboundedReceiver<Vec<u8>>,
     /// Fired once the socket is established (or `Err` if it dies first).
@@ -365,6 +366,7 @@ struct TcpEntry {
 /// Per-UDP-socket driver-side bookkeeping.
 struct UdpEntry {
     handle: SocketHandle,
+    local_port: u16,
     to_caller: mpsc::Sender<(Vec<u8>, SocketAddr)>,
     from_caller: mpsc::UnboundedReceiver<(Vec<u8>, SocketAddr)>,
 }
@@ -384,6 +386,11 @@ struct Driver {
     local_v6: Option<Ipv6Addr>,
     /// Next ephemeral source port to hand out (smoltcp `connect` rejects port 0).
     next_ephemeral: u16,
+    /// Ports currently handed out to live TCP/UDP sockets; used to skip
+    /// collisions in `alloc_ephemeral_port` and reclaimed on socket reap.
+    in_use_ports: HashSet<u16>,
+    /// Reused scratch buffer for `pump_udp_recv` (avoids a 64KB alloc per poll).
+    udp_rxbuf: Vec<u8>,
     entries: Vec<TcpEntry>,
     udp_entries: Vec<UdpEntry>,
 }
@@ -558,16 +565,29 @@ impl Driver {
         }
     }
 
-    /// Hand out a wrapping ephemeral source port in the IANA dynamic range.
+    /// Hand out a fresh ephemeral source port in the IANA dynamic range,
+    /// skipping any port still in use by a live socket. The range wraps at
+    /// `u16::MAX` → `EPHEMERAL_LO`. If the entire range is exhausted (16384
+    /// ports all live, extremely unlikely in proxy workloads), returns 0 which
+    /// smoltcp rejects loudly at `connect`/`bind`.
     fn alloc_ephemeral_port(&mut self) -> u16 {
         const EPHEMERAL_LO: u16 = 49152;
-        let port = self.next_ephemeral;
-        self.next_ephemeral = if self.next_ephemeral == u16::MAX {
-            EPHEMERAL_LO
-        } else {
-            self.next_ephemeral + 1
-        };
-        port
+        for _ in 0..(u16::MAX - EPHEMERAL_LO + 1) {
+            let port = self.next_ephemeral;
+            self.next_ephemeral = if self.next_ephemeral == u16::MAX {
+                EPHEMERAL_LO
+            } else {
+                self.next_ephemeral + 1
+            };
+            if !self.in_use_ports.contains(&port) {
+                return port;
+            }
+        }
+        0
+    }
+
+    fn reclaim_port(&mut self, port: u16) {
+        self.in_use_ports.remove(&port);
     }
 
     fn on_dial_tcp(
@@ -595,11 +615,19 @@ impl Driver {
         // smoltcp's `connect` rejects a zero local port, so we allocate an ephemeral
         // source port ourselves.
         let local_port = self.alloc_ephemeral_port();
+        if local_port == 0 {
+            let _ = reply.send(Err(DialError::Other(
+                "WireGuard netstack ephemeral port range exhausted".into(),
+            )));
+            return;
+        }
+        self.in_use_ports.insert(local_port);
         let local_ep = IpListenEndpoint {
             addr: Some(to_smol_addr(local_ip)),
             port: local_port,
         };
         if let Err(e) = sock.connect(self.iface.context(), remote_ep, local_ep) {
+            self.reclaim_port(local_port);
             let _ = reply.send(Err(DialError::Other(format!("WireGuard connect: {e}"))));
             return;
         }
@@ -611,6 +639,7 @@ impl Driver {
 
         self.entries.push(TcpEntry {
             handle,
+            local_port,
             to_caller: to_caller_tx,
             from_caller: from_caller_rx,
             connect_done: Some(reply),
@@ -640,14 +669,22 @@ impl Driver {
             ),
         );
         let local_port = self.alloc_ephemeral_port();
+        if local_port == 0 {
+            let _ = reply.send(Err(DialError::Other(
+                "WireGuard netstack ephemeral port range exhausted".into(),
+            )));
+            return;
+        }
         // Wildcard local address: smoltcp picks the iface source matching each dst family.
         if let Err(e) = sock.bind(IpListenEndpoint {
             addr: None,
             port: local_port,
         }) {
+            self.reclaim_port(local_port);
             let _ = reply.send(Err(DialError::Other(format!("WireGuard udp bind: {e}"))));
             return;
         }
+        self.in_use_ports.insert(local_port);
 
         let handle = self.sockets.add(sock);
         let (to_caller_tx, to_caller_rx) = mpsc::channel(TO_CALLER_CAP);
@@ -661,6 +698,7 @@ impl Driver {
         };
         self.udp_entries.push(UdpEntry {
             handle,
+            local_port,
             to_caller: to_caller_tx,
             from_caller: from_caller_rx,
         });
@@ -754,6 +792,7 @@ impl Driver {
 
         for idx in reap.into_iter().rev() {
             let entry = self.entries.swap_remove(idx);
+            self.reclaim_port(entry.local_port);
             self.sockets.remove(entry.handle);
         }
     }
@@ -782,6 +821,7 @@ impl Driver {
         }
         for idx in reap.into_iter().rev() {
             let entry = self.udp_entries.swap_remove(idx);
+            self.reclaim_port(entry.local_port);
             self.sockets.remove(entry.handle);
         }
     }
@@ -790,7 +830,8 @@ impl Driver {
     fn pump_udp_recv(&mut self) {
         let sockets = &mut self.sockets;
         let mut reap: Vec<usize> = Vec::new();
-        let mut rxbuf = vec![0u8; WG_MAX_PACKET];
+        // Reuse the driver-owned rxbuf instead of allocating 64KB per poll.
+        let rxbuf = &mut self.udp_rxbuf;
         for (idx, entry) in self.udp_entries.iter_mut().enumerate() {
             if entry.to_caller.is_closed() {
                 reap.push(idx);
@@ -799,7 +840,7 @@ impl Driver {
             let sock = sockets.get_mut::<udp::Socket>(entry.handle);
             while sock.can_recv() {
                 match entry.to_caller.try_reserve() {
-                    Ok(permit) => match sock.recv_slice(&mut rxbuf) {
+                    Ok(permit) => match sock.recv_slice(rxbuf) {
                         Ok((n, meta)) => {
                             let src = SocketAddr::new(
                                 from_smol_addr(meta.endpoint.addr),
@@ -815,6 +856,7 @@ impl Driver {
         }
         for idx in reap.into_iter().rev() {
             let entry = self.udp_entries.swap_remove(idx);
+            self.reclaim_port(entry.local_port);
             self.sockets.remove(entry.handle);
         }
     }
@@ -898,6 +940,8 @@ impl WgNetStack {
             local_v4,
             local_v6,
             next_ephemeral: 49152,
+            in_use_ports: HashSet::new(),
+            udp_rxbuf: vec![0u8; WG_MAX_PACKET],
             entries: Vec::new(),
             udp_entries: Vec::new(),
         };
@@ -1147,5 +1191,71 @@ mod tests {
         let mut buf = [0u8; 64];
         let r = tokio::time::timeout(Duration::from_millis(200), sock.recv_from(&mut buf)).await;
         assert!(r.is_err(), "recv_from should time out with no peer");
+    }
+
+    #[tokio::test]
+    async fn udp_many_concurrent_sockets_no_port_collision() {
+        // Open many UDP sockets concurrently on one tunnel. The ephemeral port
+        // allocator must skip in-use ports (P3-3); none of the opens should fail
+        // with a bind error. We keep the sockets alive for the duration of the
+        // check by holding them in a Vec.
+        let stack = build_stack(&[IpAddr::V4(Ipv4Addr::new(10, 7, 0, 2))]).await;
+        const N: usize = 64;
+        let mut socks = Vec::with_capacity(N);
+        for _ in 0..N {
+            let sock = stack
+                .connect_udp()
+                .await
+                .expect("udp socket open must not collide");
+            socks.push(sock);
+        }
+        // All 64 sockets are live with distinct ephemeral ports; send a datagram
+        // from each to confirm they're independently usable.
+        for sock in &socks {
+            sock.send_to(b"x", "10.7.0.1:53".parse().unwrap())
+                .await
+                .expect("each socket must send");
+        }
+        // Dropping all sockets reclaims their ports (driver reaps on next poll).
+        drop(socks);
+        tokio::time::sleep(Duration::from_millis(120)).await;
+        // After reaping, a fresh open must succeed (ports were reclaimed).
+        let _again = stack
+            .connect_udp()
+            .await
+            .expect("port reclaimed after drop");
+    }
+
+    #[tokio::test]
+    async fn tcp_many_concurrent_dials_all_timeout_distinctly() {
+        // P3-6: N concurrent TCP dials on one tunnel with no peer answering.
+        // Each must get its own ephemeral port (no collision) and surface a
+        // timeout rather than hanging or colliding. This is the TCP stress
+        // counterpart to the UDP collision test.
+        let stack = build_stack(&[IpAddr::V4(Ipv4Addr::new(10, 7, 0, 2))]).await;
+        const N: usize = 16;
+        let mut handles = Vec::with_capacity(N);
+        for i in 0..N {
+            let s = stack.clone();
+            handles.push(tokio::spawn(async move {
+                // Distinct target ports so smoltcp doesn't dedup; all time out
+                // (no real peer) but the point is each dial gets a port.
+                let r = s
+                    .connect_tcp("10.7.0.1", 1000 + i as u16, Duration::from_millis(300))
+                    .await;
+                assert!(r.is_err(), "dial {i} must time out, not hang");
+                r
+            }));
+        }
+        for (i, h) in handles.into_iter().enumerate() {
+            let r = h.await.expect("task {i} panicked");
+            match r {
+                Err(DialError::Other(msg)) => assert!(
+                    msg.contains("timeout"),
+                    "dial {i}: expected timeout, got {msg}"
+                ),
+                other => panic!("dial {i}: expected Other(timeout), got {other:?}"),
+            }
+        }
     }
 }

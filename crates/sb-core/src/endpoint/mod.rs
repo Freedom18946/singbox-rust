@@ -264,6 +264,7 @@ pub trait Endpoint: Send + Sync + Any {
     }
 
     /// Open an endpoint-backed UDP outbound session.
+    #[allow(clippy::type_complexity)]
     fn open_udp_outbound_session(
         &self,
     ) -> std::pin::Pin<
@@ -1003,6 +1004,7 @@ mod tests {
                 true
             }
 
+            #[allow(clippy::type_complexity)]
             fn open_udp_outbound_session(
                 &self,
             ) -> std::pin::Pin<

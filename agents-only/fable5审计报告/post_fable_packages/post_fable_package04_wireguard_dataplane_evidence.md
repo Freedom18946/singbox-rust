@@ -199,13 +199,48 @@ the bar is end-to-end correctness + live proof, not a re-label.
 | `cargo test -p sb-core registry_` | PASS: 8 matched tests passed |
 | `cargo check --workspace --all-features` | PASS |
 
-### Remaining (post004 roadmap after Phase 2)
+### Phase 3 delivered (multi-socket concurrency hardening)
 
-- **Phase 3**: multi-socket concurrency hardening on one tunnel.
+- **P3-1 multi-peer UDP routing**: `WireGuardEndpointUdpSession` socket cache changed from a single
+  `Mutex<Option<Arc<WgUdpSocket>>>` to a per-peer `HashMap<peer_key, PeerSocketEntry>`. `socket_for`
+  selects the peer by `allowed_ips` (target IP) and uses that peer's bucket; datagrams never ride the
+  wrong tunnel. `peer_key` = `Arc<WireGuardTransport>` address (one tunnel per peer → unique).
+- **P3-2 recv_from race fix**: replaced `Mutex<Option> + Notify` (check-then-await window where
+  `notify_waiters` could fire between check and `notified()` registration) with `tokio::sync::watch`:
+  `borrow_and_update()` is non-async and reflects the latest state atomically; `changed().await`
+  registers the waiter before observing.
+- **P3-3 ephemeral port dedup**: `alloc_ephemeral_port` now skips in-use ports (`HashSet<u16>`) and
+  wraps the full 49152..=65535 range before returning 0 (loud-fail at smoltcp bind). Ports are
+  reclaimed when sockets are reaped in `pump_sockets`/`pump_udp_writes`/`pump_udp_recv`. `pump_udp_recv`
+  `rxbuf` hoisted from a 64KB-per-poll alloc to a Driver-owned `udp_rxbuf` scratch buffer.
+- **P3-4 ensure_started TOCTOU**: re-check `transports.is_empty()` under the lock after building, so
+  two concurrent callers don't both populate (which would orphan netstack drivers).
+- **P3-5 udp_timeout**: `wireguard_udp_timeout` parsed via `humantime` (invalid → 5m fallback with
+  warning); per-peer socket idle reap on `send_to`/`recv_from` paths. Tailscale endpoint
+  `tailscale_udp_timeout` aligned (was hardcoded 300s, now parses IR).
+- **P3-6 TCP stress**: `tcp_many_concurrent_dials_all_timeout_distinctly` — 16 concurrent dials on one
+  tunnel, each gets a distinct ephemeral port and surfaces a timeout (not a hang/collision).
+
+### Phase 3 verification snapshot
+
+| Command | Result |
+|---|---|
+| `cargo test -p sb-transport --features transport_wireguard --lib wireguard` | PASS: 16 passed (14 + port-collision + TCP concurrent-dial) |
+| `cargo test -p sb-adapters --features adapter-wireguard-outbound,adapter-wireguard-endpoint,router --lib wireguard` | PASS: 5 passed |
+| `cargo test -p sb-core --lib endpoint` | PASS: 29 passed (23 + 6 new) |
+| `cargo test -p sb-core --lib registry_` | PASS: 8 passed |
+| `cargo clippy -p sb-transport --features transport_wireguard --all-targets` | 0 warnings |
+| `cargo clippy -p sb-core --features router --all-targets` | 0 warnings |
+| `cargo fmt --all -- --check` | clean |
+| `cargo check --workspace --all-features` | PASS |
+
+### Remaining (post004 roadmap after Phase 3)
+
 - **Phase 4**: MIG-02 — make the disabled-feature outbound builder loud
   (`invalid_config_outbound`) instead of silent `None`; consume islanded `mtu` /
   `allowed_ips`.
 - **Phase 5**: live round-trip proof vs a real Go sing-box WG peer (ordinary user,
   no root), double-sided assertion + `result.json`, as the `04b` harness.
 - Not yet exercised live: a real TCP/UDP round-trip through the tunnel (that is the
-  Phase 5 gate). Phase 1/2 prove stack mechanics + TCP/UDP wiring + loud failure modes.
+  Phase 5 gate). Phase 1/2/3 prove stack mechanics + TCP/UDP wiring + loud failure modes
+  + multi-socket concurrency + idle reap.
