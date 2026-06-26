@@ -31,11 +31,13 @@ use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
 use boringtun::noise::Tunn;
 use boringtun::x25519::{PublicKey, StaticSecret};
 use tokio::net::UdpSocket;
+use tokio::sync::mpsc;
 use tracing::debug;
 
 use crate::{DialError, Dialer, IoStream};
 use netstack::WgNetStack;
 
+pub use netstack::TcpAccept;
 pub use netstack::WgUdpSocket;
 
 /// WireGuard transport configuration.
@@ -63,6 +65,13 @@ pub struct WireGuardConfig {
     pub reserved: [u8; 3],
     /// Connection timeout.
     pub connect_timeout: Duration,
+    /// Ports to listen on inside the WG tunnel for incoming TCP connections
+    /// from peers. When non-empty, the netstack opens smoltcp TCP listeners on
+    /// these ports and accepted connections are delivered via
+    /// [`WireGuardTransport::take_tcp_accepts`]. Mirrors Go gvisor's
+    /// `SetTransportProtocolHandler` but for specific ports (smoltcp does not
+    /// support catch-all-port listening).
+    pub listen_ports: Vec<u16>,
 }
 
 impl Default for WireGuardConfig {
@@ -78,6 +87,7 @@ impl Default for WireGuardConfig {
             mtu: 1408,
             reserved: [0, 0, 0],
             connect_timeout: Duration::from_secs(10),
+            listen_ports: Vec::new(),
         }
     }
 }
@@ -91,6 +101,9 @@ fn decode_key32(s: &str) -> Option<[u8; 32]> {
 pub struct WireGuardTransport {
     netstack: WgNetStack,
     connect_timeout: Duration,
+    /// Receiver for incoming TCP connections accepted by netstack listeners.
+    /// `None` when no listen_ports were configured.
+    tcp_accept_rx: Option<mpsc::Receiver<netstack::TcpAccept>>,
 }
 
 impl std::fmt::Debug for WireGuardTransport {
@@ -143,19 +156,27 @@ impl WireGuardTransport {
             None, // rate limiter
         );
 
-        let netstack = WgNetStack::new(
+        let (netstack, tcp_accept_rx) = WgNetStack::new(
             tunn,
             socket,
             config.peer_endpoint,
             &config.local_addrs,
             config.mtu as usize,
             config.reserved,
+            &config.listen_ports,
         );
 
         Ok(Self {
             netstack,
             connect_timeout: config.connect_timeout,
+            tcp_accept_rx,
         })
+    }
+
+    /// Take the receiver for incoming TCP connections accepted by netstack
+    /// listeners. Returns `None` if no `listen_ports` were configured.
+    pub fn take_tcp_accepts(&mut self) -> Option<mpsc::Receiver<netstack::TcpAccept>> {
+        self.tcp_accept_rx.take()
     }
 
     /// Proactively (re)initiate the Noise handshake (warm-up / roaming aid).

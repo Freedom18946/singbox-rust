@@ -4,7 +4,7 @@ use super::{
 };
 use ipnet::IpNet;
 use sb_config::ir::{EndpointIR, EndpointType, WireGuardPeerIR};
-use sb_transport::wireguard::{WgUdpSocket, WireGuardConfig, WireGuardTransport};
+use sb_transport::wireguard::{TcpAccept, WgUdpSocket, WireGuardConfig, WireGuardTransport};
 use std::collections::HashMap;
 use std::future::Future;
 use std::io;
@@ -13,7 +13,7 @@ use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 use tokio::runtime::Handle;
-use tokio::sync::{watch, Mutex};
+use tokio::sync::{mpsc, watch, Mutex as TokioMutex};
 use tracing::{debug, info, warn};
 
 /// WireGuard endpoint backed by sb-transport's userspace WireGuard.
@@ -27,7 +27,13 @@ pub struct WireGuardEndpoint {
     /// Local addresses assigned to this WireGuard interface (for loopback detection).
     local_addresses: Vec<IpNet>,
     /// Connection handler for routing inbound connections.
-    connection_handler: parking_lot::RwLock<Option<Arc<dyn ConnectionHandler>>>,
+    connection_handler: Arc<parking_lot::RwLock<Option<Arc<dyn ConnectionHandler>>>>,
+    /// Receivers for incoming TCP connections from the netstack listeners.
+    /// Set during `ensure_started`, consumed by accept tasks once the
+    /// connection handler is registered.
+    tcp_accept_rxs: parking_lot::Mutex<Vec<mpsc::Receiver<TcpAccept>>>,
+    /// Ports to listen on inside the tunnel (from endpoint config).
+    listen_ports: Vec<u16>,
     /// DNS resolver for internal name resolution.
     dns_resolver: Option<Arc<dyn crate::dns::Resolver>>,
     /// Router handle for policy checks.
@@ -71,7 +77,7 @@ struct WireGuardEndpointUdpSession {
     dns_resolver: Option<Arc<dyn crate::dns::Resolver>>,
     /// Per-peer socket cache, keyed by `PeerTransport::peer_key()`. Each peer
     /// gets its own `WgUdpSocket` so datagrams never ride the wrong tunnel.
-    sockets: Mutex<HashMap<usize, PeerSocketEntry>>,
+    sockets: TokioMutex<HashMap<usize, PeerSocketEntry>>,
     /// `watch` replaces `Mutex<Option> + Notify`: readers `borrow()` the current
     /// socket non-async (no check-then-await race) and `changed().await` to wait
     /// for the first socket to appear. The carried value is the peer_key whose
@@ -100,7 +106,7 @@ impl WireGuardEndpointUdpSession {
         Self {
             peers,
             dns_resolver,
-            sockets: Mutex::new(HashMap::new()),
+            sockets: TokioMutex::new(HashMap::new()),
             socket_ready,
             udp_timeout,
         }
@@ -229,36 +235,36 @@ impl crate::adapter::UdpOutboundSession for WireGuardEndpointUdpSession {
     }
 }
 
+fn wireguard_runtime() -> Result<&'static tokio::runtime::Runtime, String> {
+    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
+
+    if let Some(runtime) = RUNTIME.get() {
+        return Ok(runtime);
+    }
+
+    let runtime = tokio::runtime::Builder::new_multi_thread()
+        .worker_threads(1)
+        .thread_name("sb-wireguard-endpoint")
+        .enable_all()
+        .build()
+        .map_err(|error| format!("wireguard endpoint runtime init failed: {error}"))?;
+    let _ = RUNTIME.set(runtime);
+    RUNTIME
+        .get()
+        .ok_or_else(|| "wireguard endpoint runtime unavailable".to_string())
+}
+
 fn block_on_wireguard_task<T, F>(future: F) -> Result<T, String>
 where
     T: Send + 'static,
     F: Future<Output = Result<T, String>> + Send + 'static,
 {
-    static RUNTIME: OnceLock<tokio::runtime::Runtime> = OnceLock::new();
-
-    fn runtime() -> Result<&'static tokio::runtime::Runtime, String> {
-        if let Some(runtime) = RUNTIME.get() {
-            return Ok(runtime);
-        }
-
-        let runtime = tokio::runtime::Builder::new_multi_thread()
-            .worker_threads(1)
-            .thread_name("sb-wireguard-endpoint")
-            .enable_all()
-            .build()
-            .map_err(|error| format!("wireguard endpoint runtime init failed: {error}"))?;
-        let _ = RUNTIME.set(runtime);
-        RUNTIME
-            .get()
-            .ok_or_else(|| "wireguard endpoint runtime unavailable".to_string())
-    }
-
     fn run<T, F>(future: F) -> Result<T, String>
     where
         T: Send + 'static,
         F: Future<Output = Result<T, String>> + Send + 'static,
     {
-        runtime()?.block_on(future)
+        wireguard_runtime()?.block_on(future)
     }
 
     if Handle::try_current().is_ok() {
@@ -267,6 +273,18 @@ where
             .map_err(|_| "wireguard endpoint runtime worker panicked".to_string())?
     } else {
         run(future)
+    }
+}
+
+fn spawn_wireguard_task<F>(future: F)
+where
+    F: Future<Output = ()> + Send + 'static,
+{
+    match wireguard_runtime() {
+        Ok(runtime) => {
+            runtime.spawn(future);
+        }
+        Err(error) => warn!("failed to spawn WireGuard endpoint task: {}", error),
     }
 }
 
@@ -407,7 +425,13 @@ impl WireGuardEndpoint {
             transports: parking_lot::Mutex::new(Vec::new()),
             local_addresses,
 
-            connection_handler: parking_lot::RwLock::new(None),
+            connection_handler: Arc::new(parking_lot::RwLock::new(None)),
+            tcp_accept_rxs: parking_lot::Mutex::new(Vec::new()),
+            listen_ports: ir
+                .wireguard_listen_ports
+                .as_ref()
+                .map(|v| v.clone())
+                .unwrap_or_default(),
             dns_resolver: dns,
             #[cfg(feature = "router")]
             router,
@@ -440,6 +464,7 @@ impl WireGuardEndpoint {
 
         let resolver = self.dns_resolver.clone();
         let mut transports = Vec::new();
+        let mut tcp_accept_rxs: Vec<mpsc::Receiver<TcpAccept>> = Vec::new();
 
         {
             let mut peers = self.peers.write();
@@ -483,12 +508,22 @@ impl WireGuardEndpoint {
                     mtu: self.mtu,
                     reserved: peer.reserved,
                     connect_timeout: Duration::from_secs(10),
+                    listen_ports: self.listen_ports.clone(),
                 };
-                let transport = block_on_wireguard_task(async move {
+                let mut transport = block_on_wireguard_task(async move {
                     WireGuardTransport::new(config)
                         .await
                         .map_err(|error| error.to_string())
                 })?;
+
+                // Take the accept receiver so we can spawn the accept task
+                // once the connection handler is registered. Each peer
+                // transport owns its own netstack/UDP socket in the current
+                // Rust architecture, so any listener receiver it creates must
+                // be wired into the endpoint handler path.
+                if let Some(rx) = transport.take_tcp_accepts() {
+                    tcp_accept_rxs.push(rx);
+                }
 
                 transports.push(PeerTransport {
                     allowed_ips: peer.allowed_ips.clone(),
@@ -506,7 +541,77 @@ impl WireGuardEndpoint {
             return Ok(());
         }
         *guard = transports;
+
+        // Store TCP accept receivers so accept tasks can be spawned once the
+        // connection handler is registered.
+        if !tcp_accept_rxs.is_empty() {
+            let mut accept_guard = self.tcp_accept_rxs.lock();
+            accept_guard.extend(tcp_accept_rxs);
+        }
+        self.maybe_spawn_tcp_accept_task();
+
         Ok(())
+    }
+
+    fn maybe_spawn_tcp_accept_task(&self) {
+        if self.connection_handler.read().is_none() {
+            return;
+        }
+        let receivers = {
+            let mut guard = self.tcp_accept_rxs.lock();
+            if guard.is_empty() {
+                return;
+            }
+            guard.drain(..).collect::<Vec<_>>()
+        };
+
+        for rx in receivers {
+            self.spawn_tcp_accept_task(rx);
+        }
+    }
+
+    fn spawn_tcp_accept_task(&self, mut rx: mpsc::Receiver<TcpAccept>) {
+        if self.connection_handler.read().is_none() {
+            return;
+        }
+
+        let tag = self.tag.clone();
+        let handler_lock = self.connection_handler.clone();
+        let local_addresses = self.local_addresses.clone();
+        spawn_wireguard_task(async move {
+            debug!(tag = %tag, "WireGuard TCP accept task started");
+            while let Some(accept) = rx.recv().await {
+                let local = accept.local;
+                let remote = accept.remote;
+                info!(
+                    tag = %tag,
+                    "incoming TCP connection from {} to {} inside WG tunnel",
+                    remote, local
+                );
+                let destination = Socksaddr::from(local);
+                let (translated_dest, origin_destination) =
+                    WireGuardEndpoint::translate_local_destination_from(
+                        &local_addresses,
+                        &destination,
+                    );
+                let metadata = InboundContext {
+                    inbound: tag.clone(),
+                    inbound_type: "wireguard".to_string(),
+                    network: Some(Network::Tcp),
+                    source: Some(Socksaddr::from(remote)),
+                    destination: Some(translated_dest),
+                    origin_destination,
+                };
+                let stream: EndpointStream = Box::new(accept.stream);
+                let handler = handler_lock.read().clone();
+                if let Some(handler) = handler {
+                    handler.route_connection(stream, metadata, None).await;
+                } else {
+                    warn!(tag = %tag, "no connection handler for incoming WG TCP, dropping");
+                }
+            }
+            debug!(tag = %tag, "WireGuard TCP accept task ended");
+        });
     }
 
     /// Select the appropriate peer transport based on destination address.
@@ -526,10 +631,12 @@ impl WireGuardEndpoint {
         transports.first().map(|pt| pt.transport.clone())
     }
 
-    /// Convert destination to loopback if it matches a local address.
-    fn translate_local_destination(&self, dest: &Socksaddr) -> (Socksaddr, Option<Socksaddr>) {
+    fn translate_local_destination_from(
+        local_addresses: &[IpNet],
+        dest: &Socksaddr,
+    ) -> (Socksaddr, Option<Socksaddr>) {
         if let Some(ip) = dest.addr() {
-            for local_prefix in &self.local_addresses {
+            for local_prefix in local_addresses {
                 if local_prefix.contains(&ip) {
                     // Replace with loopback
                     let loopback_ip = if ip.is_ipv4() {
@@ -546,6 +653,11 @@ impl WireGuardEndpoint {
             }
         }
         (dest.clone(), None)
+    }
+
+    /// Convert destination to loopback if it matches a local address.
+    fn translate_local_destination(&self, dest: &Socksaddr) -> (Socksaddr, Option<Socksaddr>) {
+        Self::translate_local_destination_from(&self.local_addresses, dest)
     }
 }
 
@@ -790,6 +902,8 @@ impl Endpoint for WireGuardEndpoint {
         let mut guard = self.connection_handler.write();
         *guard = Some(handler);
         debug!(tag = %self.tag, "connection handler registered");
+        drop(guard);
+        self.maybe_spawn_tcp_accept_task();
     }
 
     fn new_connection_ex(
@@ -917,6 +1031,7 @@ pub fn build_wireguard_endpoint(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
     fn wireguard_endpoint_ir(addresses: Option<Vec<String>>) -> EndpointIR {
         EndpointIR {
@@ -940,6 +1055,7 @@ mod tests {
             }]),
             wireguard_udp_timeout: None,
             wireguard_workers: None,
+            wireguard_listen_ports: None,
             tailscale_state_directory: None,
             tailscale_auth_key: None,
             tailscale_control_url: None,
@@ -1127,5 +1243,141 @@ mod tests {
         ep.ensure_started(true).expect("start2");
         let count = ep.transports.lock().len();
         assert_eq!(count, 1, "transports filled exactly once, not doubled");
+    }
+
+    fn keypair_a() -> (&'static str, &'static str) {
+        (
+            "IPCEEDl2GPOfgm3dOWpu60ukWO0ixOEr7vN8kN92Sm8=",
+            "rJwEZnkVL9bdiicGfKitXhif7bCvqm0NOjeI1QSM5gU=",
+        )
+    }
+
+    fn keypair_b() -> (&'static str, &'static str) {
+        (
+            "GKaTjB3F8RpZJdd10plIlncr36M/Oxml/pkR5doSqHI=",
+            "tjXnHkpr2ZR9MI2udxlxDBpiRbQj1ABu9ZvZcWCPOBc=",
+        )
+    }
+
+    async fn alloc_udp_port() -> u16 {
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        socket.local_addr().unwrap().port()
+    }
+
+    struct CaptureTcpHandler {
+        tx: TokioMutex<Option<tokio::sync::oneshot::Sender<(InboundContext, Vec<u8>)>>>,
+    }
+
+    #[async_trait::async_trait]
+    impl ConnectionHandler for CaptureTcpHandler {
+        async fn route_connection(
+            &self,
+            mut conn: EndpointStream,
+            metadata: InboundContext,
+            _on_close: Option<CloseHandler>,
+        ) {
+            let mut payload = vec![0u8; 7];
+            conn.read_exact(&mut payload)
+                .await
+                .expect("handler reads accepted WG TCP payload");
+            conn.write_all(b"P6-PONG")
+                .await
+                .expect("handler replies over accepted WG TCP stream");
+            if let Some(tx) = self.tx.lock().await.take() {
+                let _ = tx.send((metadata, payload));
+            }
+        }
+
+        async fn route_packet_connection(
+            &self,
+            _socket: Arc<UdpSocket>,
+            _metadata: InboundContext,
+            _on_close: Option<CloseHandler>,
+        ) {
+        }
+    }
+
+    #[tokio::test]
+    async fn incoming_tcp_listener_routes_to_connection_handler() {
+        let endpoint_udp_port = alloc_udp_port().await;
+        let peer_udp_port = alloc_udp_port().await;
+        let (endpoint_priv, endpoint_pub) = keypair_a();
+        let (peer_priv, peer_pub) = keypair_b();
+
+        let mut ir = wireguard_endpoint_ir(Some(vec!["10.99.0.1/32".to_string()]));
+        ir.wireguard_private_key = Some(endpoint_priv.to_string());
+        ir.wireguard_listen_port = Some(endpoint_udp_port);
+        ir.wireguard_listen_ports = Some(vec![18081]);
+        ir.wireguard_peers = Some(vec![WireGuardPeerIR {
+            address: Some("127.0.0.1".to_string()),
+            port: Some(peer_udp_port),
+            public_key: Some(peer_pub.to_string()),
+            pre_shared_key: None,
+            allowed_ips: Some(vec!["0.0.0.0/0".to_string()]),
+            persistent_keepalive_interval: Some(25),
+            reserved: None,
+        }]);
+
+        let endpoint = WireGuardEndpoint::new(
+            &ir,
+            None,
+            #[cfg(feature = "router")]
+            None,
+        )
+        .expect("wireguard endpoint");
+        let (tx, rx) = tokio::sync::oneshot::channel();
+        endpoint.set_connection_handler(Arc::new(CaptureTcpHandler {
+            tx: TokioMutex::new(Some(tx)),
+        }));
+        endpoint.start(StartStage::Start).expect("endpoint starts");
+
+        let peer = WireGuardTransport::new(WireGuardConfig {
+            private_key: peer_priv.to_string(),
+            peer_public_key: endpoint_pub.to_string(),
+            pre_shared_key: None,
+            peer_endpoint: SocketAddr::from(([127, 0, 0, 1], endpoint_udp_port)),
+            local_addr: Some(SocketAddr::from(([127, 0, 0, 1], peer_udp_port))),
+            local_addrs: vec![IpAddr::V4(Ipv4Addr::new(10, 99, 0, 2))],
+            persistent_keepalive: Some(25),
+            mtu: 1408,
+            reserved: [0, 0, 0],
+            connect_timeout: Duration::from_secs(5),
+            listen_ports: Vec::new(),
+        })
+        .await
+        .expect("peer transport");
+
+        use sb_transport::Dialer;
+        let mut client = peer
+            .connect("10.99.0.1", 18081)
+            .await
+            .expect("peer dials endpoint listener through WG");
+        client.write_all(b"P6-PING").await.unwrap();
+
+        let (metadata, payload) = tokio::time::timeout(Duration::from_secs(5), rx)
+            .await
+            .expect("handler should receive accepted connection")
+            .expect("handler result");
+        assert_eq!(payload, b"P6-PING");
+        assert_eq!(metadata.inbound, "wg-ep");
+        assert_eq!(metadata.inbound_type, "wireguard");
+        assert_eq!(metadata.network, Some(Network::Tcp));
+        assert_eq!(
+            metadata.destination.unwrap().to_string(),
+            "127.0.0.1:18081",
+            "local WG destination is translated to loopback before routing"
+        );
+        assert_eq!(
+            metadata.origin_destination.unwrap().to_string(),
+            "10.99.0.1:18081"
+        );
+        assert_eq!(
+            metadata.source.unwrap().addr(),
+            Some(IpAddr::V4(Ipv4Addr::new(10, 99, 0, 2)))
+        );
+
+        let mut reply = [0u8; 7];
+        client.read_exact(&mut reply).await.unwrap();
+        assert_eq!(&reply, b"P6-PONG");
     }
 }

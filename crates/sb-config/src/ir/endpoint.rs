@@ -73,6 +73,12 @@ pub struct EndpointIR {
     /// WireGuard: Number of worker threads
     #[serde(default)]
     pub wireguard_workers: Option<i32>,
+    /// WireGuard: Ports to listen on inside the tunnel for incoming TCP from
+    /// peers. The userspace netstack opens smoltcp TCP listeners on these ports
+    /// and accepted connections are routed through the connection handler.
+    /// Mirrors Go gvisor's `SetTransportProtocolHandler` but for specific ports.
+    #[serde(default)]
+    pub wireguard_listen_ports: Option<Vec<u16>>,
 
     // Tailscale-specific fields
     /// Tailscale: State directory path

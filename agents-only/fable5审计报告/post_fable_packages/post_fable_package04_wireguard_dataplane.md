@@ -3,12 +3,18 @@
 
 ## Status
 
-DONE (2026-06-13, code commit `f70bf5ef`).
+DONE (2026-06-13, code commit `f70bf5ef`; post004 P6 extension closed
+2026-06-27).
 
 Endpoint-form WireGuard now resolves as an outbound route target in the live
 startup path, and legacy outbound-form WireGuard is wired into the app `adapters`
 aggregate. This does not claim full public WireGuard interoperability or
 performance certification.
+
+Later post004 extensions deepened the userspace dataplane through Phase 6:
+smoltcp/boringtun TCP+UDP outbound, live Go sing-box round-trip proof, and
+incoming in-tunnel TCP on endpoint `listen_ports` with an independent Go→Rust
+curl proof.
 
 ## Source Findings
 
@@ -85,3 +91,10 @@ Legacy outbound form: feature wired and builder tested under
 `adapter-wireguard-outbound`; full public peer traffic remains uncertified.
 
 Evidence: `post_fable_package04_wireguard_dataplane_evidence.md`.
+
+Post004 extension closeout: Phase 1-5 were re-audited against sealed commits on
+2026-06-27 and matched the evidence. P6 adds endpoint `listen_ports`,
+smoltcp TCP listeners, `TcpAccept` delivery to `ConnectionHandler`, and an
+extended 04b harness where both Rust→Go and independent Go→Rust curl paths pass.
+P7 `system:true` kernel WireGuard remains planning-only; P8 smoltcp→lwIP remains
+deferred until evidence requires it.

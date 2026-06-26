@@ -43,7 +43,7 @@ were present.
 | post_fable_package02 | Schema parity, TUN first | P0 | CAL-01, H-4 | DONE (`e3defcdf`) |
 | post_fable_package12 | DNS schema parity, GUI default | P0 | F-1 | DONE (`349eecf3`) |
 | post_fable_package03 | TUN dataplane | P1 | CAL-10, H-5 | DONE (`edf42095` runtime wiring; post003 extension 2026-06-20: UDP NAT + IPv6 datapath, fixed connected-UDP send + TUN egress through proxy outbounds; live root proof PASS for TCP IPv4+IPv6 through HTTP outbound) |
-| post_fable_package04 | WireGuard dataplane | P0/P1 | CAL-03, CAL-09 | DONE (`f70bf5ef`; endpoint route target + legacy feature wiring) |
+| post_fable_package04 | WireGuard dataplane | P0/P1 | CAL-03, CAL-09 | DONE (`f70bf5ef`; post004 P6 extension: userspace WG TCP/UDP outbound + incoming TCP `listen_ports` + live Go↔Rust 04b proof) |
 | post_fable_package05 | Reload continuity and atomicity | P1 | CAL-04, CAL-05, CAL-07, CAL-12, CAL-14 | DONE (`a9236205`; atomic reload + safe same-port rejection) |
 | post_fable_package06 | Inbound liveness and observability | P1/P2 | CAL-06, CAL-13, CAL-15, CAL-16 | DONE (`bbc00416`; inbound/sidecar/DNS/V2Ray visibility) |
 | post_fable_package07 | GUI E2E probe | Probe | H-1, H-2, H-3, H-9 | PARTIAL, PAUSED_INDEFINITE (probe PASS; package18 proved real Wails Start/core/API/traffic; package19 latest blocker is `BLOCKED_ACCESSIBILITY`; no package20 until resumed) |
@@ -70,7 +70,9 @@ were present.
    before package03, so the GUI default DNS config can pass the strict production
    load path.
 4. `post_fable_package04_wireguard_dataplane.md` is DONE for endpoint/outbound
-   wiring; public peer interoperability remains outside package04 scope.
+   wiring and its post004 userspace WG dataplane extension is closed through P6
+   (`listen_ports` incoming TCP + extended 04b Go↔Rust proof). Kernel
+   `system:true` WG remains planning-only.
 5. `post_fable_package05_reload_continuity_atomicity.md` after GUI reload and Go
    reload probes are documented. It is the highest-risk core-path package.
 6. `post_fable_package06_inbound_liveness_observability.md` after or together with

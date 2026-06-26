@@ -16,6 +16,7 @@ fn allowed_endpoint_keys() -> HashSet<String> {
         "address",
         "private_key",
         "listen_port",
+        "listen_ports",
         "peers",
         "udp_timeout",
         "workers",
@@ -90,6 +91,33 @@ pub(crate) fn validate_endpoints(doc: &Value, allow_unknown: bool, issues: &mut 
                             }
                         }
                     }
+                }
+            }
+            if let Some(listen_ports) = map.get("listen_ports") {
+                if let Some(ports) = listen_ports.as_array() {
+                    for (j, port) in ports.iter().enumerate() {
+                        let valid = port
+                            .as_u64()
+                            .and_then(|value| u16::try_from(value).ok())
+                            .is_some_and(|value| value != 0);
+                        if !valid {
+                            issues.push(emit_issue(
+                                "error",
+                                IssueCode::TypeMismatch,
+                                &format!("/endpoints/{}/listen_ports/{}", i, j),
+                                "listen_ports entries must be port numbers 1..=65535",
+                                "use numeric TCP listen ports",
+                            ));
+                        }
+                    }
+                } else {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("/endpoints/{}/listen_ports", i),
+                        "listen_ports must be an array",
+                        "use an array of numeric TCP listen ports",
+                    ));
                 }
             }
         }
@@ -173,6 +201,13 @@ pub(crate) fn lower_endpoints(doc: &Value, ir: &mut ConfigIR) {
                 .and_then(|v| v.as_str())
                 .map(|s| s.to_string()),
             wireguard_workers: e.get("workers").and_then(|v| v.as_i64()).map(|x| x as i32),
+            wireguard_listen_ports: e.get("listen_ports").and_then(|v| v.as_array()).map(|arr| {
+                arr.iter()
+                    .filter_map(|v| v.as_u64())
+                    .filter_map(|x| u16::try_from(x).ok())
+                    .filter(|port| *port != 0)
+                    .collect::<Vec<u16>>()
+            }),
             tailscale_state_directory: e
                 .get("state_directory")
                 .and_then(|v| v.as_str())
@@ -353,6 +388,7 @@ mod tests {
             "address": ["10.0.0.1/32"],
             "private_key": "abc123",
             "listen_port": 51820,
+            "listen_ports": [80, 443],
             "udp_timeout": "5m",
             "workers": 4
         }]});
@@ -372,8 +408,43 @@ mod tests {
         );
         assert_eq!(ep.wireguard_private_key.as_deref(), Some("abc123"));
         assert_eq!(ep.wireguard_listen_port, Some(51820));
+        assert_eq!(ep.wireguard_listen_ports.as_ref().unwrap(), &vec![80, 443]);
         assert_eq!(ep.wireguard_udp_timeout.as_deref(), Some("5m"));
         assert_eq!(ep.wireguard_workers, Some(4));
+    }
+
+    #[test]
+    fn wireguard_listen_ports_must_be_port_array() {
+        let doc = json!({"endpoints": [{
+            "type": "wireguard",
+            "listen_ports": "443"
+        }]});
+        let issues = run_validate(&doc, false);
+        assert!(issues
+            .iter()
+            .any(|i| i["ptr"] == "/endpoints/0/listen_ports"
+                && i["msg"] == "listen_ports must be an array"));
+
+        let doc = json!({"endpoints": [{
+            "type": "wireguard",
+            "listen_ports": [80, 0, 65536, "443"]
+        }]});
+        let issues = run_validate(&doc, false);
+        assert!(issues
+            .iter()
+            .any(|i| i["ptr"] == "/endpoints/0/listen_ports/1"));
+        assert!(issues
+            .iter()
+            .any(|i| i["ptr"] == "/endpoints/0/listen_ports/2"));
+        assert!(issues
+            .iter()
+            .any(|i| i["ptr"] == "/endpoints/0/listen_ports/3"));
+
+        let ir = run_lower(&doc);
+        assert_eq!(
+            ir.endpoints[0].wireguard_listen_ports.as_ref().unwrap(),
+            &vec![80]
+        );
     }
 
     #[test]

@@ -4,6 +4,7 @@
 Date: 2026-06-13
 Code commit: `f70bf5ef` (`fix(sb-core): expose WireGuard endpoints as outbounds`)
 Status: DONE for package04 scope
+Latest extension: 2026-06-27 post004 P6 incoming TCP listener DONE
 
 ## Conclusion
 
@@ -17,6 +18,11 @@ CAL-09 is closed for feature wiring: legacy `outbounds:[{type:"wireguard"}]`
 is enabled through the app `adapters` aggregate, so `parity` covers it
 indirectly. The builder returns a real lazy WireGuard connector under
 `adapter-wireguard-outbound`; it is no longer an unreachable app-build ghost.
+
+The later post004 userspace dataplane line is also closed through the
+user-directed P6 extension: Rust can now both dial TCP/UDP through the userspace
+WG netstack and accept configured incoming in-tunnel TCP on endpoint
+`listen_ports`.
 
 This package does not certify public WireGuard peer interoperability or
 performance. It proves endpoint/outbound resolution, startup, and the
@@ -332,22 +338,91 @@ the bar is end-to-end correctness + live proof, not a re-label.
 
 | Command | Result |
 |---|---|
-| `SKIP_GO_BUILD=1 SKIP_BUILD=1 GO_BIN=/tmp/gp04b_build/sing-box WORK=/tmp/pf04b-wg-live bash .../post_fable_package04b_wg_live_proof_harness.sh` | PASS: `result.json` status=PASS, exit 0 |
+| `SKIP_GO_BUILD=1 SKIP_BUILD=1 GO_BIN=/tmp/gp04b_build/sing-box WORK=/tmp/pf04b-wg-live bash .../post_fable_package04b_wg_live_proof_harness.sh` | PASS: historical Phase 5 proof, `result.json` status=PASS, exit 0 |
 | `cat /tmp/pf04b-wg-live/result.json` | curl 200, stub_hit=true, go_inbound=true, rust_outbound=true, cleanup=complete |
 | Go sing-box build (`go build -tags with_wireguard,with_gvisor`) | PASS (32MB binary, tags confirmed) |
 | Rust app build (`cargo build -p app --features adapters,clash_api`) | PASS |
 
-### post004 closure
+### Phase 1-5 audit (2026-06-27)
 
-Phase 1-5 complete. The WireGuard userspace dataplane is proven:
+The sealed phase history was re-read against its commits and implementation
+surface. Result: the documented claims are real, not just prose.
+
+| Phase | Sealed commit(s) | Re-audit result |
+|---|---|---|
+| P1 userspace TCP netstack | `8f976824` | REAL: `wireguard.rs` was replaced by `wireguard/mod.rs` + `netstack.rs`; smoltcp owns IP/TCP over boringtun; raw-byte `WireGuardStream` path was removed; outbound dial now targets the requested in-tunnel host/port. |
+| P2 UDP-over-WG | `069c1e96`, `7964e5a6` | REAL: `WgUdpSocket`, UDP outbound factories, endpoint UDP sessions, persistent endpoint runtime, and dual-stack UDP happy-path stress are present. |
+| P3 concurrency hardening | `9dadcd10` | REAL: per-peer UDP socket buckets, watch-based recv readiness, ephemeral port dedup/reclaim, UDP scratch-buffer reuse, `ensure_started` TOCTOU guard, parsed `udp_timeout`, and TCP concurrent-dial stress are present. |
+| P4 MIG-02 | `c0e11036` | REAL: disabled WireGuard outbound is loud, and outbound `mtu`/`reserved`/`allowed_ips` are consumed or validated instead of islanded. |
+| P5 live Go proof | `9f0bf903` | REAL: 04b harness exists and proves Rust→Go request plus Go→Rust response through WG against Go sing-box. Its documented limitation was also real at that time: Rust had no incoming TCP forwarder before P6. |
+
+### Phase 6 delivered (incoming TCP listener + independent Go→Rust proof)
+
+P6 closes the Phase 5 limitation from the screenshot.
+
+- Config/IR: endpoint `listen_ports` is accepted by the strict v2 endpoint
+  schema, lowered into `EndpointIR.wireguard_listen_ports`, round-tripped through
+  raw IR, and type/range checked as TCP port numbers.
+- Transport: `WireGuardConfig.listen_ports` opens smoltcp TCP listeners inside
+  the WG netstack. Established listener sockets are converted into `TcpAccept`
+  values carrying `WgTcpStream`, local address, and remote address.
+- Endpoint: `WireGuardEndpoint` consumes accept receivers, spawns WG-runtime
+  accept tasks after both transport startup and connection-handler registration
+  are ready, builds `InboundContext`, and calls `route_connection`.
+- Local destination parity: accepted traffic to the endpoint's WG-local address
+  is translated to loopback before routing, while `origin_destination` preserves
+  the original WG destination. This matches the existing outbound/local-address
+  handling and lets live single-host proof reach the local stub without proxy
+  recursion.
+- 04b harness: now proves both the original Rust→Go→stub→Go→Rust curl and an
+  independent Go→Rust curl:
+  `curl -x socks5://127.0.0.1:$GM http://10.0.0.2:$STUB/wg04b-rust`.
+  Go routes `10.0.0.2/32` to `wg-go`; Rust accepts the in-tunnel TCP connection
+  on `listen_ports`, routes it through the endpoint handler, translates
+  `10.0.0.2:$STUB` to `127.0.0.1:$STUB`, and reaches the direct stub.
+
+### Phase 6 verification snapshot
+
+| Command | Result |
+|---|---|
+| `cargo test -p sb-config wireguard` | PASS: 18 passed; endpoint `listen_ports` lowering/raw/type coverage included |
+| `cargo test -p sb-transport wireguard::netstack --features transport_wireguard` | PASS: 15 passed; incoming TCP listener + paired-netstack ping/pong included |
+| `cargo test -p sb-core wireguard --features router` | PASS: 8 passed; endpoint listener routes accepted TCP to `ConnectionHandler` |
+| `cargo test -p sb-adapters --features adapter-wireguard-outbound,adapter-wireguard-endpoint,router --lib wireguard` | PASS: 12 passed |
+| `cargo test -p app --features adapters --test wireguard_endpoint_test --test wireguard_endpoint_e2e` | PASS: 10 passed |
+| `SKIP_GO_BUILD=1 GO_BIN=/tmp/gp04b_build/sing-box WORK=/tmp/pf04b-wg-live-p6 bash .../post_fable_package04b_wg_live_proof_harness.sh` | PASS: Rust→Go round-trip and independent Go→Rust curl both green |
+| `/tmp/pf04b-wg-live-p6/result.json` | status=PASS; both curl statuses 200; `stub_hit`, `stub_go_to_rust_hit`, `go_inbound_from_wg_hit`, `rust_outbound_to_wg_hit`, `go_outbound_to_rust_wg_hit`, `rust_inbound_from_go_wg_hit` all true; cleanup=complete |
+| `cargo check -p app --features adapters,clash_api` | PASS |
+| `cargo check -p app --features parity` | PASS |
+| `cargo check --workspace --all-features` | PASS |
+| `cargo fmt --all -- --check` + `git diff --check` | PASS |
+| `bash agents-only/06-scripts/verify-consistency.sh` | PASS; `active_context.md` 96 lines and pointers resolve |
+
+### P7/P8 follow-up posture
+
+- **P7 `system:true` kernel WireGuard — PLANNED, not implemented**. Proposed
+  phases: audit OS/kernel-WG surfaces and privilege requirements; define exact
+  config semantics for `system_interface`/`interface_name`; implement interface
+  lifecycle and route ownership per platform; add manual privileged gates; only
+  then decide whether it can become a default user path.
+- **P8 smoltcp→lwIP — DEFERRED**. No migration is justified by current
+  correctness evidence. Triggers would be sustained performance/BDP failure,
+  TCP option correctness gaps, fragmentation/PMTU defects, or live workload
+  failures that cannot be reasonably fixed behind the current `WireGuardTransport`
+  seam. If triggered, plan as benchmark → adapter seam → dual-stack parity tests
+  → rollback-safe migration.
+
+### post004 closure (updated 2026-06-27)
+
+Phase 1-6 complete. The WireGuard userspace dataplane is proven:
 - **Phase 1**: smoltcp netstack + boringtun tunnel (real IP packets, not raw bytes).
 - **Phase 2**: UDP-over-WG via smoltcp `udp::Socket`.
 - **Phase 3**: multi-socket concurrency (per-peer bucketing, port dedup, TOCTOU fix,
   idle reap, TCP stress).
 - **Phase 4**: MIG-02 loud disabled builder + islanded mtu/reserved/allowed_ips.
 - **Phase 5**: live round-trip proof vs Go sing-box (Rust→Go→stub→Go→Rust through WG).
+- **Phase 6**: endpoint incoming TCP listener and independent Go→Rust curl proof.
 
-No Phase 6 is planned. Future WireGuard work (if any) would be: incoming TCP forwarder
-for smoltcp netstack (enabling Go-initiated connections to Rust), performance tuning
-(smoltcp → lwIP migration path documented in Phase 1), and `system: true` kernel
-WireGuard integration.
+Future WireGuard work is no longer a hidden Phase 6 item. The remaining major
+lines are P7 `system:true` kernel-WG planning and P8 smoltcp→lwIP only if evidence
+requires it.

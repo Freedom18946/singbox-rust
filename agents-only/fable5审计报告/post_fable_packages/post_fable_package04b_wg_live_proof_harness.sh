@@ -9,20 +9,21 @@
 #     mixed inbound: 127.0.0.1:RM  mixed inbound: 127.0.0.1:GM
 #     http-out → 127.0.0.1:STUB    http-out → 127.0.0.1:STUB
 #
-# Round-trip proof (Rust→Go→stub→Go→Rust):
+# Round-trip proof 1 (Rust→Go→stub→Go→Rust):
 #   curl -x socks5://127.0.0.1:RM http://172.20.0.100:STUB/wg04b
 #   Rust routes 172.20.0.100 → wg-rust (endpoint-as-outbound) → tunnel → Go
 #   Go WG netstack receives 172.20.0.100:STUB, routes → http-out → stub
 #   stub responds → Go → tunnel → Rust → curl (response traverses Go→Rust)
 #
+# Round-trip proof 2 (Go→Rust independent incoming TCP):
+#   curl -x socks5://127.0.0.1:GM http://10.0.0.2:STUB/wg04b-rust
+#   Go routes 10.0.0.2 → wg-go → tunnel → Rust smoltcp listener
+#   Rust endpoint handler translates local WG destination → loopback → direct stub.
+#
 # The round-trip proves bidirectional WG tunnel:
 #   - Request path: Rust → WG tunnel → Go (Rust initiates, Go receives)
 #   - Response path: Go → WG tunnel → Rust (Go sends back, Rust receives)
-#
-# Limitation: a Go-initiated curl through WG to Rust is not possible because
-# the Rust smoltcp netstack only supports outbound dial (no incoming TCP
-# forwarder, unlike Go's gvisor SetTransportProtocolHandler). The round-trip
-# response path already proves Go→Rust tunnel traversal.
+#   - Independent incoming path: Go → WG tunnel → Rust listener → handler → stub
 #
 # SOCKS5 proxy is used (not HTTP) because the Rust HTTP inbound hardcodes
 # ip:None in RouteCtx, preventing ip_cidr rule matching. SOCKS5 with an
@@ -54,6 +55,9 @@ KEYPAIR_FILE="$WORK/keypair.txt"
 CURL_FWD_BODY="$WORK/curl_fwd.body"
 CURL_FWD_ERR="$WORK/curl_fwd.err"
 CURL_FWD_STATUS="$WORK/curl_fwd.status"
+CURL_IN_BODY="$WORK/curl_in.body"
+CURL_IN_ERR="$WORK/curl_in.err"
+CURL_IN_STATUS="$WORK/curl_in.status"
 
 GO_BUILD_STATUS="not_run"
 RUST_BUILD_STATUS="not_run"
@@ -65,9 +69,14 @@ GO_STARTED_SEEN="false"
 RUST_STARTED_SEEN="false"
 CURL_FWD_STATUS_VALUE=""
 CURL_FWD_SUCCESS="false"
+CURL_IN_STATUS_VALUE=""
+CURL_IN_SUCCESS="false"
 STUB_FWD_HIT="false"
+STUB_IN_HIT="false"
 GO_INBOUND_HIT="false"
 RUST_OUTBOUND_HIT="false"
+GO_TO_RUST_HIT="false"
+RUST_INBOUND_HIT="false"
 CLEANUP_STATUS="not_run"
 MESSAGE=""
 GO_PID=""
@@ -95,9 +104,14 @@ json_result() {
   PF04B_RUST_STARTED_SEEN="$RUST_STARTED_SEEN" \
   PF04B_CURL_FWD_STATUS="$CURL_FWD_STATUS_VALUE" \
   PF04B_CURL_FWD_SUCCESS="$CURL_FWD_SUCCESS" \
+  PF04B_CURL_IN_STATUS="$CURL_IN_STATUS_VALUE" \
+  PF04B_CURL_IN_SUCCESS="$CURL_IN_SUCCESS" \
   PF04B_STUB_FWD_HIT="$STUB_FWD_HIT" \
+  PF04B_STUB_IN_HIT="$STUB_IN_HIT" \
   PF04B_GO_INBOUND_HIT="$GO_INBOUND_HIT" \
   PF04B_RUST_OUTBOUND_HIT="$RUST_OUTBOUND_HIT" \
+  PF04B_GO_TO_RUST_HIT="$GO_TO_RUST_HIT" \
+  PF04B_RUST_INBOUND_HIT="$RUST_INBOUND_HIT" \
   PF04B_CLEANUP_STATUS="$CLEANUP_STATUS" \
   PF04B_WORK="$WORK" \
   python3 - <<'PY' > "$RESULT"
@@ -123,9 +137,14 @@ data = {
         "rust_started_seen": bool_env("PF04B_RUST_STARTED_SEEN"),
         "curl_round_trip_status": os.environ["PF04B_CURL_FWD_STATUS"],
         "curl_round_trip_success": bool_env("PF04B_CURL_FWD_SUCCESS"),
+        "curl_go_to_rust_status": os.environ["PF04B_CURL_IN_STATUS"],
+        "curl_go_to_rust_success": bool_env("PF04B_CURL_IN_SUCCESS"),
         "stub_hit": bool_env("PF04B_STUB_FWD_HIT"),
+        "stub_go_to_rust_hit": bool_env("PF04B_STUB_IN_HIT"),
         "go_inbound_from_wg_hit": bool_env("PF04B_GO_INBOUND_HIT"),
         "rust_outbound_to_wg_hit": bool_env("PF04B_RUST_OUTBOUND_HIT"),
+        "go_outbound_to_rust_wg_hit": bool_env("PF04B_GO_TO_RUST_HIT"),
+        "rust_inbound_from_go_wg_hit": bool_env("PF04B_RUST_INBOUND_HIT"),
         "cleanup": os.environ["PF04B_CLEANUP_STATUS"],
     },
     "artifacts": {
@@ -138,6 +157,7 @@ data = {
         "stub_log": "stub.log",
         "keypair": "keypair.txt",
         "curl_fwd_body": "curl_fwd.body",
+        "curl_in_body": "curl_in.body",
     },
 }
 print(json.dumps(data, indent=2, sort_keys=True))
@@ -223,6 +243,17 @@ class Handler(socketserver.BaseRequestHandler):
         first = text.splitlines()[0] if text.splitlines() else ""
         log(f"CONNECT_LINE {first}")
         if not first.startswith("CONNECT "):
+            if first.startswith("GET "):
+                log(f"DIRECT_LINE {first}")
+                body = b"WG04B-OK\n"
+                response = (
+                    b"HTTP/1.1 200 OK\r\n"
+                    + f"Content-Length: {len(body)}\r\n".encode("ascii")
+                    + b"Content-Type: text/plain\r\nConnection: close\r\n\r\n"
+                    + body
+                )
+                self.request.sendall(response)
+                return
             self.request.sendall(b"HTTP/1.1 405 Method Not Allowed\r\nConnection: close\r\n\r\n")
             return
         self.request.sendall(b"HTTP/1.1 200 Connection Established\r\nConnection: keep-alive\r\n\r\n")
@@ -326,6 +357,7 @@ generate_configs() {
       "address": ["10.0.0.2/32"],
       "private_key": "$RUST_PRIV",
       "listen_port": $r_port,
+      "listen_ports": [$stub_port],
       "peers": [{
         "public_key": "$GO_PUB",
         "address": "127.0.0.1",
@@ -342,9 +374,10 @@ generate_configs() {
   ],
   "route": {
     "rules": [
+      { "ip_cidr": ["127.0.0.1/32"], "outbound": "direct" },
       { "ip_cidr": ["172.20.0.100/32"], "outbound": "wg-rust" }
     ],
-    "final": "block"
+    "final": "direct"
   }
 }
 EOF
@@ -378,6 +411,7 @@ EOF
   ],
   "route": {
     "rules": [
+      { "ip_cidr": ["10.0.0.2/32"], "outbound": "wg-go" },
       { "ip_cidr": ["172.20.0.100/32"], "outbound": "http-out" }
     ],
     "final": "block"
@@ -511,11 +545,32 @@ run_forward_curl() {
   fi
 }
 
+run_go_to_rust_curl() {
+  log "independent Go→Rust curl: http://10.0.0.2:$STUB_PORT/wg04b-rust via socks5://$GM_PORT"
+  CURL_IN_STATUS_VALUE="$(curl -x "socks5://127.0.0.1:$GM_PORT" -sS -o "$CURL_IN_BODY" -w "%{http_code}" --max-time 30 "http://10.0.0.2:$STUB_PORT/wg04b-rust" 2> "$CURL_IN_ERR" || true)"
+  printf '%s\n' "$CURL_IN_STATUS_VALUE" > "$CURL_IN_STATUS"
+  if [ "$CURL_IN_STATUS_VALUE" = "200" ] && grep -q "WG04B-OK" "$CURL_IN_BODY" 2>/dev/null; then
+    CURL_IN_SUCCESS="true"
+  fi
+  if grep -q "DIRECT_LINE GET /wg04b-rust" "$STUB_LOG" 2>/dev/null; then
+    STUB_IN_HIT="true"
+  fi
+  if grep -q "outbound connection to 10.0.0.2:$STUB_PORT" "$GO_LOG" 2>/dev/null || \
+     grep -q "inbound connection to 10.0.0.2:$STUB_PORT" "$GO_LOG" 2>/dev/null; then
+    GO_TO_RUST_HIT="true"
+  fi
+  if grep -q "incoming TCP connection from 10.0.0.1:" "$RUST_LOG" 2>/dev/null && \
+     grep -q "to 10.0.0.2:$STUB_PORT inside WG tunnel" "$RUST_LOG" 2>/dev/null; then
+    RUST_INBOUND_HIT="true"
+  fi
+}
+
 # ── main ────────────────────────────────────────────────────────────────
 log "repo=$REPO"
 log "work=$WORK"
 rm -f "$RUST_LOG" "$GO_LOG" "$STUB_LOG" "$STUB_PORT_FILE" "$RESULT" \
-      "$CURL_FWD_BODY" "$CURL_FWD_ERR" "$CURL_FWD_STATUS"
+      "$CURL_FWD_BODY" "$CURL_FWD_ERR" "$CURL_FWD_STATUS" \
+      "$CURL_IN_BODY" "$CURL_IN_ERR" "$CURL_IN_STATUS"
 
 if ! run_go_build; then
   finish "FAIL" 1 "Go sing-box build failed"
@@ -559,6 +614,7 @@ log "waiting ${HANDSHAKE_WAIT}s for WireGuard handshake to settle"
 sleep "$HANDSHAKE_WAIT"
 
 run_forward_curl
+run_go_to_rust_curl
 
 local_roundtrip_ok="false"
 if [ "$CURL_FWD_SUCCESS" = "true" ] && [ "$STUB_FWD_HIT" = "true" ] && \
@@ -566,8 +622,14 @@ if [ "$CURL_FWD_SUCCESS" = "true" ] && [ "$STUB_FWD_HIT" = "true" ] && \
   local_roundtrip_ok="true"
 fi
 
-if [ "$local_roundtrip_ok" = "true" ]; then
-  finish "PASS" 0 "WireGuard live round-trip proof PASS: Rust→Go (request via WG tunnel) → stub → Go→Rust (response via WG tunnel); all four assertions green (curl 200 + body + stub CONNECT + Go inbound + Rust outbound)"
+local_go_to_rust_ok="false"
+if [ "$CURL_IN_SUCCESS" = "true" ] && [ "$STUB_IN_HIT" = "true" ] && \
+   [ "$GO_TO_RUST_HIT" = "true" ] && [ "$RUST_INBOUND_HIT" = "true" ]; then
+  local_go_to_rust_ok="true"
 fi
 
-finish "FAIL" 1 "WireGuard live proof failed (roundtrip=$local_roundtrip_ok; curl=$CURL_FWD_STATUS_VALUE stub=$STUB_FWD_HIT go_in=$GO_INBOUND_HIT rust_out=$RUST_OUTBOUND_HIT)"
+if [ "$local_roundtrip_ok" = "true" ] && [ "$local_go_to_rust_ok" = "true" ]; then
+  finish "PASS" 0 "WireGuard live proof PASS: Rust→Go round-trip and independent Go→Rust incoming TCP curl both green"
+fi
+
+finish "FAIL" 1 "WireGuard live proof failed (roundtrip=$local_roundtrip_ok curl=$CURL_FWD_STATUS_VALUE stub=$STUB_FWD_HIT go_in=$GO_INBOUND_HIT rust_out=$RUST_OUTBOUND_HIT; go_to_rust=$local_go_to_rust_ok curl_in=$CURL_IN_STATUS_VALUE stub_in=$STUB_IN_HIT go_to_rust_hit=$GO_TO_RUST_HIT rust_in=$RUST_INBOUND_HIT)"

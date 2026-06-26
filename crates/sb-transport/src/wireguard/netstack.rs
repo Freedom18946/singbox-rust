@@ -174,6 +174,20 @@ impl<'a> TxToken for WgTxToken<'a> {
 
 // ===================== caller-facing stream =====================
 
+/// An incoming TCP connection accepted by a netstack listener.
+///
+/// Carries the established `WgTcpStream` plus the local and remote addresses so
+/// the endpoint can build an `InboundContext` for routing.
+#[derive(Debug)]
+pub struct TcpAccept {
+    /// The established stream inside the WG tunnel.
+    pub stream: WgTcpStream,
+    /// The local (WG interface) address the connection arrived at.
+    pub local: SocketAddr,
+    /// The remote (in-tunnel peer) address that initiated the connection.
+    pub remote: SocketAddr,
+}
+
 /// A TCP stream flowing through the WireGuard tunnel's userspace netstack.
 #[derive(Debug)]
 pub struct WgTcpStream {
@@ -363,6 +377,14 @@ struct TcpEntry {
     caller_closed: bool,
 }
 
+/// A listening socket inside the WG netstack, waiting for incoming TCP from the
+/// tunnel. Mirrors Go gvisor's `SetTransportProtocolHandler` but for specific
+/// ports (smoltcp does not support catch-all-port listening).
+struct TcpListenerEntry {
+    handle: SocketHandle,
+    local: SocketAddr,
+}
+
 /// Per-UDP-socket driver-side bookkeeping.
 struct UdpEntry {
     handle: SocketHandle,
@@ -393,6 +415,13 @@ struct Driver {
     udp_rxbuf: Vec<u8>,
     entries: Vec<TcpEntry>,
     udp_entries: Vec<UdpEntry>,
+    /// TCP listeners inside the tunnel (incoming connections from WG peers).
+    listeners: Vec<TcpListenerEntry>,
+    /// Channel to deliver accepted incoming TCP connections to the endpoint.
+    /// `None` when no listener was requested → incoming TCP is dropped.
+    tcp_accept_tx: Option<mpsc::Sender<TcpAccept>>,
+    /// Ports to listen on inside the tunnel (consumed at driver start).
+    listen_ports: Vec<u16>,
 }
 
 impl Driver {
@@ -415,6 +444,42 @@ impl Driver {
         let mut scratch = vec![0u8; WG_MAX_PACKET];
         let mut poll_timer = tokio::time::interval(Duration::from_millis(WG_POLL_MS));
         poll_timer.set_missed_tick_behavior(tokio::time::MissedTickBehavior::Delay);
+
+        // Open TCP listeners inside the tunnel for each configured listen port.
+        // smoltcp listeners are port-specific (no catch-all like gvisor's
+        // SetTransportProtocolHandler). Each listener binds to all WG interface
+        // addresses (wildcard) so incoming connections to any local IP on that
+        // port are accepted.
+        for &port in &self.listen_ports {
+            let mut sock = tcp::Socket::new(
+                tcp::SocketBuffer::new(vec![0u8; TCP_BUF]),
+                tcp::SocketBuffer::new(vec![0u8; TCP_BUF]),
+            );
+            let listen_ep = IpListenEndpoint { addr: None, port };
+            match sock.listen(listen_ep) {
+                Ok(()) => {
+                    let handle = self.sockets.add(sock);
+                    let local = SocketAddr::new(
+                        self.local_v4
+                            .map(IpAddr::V4)
+                            .unwrap_or(IpAddr::V4(Ipv4Addr::UNSPECIFIED)),
+                        port,
+                    );
+                    debug!(
+                        "WireGuard netstack: listening inside tunnel on port {} (handle {})",
+                        port, handle
+                    );
+                    self.listeners.push(TcpListenerEntry { handle, local });
+                }
+                Err(e) => {
+                    warn!(
+                        "WireGuard netstack: failed to listen on port {} inside tunnel: {:?}",
+                        port, e
+                    );
+                }
+            }
+        }
+        self.listen_ports.clear(); // consumed
 
         // Warm up: kick the Noise handshake so keys are usually ready before the first
         // dial (the SYN would trigger it anyway, but this shaves the first-connect RTT).
@@ -459,6 +524,7 @@ impl Driver {
                 .poll(SmolInstant::now(), &mut self.device, &mut self.sockets);
             self.flush_tx(&mut scratch).await;
             self.pump_sockets();
+            self.pump_listeners();
             self.pump_udp_recv();
         }
     }
@@ -826,6 +892,93 @@ impl Driver {
         }
     }
 
+    /// Check listening sockets for accepted incoming TCP connections from the
+    /// tunnel. On accept, the listener socket becomes the established connection,
+    /// so a new listener is created for the same port. The accepted stream is
+    /// sent to the endpoint via `tcp_accept_tx`.
+    fn pump_listeners(&mut self) {
+        // Collect indices of listeners that have accepted a connection.
+        // smoltcp's `accept()` returns Ok(remote) when the socket has
+        // transitioned from LISTEN to ESTABLISHED.
+        let mut accepts: Vec<(usize, SocketAddr, SocketAddr)> = Vec::new();
+        for (idx, listener) in self.listeners.iter().enumerate() {
+            let sock = self.sockets.get_mut::<tcp::Socket>(listener.handle);
+            // smoltcp 0.11 has no `accept()` method. A listening socket
+            // transitions from LISTEN to ESTABLISHED when a SYN arrives.
+            // `remote_endpoint()` returns `Some` only when established.
+            if let Some(remote_ep) = sock.remote_endpoint() {
+                let local = sock
+                    .local_endpoint()
+                    .map(|ep| SocketAddr::new(from_smol_addr(ep.addr), ep.port))
+                    .unwrap_or(listener.local);
+                let remote = SocketAddr::new(from_smol_addr(remote_ep.addr), remote_ep.port);
+                accepts.push((idx, local, remote));
+            }
+        }
+
+        // Process accepts in reverse to keep indices valid during swap_remove.
+        for (idx, local, remote) in accepts.into_iter().rev() {
+            let listener = self.listeners.swap_remove(idx);
+            // The listener's socket handle is now the established connection.
+
+            // Create the caller-facing stream channels.
+            let (to_caller_tx, to_caller_rx) = mpsc::channel(TO_CALLER_CAP);
+            let (from_caller_tx, from_caller_rx) = mpsc::unbounded_channel();
+            let stream = WgTcpStream::new(to_caller_rx, from_caller_tx, self.wake.clone());
+
+            // Move the accepted socket into the entries vector for I/O servicing.
+            // `local_port: 0` means no ephemeral port to reclaim (the listener
+            // port is fixed and always in use by the next listener).
+            self.entries.push(TcpEntry {
+                handle: listener.handle,
+                local_port: 0,
+                to_caller: to_caller_tx,
+                from_caller: from_caller_rx,
+                connect_done: None, // already established
+                pending_stream: None,
+                tx_pending: VecDeque::new(),
+                caller_closed: false,
+            });
+
+            // Deliver the accept to the endpoint.
+            if let Some(tx) = &self.tcp_accept_tx {
+                if let Err(error) = tx.try_send(TcpAccept {
+                    stream,
+                    local,
+                    remote,
+                }) {
+                    warn!(
+                        "WireGuard netstack: failed to deliver accepted TCP connection from {} to {}: {}",
+                        remote, local, error
+                    );
+                }
+            }
+
+            // Create a new listener for the same port to accept more connections.
+            let mut new_sock = tcp::Socket::new(
+                tcp::SocketBuffer::new(vec![0u8; TCP_BUF]),
+                tcp::SocketBuffer::new(vec![0u8; TCP_BUF]),
+            );
+            let listen_ep = IpListenEndpoint {
+                addr: None,
+                port: local.port(),
+            };
+            if let Err(e) = new_sock.listen(listen_ep) {
+                warn!(
+                    "WireGuard netstack: failed to re-listen on port {}: {:?}",
+                    local.port(),
+                    e
+                );
+            } else {
+                let new_handle = self.sockets.add(new_sock);
+                self.listeners.push(TcpListenerEntry {
+                    handle: new_handle,
+                    local,
+                });
+            }
+        }
+    }
+
     /// Deliver inbound datagrams to callers; reap sockets whose caller is gone.
     fn pump_udp_recv(&mut self) {
         let sockets = &mut self.sockets;
@@ -885,7 +1038,8 @@ impl WgNetStack {
         local_addrs: &[IpAddr],
         mtu: usize,
         reserved: [u8; 3],
-    ) -> Self {
+        listen_ports: &[u16],
+    ) -> (Self, Option<mpsc::Receiver<TcpAccept>>) {
         let mut config = Config::new(HardwareAddress::Ip);
         config.random_seed = rand::random();
         let mut device = WgPhy::new(mtu);
@@ -926,6 +1080,12 @@ impl WgNetStack {
 
         let (ctrl_tx, ctrl_rx) = mpsc::channel(64);
         let wake = Arc::new(Notify::new());
+        let (tcp_accept_tx, tcp_accept_rx) = if listen_ports.is_empty() {
+            (None, None)
+        } else {
+            let (tx, rx) = mpsc::channel::<TcpAccept>(64);
+            (Some(tx), Some(rx))
+        };
 
         let driver = Driver {
             tunn,
@@ -944,11 +1104,14 @@ impl WgNetStack {
             udp_rxbuf: vec![0u8; WG_MAX_PACKET],
             entries: Vec::new(),
             udp_entries: Vec::new(),
+            listeners: Vec::new(),
+            tcp_accept_tx,
+            listen_ports: listen_ports.to_vec(),
         };
 
         tokio::spawn(driver.run());
 
-        Self { ctrl_tx }
+        (Self { ctrl_tx }, tcp_accept_rx)
     }
 
     /// Open a TCP connection to `host:port` inside the tunnel.
@@ -1081,7 +1244,115 @@ mod tests {
         let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
         // peer endpoint points at an unused loopback port (no real peer in unit tests).
         let peer = "127.0.0.1:1".parse().unwrap();
-        WgNetStack::new(tunn, socket, peer, local_addrs, 1408, [0, 0, 0])
+        let (stack, _accept_rx) =
+            WgNetStack::new(tunn, socket, peer, local_addrs, 1408, [0, 0, 0], &[]);
+        stack
+    }
+
+    fn keypair_a() -> (&'static str, &'static str) {
+        (
+            "IPCEEDl2GPOfgm3dOWpu60ukWO0ixOEr7vN8kN92Sm8=",
+            "rJwEZnkVL9bdiicGfKitXhif7bCvqm0NOjeI1QSM5gU=",
+        )
+    }
+
+    fn keypair_b() -> (&'static str, &'static str) {
+        (
+            "GKaTjB3F8RpZJdd10plIlncr36M/Oxml/pkR5doSqHI=",
+            "tjXnHkpr2ZR9MI2udxlxDBpiRbQj1ABu9ZvZcWCPOBc=",
+        )
+    }
+
+    fn tunn_from_keys(private_b64: &str, peer_public_b64: &str) -> Tunn {
+        use base64::{engine::general_purpose::STANDARD as B64, Engine as _};
+        let priv_arr: [u8; 32] = B64.decode(private_b64).unwrap().try_into().unwrap();
+        let peer_arr: [u8; 32] = B64.decode(peer_public_b64).unwrap().try_into().unwrap();
+        Tunn::new(
+            boringtun::x25519::StaticSecret::from(priv_arr),
+            boringtun::x25519::PublicKey::from(peer_arr),
+            None,
+            Some(25),
+            0,
+            None,
+        )
+    }
+
+    #[tokio::test]
+    async fn listen_ports_open_accept_receiver_only_when_configured() {
+        let (priv_a, _pub_a) = keypair_a();
+        let (_priv_b, pub_b) = keypair_b();
+        let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let peer = "127.0.0.1:1".parse().unwrap();
+        let local_addrs = [IpAddr::V4(Ipv4Addr::new(10, 9, 0, 1))];
+
+        let (_stack, accept_rx) = WgNetStack::new(
+            tunn_from_keys(priv_a, pub_b),
+            socket,
+            peer,
+            &local_addrs,
+            1408,
+            [0, 0, 0],
+            &[18080],
+        );
+
+        assert!(accept_rx.is_some(), "listen_ports creates accept receiver");
+    }
+
+    #[tokio::test]
+    async fn paired_netstacks_accept_incoming_tcp_and_echo() {
+        use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+        let (priv_a, pub_a) = keypair_a();
+        let (priv_b, pub_b) = keypair_b();
+        let socket_a = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let socket_b = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let outer_a = socket_a.local_addr().unwrap();
+        let outer_b = socket_b.local_addr().unwrap();
+
+        let local_a = [IpAddr::V4(Ipv4Addr::new(10, 9, 0, 1))];
+        let local_b = [IpAddr::V4(Ipv4Addr::new(10, 9, 0, 2))];
+        let (_stack_a, accept_rx) = WgNetStack::new(
+            tunn_from_keys(priv_a, pub_b),
+            socket_a,
+            outer_b,
+            &local_a,
+            1408,
+            [0, 0, 0],
+            &[18080],
+        );
+        let (stack_b, _accept_rx_b) = WgNetStack::new(
+            tunn_from_keys(priv_b, pub_a),
+            socket_b,
+            outer_a,
+            &local_b,
+            1408,
+            [0, 0, 0],
+            &[],
+        );
+        let mut accept_rx = accept_rx.expect("listener accept receiver");
+
+        let mut client = stack_b
+            .connect_tcp("10.9.0.1", 18080, Duration::from_secs(5))
+            .await
+            .expect("client connects to listener through WG");
+        let accept = tokio::time::timeout(Duration::from_secs(5), accept_rx.recv())
+            .await
+            .expect("accept should arrive")
+            .expect("accept channel open");
+
+        assert_eq!(accept.local, "10.9.0.1:18080".parse().unwrap());
+        assert_eq!(accept.remote.ip(), IpAddr::V4(Ipv4Addr::new(10, 9, 0, 2)));
+
+        let mut server = accept.stream;
+        client.write_all(b"ping").await.unwrap();
+        let mut buf = [0u8; 4];
+        server.read_exact(&mut buf).await.unwrap();
+        assert_eq!(&buf, b"ping");
+
+        server.write_all(b"pong").await.unwrap();
+        let mut reply = [0u8; 4];
+        client.read_exact(&mut reply).await.unwrap();
+        assert_eq!(&reply, b"pong");
     }
 
     #[tokio::test]

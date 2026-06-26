@@ -783,6 +783,8 @@ pub struct RawEndpointIR {
     /// WireGuard: Number of worker threads
     #[serde(default)]
     pub wireguard_workers: Option<i32>,
+    #[serde(default)]
+    pub wireguard_listen_ports: Option<Vec<u16>>,
 
     // Tailscale-specific fields
     /// Tailscale: State directory path
@@ -837,6 +839,7 @@ impl From<RawEndpointIR> for EndpointIR {
                 .map(|v| v.into_iter().map(Into::into).collect()),
             wireguard_udp_timeout: raw.wireguard_udp_timeout,
             wireguard_workers: raw.wireguard_workers,
+            wireguard_listen_ports: raw.wireguard_listen_ports,
             tailscale_state_directory: raw.tailscale_state_directory,
             tailscale_auth_key: raw.tailscale_auth_key,
             tailscale_control_url: raw.tailscale_control_url,
@@ -3353,6 +3356,7 @@ mod tests {
             "wireguard_address": ["10.0.0.1/24"],
             "wireguard_mtu": 1420,
             "wireguard_listen_port": 51820,
+            "wireguard_listen_ports": [80, 443],
             "wireguard_peers": [
                 {
                     "address": "192.168.1.1",
@@ -3368,6 +3372,7 @@ mod tests {
         assert_eq!(ir.ty, super::super::EndpointType::Wireguard);
         assert_eq!(ir.tag.as_deref(), Some("wg0"));
         assert_eq!(ir.wireguard_private_key.as_deref(), Some("priv-key-base64"));
+        assert_eq!(ir.wireguard_listen_ports.as_ref().unwrap(), &vec![80, 443]);
         assert_eq!(ir.wireguard_peers.as_ref().unwrap().len(), 1);
         // roundtrip
         let json = serde_json::to_value(&ir).unwrap();

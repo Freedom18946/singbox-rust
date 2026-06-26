@@ -10,78 +10,30 @@
 
 ---
 
-## Resume (2026-06-26e) - post004 WireGuard live proof (Phase 5)
+## Resume (2026-06-27) - post004 WireGuard incoming TCP P6
 
-- **post004 Phase 5 DONE**: live round-trip proof vs Go sing-box. 04b harness
-  builds Go sing-box 1.13.13 (with_wireguard,with_gvisor) + Rust app, generates WG
-  keypairs, starts both kernels on loopback, and proves HTTP round-trip through the
-  WG tunnel: curl → Rust mixed → wg-rust (endpoint-as-outbound) → WG tunnel → Go
-  gvisor netstack → http-out → stub → response back Go→Rust. Four assertions all
-  green: curl 200 + body WG04B-OK + stub CONNECT + Go inbound + Rust outbound.
-  `result.json` status=PASS, cleanup=complete.
-- Honest limit: Go-initiated curl to Rust not possible (Rust smoltcp netstack has
-  no incoming TCP forwarder, unlike Go gvisor). Round-trip response path already
-  proves Go→Rust traversal. SOCKS5 proxy used (not HTTP) because Rust HTTP inbound
-  hardcodes ip:None in RouteCtx, preventing ip_cidr matching.
-- **post004 CLOSED**: Phase 1-5 complete. No Phase 6 planned.
-- Verified: 04b harness PASS (`/tmp/pf04b-wg-live/result.json`); Go build PASS;
-  Rust build PASS. Phase 1 `8f976824`, Phase 2 `069c1e96`, Phase 3 `9dadcd10`,
-  Phase 4 `c0e11036` sealed.
-
-## Resume (2026-06-26d) - post004 WireGuard MIG-02 (Phase 4)
-
-- **post004 Phase 4 DONE**: loud disabled-feature outbound builder + islanded
-  mtu/reserved/allowed_ips consumption. Disabled `adapter-wireguard-outbound` branch now
-  returns `invalid_config_outbound` (loud) instead of silent `None`. `OutboundIR` +
-  `RawOutboundIR` gained `wireguard_mtu` / `wireguard_reserved`; v2 validator extracts
-  them; `WireGuardOutboundConfig::try_from` consumes `mtu` (unwrap_or 1420) + `reserved`
-  (3-byte loud validation) + validates `allowed_ips` CIDRs loudly. Replaces hardcoded
-  1420 / [0,0,0] / opaque-string allowed_ips.
-- Verified: sb-config outbound 104, sb-config wireguard 16, compatibility_matrix 6,
-  sb-adapters wireguard 12 (5+7), sb-adapters register 15 (incl disabled-loud),
-  transport-wg 16, core endpoint 29, clippy 0 warn (sb-adapters+sb-config), fmt clean,
-  all-features PASS. Phase 1 `8f976824`, Phase 2 `069c1e96`, Phase 3 `9dadcd10` sealed.
-  Next: P5 live proof vs Go.
-
-## Resume (2026-06-26c) - post004 WireGuard multi-socket concurrency (Phase 3)
-
-- **post004 Phase 3 DONE**: multi-peer UDP socket routing (per-peer `HashMap` bucketing, no
-  cross-peer socket reuse); `recv_from` Notify check-then-await race fixed via `tokio::sync::watch`;
-  ephemeral port dedup + reclaim on socket reap; `pump_udp_recv` 64KB rxbuf hoisted to Driver scratch;
-  `ensure_started` TOCTOU double-fill fixed (re-check under lock); `wireguard_udp_timeout` parsed
-  (`humantime`) + per-peer idle reap; tailscale endpoint `tailscale_udp_timeout` aligned (was hardcoded
-  300s); TCP concurrent-dial stress test added.
-- Verified: transport-wg 16 (14 + port-collision + TCP concurrent-dial), adapters-wg 5, core endpoint
-  29 (23 + 6 new: udp_timeout parse/invalid/none, multi-peer, idle reap, ensure_started concurrent),
-  core registry 8, all-features PASS, fmt/clippy 0 warn. Phase 1 `8f976824`, Phase 2 `069c1e96` sealed.
-  Next: P4 MIG-02 loud disabled builder + mtu/allowed_ips; P5 live proof vs Go.
-
-## Resume (2026-06-26) - post004 WireGuard UDP-over-WG (Phase 2)
-
-- **post004 Phase 2 DONE**: UDP now rides the same userspace WG netstack: `WgUdpSocket`
-  wraps smoltcp `udp::Socket` with `send_to/recv_from`; transport + legacy outbound expose
-  `connect_udp`; registry stores named UDP factories and routes connector detours through them;
-  WireGuard endpoints expose endpoint-backed UDP outbound sessions. During test hardening, endpoint
-  WG driver lifetime moved to a persistent runtime instead of a dropped temporary runtime.
-- Verified: transport-wg 14 (13 + dual-stack accept stress), adapters-wg 5, core endpoint 23, core registry 8,
-  all-features PASS, fmt/clippy clean. Acceptance re-run 2026-06-26 independently reproduced all claimed
-  commands; added `udp_dual_stack_send_to_both_families_queues` to pin the v4+v6 happy path. Phase 1 was
-  already `origin/main`-sealed (`8f976824`). Next: P3 multi-socket concurrency
-  hardening; P4 MIG-02 loud disabled builder + mtu/allowed_ips; P5 live proof vs Go.
+- **post004 P6 DONE**: userspace WG endpoint now accepts incoming in-tunnel TCP on
+  configured endpoint `listen_ports`. Flow: v2 `listen_ports` → EndpointIR →
+  `WireGuardConfig` → smoltcp listener → `TcpAccept` → endpoint
+  `ConnectionHandler::route_connection`; local WG destinations translate to loopback
+  while preserving `origin_destination`.
+- **04b harness extended PASS**: original Rust→Go→stub→Go→Rust curl remains green,
+  and a new independent Go→Rust curl is green: Go mixed → `wg-go` → Rust smoltcp
+  listener → route handler → direct stub. Evidence:
+  `/tmp/pf04b-wg-live-p6/result.json` status=PASS, both curls 200, all stub/Go/Rust
+  hit assertions true, cleanup=complete.
+- **Audit result**: post004 Phase 1-5 claims match their sealed commits/evidence;
+  the prior "No Phase 6 planned" note is superseded by this user-directed P6.
+  Sealed commits: P1 `8f976824`, P2 `069c1e96`/`7964e5a6`, P3 `9dadcd10`,
+  P4 `c0e11036`, P5 `9f0bf903`.
+- **P7/P8 posture**: P7 `system:true` kernel WireGuard is planning-only; P8
+  smoltcp→lwIP is deferred until performance/correctness evidence requires it.
 
 ## Resume (2026-06-20b) - post003 TUN UDP/IPv6 + proxy egress
 
-- **post_fable_package03 DONE**: Enhanced TUN datapath beyond TCP/IPv4 — UDP NAT + IPv6 TCP/UDP
-  reply packets; macOS EISCONN fix; TUN egress through **proxy outbounds** (`connect_tcp_stream`
-  + boxed-stream session relay; was direct-only).
-- **Live root 03b proof PASS** (`/tmp/pf03b_post003_privileged2`): TCP IPv4+IPv6 through HTTP
-  outbound — curl 200 + outbound_hit both stacks + cleanup; IPv6 fully round-tripped. UDP proven
-  by unit test (single-host live UDP-through-utun infeasible: direct egress loops; documented).
-  Limits: SOCKS5/Hyst2 UDP loud-Unsupported; no IP frag. Evidence: post_fable_package03 evidence note.
-
-## Resume (2026-06-20) - P1313-03 DNS rule actions/cache
-- **P1313-03 DONE**: DNS rule fields/logical rules, route-options/action options, answer cache semantics, ECS/predefined wire response, RDRC rejection, and FakeIP-safe reverse mapping are pinned. Evidence: `agents-only/post1313/p1313_03_dns_rule_actions_and_cache_semantics.md`.
-- **P1313-01/02 DONE**: GUI fixture schema baseline and DNS transport manager remain closed; next is P1313-04 route rule engine/network strategy.
+- **post_fable_package03 DONE**: UDP NAT + IPv6 TCP/UDP reply packets; macOS EISCONN fix;
+  TUN egress through proxy outbounds. Live root 03b TCP IPv4+IPv6 proof PASS at
+  `/tmp/pf03b_post003_privileged2`; UDP pinned by unit test. Evidence: package03 note.
 
 ## Strategic State
 
@@ -99,15 +51,11 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 
 ## T3 ClientHello Fingerprint Parity — T3-0…T3-2 DONE (2026-06-08)
 
-- CLOSED (local): functional dataplane (token-match + 4 phases + L18 REALITY_LOCAL gate);
-  normalized-profile parity (committed harness `labs/interop-lab/reality_clienthello_parity/`,
-  digest `bc002612a968fae0`); required field-set parity; coordinated GREASE structure
-  (`6f8ae63a`, independent OsRng per ClientHello, FIXED→RANDOMIZED, 230,242/262,144 unique — sampled).
-- LOCAL-DIAGNOSTIC: from-spec JA4 `t13d1516h2_…` Go==Rust observed locally.
-- OPEN: official FoxIO-tool JA4 crosscheck **PENDING**; extension-order statistical parity;
-  `HelloChrome_Auto` drift; tier-2 real-network camouflage. NON-GOAL: L4 byte identity.
-- A2.3 full capstone runtime status-JSON rehearsal **DEFERRED**. No uTLS-equivalent port.
-- Detail: t32_reality_tier3_governance_update.md; harness commit T3-1B `052d4392`.
+- CLOSED (local): functional dataplane, normalized-profile parity, required field-set parity,
+  coordinated GREASE structure, and local from-spec JA4 Go==Rust diagnostic.
+- OPEN: official FoxIO-tool JA4 crosscheck, extension-order statistical parity,
+  `HelloChrome_Auto` drift, tier-2 camouflage. NON-GOAL: L4 byte identity.
+- A2.3 runtime status-JSON rehearsal DEFERRED. Detail: t32 governance; T3-1B `052d4392`.
 - agents-only/a0_reality_spike/ stays pre-existing untracked (do not commit/delete).
 
 ## REALITY Acceptance (3-tier; golden_spec S4)

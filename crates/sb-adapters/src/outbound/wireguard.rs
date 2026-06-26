@@ -105,6 +105,7 @@ impl WireGuardOutbound {
             mtu: config.mtu,
             reserved: config.reserved,
             connect_timeout: config.connect_timeout,
+            listen_ports: Vec::new(),
         };
 
         // Initialize transport

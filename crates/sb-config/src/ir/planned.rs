@@ -532,6 +532,7 @@ mod tests {
             wireguard_peers: None,
             wireguard_udp_timeout: None,
             wireguard_workers: None,
+            wireguard_listen_ports: None,
             tailscale_state_directory: None,
             tailscale_auth_key: None,
             tailscale_control_url: None,
