@@ -294,3 +294,60 @@ the bar is end-to-end correctness + live proof, not a re-label.
   Phase 5 gate). Phase 1/2/3/4 prove stack mechanics + TCP/UDP wiring + loud failure
   modes + multi-socket concurrency + idle reap + loud disabled builder + islanded
   mtu/reserved/allowed_ips consumption.
+
+### Phase 5 delivered (live round-trip proof vs Go sing-box)
+
+- **04b harness**: `post_fable_package04b_wg_live_proof_harness.sh` — builds Go
+  sing-box (1.13.13, `with_wireguard,with_gvisor`) and Rust app, generates WireGuard
+  keypairs, starts a Python HTTP CONNECT stub, launches both kernels, and proves a live
+  HTTP round-trip through the WG tunnel.
+- **Topology** (single-host loopback, no root):
+  - Rust app: WG endpoint (10.0.0.2/32), mixed inbound, http-out → stub.
+  - Go sing-box: WG endpoint (10.0.0.1/32), mixed inbound, http-out → stub.
+  - curl: `curl -x socks5://127.0.0.1:RM http://172.20.0.100:STUB/wg04b`
+  - Path: curl → Rust mixed → route 172.20.0.100/32 → wg-rust (endpoint-as-outbound) →
+    WG tunnel → Go gvisor netstack → route 172.20.0.100/32 → http-out → stub → response
+    back through Go → WG tunnel → Rust → curl.
+- **Round-trip proof**: the request traverses Rust→Go through the WG tunnel, and the
+  response traverses Go→Rust through the WG tunnel. This proves bidirectional tunnel
+  data flow with a single curl.
+- **Four assertions** (all green):
+  1. `curl_round_trip_success`: HTTP 200 + body `WG04B-OK`.
+  2. `stub_hit`: stub log has `CONNECT_LINE CONNECT 172.20.0.100:STUB_PORT`.
+  3. `go_inbound_from_wg_hit`: Go log has `inbound connection to 172.20.0.100:STUB_PORT`.
+  4. `rust_outbound_to_wg_hit`: Rust log has `outbound TCP connection to
+     172.20.0.100:STUB_PORT tag=wg-rust`.
+- **SOCKS5 not HTTP proxy**: the Rust HTTP inbound hardcodes `ip: None` in `RouteCtx`,
+  preventing `ip_cidr` rule matching. SOCKS5 with an IP-typed address populates
+  `ctx.ip`, enabling the route rule to match. This is a known Rust-side gap (the
+  convenience deciders like `decide_http` do parse host literals, but the production
+  HTTP inbound path calls `decide_with_meta` which does not).
+- **Honest limitation**: a Go-initiated curl through WG to Rust is not possible because
+  the Rust smoltcp netstack only supports outbound dial (no incoming TCP forwarder,
+  unlike Go's gvisor `SetTransportProtocolHandler`). The round-trip response path
+  already proves Go→Rust tunnel traversal. Adding incoming TCP support to the Rust
+  smoltcp netstack is a future enhancement, not a Phase 5 blocker.
+
+### Phase 5 verification snapshot
+
+| Command | Result |
+|---|---|
+| `SKIP_GO_BUILD=1 SKIP_BUILD=1 GO_BIN=/tmp/gp04b_build/sing-box WORK=/tmp/pf04b-wg-live bash .../post_fable_package04b_wg_live_proof_harness.sh` | PASS: `result.json` status=PASS, exit 0 |
+| `cat /tmp/pf04b-wg-live/result.json` | curl 200, stub_hit=true, go_inbound=true, rust_outbound=true, cleanup=complete |
+| Go sing-box build (`go build -tags with_wireguard,with_gvisor`) | PASS (32MB binary, tags confirmed) |
+| Rust app build (`cargo build -p app --features adapters,clash_api`) | PASS |
+
+### post004 closure
+
+Phase 1-5 complete. The WireGuard userspace dataplane is proven:
+- **Phase 1**: smoltcp netstack + boringtun tunnel (real IP packets, not raw bytes).
+- **Phase 2**: UDP-over-WG via smoltcp `udp::Socket`.
+- **Phase 3**: multi-socket concurrency (per-peer bucketing, port dedup, TOCTOU fix,
+  idle reap, TCP stress).
+- **Phase 4**: MIG-02 loud disabled builder + islanded mtu/reserved/allowed_ips.
+- **Phase 5**: live round-trip proof vs Go sing-box (Rust→Go→stub→Go→Rust through WG).
+
+No Phase 6 is planned. Future WireGuard work (if any) would be: incoming TCP forwarder
+for smoltcp netstack (enabling Go-initiated connections to Rust), performance tuning
+(smoltcp → lwIP migration path documented in Phase 1), and `system: true` kernel
+WireGuard integration.

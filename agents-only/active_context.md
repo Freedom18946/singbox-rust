@@ -10,6 +10,24 @@
 
 ---
 
+## Resume (2026-06-26e) - post004 WireGuard live proof (Phase 5)
+
+- **post004 Phase 5 DONE**: live round-trip proof vs Go sing-box. 04b harness
+  builds Go sing-box 1.13.13 (with_wireguard,with_gvisor) + Rust app, generates WG
+  keypairs, starts both kernels on loopback, and proves HTTP round-trip through the
+  WG tunnel: curl → Rust mixed → wg-rust (endpoint-as-outbound) → WG tunnel → Go
+  gvisor netstack → http-out → stub → response back Go→Rust. Four assertions all
+  green: curl 200 + body WG04B-OK + stub CONNECT + Go inbound + Rust outbound.
+  `result.json` status=PASS, cleanup=complete.
+- Honest limit: Go-initiated curl to Rust not possible (Rust smoltcp netstack has
+  no incoming TCP forwarder, unlike Go gvisor). Round-trip response path already
+  proves Go→Rust traversal. SOCKS5 proxy used (not HTTP) because Rust HTTP inbound
+  hardcodes ip:None in RouteCtx, preventing ip_cidr matching.
+- **post004 CLOSED**: Phase 1-5 complete. No Phase 6 planned.
+- Verified: 04b harness PASS (`/tmp/pf04b-wg-live/result.json`); Go build PASS;
+  Rust build PASS. Phase 1 `8f976824`, Phase 2 `069c1e96`, Phase 3 `9dadcd10`,
+  Phase 4 `c0e11036` sealed.
+
 ## Resume (2026-06-26d) - post004 WireGuard MIG-02 (Phase 4)
 
 - **post004 Phase 4 DONE**: loud disabled-feature outbound builder + islanded
