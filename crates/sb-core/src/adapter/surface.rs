@@ -238,9 +238,7 @@ impl FakeIpStoragePort for CacheFilePortAdapter {
     }
 
     fn load_domain(&self, domain: &str, is_ipv6: bool) -> Option<IpAddr> {
-        self.inner
-            .get_fakeip_by_domain(domain)
-            .filter(|ip| ip.is_ipv6() == is_ipv6)
+        self.inner.get_fakeip_by_domain(domain, is_ipv6)
     }
 
     fn load_address(&self, ip: IpAddr) -> Option<String> {
@@ -309,17 +307,11 @@ impl CacheFilePort for CacheFilePortAdapter {
     }
 
     fn load_rule_set(&self, tag: &str) -> Option<SavedRuleSetBinary> {
-        self.inner
-            .get_rule_set(tag)
-            .map(|content| SavedRuleSetBinary {
-                content,
-                last_updated: SystemTime::UNIX_EPOCH,
-                last_etag: String::new(),
-            })
+        self.inner.get_rule_set_cached(tag)
     }
 
     fn save_rule_set(&self, tag: &str, set: SavedRuleSetBinary) -> Result<(), sb_types::CoreError> {
-        self.inner.store_rule_set(tag, set.content);
+        self.inner.store_rule_set_cached(tag, set);
         Ok(())
     }
 }

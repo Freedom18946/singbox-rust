@@ -89,7 +89,7 @@ fn fakeip_env_usize(name: &str, default: usize) -> usize {
 /// Note: Synchronous to match allocate_v4/allocate_v6 APIs which are called in sync contexts.
 pub trait FakeIpStorage: Send + Sync + std::fmt::Debug {
     /// Get the fake IP for a domain if it exists in storage
-    fn get_by_domain(&self, domain: &str) -> Option<IpAddr>;
+    fn get_by_domain(&self, domain: &str, is_ipv6: bool) -> Option<IpAddr>;
 
     /// Store a new mapping
     fn store(&self, domain: &str, ip: IpAddr);
@@ -282,7 +282,7 @@ pub fn allocate_v4(domain: &str) -> IpAddr {
 
     // Check persistence
     if let Some(storage) = st.storage.clone() {
-        if let Some(IpAddr::V4(ip)) = storage.get_by_domain(domain) {
+        if let Some(IpAddr::V4(ip)) = storage.get_by_domain(domain, false) {
             st.by_domain_v4.put(domain.to_string(), ip);
             st.by_ip.put(IpAddr::V4(ip), domain.to_string());
             // Update current pointer loosely if needed, but not strictly required for correctness
@@ -325,7 +325,7 @@ pub fn allocate_v6(domain: &str) -> IpAddr {
 
     // Check persistence
     if let Some(storage) = st.storage.clone() {
-        if let Some(IpAddr::V6(ip)) = storage.get_by_domain(domain) {
+        if let Some(IpAddr::V6(ip)) = storage.get_by_domain(domain, true) {
             st.by_domain_v6.put(domain.to_string(), ip);
             st.by_ip.put(IpAddr::V6(ip), domain.to_string());
             return IpAddr::V6(ip);

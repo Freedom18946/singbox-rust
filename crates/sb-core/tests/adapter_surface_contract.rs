@@ -30,7 +30,7 @@ fn consume_contracts(
 
 #[test]
 fn adapter_services_expose_trait_object_contracts_without_downcast() {
-    let cache = Arc::new(CacheFileService::new(&CacheFileIR {
+    let cache = Arc::new(CacheFileService::memory(&CacheFileIR {
         enabled: true,
         path: None,
         cache_id: None,

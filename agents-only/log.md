@@ -8479,3 +8479,35 @@ L2.8.4-6 Handlers + WebSocket:
 - `cargo fmt --check`
 
 **结果**: P1313-06 DONE。未声明 dual-kernel parity 变化；router 直连派发仍留作后续 wiring。
+
+---
+
+## 2026-06-27 P1313-07 CacheFile Persistence
+
+**任务**: 实现 post1313 任务包 07，让 Rust CacheFile 成为真实持久化服务。
+
+**完成内容**:
+- 保留 Rust sled 后端，不实现 Go bbolt `cache.db` 文件级兼容；普通文件路径显式报错。
+- `CacheFileService::try_new` 成为生产构造入口；无路径默认 `cache.db`，腐败 sled 目录移动到
+  `.corrupt.<timestamp>` 后重建，不再静默退回内存。
+- Clash mode、selector selected/group expansion、RDRC、rule-set payload 按 `cache_id`
+  隔离；FakeIP 保持全局，并拆分 IPv4/IPv6 domain 映射。
+- RDRC 按 transport/qtype/qname 保存拒绝状态并在过期读取时删除；`store_rdrc=false`
+  完全不读写。
+- Rule-set CacheFile payload 升级为 typed v2，并兼容读取旧 Rust raw `rulesets` tree。
+- app/supervisor/API/DNS/FakeIP/rule-set 路径接入共享 CacheFile，启动/reload 传播初始化错误。
+
+**验证**:
+- `cargo test -p sb-core cache_file`
+- `cargo test -p sb-core dns`
+- `cargo test -p sb-core --test supervisor_reload_state`
+- `cargo test -p sb-core --test adapter_surface_contract`
+- `cargo test -p sb-api clash`
+- `cargo test -p sb-core --test router_ruleset_integration test_remote_ruleset_cachefile_fallback_preserves_metadata`
+- `cargo check -p sb-core --features router`
+- `cargo check --workspace --all-features`
+- `./agents-only/06-scripts/verify-consistency.sh`
+- `make boundaries`
+- `cargo fmt --check`
+
+**结果**: P1313-07 DONE。未添加 GitHub Actions，未声明 dual-kernel parity 变化。

@@ -5,12 +5,15 @@ use std::sync::Arc;
 
 #[tokio::test]
 async fn test_context_service_wiring() {
+    let temp_dir = tempfile::tempdir().expect("temp cache dir");
+    let cache_path = temp_dir.path().join("test_cache.db");
+
     // Create ConfigIR with experimental services enabled
     let config = ConfigIR {
         experimental: Some(ExperimentalIR {
             cache_file: Some(CacheFileIR {
                 enabled: true,
-                path: Some("/tmp/test_cache.db".into()),
+                path: Some(cache_path.to_string_lossy().into_owned()),
                 cache_id: None,
                 store_fakeip: true,
                 store_rdrc: false,
@@ -33,9 +36,10 @@ async fn test_context_service_wiring() {
     if let Some(exp) = &config.experimental {
         if let Some(cache_cfg) = &exp.cache_file {
             if cache_cfg.enabled {
-                let cache_svc = Arc::new(sb_core::services::cache_file::CacheFileService::new(
-                    cache_cfg,
-                ));
+                let cache_svc = Arc::new(
+                    sb_core::services::cache_file::CacheFileService::try_new(cache_cfg)
+                        .expect("cache service"),
+                );
                 context = context.with_cache_file(cache_svc);
             }
         }

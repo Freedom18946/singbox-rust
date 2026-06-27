@@ -25,18 +25,50 @@ pub use crate::bootstrap_runtime::runtime_shell::Runtime;
 /// 1. 实例化所有具体出站（Direct, Socks 等）。
 /// 2. 实例化引用具体出站的选择器。
 #[allow(clippy::too_many_lines, clippy::cognitive_complexity)]
-pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> OutboundRegistry {
-    let cache_file = ir.experimental.as_ref().and_then(|exp| {
-        exp.cache_file.as_ref().map(|cache_cfg| {
-            Arc::new(sb_core::services::cache_file::CacheFileService::new(
-                cache_cfg,
-            )) as Arc<dyn sb_core::context::CacheFile>
+pub fn build_outbound_registry_from_ir(ir: &sb_config::ir::ConfigIR) -> Result<OutboundRegistry> {
+    let cache_file = ir
+        .experimental
+        .as_ref()
+        .and_then(|exp| exp.cache_file.as_ref())
+        .filter(|cache_cfg| cache_cfg.enabled)
+        .map(|cache_cfg| {
+            let cache = Arc::new(
+                sb_core::services::cache_file::CacheFileService::try_new(cache_cfg)
+                    .with_context(|| {
+                        format!(
+                            "failed to initialize cache file service at {:?}",
+                            cache_cfg.path
+                        )
+                    })?,
+            );
+            restore_clash_mode_from_cache(cache.as_ref());
+            Ok(cache as Arc<dyn sb_core::context::CacheFile>)
         })
-    });
+        .transpose()?;
     let urltest_history: Arc<dyn sb_core::context::URLTestHistoryStorage> =
         Arc::new(sb_core::services::urltest_history::URLTestHistoryService::new());
 
-    build_outbound_registry_from_ir_with_runtime_services(ir, cache_file, urltest_history)
+    Ok(build_outbound_registry_from_ir_with_runtime_services(
+        ir,
+        cache_file,
+        urltest_history,
+    ))
+}
+
+fn restore_clash_mode_from_cache(cache: &sb_core::services::cache_file::CacheFileService) {
+    let Some(mode) = cache.get_clash_mode() else {
+        return;
+    };
+    match mode.parse() {
+        Ok(mode) => sb_core::adapter::clash::set_mode(mode),
+        Err(error) => {
+            tracing::warn!(
+                mode = %mode,
+                error = %error,
+                "ignoring invalid persisted Clash mode; keeping current default"
+            );
+        }
+    }
 }
 
 fn build_outbound_registry_from_ir_with_runtime_services(
@@ -131,18 +163,30 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         Arc::new(sb_config::present::to_ir(&cfg).map_err(|e| anyhow!("to_ir failed: {e}"))?);
 
     // Initialize CacheFile service (Experiment)
-    let cache_service = cfg_ir.experimental.as_ref().and_then(|exp| {
-        exp.cache_file.as_ref().map(|cache_cfg| {
-            let svc = Arc::new(sb_core::services::cache_file::CacheFileService::new(
-                cache_cfg,
-            ));
+    let cache_service = cfg_ir
+        .experimental
+        .as_ref()
+        .and_then(|exp| exp.cache_file.as_ref())
+        .filter(|cache_cfg| cache_cfg.enabled)
+        .map(|cache_cfg| {
+            let svc = Arc::new(
+                sb_core::services::cache_file::CacheFileService::try_new(cache_cfg).with_context(
+                    || {
+                        format!(
+                            "failed to initialize cache file service at {:?}",
+                            cache_cfg.path
+                        )
+                    },
+                )?,
+            );
+            restore_clash_mode_from_cache(svc.as_ref());
 
             // Wire to FakeIP persistence
             sb_core::dns::fakeip::set_storage(svc.clone());
 
-            svc as Arc<dyn sb_core::context::CacheFile>
+            Ok(svc as Arc<dyn sb_core::context::CacheFile>)
         })
-    });
+        .transpose()?;
 
     // Global Context
     let mut ctx = sb_core::context::Context::new();

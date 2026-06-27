@@ -244,11 +244,14 @@ fn dns_stage_for_service_stage(
     }
 }
 
-fn build_runtime_dns_from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Option<RuntimeDns>> {
+fn build_runtime_dns_from_ir(
+    ir: &sb_config::ir::ConfigIR,
+    cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+) -> Result<Option<RuntimeDns>> {
     if ir.dns.is_none() {
         return Ok(None);
     }
-    let (resolver, router) = crate::dns::config_builder::build_dns_components(ir, None)
+    let (resolver, router) = crate::dns::config_builder::build_dns_components(ir, cache_file)
         .context("failed to build DNS runtime")?;
     Ok(Some(RuntimeDns { resolver, router }))
 }
@@ -590,9 +593,9 @@ impl Supervisor {
         let engine_for_state = engine.clone();
 
         // Create runtime context and wire experimental sidecars from IR
-        let context = build_context_from_ir(&ir, None);
+        let context = build_context_from_ir(&ir, None)?;
         ensure_geo_assets(&ir).await;
-        let dns_runtime = match build_runtime_dns_from_ir(&ir) {
+        let dns_runtime = match build_runtime_dns_from_ir(&ir, context.cache_file.clone()) {
             Ok(runtime) => runtime,
             Err(e) => {
                 shutdown_context(&context);
@@ -827,9 +830,9 @@ impl Supervisor {
         }
 
         // Create runtime context and wire experimental sidecars from IR
-        let context = build_context_from_ir(&ir, None);
+        let context = build_context_from_ir(&ir, None)?;
         ensure_geo_assets(&ir).await;
-        let dns_runtime = match build_runtime_dns_from_ir(&ir) {
+        let dns_runtime = match build_runtime_dns_from_ir(&ir, context.cache_file.clone()) {
             Ok(runtime) => runtime,
             Err(e) => {
                 shutdown_context(&context);
@@ -1140,9 +1143,21 @@ impl Supervisor {
                 .and_then(|e| e.v2ray_api.as_ref()),
             old_context.v2ray_server.as_ref(),
         );
+        let inherited_cache_file = reusable_cache_file(
+            old_ir
+                .experimental
+                .as_ref()
+                .and_then(|e| e.cache_file.as_ref()),
+            new_ir
+                .experimental
+                .as_ref()
+                .and_then(|e| e.cache_file.as_ref()),
+            old_context.cache_file.as_ref(),
+        );
 
         // Build new context from new IR (supports dynamic service reconfiguration)
-        let new_context = build_context_from_ir(&new_ir, inherited_v2ray);
+        let new_context =
+            build_context_from_ir_with_cache(&new_ir, inherited_v2ray, inherited_cache_file)?;
         ensure_geo_assets(&new_ir).await;
 
         // APP-RELOAD-CONTEXT-CLEANUP-01B: every fallible pre-swap activation stage runs inside
@@ -1155,7 +1170,8 @@ impl Supervisor {
         let mut new_dns_runtime_slot: Option<RuntimeDns> = None;
         let mut new_inbound_monitors_slot: Option<Vec<InboundRuntimeMonitor>> = None;
         let activation_result: Result<(Arc<Bridge>, Option<RuntimeDns>, Vec<InboundRuntimeMonitor>)> = async {
-            let new_dns_runtime = build_runtime_dns_from_ir(&new_ir)?;
+            let new_dns_runtime =
+                build_runtime_dns_from_ir(&new_ir, new_context.cache_file.clone())?;
             new_dns_runtime_slot = new_dns_runtime.clone();
 
             // Initialize new context managers
@@ -1341,9 +1357,21 @@ impl Supervisor {
                 .and_then(|e| e.v2ray_api.as_ref()),
             old_context.v2ray_server.as_ref(),
         );
+        let inherited_cache_file = reusable_cache_file(
+            old_ir
+                .experimental
+                .as_ref()
+                .and_then(|e| e.cache_file.as_ref()),
+            new_ir
+                .experimental
+                .as_ref()
+                .and_then(|e| e.cache_file.as_ref()),
+            old_context.cache_file.as_ref(),
+        );
 
         // Build new context from new IR (supports dynamic service reconfiguration)
-        let new_context = build_context_from_ir(&new_ir, inherited_v2ray);
+        let new_context =
+            build_context_from_ir_with_cache(&new_ir, inherited_v2ray, inherited_cache_file)?;
         ensure_geo_assets(&new_ir).await;
 
         // APP-RELOAD-CONTEXT-CLEANUP-01B: same single pre-swap transaction block as the router
@@ -1353,7 +1381,8 @@ impl Supervisor {
         let mut new_dns_runtime_slot: Option<RuntimeDns> = None;
         let mut new_inbound_monitors_slot: Option<Vec<InboundRuntimeMonitor>> = None;
         let activation_result: Result<(Arc<Bridge>, Option<RuntimeDns>, Vec<InboundRuntimeMonitor>)> = async {
-            let new_dns_runtime = build_runtime_dns_from_ir(&new_ir)?;
+            let new_dns_runtime =
+                build_runtime_dns_from_ir(&new_ir, new_context.cache_file.clone())?;
             new_dns_runtime_slot = new_dns_runtime.clone();
 
             // Initialize new context managers (Box Runtime Parity)
@@ -2096,15 +2125,29 @@ fn wire_experimental_sidecars(
     mut context: Context,
     ir: &sb_config::ir::ConfigIR,
     inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
-) -> Context {
+    inherited_cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+) -> Result<Context> {
     if let Some(exp) = &ir.experimental {
         if let Some(cache_cfg) = &exp.cache_file {
             if cache_cfg.enabled {
-                let cache_svc = Arc::new(crate::services::cache_file::CacheFileService::new(
-                    cache_cfg,
-                ));
-                context = context.with_cache_file(cache_svc);
-                tracing::info!(target: "sb_core::runtime", path = ?cache_cfg.path, "cache file service wired");
+                if let Some(cache_svc) = inherited_cache_file {
+                    restore_clash_mode_from_cache(cache_svc.as_ref());
+                    context = context.with_cache_file(cache_svc);
+                    tracing::info!(target: "sb_core::runtime", path = ?cache_cfg.path, "cache file service reused across equivalent reload");
+                } else {
+                    let cache_svc = Arc::new(
+                        crate::services::cache_file::CacheFileService::try_new(cache_cfg)
+                            .with_context(|| {
+                                format!(
+                                    "failed to initialize cache file service at {:?}",
+                                    cache_cfg.path
+                                )
+                            })?,
+                    );
+                    restore_clash_mode_from_cache(cache_svc.as_ref());
+                    context = context.with_cache_file(cache_svc);
+                    tracing::info!(target: "sb_core::runtime", path = ?cache_cfg.path, "cache file service wired");
+                }
             }
         }
 
@@ -2131,7 +2174,24 @@ fn wire_experimental_sidecars(
         }
     }
 
-    context
+    Ok(context)
+}
+
+fn restore_clash_mode_from_cache(cache: &dyn crate::context::CacheFile) {
+    let Some(mode) = cache.get_clash_mode() else {
+        return;
+    };
+    match mode.parse() {
+        Ok(mode) => crate::adapter::clash::set_mode(mode),
+        Err(error) => {
+            tracing::warn!(
+                target: "sb_core::runtime",
+                mode = %mode,
+                error = %error,
+                "ignoring invalid persisted Clash mode; keeping current default"
+            );
+        }
+    }
 }
 
 /// Decide whether the old V2Ray API server can be carried into the new context unchanged
@@ -2175,6 +2235,19 @@ fn reusable_v2ray_server(
     Some(Arc::clone(server))
 }
 
+fn reusable_cache_file(
+    old_cache: Option<&sb_config::ir::CacheFileIR>,
+    new_cache: Option<&sb_config::ir::CacheFileIR>,
+    old_service: Option<&Arc<dyn crate::context::CacheFile>>,
+) -> Option<Arc<dyn crate::context::CacheFile>> {
+    let old_cfg = old_cache?;
+    let new_cfg = new_cache?;
+    if !old_cfg.enabled || !new_cfg.enabled || old_cfg != new_cfg {
+        return None;
+    }
+    old_service.cloned()
+}
+
 /// True iff both contexts hold the SAME `V2RayServer` instance (i.e. the server was reused across
 /// a reload). Used to decide whether the old context's teardown must skip closing it.
 fn same_v2ray_server(a: &Context, b: &Context) -> bool {
@@ -2187,10 +2260,18 @@ fn same_v2ray_server(a: &Context, b: &Context) -> bool {
 fn build_context_from_ir(
     ir: &sb_config::ir::ConfigIR,
     inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
-) -> Context {
+) -> Result<Context> {
+    build_context_from_ir_with_cache(ir, inherited_v2ray_server, None)
+}
+
+fn build_context_from_ir_with_cache(
+    ir: &sb_config::ir::ConfigIR,
+    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+    inherited_cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+) -> Result<Context> {
     let mut ctx = Context::new();
     ctx.network.apply_route_options(&ir.route);
-    ctx = wire_experimental_sidecars(ctx, ir, inherited_v2ray_server);
+    ctx = wire_experimental_sidecars(ctx, ir, inherited_v2ray_server, inherited_cache_file)?;
     log_geo_download_hints(ir);
     if let Some(p) = &ir.route.geoip_path {
         std::env::set_var("GEOIP_PATH", p);
@@ -2210,7 +2291,7 @@ fn build_context_from_ir(
             }
         }
     }
-    ctx
+    Ok(ctx)
 }
 
 fn log_geo_download_hints(ir: &sb_config::ir::ConfigIR) {
@@ -3211,7 +3292,7 @@ mod tests {
             ..Default::default()
         });
 
-        let err = build_runtime_dns_from_ir(&ir)
+        let err = build_runtime_dns_from_ir(&ir, None)
             .expect_err("unsupported resolved DNS transport should block activation");
         assert!(format!("{err:#}").contains("resolved"));
     }
@@ -3849,7 +3930,7 @@ mod tests {
             };
 
             // Initial build binds + serves a real listener.
-            let ctx1 = build_context_from_ir(&ir, None);
+            let ctx1 = build_context_from_ir(&ir, None).expect("context");
             let server1 = ctx1
                 .v2ray_server
                 .clone()
@@ -3863,7 +3944,7 @@ mod tests {
             let v2 = ir.experimental.as_ref().and_then(|e| e.v2ray_api.as_ref());
             let inherited = reusable_v2ray_server(v2, v2, ctx1.v2ray_server.as_ref())
                 .expect("a Running equivalent server must be reusable");
-            let ctx2 = build_context_from_ir(&ir, Some(inherited));
+            let ctx2 = build_context_from_ir(&ir, Some(inherited)).expect("context");
             let server2 = ctx2
                 .v2ray_server
                 .clone()
@@ -4172,7 +4253,7 @@ mod tests {
                 let Some(port) = reserve_port() else { return };
                 let listen = format!("127.0.0.1:{port}");
 
-                let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None);
+                let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None).expect("context");
                 assert!(new_ctx.v2ray_server.is_some(), "fresh v2ray must be wired");
                 assert!(connect_ok(&listen).await, "fresh listener must be bound");
 
@@ -4193,13 +4274,13 @@ mod tests {
                 let listen = format!("127.0.0.1:{port}");
                 let ir = v2ray_ir(&listen);
 
-                let old_ctx = build_context_from_ir(&ir, None);
+                let old_ctx = build_context_from_ir(&ir, None).expect("context");
                 assert!(connect_ok(&listen).await, "old listener A must be bound");
 
                 let v2 = ir.experimental.as_ref().and_then(|e| e.v2ray_api.as_ref());
                 let inherited = reusable_v2ray_server(v2, v2, old_ctx.v2ray_server.as_ref())
                     .expect("running equivalent server must be reusable");
-                let new_ctx = build_context_from_ir(&ir, Some(inherited));
+                let new_ctx = build_context_from_ir(&ir, Some(inherited)).expect("context");
                 assert!(same_v2ray_server(&old_ctx, &new_ctx));
 
                 // Pre-swap failure → rollback must NOT close the inherited (shared) server.
@@ -4238,7 +4319,7 @@ mod tests {
                 let listen = format!("127.0.0.1:{}", holder.local_addr().unwrap().port());
 
                 // External occupation → fresh start fails → visible-but-nonfatal skip.
-                let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None);
+                let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None).expect("context");
                 assert!(
                     new_ctx.v2ray_server.is_none(),
                     "bind failure must warn+skip, leaving no v2ray in the new context"
@@ -4267,7 +4348,7 @@ mod tests {
                 let listen = format!("127.0.0.1:{port}");
 
                 for round in 0..3 {
-                    let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None);
+                    let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None).expect("context");
                     assert!(
                         new_ctx.v2ray_server.is_some(),
                         "round {round}: fresh v2ray must bind (port released by prior rollback)"
@@ -4289,7 +4370,7 @@ mod tests {
             async fn fresh_rollback_closes_exactly_once() {
                 let Some(port) = reserve_port() else { return };
                 let listen = format!("127.0.0.1:{port}");
-                let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None);
+                let new_ctx = build_context_from_ir(&v2ray_ir(&listen), None).expect("context");
                 let server = new_ctx.v2ray_server.clone().expect("fresh server wired");
 
                 shutdown_failed_reload_context(&Context::new(), &new_ctx, &[], &[], &[]);

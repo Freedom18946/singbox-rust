@@ -439,6 +439,8 @@ pub struct RuleSetManager {
     cache_dir: PathBuf,
     /// Auto-update interval
     update_interval: Duration,
+    /// Optional CacheFile persistence for remote payload recovery.
+    cache_file: Option<Arc<dyn crate::context::CacheFile>>,
 }
 
 impl RuleSetManager {
@@ -447,7 +449,14 @@ impl RuleSetManager {
             rulesets: Arc::new(parking_lot::RwLock::new(HashMap::new())),
             cache_dir,
             update_interval,
+            cache_file: None,
         }
+    }
+
+    #[must_use]
+    pub fn with_cache_file(mut self, cache_file: Arc<dyn crate::context::CacheFile>) -> Self {
+        self.cache_file = Some(cache_file);
+        self
     }
 
     /// Load a rule-set
@@ -469,7 +478,14 @@ impl RuleSetManager {
         let ruleset = match source {
             RuleSetSource::Local(ref path) => binary::load_from_file(path, format).await?,
             RuleSetSource::Remote(ref url) => {
-                remote::load_from_url(url, &self.cache_dir, format).await?
+                remote::load_from_url_with_cache_file(
+                    url,
+                    &self.cache_dir,
+                    format,
+                    Some(&tag),
+                    self.cache_file.clone(),
+                )
+                .await?
             }
         };
 
@@ -509,7 +525,15 @@ impl RuleSetManager {
                 for (tag, source, format) in tags_to_update {
                     match source {
                         RuleSetSource::Remote(ref url) => {
-                            match remote::load_from_url(url, &self.cache_dir, format).await {
+                            match remote::load_from_url_with_cache_file(
+                                url,
+                                &self.cache_dir,
+                                format,
+                                Some(&tag),
+                                self.cache_file.clone(),
+                            )
+                            .await
+                            {
                                 Ok(new_ruleset) => {
                                     let mut cache = self.rulesets.write();
                                     cache.insert(tag.clone(), Arc::new(new_ruleset));

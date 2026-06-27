@@ -10,9 +10,67 @@
 use sb_core::router::ruleset::{
     DefaultRule, IpCidr, Rule, RuleSetFormat, RuleSetManager, RuleSetSource,
 };
+use sb_types::ports::http::{HttpRequest, HttpResponse};
 use std::path::PathBuf;
+use std::pin::Pin;
+use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
 use std::time::Duration;
+
+#[derive(Debug)]
+struct MockRuleSetHttpClient {
+    status: u16,
+    body: Vec<u8>,
+    etag: Option<String>,
+    calls: AtomicUsize,
+}
+
+impl MockRuleSetHttpClient {
+    fn ok(body: Vec<u8>, etag: &str) -> Self {
+        Self {
+            status: 200,
+            body,
+            etag: Some(etag.to_string()),
+            calls: AtomicUsize::new(0),
+        }
+    }
+
+    fn fail() -> Self {
+        Self {
+            status: 503,
+            body: Vec::new(),
+            etag: None,
+            calls: AtomicUsize::new(0),
+        }
+    }
+}
+
+impl sb_types::ports::http::HttpClient for MockRuleSetHttpClient {
+    fn execute(
+        &self,
+        _req: HttpRequest,
+    ) -> Pin<
+        Box<
+            dyn std::future::Future<Output = Result<HttpResponse, sb_types::CoreError>> + Send + '_,
+        >,
+    > {
+        self.calls.fetch_add(1, Ordering::SeqCst);
+        let status = self.status;
+        let body = self.body.clone();
+        let etag = self.etag.clone();
+        Box::pin(async move {
+            let mut headers = std::collections::HashMap::new();
+            if let Some(etag) = etag {
+                headers.insert("ETag".to_string(), etag);
+            }
+            Ok(HttpResponse {
+                status,
+                headers,
+                body,
+            })
+        })
+    }
+}
 
 #[tokio::test]
 async fn test_ruleset_manager_basic() {
@@ -211,6 +269,88 @@ async fn test_ruleset_manager_caching() {
 
     // Cleanup
     let _ = std::fs::remove_dir_all(&temp_dir);
+}
+
+#[tokio::test]
+async fn test_remote_ruleset_cachefile_fallback_preserves_metadata() -> anyhow::Result<()> {
+    let temp_dir = tempfile::tempdir()?;
+    let file_cache_dir = temp_dir.path().join("file-cache");
+    let cache_path = temp_dir.path().join("cache-file");
+    let cache_cfg = sb_config::ir::CacheFileIR {
+        enabled: true,
+        path: Some(cache_path.to_string_lossy().into_owned()),
+        cache_id: Some("ruleset-remote".to_string()),
+        store_fakeip: false,
+        store_rdrc: false,
+        rdrc_timeout: None,
+    };
+    let url = "https://example.invalid/ruleset.json";
+    let body = br#"{"version":1,"rules":[{"domain":["example.com"]}]}"#.to_vec();
+
+    let client: Arc<dyn sb_types::ports::http::HttpClient> =
+        Arc::new(MockRuleSetHttpClient::ok(body.clone(), "etag-a"));
+    let installed = sb_core::http_client::install_default_http_client(client.clone());
+    if !Arc::ptr_eq(&installed, &client) {
+        eprintln!("skipping remote ruleset cachefile test: another HTTP client owner is installed");
+        return Ok(());
+    }
+
+    {
+        let concrete_cache = Arc::new(sb_core::services::cache_file::CacheFileService::new(
+            &cache_cfg,
+        ));
+        let cache: Arc<dyn sb_core::context::CacheFile> = concrete_cache.clone();
+        let manager = RuleSetManager::new(file_cache_dir.clone(), Duration::from_secs(3600))
+            .with_cache_file(cache.clone());
+        let ruleset = manager
+            .load(
+                "remote".to_string(),
+                RuleSetSource::Remote(url.to_string()),
+                RuleSetFormat::Source,
+            )
+            .await?;
+        assert_eq!(ruleset.etag.as_deref(), None);
+        let saved = cache
+            .get_rule_set_cached("remote")
+            .expect("download should save CacheFile payload");
+        assert_eq!(saved.content, body);
+        assert_eq!(saved.last_etag, "etag-a");
+        concrete_cache.flush();
+    }
+    drop(installed);
+
+    std::fs::remove_dir_all(&file_cache_dir)?;
+    let blocked_cache_parent = temp_dir.path().join("blocked-cache-parent");
+    std::fs::write(&blocked_cache_parent, b"not-a-directory")?;
+    let unavailable_file_cache_dir = blocked_cache_parent.join("child");
+
+    let failing: Arc<dyn sb_types::ports::http::HttpClient> =
+        Arc::new(MockRuleSetHttpClient::fail());
+    let installed = sb_core::http_client::install_default_http_client(failing.clone());
+    if !Arc::ptr_eq(&installed, &failing) {
+        eprintln!(
+            "skipping remote ruleset cachefile fallback: another HTTP client owner is installed"
+        );
+        return Ok(());
+    }
+
+    let cache: Arc<dyn sb_core::context::CacheFile> = Arc::new(
+        sb_core::services::cache_file::CacheFileService::new(&cache_cfg),
+    );
+    let manager = RuleSetManager::new(unavailable_file_cache_dir, Duration::from_secs(3600))
+        .with_cache_file(cache);
+    let restored = manager
+        .load(
+            "remote".to_string(),
+            RuleSetSource::Remote(url.to_string()),
+            RuleSetFormat::Source,
+        )
+        .await?;
+    assert_eq!(restored.source, RuleSetSource::Remote(url.to_string()));
+    assert_eq!(restored.etag.as_deref(), Some("etag-a"));
+    drop(installed);
+
+    Ok(())
 }
 
 #[test]

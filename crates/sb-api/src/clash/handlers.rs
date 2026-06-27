@@ -1006,7 +1006,20 @@ pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
         .cache_file
         .as_ref()
         .and_then(|cache| cache.get_clash_mode())
-        .unwrap_or_else(|| "rule".to_string());
+        .and_then(
+            |mode| match mode.parse::<sb_core::adapter::clash::ClashMode>() {
+                Ok(parsed) => Some(parsed.to_string()),
+                Err(error) => {
+                    log::warn!(
+                        "Ignoring invalid persisted Clash mode '{}': {}",
+                        mode,
+                        error
+                    );
+                    None
+                }
+            },
+        )
+        .unwrap_or_else(|| sb_core::adapter::clash::get_mode().to_string());
 
     // Read actual ports from config IR if available
     let (port, socks_port, mixed_port) = if let Some(config) = &state.global_config {
@@ -1120,10 +1133,18 @@ pub async fn update_configs(
     // Process mode change (the only field Go actually handles)
     if let Some(mode) = obj.get("mode").and_then(|v| v.as_str()) {
         if !mode.is_empty() {
-            if let Some(cache) = &_state.cache_file {
-                cache.set_clash_mode(mode.to_string());
+            match mode.parse() {
+                Ok(parsed_mode) => {
+                    sb_core::adapter::clash::set_mode(parsed_mode);
+                    if let Some(cache) = &_state.cache_file {
+                        cache.set_clash_mode(parsed_mode.to_string());
+                    }
+                    log::info!("Updated mode: {}", parsed_mode);
+                }
+                Err(error) => {
+                    log::warn!("Ignoring invalid Clash mode '{}': {}", mode, error);
+                }
             }
-            log::info!("Updated mode: {}", mode);
         }
     }
 

@@ -14,10 +14,10 @@ use sb_config::ir::CacheFileIR;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use std::net::IpAddr;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::Arc;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error, info};
+use tracing::{info, warn};
 
 #[cfg(not(test))]
 const FAKEIP_METADATA_SAVE_INTERVAL: Duration = Duration::from_secs(10);
@@ -29,6 +29,35 @@ const FAKEIP_METADATA_SAVE_INTERVAL: Duration = Duration::from_millis(50);
 pub struct RdrcEntry {
     pub ips: Vec<IpAddr>,
     pub expires_at: u64, // Unix timestamp
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+struct RuleSetCacheRecordV2 {
+    version: u8,
+    content: Vec<u8>,
+    last_updated_unix: u64,
+    last_etag: String,
+}
+
+impl From<sb_types::ports::SavedRuleSetBinary> for RuleSetCacheRecordV2 {
+    fn from(set: sb_types::ports::SavedRuleSetBinary) -> Self {
+        Self {
+            version: 2,
+            content: set.content,
+            last_updated_unix: system_time_to_unix(set.last_updated),
+            last_etag: set.last_etag,
+        }
+    }
+}
+
+impl From<RuleSetCacheRecordV2> for sb_types::ports::SavedRuleSetBinary {
+    fn from(record: RuleSetCacheRecordV2) -> Self {
+        Self {
+            content: record.content,
+            last_updated: UNIX_EPOCH + Duration::from_secs(record.last_updated_unix),
+            last_etag: record.last_etag,
+        }
+    }
 }
 
 #[derive(Debug)]
@@ -176,7 +205,8 @@ fn persist(inner: &FakeIpMetaDebouncerInner, metadata: crate::dns::fakeip::FakeI
 
 #[derive(Debug, Default)]
 struct MemoryBackend {
-    fakeip_by_domain: RwLock<HashMap<String, IpAddr>>,
+    fakeip_by_domain_v4: RwLock<HashMap<String, IpAddr>>,
+    fakeip_by_domain_v6: RwLock<HashMap<String, IpAddr>>,
     fakeip_by_ip: RwLock<HashMap<String, String>>,
     fakeip_meta: RwLock<Option<crate::dns::fakeip::FakeIpMetadata>>,
     rdrc: RwLock<HashMap<String, RdrcEntry>>,
@@ -184,7 +214,88 @@ struct MemoryBackend {
     clash_mode: RwLock<HashMap<String, String>>,
     selected: RwLock<HashMap<String, HashMap<String, String>>>,
     expand: RwLock<HashMap<String, HashMap<String, bool>>>,
-    rule_sets: RwLock<HashMap<String, Vec<u8>>>,
+    rule_sets: RwLock<HashMap<String, HashMap<String, sb_types::ports::SavedRuleSetBinary>>>,
+}
+
+fn open_persistent_db(path: &Path) -> anyhow::Result<sled::Db> {
+    if path.exists() && path.is_file() {
+        anyhow::bail!(
+            "cache file path '{}' is a regular file; Rust CacheFile uses a sled directory. Move the file or configure a different experimental.cache_file.path",
+            path.display()
+        );
+    }
+
+    if let Some(parent) = path.parent() {
+        if !parent.as_os_str().is_empty() {
+            std::fs::create_dir_all(parent).map_err(|error| {
+                anyhow::anyhow!(
+                    "failed to create cache file parent directory '{}': {error}",
+                    parent.display()
+                )
+            })?;
+        }
+    }
+
+    match sled::open(path) {
+        Ok(db) => {
+            info!(path = %path.display(), "opened cache file service");
+            Ok(db)
+        }
+        Err(error) if path.is_dir() && !is_sled_lock_error(&error) => {
+            let corrupt_path = corrupt_path(path);
+            warn!(
+                path = %path.display(),
+                corrupt_path = %corrupt_path.display(),
+                error = %error,
+                "cache sled directory failed to open; renaming and rebuilding"
+            );
+            std::fs::rename(path, &corrupt_path).map_err(|rename_error| {
+                anyhow::anyhow!(
+                    "failed to rename corrupt cache directory '{}' to '{}': {rename_error}",
+                    path.display(),
+                    corrupt_path.display()
+                )
+            })?;
+            let db = sled::open(path).map_err(|reopen_error| {
+                anyhow::anyhow!(
+                    "failed to rebuild cache file directory '{}' after moving corrupt cache to '{}': {reopen_error}",
+                    path.display(),
+                    corrupt_path.display()
+                )
+            })?;
+            info!(path = %path.display(), "rebuilt cache file service after corrupt directory move");
+            Ok(db)
+        }
+        Err(error) => Err(anyhow::anyhow!(
+            "failed to open cache file directory '{}': {error}",
+            path.display()
+        )),
+    }
+}
+
+fn is_sled_lock_error(error: &sled::Error) -> bool {
+    let message = error.to_string().to_ascii_lowercase();
+    message.contains("lock")
+}
+
+fn corrupt_path(path: &Path) -> PathBuf {
+    let ts = SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_nanos();
+    let file_name = path
+        .file_name()
+        .and_then(|name| name.to_str())
+        .unwrap_or("cache.db");
+    path.with_file_name(format!("{file_name}.corrupt.{ts}"))
+}
+
+fn cache_path_from_config(config: &CacheFileIR) -> PathBuf {
+    config
+        .path
+        .as_deref()
+        .map(PathBuf::from)
+        .unwrap_or_else(|| PathBuf::from("cache.db"))
 }
 
 /// Cache file service for storing persistent data.
@@ -201,7 +312,15 @@ pub struct CacheFileService {
 
 impl CacheFileService {
     /// Create a new cache file service from configuration.
+    ///
+    /// Convenience wrapper for tests and simple call sites. Production startup should use
+    /// [`Self::try_new`] so cache initialization failures are surfaced to the caller.
     pub fn new(config: &CacheFileIR) -> Self {
+        Self::try_new(config).expect("failed to initialize CacheFileService")
+    }
+
+    /// Create a new cache file service from configuration and report persistent open failures.
+    pub fn try_new(config: &CacheFileIR) -> anyhow::Result<Self> {
         let cache_id = normalize_cache_id(config.cache_id.as_deref());
         let rdrc_timeout = config
             .rdrc_timeout
@@ -210,49 +329,62 @@ impl CacheFileService {
             .unwrap_or(Duration::from_secs(7 * 24 * 3600)); // Default: 7 days
 
         let backend = if config.enabled {
-            if let Some(path_str) = &config.path {
-                let path = PathBuf::from(path_str);
-                // Ensure parent directory exists
-                if let Some(parent) = path.parent() {
-                    if !parent.exists() {
-                        let _ = std::fs::create_dir_all(parent);
-                    }
-                }
-                match sled::open(&path) {
-                    Ok(db) => {
-                        info!("Opened cache file at {}", path.display());
-                        Arc::new(CacheBackend::Persistence(db))
-                    }
-                    Err(e) => {
-                        error!(
-                            "Failed to open cache file at {}: {}, falling back to memory",
-                            path.display(),
-                            e
-                        );
-                        Arc::new(CacheBackend::Memory(Box::default()))
-                    }
-                }
-            } else {
-                debug!("Cache enabled but no path provided, using memory backend");
-                Arc::new(CacheBackend::Memory(Box::default()))
-            }
+            let path = cache_path_from_config(config);
+            Arc::new(CacheBackend::Persistence(open_persistent_db(&path)?))
         } else {
             Arc::new(CacheBackend::Memory(Box::default()))
         };
 
+        Ok(Self::from_parts(
+            config.enabled,
+            cache_id,
+            backend,
+            config.store_fakeip,
+            config.store_rdrc,
+            rdrc_timeout,
+        ))
+    }
+
+    /// Construct an explicit in-memory service. Tests should use this when persistence is not
+    /// under test so `enabled=true, path=None` does not create `./cache.db`.
+    pub fn memory(config: &CacheFileIR) -> Self {
+        let cache_id = normalize_cache_id(config.cache_id.as_deref());
+        let rdrc_timeout = config
+            .rdrc_timeout
+            .as_ref()
+            .and_then(|s| parse_duration(s))
+            .unwrap_or(Duration::from_secs(7 * 24 * 3600));
+        Self::from_parts(
+            config.enabled,
+            cache_id,
+            Arc::new(CacheBackend::Memory(Box::default())),
+            config.store_fakeip,
+            config.store_rdrc,
+            rdrc_timeout,
+        )
+    }
+
+    fn from_parts(
+        enabled: bool,
+        cache_id: Option<String>,
+        backend: Arc<CacheBackend>,
+        store_fakeip: bool,
+        store_rdrc: bool,
+        rdrc_timeout: Duration,
+    ) -> Self {
         let fakeip_meta_debouncer = match &*backend {
-            CacheBackend::Persistence(db) if config.store_fakeip => {
+            CacheBackend::Persistence(db) if store_fakeip => {
                 Some(FakeIpMetaDebouncer::new(Some(db.clone())))
             }
             _ => None,
         };
 
         Self {
-            enabled: config.enabled,
+            enabled,
             cache_id,
             backend,
-            store_fakeip: config.store_fakeip,
-            store_rdrc: config.store_rdrc,
+            store_fakeip,
+            store_rdrc,
             rdrc_timeout,
             fakeip_meta_debouncer,
         }
@@ -295,6 +427,20 @@ impl CacheFileService {
         }
     }
 
+    fn open_rdrc_tree<'a>(&'a self, db: &'a sled::Db) -> Result<sled::Tree, sled::Error> {
+        match self.cache_id.as_deref() {
+            None => db.open_tree("rdrc"),
+            Some(id) => db.open_tree(format!("cache/{}/rdrc", escape_cache_id(id))),
+        }
+    }
+
+    fn open_ruleset_tree<'a>(&'a self, db: &'a sled::Db) -> Result<sled::Tree, sled::Error> {
+        match self.cache_id.as_deref() {
+            None => db.open_tree("rulesets_v2"),
+            Some(id) => db.open_tree(format!("cache/{}/rulesets_v2", escape_cache_id(id))),
+        }
+    }
+
     /// Store FakeIP mapping
     pub fn store_fakeip_mapping(&self, domain: &str, ip: IpAddr) {
         if !self.store_fakeip {
@@ -303,13 +449,23 @@ impl CacheFileService {
 
         match &*self.backend {
             CacheBackend::Memory(mem) => {
-                mem.fakeip_by_domain.write().insert(domain.to_string(), ip);
+                let map = if ip.is_ipv6() {
+                    &mem.fakeip_by_domain_v6
+                } else {
+                    &mem.fakeip_by_domain_v4
+                };
+                map.write().insert(domain.to_string(), ip);
                 mem.fakeip_by_ip
                     .write()
                     .insert(ip.to_string(), domain.to_string());
             }
             CacheBackend::Persistence(db) => {
-                let _ = db.open_tree("fakeip_domain").and_then(|t| {
+                let domain_tree = if ip.is_ipv6() {
+                    "fakeip_domain6"
+                } else {
+                    "fakeip_domain4"
+                };
+                let _ = db.open_tree(domain_tree).and_then(|t| {
                     let val = serde_json::to_vec(&ip).unwrap_or_default();
                     t.insert(domain, val)
                 });
@@ -323,18 +479,45 @@ impl CacheFileService {
 
     /// Get FakeIP for domain
     pub fn get_fakeip_by_domain(&self, domain: &str) -> Option<IpAddr> {
+        self.get_fakeip_by_domain_family(domain, false)
+            .or_else(|| self.get_fakeip_by_domain_family(domain, true))
+    }
+
+    /// Get FakeIP for domain and address family.
+    pub fn get_fakeip_by_domain_family(&self, domain: &str, is_ipv6: bool) -> Option<IpAddr> {
         if !self.store_fakeip {
             return None;
         }
 
         match &*self.backend {
-            CacheBackend::Memory(mem) => mem.fakeip_by_domain.read().get(domain).copied(),
-            CacheBackend::Persistence(db) => db
-                .open_tree("fakeip_domain")
-                .ok()?
-                .get(domain)
-                .ok()?
-                .and_then(|ivar| serde_json::from_slice(&ivar).ok()),
+            CacheBackend::Memory(mem) => {
+                let map = if is_ipv6 {
+                    &mem.fakeip_by_domain_v6
+                } else {
+                    &mem.fakeip_by_domain_v4
+                };
+                map.read().get(domain).copied()
+            }
+            CacheBackend::Persistence(db) => {
+                let tree_name = if is_ipv6 {
+                    "fakeip_domain6"
+                } else {
+                    "fakeip_domain4"
+                };
+                db.open_tree(tree_name)
+                    .ok()?
+                    .get(domain)
+                    .ok()?
+                    .and_then(|ivar| serde_json::from_slice(&ivar).ok())
+                    .or_else(|| {
+                        db.open_tree("fakeip_domain")
+                            .ok()?
+                            .get(domain)
+                            .ok()?
+                            .and_then(|ivar| serde_json::from_slice::<IpAddr>(&ivar).ok())
+                            .filter(|ip| ip.is_ipv6() == is_ipv6)
+                    })
+            }
         }
     }
 
@@ -446,15 +629,16 @@ impl CacheFileService {
             + ttl.as_secs().min(self.rdrc_timeout.as_secs());
 
         let entry = RdrcEntry { ips, expires_at };
+        let key = rdrc_domain_key(domain);
 
         match &*self.backend {
             CacheBackend::Memory(mem) => {
-                mem.rdrc.write().insert(domain.to_string(), entry);
+                mem.rdrc.write().insert(key, entry);
             }
             CacheBackend::Persistence(db) => {
-                if let Ok(tree) = db.open_tree("rdrc") {
+                if let Ok(tree) = self.open_rdrc_tree(db) {
                     if let Ok(val) = serde_json::to_vec(&entry) {
-                        let _ = tree.insert(domain, val);
+                        let _ = tree.insert(rdrc_domain_key(domain).as_bytes(), val);
                     }
                 }
             }
@@ -472,24 +656,30 @@ impl CacheFileService {
             .unwrap_or_default()
             .as_secs();
 
-        // Helper to check expiry
-        let check = |entry: RdrcEntry| -> Option<Vec<IpAddr>> {
-            if entry.expires_at > now {
-                Some(entry.ips)
-            } else {
-                None
-            }
-        };
+        let key = rdrc_domain_key(domain);
 
         match &*self.backend {
-            CacheBackend::Memory(mem) => mem.rdrc.read().get(domain).cloned().and_then(check),
-            CacheBackend::Persistence(db) => db
-                .open_tree("rdrc")
-                .ok()?
-                .get(domain)
-                .ok()?
-                .and_then(|v| serde_json::from_slice::<RdrcEntry>(&v).ok())
-                .and_then(check),
+            CacheBackend::Memory(mem) => {
+                let mut guard = mem.rdrc.write();
+                let entry = guard.get(&key).cloned()?;
+                if entry.expires_at > now {
+                    Some(entry.ips)
+                } else {
+                    guard.remove(&key);
+                    None
+                }
+            }
+            CacheBackend::Persistence(db) => {
+                let tree = self.open_rdrc_tree(db).ok()?;
+                let raw = tree.get(key.as_bytes()).ok()??;
+                let entry = serde_json::from_slice::<RdrcEntry>(&raw).ok()?;
+                if entry.expires_at > now {
+                    Some(entry.ips)
+                } else {
+                    let _ = tree.remove(key.as_bytes());
+                    None
+                }
+            }
         }
     }
 
@@ -499,24 +689,42 @@ impl CacheFileService {
         if !self.store_rdrc {
             return false;
         }
-        let key = format!("{}\x00{}\x00{}", transport_tag, domain, qtype);
+        let key = rdrc_rejection_key(transport_tag, domain, qtype);
         let now = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
             .as_secs();
 
         match &*self.backend {
-            CacheBackend::Memory(mem) => mem
-                .rdrc
-                .read()
-                .get(&key)
-                .is_some_and(|entry| entry.expires_at > now),
-            CacheBackend::Persistence(db) => db
-                .open_tree("rdrc")
-                .ok()
-                .and_then(|tree| tree.get(&key).ok().flatten())
-                .and_then(|v| serde_json::from_slice::<RdrcEntry>(&v).ok())
-                .is_some_and(|entry| entry.expires_at > now),
+            CacheBackend::Memory(mem) => {
+                let mut guard = mem.rdrc.write();
+                let Some(entry) = guard.get(&key).cloned() else {
+                    return false;
+                };
+                if entry.expires_at > now {
+                    true
+                } else {
+                    guard.remove(&key);
+                    false
+                }
+            }
+            CacheBackend::Persistence(db) => {
+                let Ok(tree) = self.open_rdrc_tree(db) else {
+                    return false;
+                };
+                let Some(raw) = tree.get(key.as_bytes()).ok().flatten() else {
+                    return false;
+                };
+                let Some(entry) = serde_json::from_slice::<RdrcEntry>(&raw).ok() else {
+                    return false;
+                };
+                if entry.expires_at > now {
+                    true
+                } else {
+                    let _ = tree.remove(key.as_bytes());
+                    false
+                }
+            }
         }
     }
 
@@ -526,7 +734,7 @@ impl CacheFileService {
         if !self.store_rdrc {
             return;
         }
-        let key = format!("{}\x00{}\x00{}", transport_tag, domain, qtype);
+        let key = rdrc_rejection_key(transport_tag, domain, qtype);
         let expires_at = SystemTime::now()
             .duration_since(UNIX_EPOCH)
             .unwrap_or_default()
@@ -543,7 +751,7 @@ impl CacheFileService {
                 mem.rdrc.write().insert(key, entry);
             }
             CacheBackend::Persistence(db) => {
-                if let Ok(tree) = db.open_tree("rdrc") {
+                if let Ok(tree) = self.open_rdrc_tree(db) {
                     if let Ok(val) = serde_json::to_vec(&entry) {
                         let _ = tree.insert(key.as_bytes(), val);
                     }
@@ -675,33 +883,77 @@ impl CacheFileService {
     }
 
     pub fn store_rule_set(&self, tag: &str, content: Vec<u8>) {
+        self.store_rule_set_cached(
+            tag,
+            sb_types::ports::SavedRuleSetBinary {
+                content,
+                last_updated: UNIX_EPOCH,
+                last_etag: String::new(),
+            },
+        );
+    }
+
+    pub fn store_rule_set_cached(&self, tag: &str, set: sb_types::ports::SavedRuleSetBinary) {
         if !self.enabled {
             return;
         }
         match &*self.backend {
             CacheBackend::Memory(mem) => {
-                mem.rule_sets.write().insert(tag.to_string(), content);
+                mem.rule_sets
+                    .write()
+                    .entry(self.ns_key().to_string())
+                    .or_default()
+                    .insert(tag.to_string(), set);
             }
             CacheBackend::Persistence(db) => {
-                if let Ok(tree) = db.open_tree("rulesets") {
-                    let _ = tree.insert(tag, content);
+                if let Ok(tree) = self.open_ruleset_tree(db) {
+                    let record = RuleSetCacheRecordV2::from(set);
+                    if let Ok(content) = serde_json::to_vec(&record) {
+                        let _ = tree.insert(tag, content);
+                    }
                 }
             }
         }
     }
 
     pub fn get_rule_set(&self, tag: &str) -> Option<Vec<u8>> {
+        self.get_rule_set_cached(tag).map(|set| set.content)
+    }
+
+    pub fn get_rule_set_cached(&self, tag: &str) -> Option<sb_types::ports::SavedRuleSetBinary> {
         if !self.enabled {
             return None;
         }
         match &*self.backend {
-            CacheBackend::Memory(mem) => mem.rule_sets.read().get(tag).cloned(),
-            CacheBackend::Persistence(db) => db
-                .open_tree("rulesets")
-                .ok()?
-                .get(tag)
-                .ok()?
-                .map(|v| v.to_vec()),
+            CacheBackend::Memory(mem) => mem
+                .rule_sets
+                .read()
+                .get(self.ns_key())
+                .and_then(|sets| sets.get(tag))
+                .cloned(),
+            CacheBackend::Persistence(db) => {
+                if let Some(raw) = self
+                    .open_ruleset_tree(db)
+                    .ok()
+                    .and_then(|tree| tree.get(tag).ok().flatten())
+                {
+                    if let Ok(record) = serde_json::from_slice::<RuleSetCacheRecordV2>(&raw) {
+                        return Some(record.into());
+                    }
+                }
+
+                if self.cache_id.is_none() {
+                    return db.open_tree("rulesets").ok()?.get(tag).ok()?.map(|v| {
+                        sb_types::ports::SavedRuleSetBinary {
+                            content: v.to_vec(),
+                            last_updated: UNIX_EPOCH,
+                            last_etag: String::new(),
+                        }
+                    });
+                }
+
+                None
+            }
         }
     }
 
@@ -712,6 +964,18 @@ impl CacheFileService {
         }
         if let CacheBackend::Persistence(db) = &*self.backend {
             let _ = db.flush();
+        }
+    }
+
+    #[cfg(test)]
+    fn backend_rdrc_len_for_test(&self) -> usize {
+        match &*self.backend {
+            CacheBackend::Memory(mem) => mem.rdrc.read().len(),
+            CacheBackend::Persistence(db) => self
+                .open_rdrc_tree(db)
+                .ok()
+                .map(|tree| tree.len())
+                .unwrap_or_default(),
         }
     }
 }
@@ -753,8 +1017,8 @@ impl crate::context::CacheFile for CacheFileService {
         CacheFileService::store_fakeip_mapping(self, domain, ip);
     }
 
-    fn get_fakeip_by_domain(&self, domain: &str) -> Option<IpAddr> {
-        CacheFileService::get_fakeip_by_domain(self, domain)
+    fn get_fakeip_by_domain(&self, domain: &str, is_ipv6: bool) -> Option<IpAddr> {
+        CacheFileService::get_fakeip_by_domain_family(self, domain, is_ipv6)
     }
 
     fn get_domain_by_fakeip(&self, ip: &IpAddr) -> Option<String> {
@@ -795,11 +1059,19 @@ impl crate::context::CacheFile for CacheFileService {
     fn get_rule_set(&self, tag: &str) -> Option<Vec<u8>> {
         CacheFileService::get_rule_set(self, tag)
     }
+
+    fn store_rule_set_cached(&self, tag: &str, set: sb_types::ports::SavedRuleSetBinary) {
+        CacheFileService::store_rule_set_cached(self, tag, set);
+    }
+
+    fn get_rule_set_cached(&self, tag: &str) -> Option<sb_types::ports::SavedRuleSetBinary> {
+        CacheFileService::get_rule_set_cached(self, tag)
+    }
 }
 
 impl crate::dns::fakeip::FakeIpStorage for CacheFileService {
-    fn get_by_domain(&self, domain: &str) -> Option<IpAddr> {
-        self.get_fakeip_by_domain(domain)
+    fn get_by_domain(&self, domain: &str, is_ipv6: bool) -> Option<IpAddr> {
+        self.get_fakeip_by_domain_family(domain, is_ipv6)
     }
 
     fn store(&self, domain: &str, ip: IpAddr) {
@@ -859,11 +1131,18 @@ impl crate::dns::fakeip::FakeIpStorage for CacheFileService {
 
         match &*self.backend {
             CacheBackend::Memory(mem) => {
-                mem.fakeip_by_domain.write().clear();
+                mem.fakeip_by_domain_v4.write().clear();
+                mem.fakeip_by_domain_v6.write().clear();
                 mem.fakeip_by_ip.write().clear();
                 *mem.fakeip_meta.write() = None;
             }
             CacheBackend::Persistence(db) => {
+                if let Ok(tree) = db.open_tree("fakeip_domain4") {
+                    let _ = tree.clear();
+                }
+                if let Ok(tree) = db.open_tree("fakeip_domain6") {
+                    let _ = tree.clear();
+                }
                 if let Ok(tree) = db.open_tree("fakeip_domain") {
                     let _ = tree.clear();
                 }
@@ -909,6 +1188,24 @@ fn parse_duration(s: &str) -> Option<Duration> {
     Some(Duration::from_secs(secs))
 }
 
+fn system_time_to_unix(time: SystemTime) -> u64 {
+    time.duration_since(UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn rdrc_domain_key(domain: &str) -> String {
+    format!("answer:{}:{domain}", domain.len())
+}
+
+fn rdrc_rejection_key(transport_tag: &str, domain: &str, qtype: u16) -> String {
+    format!(
+        "reject:{}:{transport_tag}:{qtype}:{}:{domain}",
+        transport_tag.len(),
+        domain.len()
+    )
+}
+
 fn normalize_cache_id(cache_id: Option<&str>) -> Option<String> {
     let id = cache_id?.trim();
     if id.is_empty() {
@@ -942,17 +1239,85 @@ mod tests {
         // Memory mode check
         let config = CacheFileIR {
             enabled: true,
-            path: None, // No path = memory
+            path: None,
             cache_id: None,
             store_fakeip: true,
             store_rdrc: false,
             rdrc_timeout: None,
         };
 
-        let svc = CacheFileService::new(&config);
+        let svc = CacheFileService::memory(&config);
         assert!(svc.enabled());
         assert!(svc.store_fakeip());
         assert!(!svc.store_rdrc());
+    }
+
+    #[test]
+    fn test_enabled_without_path_defaults_to_cache_db() {
+        let config = CacheFileIR {
+            enabled: true,
+            path: None,
+            cache_id: None,
+            store_fakeip: false,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+
+        assert_eq!(cache_path_from_config(&config), PathBuf::from("cache.db"));
+    }
+
+    #[test]
+    fn test_regular_file_path_errors() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("cache.db");
+        std::fs::write(&path, b"go-bbolt-placeholder").unwrap();
+        let config = CacheFileIR {
+            enabled: true,
+            path: Some(path.to_string_lossy().into_owned()),
+            cache_id: None,
+            store_fakeip: false,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+
+        let err = CacheFileService::try_new(&config).expect_err("regular file must be rejected");
+        assert!(
+            err.to_string().contains("regular file"),
+            "unexpected error: {err:#}"
+        );
+    }
+
+    #[test]
+    fn test_corrupt_sled_directory_is_moved_and_rebuilt() {
+        let tmp = TempDir::new().unwrap();
+        let path = tmp.path().join("cache_corrupt_db");
+        std::fs::create_dir(&path).unwrap();
+        std::fs::create_dir(path.join("conf")).unwrap();
+        let config = CacheFileIR {
+            enabled: true,
+            path: Some(path.to_string_lossy().into_owned()),
+            cache_id: None,
+            store_fakeip: false,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+
+        let svc = CacheFileService::try_new(&config).expect("corrupt sled dir should rebuild");
+        svc.set_clash_mode("rule".to_string());
+        svc.flush();
+
+        assert!(path.is_dir());
+        let moved = std::fs::read_dir(tmp.path())
+            .unwrap()
+            .filter_map(Result::ok)
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_string_lossy()
+                    .starts_with("cache_corrupt_db.corrupt.")
+            })
+            .count();
+        assert_eq!(moved, 1, "corrupt sled directory should be moved aside");
     }
 
     #[test]
@@ -1001,6 +1366,75 @@ mod tests {
     }
 
     #[test]
+    fn test_fakeip_dual_stack_same_domain_persists() {
+        let tmp = TempDir::new().unwrap();
+        let cache_path = tmp.path().join("cache_fakeip_dual_stack_db");
+        let config = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: Some("A".to_string()),
+            store_fakeip: true,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+
+        {
+            let svc = CacheFileService::new(&config);
+            svc.store_fakeip_mapping("dual.example", "198.18.0.7".parse().unwrap());
+            svc.store_fakeip_mapping("dual.example", "fd00::7".parse().unwrap());
+            svc.flush();
+        }
+
+        let svc = CacheFileService::new(&config);
+        assert_eq!(
+            svc.get_fakeip_by_domain_family("dual.example", false),
+            Some("198.18.0.7".parse().unwrap())
+        );
+        assert_eq!(
+            svc.get_fakeip_by_domain_family("dual.example", true),
+            Some("fd00::7".parse().unwrap())
+        );
+        assert_eq!(
+            svc.get_domain_by_fakeip(&"198.18.0.7".parse().unwrap()),
+            Some("dual.example".to_string())
+        );
+        assert_eq!(
+            svc.get_domain_by_fakeip(&"fd00::7".parse().unwrap()),
+            Some("dual.example".to_string())
+        );
+    }
+
+    #[test]
+    fn test_fakeip_is_global_not_cache_id_isolated() {
+        let tmp = TempDir::new().unwrap();
+        let cache_path = tmp.path().join("cache_fakeip_global_db");
+        let config_a = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: Some("A".to_string()),
+            store_fakeip: true,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+        let config_b = CacheFileIR {
+            cache_id: Some("B".to_string()),
+            ..config_a.clone()
+        };
+
+        {
+            let svc = CacheFileService::new(&config_a);
+            svc.store_fakeip_mapping("shared.example", "198.18.0.9".parse().unwrap());
+            svc.flush();
+        }
+
+        let svc = CacheFileService::new(&config_b);
+        assert_eq!(
+            svc.get_fakeip_by_domain_family("shared.example", false),
+            Some("198.18.0.9".parse().unwrap())
+        );
+    }
+
+    #[test]
     fn test_rdrc_persistence_sled() {
         let tmp = TempDir::new().unwrap();
         let cache_path = tmp.path().join("cache_rdrc_db");
@@ -1043,7 +1477,7 @@ mod tests {
             rdrc_timeout: Some("1h".to_string()),
         };
 
-        let svc = CacheFileService::new(&config);
+        let svc = CacheFileService::memory(&config);
 
         // Initially no rejection
         assert!(!svc.check_rdrc_rejection("dns-google", "example.com", 1));
@@ -1062,6 +1496,26 @@ mod tests {
 
         // Different domain should not be rejected
         assert!(!svc.check_rdrc_rejection("dns-google", "other.com", 1));
+    }
+
+    #[test]
+    fn test_rdrc_expired_entry_is_deleted() {
+        let config = CacheFileIR {
+            enabled: true,
+            path: None,
+            cache_id: None,
+            store_fakeip: false,
+            store_rdrc: true,
+            rdrc_timeout: Some("1ms".to_string()),
+        };
+        let svc = CacheFileService::memory(&config);
+        svc.save_rdrc_rejection("dns", "expired.example", 1);
+
+        assert!(!svc.check_rdrc_rejection("dns", "expired.example", 1));
+        assert!(
+            svc.backend_rdrc_len_for_test() == 0,
+            "expired memory RDRC entry should be removed"
+        );
     }
 
     #[test]
@@ -1158,6 +1612,114 @@ mod tests {
             assert_eq!(svc.get_selected("g"), Some("x".to_string()));
             assert_eq!(svc.get_expand("g"), Some(true));
         }
+    }
+
+    #[test]
+    fn test_cache_id_isolates_ruleset_and_rdrc_sled() {
+        let tmp = TempDir::new().unwrap();
+        let cache_path = tmp.path().join("cache_ruleset_rdrc_cache_id_db");
+
+        let config_a = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: Some("A".to_string()),
+            store_fakeip: false,
+            store_rdrc: true,
+            rdrc_timeout: Some("1h".to_string()),
+        };
+        let config_b = CacheFileIR {
+            cache_id: Some("B".to_string()),
+            ..config_a.clone()
+        };
+
+        {
+            let svc = CacheFileService::new(&config_a);
+            svc.store_rule_set("geo", vec![1, 2, 3]);
+            svc.save_rdrc_rejection("dns", "blocked.example", 1);
+            svc.flush();
+        }
+
+        {
+            let svc = CacheFileService::new(&config_b);
+            assert_eq!(svc.get_rule_set("geo"), None);
+            assert!(!svc.check_rdrc_rejection("dns", "blocked.example", 1));
+        }
+
+        {
+            let svc = CacheFileService::new(&config_a);
+            assert_eq!(svc.get_rule_set("geo"), Some(vec![1, 2, 3]));
+            assert!(svc.check_rdrc_rejection("dns", "blocked.example", 1));
+        }
+    }
+
+    #[test]
+    fn test_rdrc_rejection_persists_across_reopen() {
+        let tmp = TempDir::new().unwrap();
+        let cache_path = tmp.path().join("cache_rdrc_reopen_db");
+        let config = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: Some("rdrc".to_string()),
+            store_fakeip: false,
+            store_rdrc: true,
+            rdrc_timeout: Some("1h".to_string()),
+        };
+
+        {
+            let svc = CacheFileService::new(&config);
+            svc.save_rdrc_rejection("dns-a", "reopen.example", 1);
+            svc.flush();
+        }
+
+        let svc = CacheFileService::new(&config);
+        assert!(svc.check_rdrc_rejection("dns-a", "reopen.example", 1));
+        assert!(!svc.check_rdrc_rejection("dns-a", "reopen.example", 28));
+        assert!(!svc.check_rdrc_rejection("dns-b", "reopen.example", 1));
+    }
+
+    #[test]
+    fn test_ruleset_typed_roundtrip_and_legacy_raw_fallback() {
+        let tmp = TempDir::new().unwrap();
+        let cache_path = tmp.path().join("cache_ruleset_typed_db");
+        let config = CacheFileIR {
+            enabled: true,
+            path: Some(cache_path.to_string_lossy().to_string()),
+            cache_id: None,
+            store_fakeip: false,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        };
+
+        {
+            let db = sled::open(&cache_path).unwrap();
+            let tree = db.open_tree("rulesets").unwrap();
+            tree.insert("legacy", vec![9, 8, 7]).unwrap();
+            db.flush().unwrap();
+        }
+
+        {
+            let svc = CacheFileService::new(&config);
+            let legacy = svc.get_rule_set_cached("legacy").expect("legacy fallback");
+            assert_eq!(legacy.content, vec![9, 8, 7]);
+            assert_eq!(legacy.last_updated, UNIX_EPOCH);
+            assert_eq!(legacy.last_etag, "");
+
+            svc.store_rule_set_cached(
+                "typed",
+                sb_types::ports::SavedRuleSetBinary {
+                    content: vec![1, 3, 5],
+                    last_updated: UNIX_EPOCH + Duration::from_secs(123),
+                    last_etag: "etag-123".to_string(),
+                },
+            );
+            svc.flush();
+        }
+
+        let svc = CacheFileService::new(&config);
+        let typed = svc.get_rule_set_cached("typed").expect("typed payload");
+        assert_eq!(typed.content, vec![1, 3, 5]);
+        assert_eq!(typed.last_updated, UNIX_EPOCH + Duration::from_secs(123));
+        assert_eq!(typed.last_etag, "etag-123");
     }
 
     #[test]

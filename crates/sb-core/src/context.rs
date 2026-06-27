@@ -773,7 +773,7 @@ pub trait CacheFile: Send + Sync + std::fmt::Debug {
 
     fn store_fakeip_mapping(&self, _domain: &str, _ip: IpAddr) {}
 
-    fn get_fakeip_by_domain(&self, _domain: &str) -> Option<IpAddr> {
+    fn get_fakeip_by_domain(&self, _domain: &str, _is_ipv6: bool) -> Option<IpAddr> {
         None
     }
 
@@ -808,6 +808,19 @@ pub trait CacheFile: Send + Sync + std::fmt::Debug {
 
     fn get_rule_set(&self, _tag: &str) -> Option<Vec<u8>> {
         None
+    }
+
+    fn store_rule_set_cached(&self, tag: &str, set: sb_types::ports::SavedRuleSetBinary) {
+        self.store_rule_set(tag, set.content);
+    }
+
+    fn get_rule_set_cached(&self, tag: &str) -> Option<sb_types::ports::SavedRuleSetBinary> {
+        self.get_rule_set(tag)
+            .map(|content| sb_types::ports::SavedRuleSetBinary {
+                content,
+                last_updated: std::time::UNIX_EPOCH,
+                last_etag: String::new(),
+            })
     }
 }
 

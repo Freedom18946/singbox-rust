@@ -490,8 +490,8 @@ pub struct DnsRuleEngine {
     independent_cache: bool,
     /// Global DNS client subnet fallback for raw exchange.
     global_client_subnet: Option<String>,
-    /// CacheFileService for RDRC response rejection persistence.
-    cache_file: Option<Arc<crate::services::cache_file::CacheFileService>>,
+    /// CacheFile service for RDRC response rejection persistence.
+    cache_file: Option<Arc<dyn crate::context::CacheFile>>,
 }
 
 impl DnsRuleEngine {
@@ -580,7 +580,7 @@ impl DnsRuleEngine {
     /// Wire CacheFileService for RDRC rejection checks/saves.
     pub fn with_cache_file(
         mut self,
-        cache_file: Option<Arc<crate::services::cache_file::CacheFileService>>,
+        cache_file: Option<Arc<dyn crate::context::CacheFile>>,
     ) -> Self {
         self.cache_file = cache_file;
         self
@@ -832,7 +832,7 @@ impl DnsRuleEngine {
             && !self.answer_ips_satisfy_rule(&decision, &match_ctx, &answer.ips)
         {
             if let Some(cache_file) = &self.cache_file {
-                cache_file.save_rdrc_rejection(tag, domain, record_type.as_u16());
+                let _ = cache_file.save_rdrc_rejection(tag, domain, record_type.as_u16());
             }
             return Ok(DnsAnswer::new(
                 Vec::new(),
@@ -2307,16 +2307,16 @@ mod tests {
         let mut upstreams = HashMap::new();
         upstreams.insert("dns".to_string(), upstream as Arc<dyn DnsUpstream>);
 
-        let cache_file = Arc::new(crate::services::cache_file::CacheFileService::new(
-            &sb_config::ir::CacheFileIR {
+        let cache_file: Arc<dyn crate::context::CacheFile> = Arc::new(
+            crate::services::cache_file::CacheFileService::memory(&sb_config::ir::CacheFileIR {
                 enabled: false,
                 path: None,
                 cache_id: None,
                 store_fakeip: false,
                 store_rdrc: true,
                 rdrc_timeout: Some("1h".to_string()),
-            },
-        ));
+            }),
+        );
 
         let engine = DnsRuleEngine::new(
             vec![route_rule(
@@ -2352,6 +2352,80 @@ mod tests {
             queries.load(Ordering::SeqCst),
             1,
             "second rejected response should be served from RDRC without upstream query"
+        );
+    }
+
+    #[tokio::test]
+    async fn p1313_07_rdrc_rejection_persists_across_service_reopen() {
+        fn engine_with_cache(
+            cache_file: Arc<dyn crate::context::CacheFile>,
+        ) -> (DnsRuleEngine, Arc<AtomicUsize>) {
+            let (upstream, queries) =
+                CountingUpstream::new("dns", vec![IpAddr::from([198, 51, 100, 1])]);
+            let mut upstreams = HashMap::new();
+            upstreams.insert("dns".to_string(), upstream as Arc<dyn DnsUpstream>);
+
+            let engine = DnsRuleEngine::new(
+                vec![route_rule(
+                    Rule::Default(DefaultRule {
+                        domain_suffix: vec!["persist.example".to_string()],
+                        ip_cidr: vec![
+                            crate::router::ruleset::IpCidr::parse("203.0.113.0/24").unwrap()
+                        ],
+                        ..Default::default()
+                    }),
+                    "dns",
+                    10,
+                )],
+                upstreams,
+                "dns".to_string(),
+                crate::dns::DnsStrategy::default(),
+                Arc::new(crate::dns::transport::TransportRegistry::new()),
+                None,
+                None,
+            )
+            .with_cache_file(Some(cache_file));
+            (engine, queries)
+        }
+
+        let tmp = tempfile::tempdir().unwrap();
+        let cache_cfg = sb_config::ir::CacheFileIR {
+            enabled: true,
+            path: Some(tmp.path().join("rdrc-cache").to_string_lossy().into_owned()),
+            cache_id: Some("dns-rdrc".to_string()),
+            store_fakeip: false,
+            store_rdrc: true,
+            rdrc_timeout: Some("1h".to_string()),
+        };
+
+        {
+            let concrete_cache = Arc::new(crate::services::cache_file::CacheFileService::new(
+                &cache_cfg,
+            ));
+            let cache: Arc<dyn crate::context::CacheFile> = concrete_cache.clone();
+            let (engine, queries) = engine_with_cache(cache);
+            let first = engine
+                .resolve("www.persist.example", RecordType::A)
+                .await
+                .unwrap();
+            assert_eq!(first.rcode, Rcode::Refused);
+            assert_eq!(queries.load(Ordering::SeqCst), 1);
+            concrete_cache.flush();
+        }
+
+        let cache: Arc<dyn crate::context::CacheFile> = Arc::new(
+            crate::services::cache_file::CacheFileService::new(&cache_cfg),
+        );
+        let (engine, queries) = engine_with_cache(cache);
+        let second = engine
+            .resolve("www.persist.example", RecordType::A)
+            .await
+            .unwrap();
+        assert_eq!(second.rcode, Rcode::Refused);
+        assert_eq!(
+            queries.load(Ordering::SeqCst),
+            0,
+            "persisted RDRC rejection should avoid a new upstream query"
         );
     }
 

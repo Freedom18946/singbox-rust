@@ -15,6 +15,40 @@ type DnsComponents = (
     Option<Arc<dyn crate::dns::dns_router::DnsRouter>>,
 );
 
+#[derive(Clone)]
+struct CacheFileFakeIpStorage {
+    inner: Arc<dyn crate::context::CacheFile>,
+}
+
+impl std::fmt::Debug for CacheFileFakeIpStorage {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("CacheFileFakeIpStorage")
+            .finish_non_exhaustive()
+    }
+}
+
+impl crate::dns::fakeip::FakeIpStorage for CacheFileFakeIpStorage {
+    fn get_by_domain(&self, domain: &str, is_ipv6: bool) -> Option<std::net::IpAddr> {
+        self.inner.get_fakeip_by_domain(domain, is_ipv6)
+    }
+
+    fn store(&self, domain: &str, ip: std::net::IpAddr) {
+        self.inner.store_fakeip_mapping(domain, ip);
+    }
+
+    fn load_metadata(&self) -> Option<crate::dns::fakeip::FakeIpMetadata> {
+        self.inner.load_fakeip_metadata()
+    }
+
+    fn save_metadata_debounced(&self, metadata: crate::dns::fakeip::FakeIpMetadata) {
+        self.inner.save_fakeip_metadata(metadata);
+    }
+
+    fn reset(&self) {
+        let _ = self.inner.reset_fakeip();
+    }
+}
+
 struct DnsServerManager {
     registry: Arc<crate::dns::transport::TransportRegistry>,
     upstreams: HashMap<String, Arc<dyn DnsUpstream>>,
@@ -218,11 +252,11 @@ fn topological_order(
 
 /// Build DNS components (Resolver and Router) from sb-config IR.
 ///
-/// `cache_file` is an optional `CacheFileService` for future RDRC (Resolver DNS Result Cache)
+/// `cache_file` is an optional `CacheFile` for RDRC (Resolver DNS Result Cache)
 /// integration. When `Some`, the DNS resolver can persist and reuse cached transport results.
 pub fn build_dns_components(
     ir: &sb_config::ir::ConfigIR,
-    cache_file: Option<Arc<crate::services::cache_file::CacheFileService>>,
+    cache_file: Option<Arc<dyn crate::context::CacheFile>>,
 ) -> Result<DnsComponents> {
     let dns_ir = ir
         .dns
@@ -236,7 +270,7 @@ pub fn build_dns_components(
     // Must happen after FakeIP env knobs are applied so restored pointers can be range-validated.
     if let Some(ref cf) = cache_file {
         if cf.store_fakeip() {
-            crate::dns::fakeip::set_storage(cf.clone());
+            crate::dns::fakeip::set_storage(Arc::new(CacheFileFakeIpStorage { inner: cf.clone() }));
             tracing::debug!(target: "sb_core::dns", "CacheFileService wired for FakeIP persistence");
         }
     }

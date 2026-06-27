@@ -383,6 +383,34 @@ async fn test_get_configs() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_clash_get_configs_reads_cache_file_mode() -> anyhow::Result<()> {
+    let cache = Arc::new(sb_core::services::cache_file::CacheFileService::memory(
+        &sb_config::ir::CacheFileIR {
+            enabled: true,
+            path: None,
+            cache_id: None,
+            store_fakeip: false,
+            store_rdrc: false,
+            rdrc_timeout: None,
+        },
+    ));
+    cache.set_clash_mode("global".to_string());
+    let Some(server) = TestServer::start_with_server(
+        TestServer::new_server()?.with_cache_file(cache as Arc<dyn sb_core::context::CacheFile>),
+    )
+    .await?
+    else {
+        return Ok(());
+    };
+
+    let response = server.get("/configs").await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = response.json().await?;
+    assert_eq!(json.get("mode").and_then(|v| v.as_str()), Some("global"));
+    Ok(())
+}
+
 /// Test PATCH /configs - Update configuration (valid)
 #[tokio::test]
 async fn test_patch_configs_valid() -> anyhow::Result<()> {
@@ -396,6 +424,7 @@ async fn test_patch_configs_valid() -> anyhow::Result<()> {
 
     let response = server.patch("/configs", body).await?;
     assert_eq!(response.status(), StatusCode::NO_CONTENT); // Matches Go: render.NoContent
+    sb_core::adapter::clash::set_mode(sb_core::adapter::clash::ClashMode::Rule);
     Ok(())
 }
 

@@ -10,23 +10,22 @@
 
 ---
 
-## Resume (2026-06-27) - P1313-06 adapter surface contracts
+## Resume (2026-06-27) - P1313-07 CacheFile persistence
 
-- **P1313-06 DONE**: `sb-types::ports` now exposes object-safe adapter-facing
-  contracts for handler/upstream, router/ruleset, DNS, FakeIP/RDRC, CacheFile,
-  URLTest history, Clash, V2Ray, time, certificate, and the adapter service bundle.
-- **Bridge added**: `sb-core::adapter::surface` converts `ContextRegistry` services
-  into those contracts; inbound/outbound adapter contexts expose `services()`.
-- **Cache hooks surfaced**: `context::CacheFile` carries FakeIP/RDRC/rule-set
-  hooks with conservative defaults, and `CacheFileService` wires them to existing
-  behavior. Deeper cache persistence remains P1313-07 scope.
-- **Contract test added**: `crates/sb-core/tests/adapter_surface_contract.rs`
-  proves cross-crate consumers can use the bundle through `dyn sb_types::ports::*`
-  without concrete downcasts.
-- **Boundary retained**: no public `RuntimePlan`/`PlannedConfigIR`, no GitHub
-  workflow automation, no dual-kernel parity movement claim.
-- **Verification PASS**: P1313-06 package doc records command evidence;
-  consistency, boundaries, format, and workspace all-features checks are green.
+- **P1313-07 DONE**: CacheFile is now a real persistent service for Clash mode,
+  selector selected/group expansion, rule-set payload metadata, FakeIP mappings,
+  FakeIP allocation metadata, and RDRC rejection state.
+- **Persistence posture**: Rust keeps its sled backend and implements Go-equivalent
+  behavior; Go bbolt `cache.db` file-level compatibility is explicitly out of
+  scope. A regular-file cache path now fails clearly instead of being overwritten.
+- **Lifecycle fixed**: enabled cache with no path defaults to `cache.db`; startup
+  and reload propagate cache initialization errors; corrupt sled directories are
+  moved to `.corrupt.<timestamp>` and rebuilt without falling back to memory.
+- **Runtime wiring**: app/supervisor/API paths share the same CacheFile instance,
+  restore persisted Clash mode, and wire FakeIP/RDRC/rule-set cache hooks through
+  object-safe context ports. Equivalent reloads reuse the existing sled handle.
+- **Verification PASS**: P1313-07 package doc records tests/checks. No GitHub
+  workflow automation was added and no dual-kernel parity movement is claimed.
 
 ## Strategic State
 

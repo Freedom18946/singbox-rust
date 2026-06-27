@@ -100,4 +100,56 @@ async fn selector_selection_survives_reload_via_cache_file() {
         .shutdown_graceful(std::time::Duration::from_secs(1))
         .await
         .expect("shutdown supervisor");
+    sb_core::adapter::clash::set_mode(sb_core::adapter::clash::ClashMode::Rule);
+}
+
+#[tokio::test]
+async fn clash_mode_restores_from_cache_file_on_start() {
+    let temp_dir = tempfile::tempdir().expect("temp dir");
+    let cache_dir = temp_dir.path().join("clash-mode-cache");
+    let cache_cfg = CacheFileIR {
+        enabled: true,
+        path: Some(cache_dir.to_string_lossy().into_owned()),
+        cache_id: Some("clash-mode".to_string()),
+        ..Default::default()
+    };
+
+    {
+        let cache = sb_core::services::cache_file::CacheFileService::new(&cache_cfg);
+        cache.set_clash_mode("global".to_string());
+        cache.flush();
+    }
+    sb_core::adapter::clash::set_mode(sb_core::adapter::clash::ClashMode::Rule);
+
+    let ir = ConfigIR {
+        experimental: Some(ExperimentalIR {
+            cache_file: Some(cache_cfg),
+            ..Default::default()
+        }),
+        outbounds: vec![OutboundIR {
+            ty: OutboundType::Direct,
+            name: Some("direct".to_string()),
+            ..Default::default()
+        }],
+        route: RouteIR {
+            default: Some("direct".to_string()),
+            ..Default::default()
+        },
+        ..Default::default()
+    };
+
+    let registry: RegistrySnapshot = sb_adapters::build_default_registry();
+    let supervisor = Supervisor::start_with_registry(ir, Some(registry))
+        .await
+        .expect("start supervisor");
+
+    assert_eq!(
+        sb_core::adapter::clash::get_mode(),
+        sb_core::adapter::clash::ClashMode::Global
+    );
+
+    supervisor
+        .shutdown_graceful(std::time::Duration::from_secs(1))
+        .await
+        .expect("shutdown supervisor");
 }
