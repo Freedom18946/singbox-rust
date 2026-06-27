@@ -1,6 +1,6 @@
 use serde_json::{json, Value};
 
-use sb_config::ir::InboundType;
+use sb_config::ir::{InboundType, RuleAction};
 
 fn parse_fixture(source: &str) -> Value {
     serde_json::from_str(source).expect("fixture JSON must be valid")
@@ -58,6 +58,11 @@ fn gui1251_fixtures_pass_production_load_path_without_schema_version() {
             include_str!("golden/gui1251/mixed_auth.json"),
             false,
         ),
+        (
+            "composite_route_dns_profile",
+            include_str!("golden/gui1251/composite_route_dns_profile.json"),
+            false,
+        ),
     ];
 
     for (name, source, expect_tun) in fixtures {
@@ -111,6 +116,73 @@ fn gui1251_fixtures_pass_production_load_path_without_schema_version() {
             .any(|inbound| inbound.ty == InboundType::Tun);
         assert_eq!(has_tun, expect_tun, "{name} TUN expectation mismatch");
     }
+}
+
+#[test]
+fn gui1251_composite_route_dns_profile_covers_low_priority_shape() {
+    let raw = parse_fixture(include_str!(
+        "golden/gui1251/composite_route_dns_profile.json"
+    ));
+    let (_, ir) = load_production(raw.clone());
+
+    assert!(
+        raw.pointer("/experimental/cache_file/store_rdrc").is_none(),
+        "GUI 1.25.1 generator suppresses cache_file.store_rdrc"
+    );
+    assert_eq!(
+        raw.pointer("/experimental/clash_api/external_controller")
+            .and_then(Value::as_str),
+        Some("[::1]:20123"),
+        "fixture should pin bracketed IPv6 controller shape"
+    );
+
+    let mixed = raw
+        .get("inbounds")
+        .and_then(Value::as_array)
+        .and_then(|items| items.iter().find(|item| item["type"] == "mixed"))
+        .expect("fixture has mixed inbound");
+    assert_eq!(mixed["listen"], "0.0.0.0");
+    assert_eq!(mixed["users"][0]["username"], "gui");
+    assert_eq!(mixed["users"][0]["password"], "pa:ss");
+
+    assert!(
+        ir.route
+            .rules
+            .iter()
+            .any(|rule| rule.action == RuleAction::HijackDns),
+        "route rules should cover GUI hijack-dns mode"
+    );
+    assert!(
+        ir.route
+            .rules
+            .iter()
+            .any(|rule| rule.action == RuleAction::Sniff),
+        "route rules should cover GUI sniff mode"
+    );
+    assert!(
+        raw.pointer("/route/rules")
+            .and_then(Value::as_array)
+            .is_some_and(|rules| rules
+                .iter()
+                .any(|rule| rule.get("clash_mode").and_then(Value::as_str) == Some("direct"))),
+        "route rules should cover GUI clash_mode emission"
+    );
+    assert_eq!(ir.route.rule_set.len(), 1, "route rule_set should lower");
+
+    let dns = ir.dns.as_ref().expect("fixture should lower DNS");
+    assert!(
+        dns.servers
+            .iter()
+            .any(|server| server.server_type.as_deref() == Some("fakeip")),
+        "DNS servers should include GUI fakeip shape"
+    );
+    assert!(
+        dns.rules
+            .iter()
+            .any(|rule| rule.clash_mode.as_deref() == Some("Global")),
+        "DNS rules should cover GUI clash mode shape"
+    );
+    assert_eq!(dns.independent_cache, Some(true));
 }
 
 #[test]

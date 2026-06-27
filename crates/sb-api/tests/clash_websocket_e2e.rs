@@ -46,11 +46,15 @@ struct TestServer {
 
 impl TestServer {
     async fn start() -> anyhow::Result<Option<Self>> {
+        Self::start_with_auth(None).await
+    }
+
+    async fn start_with_auth(auth_token: Option<String>) -> anyhow::Result<Option<Self>> {
         let config = ApiConfig {
             listen_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
             enable_cors: true,
             cors_origins: None,
-            auth_token: None,
+            auth_token,
             enable_traffic_ws: true,
             enable_logs_ws: true,
             traffic_broadcast_interval_ms: 1_000,
@@ -271,6 +275,50 @@ async fn test_lazy_channels_are_independent_after_one_disconnect() -> anyhow::Re
         &next_json_frame(&mut connections).await?
     ));
 
+    let _ = memory.send(Message::Close(None)).await;
+    let _ = traffic.send(Message::Close(None)).await;
+    let _ = connections.send(Message::Close(None)).await;
+    Ok(())
+}
+
+#[tokio::test]
+#[serial]
+async fn test_gui1251_lazy_channels_accept_query_token_auth() -> anyhow::Result<()> {
+    let _ = shared_tracker().close_all();
+    let Some(server) = TestServer::start_with_auth(Some("gui1251-secret".to_string())).await?
+    else {
+        return Ok(());
+    };
+
+    let bad = connect_async(format!("{}/memory", server.ws_base)).await;
+    assert!(
+        bad.is_err(),
+        "GUI websocket auth should reject missing ?token when secret is configured"
+    );
+
+    let (mut logs, _) = connect_async(format!(
+        "{}/logs?level=debug&token=gui1251-secret",
+        server.ws_base
+    ))
+    .await?;
+    let (mut memory, _) =
+        connect_async(format!("{}/memory?token=gui1251-secret", server.ws_base)).await?;
+    let (mut traffic, _) =
+        connect_async(format!("{}/traffic?token=gui1251-secret", server.ws_base)).await?;
+    let (mut connections, _) = connect_async(format!(
+        "{}/connections?token=gui1251-secret",
+        server.ws_base
+    ))
+    .await?;
+
+    assert!(next_json_frame(&mut logs).await?.is_object());
+    assert!(next_json_frame(&mut memory).await?.get("inuse").is_some());
+    assert!(next_json_frame(&mut traffic).await?.get("up").is_some());
+    assert!(verify_connections_snapshot(
+        &next_json_frame(&mut connections).await?
+    ));
+
+    let _ = logs.send(Message::Close(None)).await;
     let _ = memory.send(Message::Close(None)).await;
     let _ = traffic.send(Message::Close(None)).await;
     let _ = connections.send(Message::Close(None)).await;

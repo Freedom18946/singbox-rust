@@ -18,6 +18,25 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-06-28 02:29] Agent: Codex
+
+**任务**: P1313-12 GUI 1.25.1 low-priority contract
+**变更**:
+- `crates/sb-config/tests/golden/gui1251/composite_route_dns_profile.json` /
+  `crates/sb-config/tests/gui1251_config.rs` - 增加 GUI 1.25.1 composite route/DNS/system-proxy
+  shape fixture，覆盖 IPv6 controller、`icon`/`hidden`、省略 `store_rdrc`、colon auth、
+  fakeip/local/remote DNS、route sniff/hijack/clash/rule_set，并验证生产加载。
+- `crates/sb-api/tests/clash_http_e2e.rs` / `crates/sb-api/tests/clash_websocket_e2e.rs` -
+  增加 GUI HTTP Bearer auth 与 lazy WebSocket `?token=` 合同测试。
+- `agents-only/post1313/p1313_12_gui1251_contract_probe.sh` - 新增本地非 Wails GUI 1.25.1
+  进程/log/API/system-proxy shape 探针。
+- `agents-only/active_context.md` /
+  `agents-only/post1313/p1313_12_gui1251_low_priority_contract.md` - 记录 P1313-12 本地关闭与验证结果。
+**结果**: 成功。GUI fixture/API/runtime 定向测试、P1313-12 本地探针、`cargo fmt --check`、
+`cargo check -p app --features parity`、`cargo check --workspace --all-features`、`make boundaries`
+和一致性脚本均通过。
+**备注**: 未恢复 Wails/desktop 自动化，未新增 GitHub Actions，未声明 dual-kernel parity 变化。
+
 ### [2026-06-28 00:39] Agent: Codex
 
 **任务**: P1313-04 Route rule engine and network strategy

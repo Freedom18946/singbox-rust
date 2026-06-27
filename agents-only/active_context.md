@@ -10,16 +10,16 @@
 
 ---
 
-## Resume (2026-06-28) - P1313-11 service regression closeout
+## Resume (2026-06-28) - P1313-12 GUI 1.25.1 low-priority contract
 
-- **P1313-11 DONE locally**: SSMAPI managed-Shadowsocks E2E now covers API auth/lifecycle,
-  TCP multi-user auth, UDP relay target behavior, traffic stats, and cache-on-close persistence.
-- **Service tails revalidated**: SSMAPI failure/cache cases, DERP injected-DNS resolver dial,
-  Shadowsocks inbound no-current-runtime startup, public UDP relay dial target seeding, and
-  resolved DNS-forwarder bind/status proof are covered on this host.
-- **Verification PASS**: see `agents-only/post1313/p1313_11_service_regression_closeout.md`.
-  No GitHub workflow automation was added and no dual-kernel parity movement is claimed.
-  Linux resolved/systemd runtime proof remains an accepted Linux-host limitation.
+- **P1313-12 DONE locally**: GUI 1.25.1 generated-config shape is refreshed with a composite
+  route/DNS/system-proxy fixture, Clash HTTP Bearer and lazy WebSocket `?token=` contracts are
+  pinned, and a local GUI-style process/log contract probe is available.
+- **Verification PASS**: see `agents-only/post1313/p1313_12_gui1251_low_priority_contract.md`.
+  Targeted GUI fixture/API/runtime probes, `cargo check -p app --features parity`,
+  `cargo check --workspace --all-features`, `make boundaries`, and consistency validation passed.
+- **Scope note**: no Wails/desktop automation was resumed, no GitHub workflow automation was
+  added, and no dual-kernel parity movement is claimed.
 
 ## Strategic State
 

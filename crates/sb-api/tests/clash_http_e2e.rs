@@ -71,11 +71,15 @@ impl TestServer {
     }
 
     fn new_server() -> anyhow::Result<ClashApiServer> {
+        Self::new_server_with_auth(None)
+    }
+
+    fn new_server_with_auth(auth_token: Option<String>) -> anyhow::Result<ClashApiServer> {
         let config = ApiConfig {
             listen_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
             enable_cors: true,
             cors_origins: None,
-            auth_token: None,
+            auth_token,
             enable_traffic_ws: true,
             enable_logs_ws: true,
             traffic_broadcast_interval_ms: 1000,
@@ -396,6 +400,34 @@ async fn test_get_configs() -> anyhow::Result<()> {
 
     // Should contain config fields
     assert!(json.is_object());
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_gui1251_http_bearer_auth_contract() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start_with_server(TestServer::new_server_with_auth(Some(
+        "gui1251-secret".to_string(),
+    ))?)
+    .await?
+    else {
+        return Ok(());
+    };
+
+    let missing = server.get("/configs").await?;
+    assert_eq!(missing.status(), StatusCode::UNAUTHORIZED);
+    let json: serde_json::Value = missing.json().await?;
+    assert_eq!(
+        json.get("message").and_then(|value| value.as_str()),
+        Some("Unauthorized")
+    );
+
+    let authorized = server
+        .client
+        .get(format!("{}/configs", server.base_url))
+        .header(reqwest::header::AUTHORIZATION, "Bearer gui1251-secret")
+        .send()
+        .await?;
+    assert_eq!(authorized.status(), StatusCode::OK);
     Ok(())
 }
 

@@ -2,6 +2,7 @@
 # P1313-12 GUI 1.25.1 Low-Priority Contract
 
 Priority: P2
+Status: DONE locally (2026-06-28)
 
 Primary evidence:
 
@@ -21,6 +22,25 @@ real Wails/desktop joint testing remains paused.
 The GUI upgrade report shows process, log-file, system proxy, WebSocket, delay timeout, and
 generated-config changes. However post-FABLE package07 is explicitly paused indefinitely, so
 desktop automation should not resume.
+
+## Closed Work
+
+GUI 1.25.1 generated-config coverage now includes a composite fixture for bracketed IPv6
+controller shape, selector/urltest/default outbound metadata, suppressed `cache_file.store_rdrc`,
+wildcard mixed inbound normalization inputs, colon-containing proxy auth, fakeip/local/remote DNS
+servers, DNS clash-mode rules, route sniff/hijack/clash/rule-set rules, and production config
+loading/IR lowering.
+
+Clash API local E2E now pins GUI 1.25.1 auth behavior: HTTP requests use
+`Authorization: Bearer <secret>`, and lazy WebSocket channels accept `?token=<secret>` for
+`/logs`, `/memory`, `/traffic`, and `/connections` while rejecting missing tokens when a secret
+is configured.
+
+A local non-Wails probe was added at `agents-only/post1313/p1313_12_gui1251_contract_probe.sh`.
+It builds on the post-FABLE process-contract pattern: launch with GUI-style `run --disable-color
+-c ... -D ...`, redirect stdout/stderr to a log file, wait for `sing-box started`, verify the
+kernel does not own the GUI PID file, check Clash API Bearer auth, drive a mixed HTTP proxy path,
+verify port release on SIGINT, and validate GUI `getProxyEndpoint()` shape from tracked fixtures.
 
 ## Task Split
 
@@ -65,6 +85,20 @@ desktop automation should not resume.
 - Golden fixtures pass Rust production config check.
 - Local API shape probe passes against an app instance built with `gui_runtime` or `parity`.
 - No Wails automation commands are run unless the user resumes GUI joint testing.
+
+## Verification
+
+- `cargo test -p sb-config --test gui1251_config`
+- `cargo test -p app --test gui_runtime_profile --features gui_runtime`
+- `cargo test -p sb-api --test clash_http_e2e`
+- `cargo test -p sb-api --test clash_websocket_e2e`
+- `cargo build -p app --bin app --features gui_runtime`
+- `WORK=/tmp/p1313_12_gui1251 bash agents-only/post1313/p1313_12_gui1251_contract_probe.sh`
+- `cargo fmt --check`
+- `cargo check -p app --features parity`
+- `cargo check --workspace --all-features`
+- `make boundaries`
+- `./agents-only/06-scripts/verify-consistency.sh`
 
 ## Non-Goals
 
