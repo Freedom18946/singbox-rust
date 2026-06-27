@@ -116,6 +116,8 @@ pub struct ContextRegistry {
 
     pub v2ray_server: Option<Arc<dyn V2RayServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
+    pub time_service: Option<Arc<dyn TimeService>>,
+    pub certificate_store: Option<Arc<dyn CertificateStore>>,
     pub process_matcher: Option<Arc<ProcessMatcher>>,
     pub network_monitor: Arc<sb_platform::monitor::NetworkMonitor>,
 }
@@ -137,6 +139,8 @@ impl From<&Context> for ContextRegistry {
 
             v2ray_server: ctx.v2ray_server.clone(),
             ntp_service: ctx.ntp_service.clone(),
+            time_service: ctx.time_service.clone(),
+            certificate_store: ctx.certificate_store.clone(),
             process_matcher: ctx.process_matcher.clone(),
             network_monitor: ctx.network_monitor.clone(),
         }
@@ -752,12 +756,59 @@ pub trait URLTestHistoryStorage: Send + Sync + std::fmt::Debug {
 }
 
 pub trait CacheFile: Send + Sync + std::fmt::Debug {
+    fn store_fakeip(&self) -> bool {
+        false
+    }
+
+    fn store_rdrc(&self) -> bool {
+        false
+    }
+
     fn get_clash_mode(&self) -> Option<String>;
     fn set_clash_mode(&self, mode: String);
     fn set_selected(&self, group: &str, selected: &str);
     fn get_selected(&self, group: &str) -> Option<String>;
     fn get_expand(&self, group: &str) -> Option<bool>;
     fn set_expand(&self, group: &str, expand: bool);
+
+    fn store_fakeip_mapping(&self, _domain: &str, _ip: IpAddr) {}
+
+    fn get_fakeip_by_domain(&self, _domain: &str) -> Option<IpAddr> {
+        None
+    }
+
+    fn get_domain_by_fakeip(&self, _ip: &IpAddr) -> Option<String> {
+        None
+    }
+
+    fn load_fakeip_metadata(&self) -> Option<crate::dns::fakeip::FakeIpMetadata> {
+        None
+    }
+
+    fn save_fakeip_metadata(&self, _metadata: crate::dns::fakeip::FakeIpMetadata) {}
+
+    fn reset_fakeip(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
+
+    fn check_rdrc_rejection(&self, _transport_tag: &str, _domain: &str, _qtype: u16) -> bool {
+        false
+    }
+
+    fn save_rdrc_rejection(
+        &self,
+        _transport_tag: &str,
+        _domain: &str,
+        _qtype: u16,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        Ok(())
+    }
+
+    fn store_rule_set(&self, _tag: &str, _content: Vec<u8>) {}
+
+    fn get_rule_set(&self, _tag: &str) -> Option<Vec<u8>> {
+        None
+    }
 }
 
 /// Runtime liveness snapshot for a repeatedly-startable V2Ray server.

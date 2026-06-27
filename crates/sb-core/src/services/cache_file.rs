@@ -717,6 +717,14 @@ impl CacheFileService {
 }
 
 impl crate::context::CacheFile for CacheFileService {
+    fn store_fakeip(&self) -> bool {
+        CacheFileService::store_fakeip(self)
+    }
+
+    fn store_rdrc(&self) -> bool {
+        CacheFileService::store_rdrc(self)
+    }
+
     fn get_clash_mode(&self) -> Option<String> {
         self.get_clash_mode()
     }
@@ -739,6 +747,53 @@ impl crate::context::CacheFile for CacheFileService {
 
     fn set_expand(&self, group: &str, expand: bool) {
         self.set_expand(group, expand);
+    }
+
+    fn store_fakeip_mapping(&self, domain: &str, ip: IpAddr) {
+        CacheFileService::store_fakeip_mapping(self, domain, ip);
+    }
+
+    fn get_fakeip_by_domain(&self, domain: &str) -> Option<IpAddr> {
+        CacheFileService::get_fakeip_by_domain(self, domain)
+    }
+
+    fn get_domain_by_fakeip(&self, ip: &IpAddr) -> Option<String> {
+        CacheFileService::get_domain_by_fakeip(self, ip)
+    }
+
+    fn load_fakeip_metadata(&self) -> Option<crate::dns::fakeip::FakeIpMetadata> {
+        <Self as crate::dns::fakeip::FakeIpStorage>::load_metadata(self)
+    }
+
+    fn save_fakeip_metadata(&self, metadata: crate::dns::fakeip::FakeIpMetadata) {
+        <Self as crate::dns::fakeip::FakeIpStorage>::save_metadata_debounced(self, metadata);
+    }
+
+    fn reset_fakeip(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        <Self as crate::dns::fakeip::FakeIpStorage>::reset(self);
+        Ok(())
+    }
+
+    fn check_rdrc_rejection(&self, transport_tag: &str, domain: &str, qtype: u16) -> bool {
+        CacheFileService::check_rdrc_rejection(self, transport_tag, domain, qtype)
+    }
+
+    fn save_rdrc_rejection(
+        &self,
+        transport_tag: &str,
+        domain: &str,
+        qtype: u16,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        CacheFileService::save_rdrc_rejection(self, transport_tag, domain, qtype);
+        Ok(())
+    }
+
+    fn store_rule_set(&self, tag: &str, content: Vec<u8>) {
+        CacheFileService::store_rule_set(self, tag, content);
+    }
+
+    fn get_rule_set(&self, tag: &str) -> Option<Vec<u8>> {
+        CacheFileService::get_rule_set(self, tag)
     }
 }
 

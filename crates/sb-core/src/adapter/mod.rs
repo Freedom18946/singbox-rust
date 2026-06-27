@@ -29,6 +29,7 @@ pub mod bridge;
 pub mod clash;
 pub mod handler;
 pub mod registry;
+pub mod surface;
 
 pub type InboundReadySender = tokio::sync::oneshot::Sender<io::Result<()>>;
 

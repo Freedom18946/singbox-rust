@@ -1,7 +1,9 @@
 //! Inbound acceptor port.
 
 use crate::errors::CoreError;
+use crate::ports::BoxFuture;
 use crate::session::{InboundTag, Session};
+use std::sync::Arc;
 
 /// Boxed async stream (placeholder - actual impl in sb-transport).
 pub type BoxedStream = Box<dyn AsyncStream>;
@@ -28,14 +30,14 @@ pub trait InboundHandler: Send + Sync + 'static {
         &self,
         session: Session,
         stream: BoxedStream,
-    ) -> impl std::future::Future<Output = Result<(), CoreError>> + Send;
+    ) -> BoxFuture<'_, Result<(), CoreError>>;
 
     /// Called when a UDP packet is received.
     fn on_datagram(
         &self,
         session: Session,
         packet: Datagram,
-    ) -> impl std::future::Future<Output = Result<(), CoreError>> + Send;
+    ) -> BoxFuture<'_, Result<(), CoreError>>;
 }
 
 /// Inbound acceptor port.
@@ -47,8 +49,6 @@ pub trait InboundAcceptor: Send + Sync + 'static {
     fn tag(&self) -> InboundTag;
 
     /// Start accepting connections, calling handler for each.
-    fn accept_loop<H: InboundHandler>(
-        &self,
-        handler: H,
-    ) -> impl std::future::Future<Output = Result<(), CoreError>> + Send;
+    fn accept_loop(&self, handler: Arc<dyn InboundHandler>)
+        -> BoxFuture<'_, Result<(), CoreError>>;
 }

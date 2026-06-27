@@ -1,6 +1,7 @@
 //! Outbound connector port.
 
 use crate::errors::CoreError;
+use crate::ports::{BoxFuture, BoxedStream};
 use crate::session::{OutboundTag, Session, TargetAddr};
 
 /// Outbound connector port.
@@ -16,7 +17,7 @@ pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
         &self,
         session: &Session,
         target: &TargetAddr,
-    ) -> impl std::future::Future<Output = Result<Box<dyn crate::ports::AsyncStream>, CoreError>> + Send;
+    ) -> BoxFuture<'_, Result<BoxedStream, CoreError>>;
 
     /// Send a UDP datagram to the target.
     fn send_datagram(
@@ -24,5 +25,5 @@ pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
         session: &Session,
         target: &TargetAddr,
         data: &[u8],
-    ) -> impl std::future::Future<Output = Result<(), CoreError>> + Send;
+    ) -> BoxFuture<'_, Result<(), CoreError>>;
 }

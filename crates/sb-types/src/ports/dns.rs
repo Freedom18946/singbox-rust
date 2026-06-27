@@ -1,6 +1,7 @@
 //! DNS resolver port.
 
 use crate::errors::DnsError;
+use crate::ports::BoxFuture;
 use std::net::IpAddr;
 
 /// DNS cache statistics.
@@ -17,10 +18,7 @@ pub struct DnsCacheStats {
 /// Implementations may be: system resolver, DoH, DoT, etc.
 pub trait DnsPort: Send + Sync + 'static {
     /// Resolve a domain name to IP addresses.
-    fn resolve_ip(
-        &self,
-        name: &str,
-    ) -> impl std::future::Future<Output = Result<Vec<IpAddr>, DnsError>> + Send;
+    fn resolve_ip(&self, name: &str) -> BoxFuture<'_, Result<Vec<IpAddr>, DnsError>>;
 
     /// Get cache statistics.
     fn cache_stats(&self) -> DnsCacheStats;

@@ -3,6 +3,8 @@
 
 Priority: P1
 
+Status: DONE (2026-06-27)
+
 Primary evidence:
 
 - `agents-only/reference/GO_PARITY_MATRIX.md` PX-007, PX-008, PX-009
@@ -23,6 +25,25 @@ hidden behind IR, global services, or one-off registries.
 
 PX-007/PX-008/PX-009 record missing or divergent handler/upstream/router/ruleset, DNS/FakeIP,
 time/certificate/cache/clash/v2ray adapter surfaces.
+
+## Result
+
+- `sb-types::ports` now exposes object-safe adapter-facing contracts backed by a local
+  `BoxFuture` alias, including handler/upstream, router/ruleset, DNS, FakeIP/RDRC,
+  CacheFile, URLTest history, Clash, V2Ray, time, certificate, and the
+  `AdapterServicePorts` bundle.
+- Existing `InboundHandler`, `InboundAcceptor`, `OutboundConnector`, and `DnsPort`
+  methods no longer use `impl Future` in trait signatures, so consumers can keep
+  port values behind `dyn Trait`.
+- `sb-core::adapter::surface` bridges `ContextRegistry` services into the new
+  contracts through thin adapters; inbound/outbound adapter contexts expose the
+  service bundle through `services()`.
+- `context::CacheFile` now carries adapter-visible FakeIP, RDRC, and rule-set
+  persistence hooks with conservative defaults. `CacheFileService` wires those
+  hooks to its existing storage behavior.
+- Router dispatch remains an explicit future wiring point: the bundle exposes a
+  placeholder router port that supports pre-match/tracker shape without claiming
+  direct stream/packet routing completion.
 
 ## Task Split
 
@@ -62,11 +83,19 @@ time/certificate/cache/clash/v2ray adapter surfaces.
 
 ## Acceptance
 
-- `cargo check -p sb-types`
-- `cargo check -p sb-core`
-- `cargo check -p sb-adapters`
-- At least one cross-crate integration test proving a consumer can use the new contract
-  without depending on concrete implementation types.
+- `cargo check -p sb-types` PASS
+- `cargo check -p sb-core --features router` PASS
+- `cargo check -p sb-adapters` PASS
+- `cargo check -p app --features parity` PASS
+- `cargo check --workspace --all-features` PASS
+- `cargo test -p sb-types` PASS
+- `cargo test -p sb-core adapter_services_expose_trait_object_contracts_without_downcast --features router` PASS
+- `./agents-only/06-scripts/verify-consistency.sh` PASS
+- `make boundaries` PASS
+- `cargo fmt --check` PASS
+- Cross-crate contract test added at
+  `crates/sb-core/tests/adapter_surface_contract.rs`; it consumes the adapter
+  service bundle only through `dyn sb_types::ports::*` trait objects.
 
 ## Non-Goals
 

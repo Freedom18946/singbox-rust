@@ -36,10 +36,29 @@ pub struct AdapterInboundContext {
     pub context: ContextRegistry,
 }
 
+impl AdapterInboundContext {
+    /// Return adapter-visible runtime service ports derived from this context.
+    #[must_use]
+    pub fn services(&self) -> super::surface::AdapterServices {
+        super::surface::AdapterServices::from_context_registry_with_dns_router(
+            &self.context,
+            self.dns_router.clone(),
+        )
+    }
+}
+
 /// Context passed to outbound adapter builders so they can access the bridge (for Selector/URLTest).
 pub struct AdapterOutboundContext {
     pub bridge: Arc<Bridge>,
     pub context: ContextRegistry,
+}
+
+impl AdapterOutboundContext {
+    /// Return adapter-visible runtime service ports derived from this context.
+    #[must_use]
+    pub fn services(&self) -> super::surface::AdapterServices {
+        super::surface::AdapterServices::from_context_registry(&self.context)
+    }
 }
 
 pub type InboundBuilder =

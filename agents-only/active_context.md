@@ -10,29 +10,23 @@
 
 ---
 
-## Resume (2026-06-27) - P1313-05 lifecycle managers/start order
+## Resume (2026-06-27) - P1313-06 adapter surface contracts
 
-- **P1313-05 DONE**: `sb-core` startup/reload now uses a private
-  `LifecycleCoordinator` with Go-shaped Initialize, StartCore, StartEdge,
-  PostStart, Started, and close ordering. Router and no-router activation share
-  the same transaction shape.
-- **DNS runtime folded in**: configured DNS is built/started inside activation;
-  build/start failure aborts startup/reload. Global DNS resolver publication now
-  happens only after activation commit, so failed reload keeps the old resolver.
-- **Atomic reload preserved**: same-port in-process reload remains rejected; failed
-  activation closes only new resources and keeps old listeners, context, runtime
-  registries, and committed DNS resolver serving.
-- **Boundary retained**: no public `RuntimePlan`/`PlannedConfigIR`, no legacy
-  inbound migration into `InboundManager`, no GUI desktop automation, no
-  dual-kernel parity movement claim.
-- **Verification PASS**: package5 doc records command evidence; consistency and
-  boundary gates are green.
-
-## Resume (2026-06-20b) - post003 TUN UDP/IPv6 + proxy egress
-
-- **post_fable_package03 DONE**: UDP NAT + IPv6 TCP/UDP reply packets; macOS EISCONN fix;
-  TUN egress through proxy outbounds. Live root 03b TCP IPv4+IPv6 proof PASS at
-  `/tmp/pf03b_post003_privileged2`; UDP pinned by unit test. Evidence: package03 note.
+- **P1313-06 DONE**: `sb-types::ports` now exposes object-safe adapter-facing
+  contracts for handler/upstream, router/ruleset, DNS, FakeIP/RDRC, CacheFile,
+  URLTest history, Clash, V2Ray, time, certificate, and the adapter service bundle.
+- **Bridge added**: `sb-core::adapter::surface` converts `ContextRegistry` services
+  into those contracts; inbound/outbound adapter contexts expose `services()`.
+- **Cache hooks surfaced**: `context::CacheFile` carries FakeIP/RDRC/rule-set
+  hooks with conservative defaults, and `CacheFileService` wires them to existing
+  behavior. Deeper cache persistence remains P1313-07 scope.
+- **Contract test added**: `crates/sb-core/tests/adapter_surface_contract.rs`
+  proves cross-crate consumers can use the bundle through `dyn sb_types::ports::*`
+  without concrete downcasts.
+- **Boundary retained**: no public `RuntimePlan`/`PlannedConfigIR`, no GitHub
+  workflow automation, no dual-kernel parity movement claim.
+- **Verification PASS**: P1313-06 package doc records command evidence;
+  consistency, boundaries, format, and workspace all-features checks are green.
 
 ## Strategic State
 

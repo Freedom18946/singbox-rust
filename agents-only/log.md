@@ -8450,3 +8450,32 @@ L2.8.4-6 Handlers + WebSocket:
 - sb-config 整体仍在第一波 blocker 列表中
 
 **验证**: cargo check/test/clippy 全 pass，inbound-errors.sh pass
+
+---
+
+## 2026-06-27 P1313-06 Adapter Surface Contracts
+
+**任务**: 实现 post1313 任务包 06，暴露 Rust adapter-facing surface contracts。
+
+**完成内容**:
+- `sb-types::ports` 新增对象安全的 adapter contract surface 与 `BoxFuture` 端口模式。
+- `sb-core::adapter::surface` 将 `ContextRegistry` 中的 CacheFile、URLTest history、
+  Clash、V2Ray、time、certificate 等服务桥接为 `sb_types::ports::*` trait objects。
+- `AdapterInboundContext` / `AdapterOutboundContext` 新增 `services()`。
+- `CacheFile` context trait 增加 FakeIP、RDRC、rule-set hooks；`CacheFileService`
+  接入已有存储行为。
+- 新增跨 crate contract test，验证消费方无需 concrete downcast。
+
+**验证**:
+- `cargo check -p sb-types`
+- `cargo check -p sb-core --features router`
+- `cargo check -p sb-adapters`
+- `cargo check -p app --features parity`
+- `cargo check --workspace --all-features`
+- `cargo test -p sb-types`
+- `cargo test -p sb-core adapter_services_expose_trait_object_contracts_without_downcast --features router`
+- `./agents-only/06-scripts/verify-consistency.sh`
+- `make boundaries`
+- `cargo fmt --check`
+
+**结果**: P1313-06 DONE。未声明 dual-kernel parity 变化；router 直连派发仍留作后续 wiring。

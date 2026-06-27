@@ -5,9 +5,17 @@
 //! sb-core depends ONLY on these traits; adapters implement them.
 //!
 //! # Note on async traits
-//! These traits use the stable `async fn in traits` feature (Rust 1.75+).
-//! For object-safety when needed, use the wrapper pattern (see templates/).
+//! Ports are object-safe so they can be passed through adapter registries and
+//! runtime contexts as `dyn Trait`. Async methods return [`BoxFuture`] instead
+//! of using `async fn` in traits.
 
+use std::future::Future;
+use std::pin::Pin;
+
+/// Boxed future used by object-safe port traits.
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+pub mod adapter;
 pub mod admin;
 pub mod dns;
 pub mod http;
@@ -16,6 +24,7 @@ pub mod metrics;
 pub mod outbound;
 pub mod service;
 
+pub use adapter::*;
 pub use admin::*;
 pub use dns::*;
 pub use http::*;
