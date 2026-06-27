@@ -442,6 +442,15 @@ pub struct RuleIR {
     /// Delay before using fallback network type.
     #[serde(default)]
     pub fallback_delay: Option<String>,
+    /// Disable UDP domain unmapping for this route action.
+    #[serde(default)]
+    pub udp_disable_domain_unmapping: Option<bool>,
+    /// Use connected UDP mode for this route action.
+    #[serde(default)]
+    pub udp_connect: Option<bool>,
+    /// UDP timeout override for this route action.
+    #[serde(default)]
+    pub udp_timeout: Option<String>,
 
     // Sniff Action Fields
     /// Sniffer protocol (e.g. "http", "tls", "quic").
@@ -884,7 +893,10 @@ mod tests {
             "mark": 255,
             "network_strategy": "prefer_ipv4",
             "fallback_network_type": ["wifi"],
-            "fallback_delay": "300ms"
+            "fallback_delay": "300ms",
+            "udp_disable_domain_unmapping": true,
+            "udp_connect": true,
+            "udp_timeout": "45s"
         });
         let ir: RuleIR = serde_json::from_value(data).unwrap();
         assert_eq!(ir.action, RuleAction::RouteOptions);
@@ -896,6 +908,9 @@ mod tests {
             ir.fallback_network_type.as_deref(),
             Some(&["wifi".to_string()][..])
         );
+        assert_eq!(ir.udp_disable_domain_unmapping, Some(true));
+        assert_eq!(ir.udp_connect, Some(true));
+        assert_eq!(ir.udp_timeout.as_deref(), Some("45s"));
     }
 
     #[test]

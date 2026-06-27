@@ -163,6 +163,14 @@ fn parse_rule_entry(val: &Value) -> RuleIR {
             .get("client_subnet")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        r.udp_disable_domain_unmapping = obj
+            .get("udp_disable_domain_unmapping")
+            .and_then(|v| v.as_bool());
+        r.udp_connect = obj.get("udp_connect").and_then(|v| v.as_bool());
+        r.udp_timeout = obj
+            .get("udp_timeout")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
 
         r.outbound = obj
             .get("outbound")

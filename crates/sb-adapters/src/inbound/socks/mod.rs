@@ -194,9 +194,18 @@ pub async fn run_with_ready(
         let inbound_tag = cfg.tag.clone();
         let stats = cfg.stats.clone();
         let conn_tracker = cfg.conn_tracker.clone();
+        let udp_runtime =
+            udp::UdpDatagramRuntime::new(Some(cfg.router.clone()), Some(cfg.outbounds.clone()));
         tokio::spawn(async move {
-            if let Err(e) =
-                udp::serve_udp_datagrams(sock, timeout, inbound_tag, stats, conn_tracker).await
+            if let Err(e) = udp::serve_udp_datagrams_with_runtime(
+                sock,
+                timeout,
+                inbound_tag,
+                stats,
+                conn_tracker,
+                udp_runtime,
+            )
+            .await
             {
                 tracing::warn!("socks/udp serve error: {:?}", e);
             }

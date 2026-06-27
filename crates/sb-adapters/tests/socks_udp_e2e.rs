@@ -3,13 +3,23 @@
 // SOCKS5 UDP 端到端集成测试
 // 由于解析函数是私有的，这里主要测试服务启动和基本功能
 
-use sb_adapters::inbound::socks::udp::serve_udp_datagrams;
+use async_trait::async_trait;
+use sb_adapters::inbound::socks::udp::{
+    encode_udp_datagram, parse_udp_datagram, serve_udp_datagrams, serve_udp_datagrams_with_runtime,
+    UdpDatagramRuntime,
+};
+use sb_config::ir::{ConfigIR, RuleAction, RuleIR};
+use sb_core::adapter::{UdpOutboundFactory, UdpOutboundSession};
+use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
+use sb_core::router::RouterHandle;
 use serial_test::serial;
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr};
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
+use tokio::sync::{mpsc, Mutex};
 use tokio::time::{sleep, timeout};
 
 async fn bind_udp_or_skip() -> Option<UdpSocket> {
@@ -29,6 +39,135 @@ fn encode_socks5_udp_ipv4(ip: Ipv4Addr, port: u16, payload: &[u8]) -> Vec<u8> {
     buf.extend_from_slice(&port.to_be_bytes());
     buf.extend_from_slice(payload);
     buf
+}
+
+#[derive(Debug)]
+struct MockTcpConnector;
+
+#[async_trait]
+impl sb_core::adapter::OutboundConnector for MockTcpConnector {
+    async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
+        Err(std::io::Error::new(
+            std::io::ErrorKind::Unsupported,
+            "mock connector only supports UDP",
+        ))
+    }
+}
+
+#[derive(Debug)]
+struct EchoUdpFactory;
+
+impl UdpOutboundFactory for EchoUdpFactory {
+    fn open_session(&self) -> sb_core::adapter::UdpOutboundFuture {
+        Box::pin(async {
+            let (tx, rx) = mpsc::channel(8);
+            Ok(Arc::new(EchoUdpSession {
+                tx,
+                rx: Mutex::new(rx),
+            }) as Arc<dyn UdpOutboundSession>)
+        })
+    }
+}
+
+#[derive(Debug)]
+struct EchoUdpSession {
+    tx: mpsc::Sender<(Vec<u8>, std::net::SocketAddr)>,
+    rx: Mutex<mpsc::Receiver<(Vec<u8>, std::net::SocketAddr)>>,
+}
+
+#[async_trait]
+impl UdpOutboundSession for EchoUdpSession {
+    async fn send_to(&self, data: &[u8], _host: &str, port: u16) -> std::io::Result<()> {
+        let from = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+        self.tx
+            .send((data.to_vec(), from))
+            .await
+            .map_err(|_| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "mock closed"))
+    }
+
+    async fn recv_from(&self) -> std::io::Result<(Vec<u8>, std::net::SocketAddr)> {
+        self.rx
+            .lock()
+            .await
+            .recv()
+            .await
+            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "mock closed"))
+    }
+}
+
+fn udp_runtime(disable_domain_unmapping: bool) -> UdpDatagramRuntime {
+    let mut cfg = ConfigIR::default();
+    cfg.route.rules.push(RuleIR {
+        action: RuleAction::RouteOptions,
+        domain: vec!["example.test".to_string()],
+        network: vec!["udp".to_string()],
+        outbound: Some("udp-mock".to_string()),
+        udp_disable_domain_unmapping: Some(disable_domain_unmapping),
+        udp_timeout: Some("2s".to_string()),
+        ..Default::default()
+    });
+    let idx = sb_core::router::builder::build_index_from_ir(&cfg).expect("router build");
+
+    let mut outbounds = HashMap::new();
+    outbounds.insert(
+        "udp-mock".to_string(),
+        OutboundImpl::Connector(Arc::new(MockTcpConnector)),
+    );
+    let mut udp_factories: HashMap<String, Arc<dyn UdpOutboundFactory>> = HashMap::new();
+    udp_factories.insert("udp-mock".to_string(), Arc::new(EchoUdpFactory));
+
+    UdpDatagramRuntime::new(
+        Some(Arc::new(RouterHandle::from_index(idx))),
+        Some(Arc::new(OutboundRegistryHandle::new_with_udp_factories(
+            OutboundRegistry::new(outbounds),
+            udp_factories,
+        ))),
+    )
+}
+
+async fn run_domain_unmapping_case(
+    disable_domain_unmapping: bool,
+) -> Option<sb_core::net::datagram::UdpTargetAddr> {
+    let Some(socks_sock) = bind_udp_or_skip().await else {
+        eprintln!("skipping socks udp domain unmapping test: PermissionDenied binding service");
+        return None;
+    };
+    let socks_sock = Arc::new(socks_sock);
+    let socks_addr = socks_sock.local_addr().unwrap();
+    let conn_tracker = sb_common::conntrack::shared_tracker();
+    let service_task = tokio::spawn(serve_udp_datagrams_with_runtime(
+        socks_sock,
+        Some(Duration::from_secs(2)),
+        Some("socks-test".to_string()),
+        None,
+        conn_tracker,
+        udp_runtime(disable_domain_unmapping),
+    ));
+
+    let Some(client) = bind_udp_or_skip().await else {
+        service_task.abort();
+        eprintln!("skipping socks udp domain unmapping test: PermissionDenied binding client");
+        return None;
+    };
+
+    let dst = sb_core::net::datagram::UdpTargetAddr::Domain {
+        host: "example.test".to_string(),
+        port: 5353,
+    };
+    let payload = b"domain-unmapping";
+    let packet = encode_udp_datagram(&dst, payload);
+    client.send_to(&packet, socks_addr).await.unwrap();
+
+    let mut recv_buf = [0u8; 1500];
+    let (n, _) = timeout(Duration::from_secs(2), client.recv_from(&mut recv_buf))
+        .await
+        .expect("reply timeout")
+        .expect("reply recv");
+    service_task.abort();
+
+    let (reply_dst, header_len) = parse_udp_datagram(&recv_buf[..n]).expect("reply parse");
+    assert_eq!(&recv_buf[header_len..n], payload);
+    Some(reply_dst)
 }
 
 #[tokio::test]
@@ -104,6 +243,38 @@ async fn socks_udp_service_starts_with_env() {
 
     // 清理环境变量
     std::env::remove_var("SB_SOCKS_UDP_ENABLE");
+}
+
+#[tokio::test]
+#[serial]
+async fn socks_udp_registry_transport_preserves_domain_reply_by_default() {
+    let Some(reply_dst) = run_domain_unmapping_case(false).await else {
+        return;
+    };
+
+    assert_eq!(
+        reply_dst,
+        sb_core::net::datagram::UdpTargetAddr::Domain {
+            host: "example.test".to_string(),
+            port: 5353,
+        }
+    );
+}
+
+#[tokio::test]
+#[serial]
+async fn socks_udp_registry_transport_can_disable_domain_unmapping() {
+    let Some(reply_dst) = run_domain_unmapping_case(true).await else {
+        return;
+    };
+
+    assert_eq!(
+        reply_dst,
+        sb_core::net::datagram::UdpTargetAddr::Ip(std::net::SocketAddr::from((
+            Ipv4Addr::LOCALHOST,
+            5353
+        )))
+    );
 }
 
 #[tokio::test]

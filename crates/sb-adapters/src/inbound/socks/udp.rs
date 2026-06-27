@@ -27,13 +27,19 @@ use std::time::Duration;
 
 #[cfg(feature = "metrics")]
 use metrics::{counter, gauge};
-use sb_core::net::datagram::{run_nat_evictor, UdpNatKey, UdpNatMap};
+use sb_core::net::datagram::{run_nat_evictor, UdpNatKey, UdpNatMap, UdpNatUpstream};
 use sb_core::net::metered::TrafficRecorder;
-use sb_core::outbound::udp::{direct_sendto, direct_udp_socket_for};
-use sb_core::router::engine::RouterHandle;
+use sb_core::outbound::udp::{direct_sendto, direct_udp_socket_for, resolve_target_socketaddr};
+use sb_core::outbound::{
+    Endpoint as OutboundEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget,
+};
 use sb_core::router::rules as rules_global;
-use sb_core::router::rules::{Decision as RDecision, RouteCtx};
+use sb_core::router::rules::{
+    Decision as RDecision, RouteActionOptions, RouteCtx as RulesRouteCtx,
+};
+use sb_core::router::{RouteCtx as RouterRouteCtx, RouterHandle, Transport};
 use sb_core::services::v2ray_api::StatsManager;
+use sb_core::types::{Endpoint as TypesEndpoint, Host};
 use std::env;
 
 static NAT_MAP: OnceCell<Arc<UdpNatMap>> = OnceCell::const_new();
@@ -79,6 +85,239 @@ fn max_entries() -> usize {
         .ok()
         .and_then(|v| v.parse::<usize>().ok())
         .unwrap_or(4096)
+}
+
+#[derive(Clone, Default)]
+pub struct UdpDatagramRuntime {
+    pub router: Option<Arc<RouterHandle>>,
+    pub outbounds: Option<Arc<OutboundRegistryHandle>>,
+}
+
+impl UdpDatagramRuntime {
+    pub fn new(
+        router: Option<Arc<RouterHandle>>,
+        outbounds: Option<Arc<OutboundRegistryHandle>>,
+    ) -> Self {
+        Self { router, outbounds }
+    }
+}
+
+#[derive(Clone)]
+struct UdpRouteDecision {
+    decision: RDecision,
+    rule: Option<String>,
+    route_options: RouteActionOptions,
+}
+
+impl Default for UdpRouteDecision {
+    fn default() -> Self {
+        Self {
+            decision: RDecision::Direct,
+            rule: None,
+            route_options: RouteActionOptions::default(),
+        }
+    }
+}
+
+fn outbound_endpoint_from_udp_target(dst: &UdpTargetAddr) -> OutboundEndpoint {
+    match dst {
+        UdpTargetAddr::Ip(sa) => OutboundEndpoint::Ip(*sa),
+        UdpTargetAddr::Domain { host, port } => OutboundEndpoint::Domain(host.clone(), *port),
+    }
+}
+
+fn types_endpoint_from_udp_target(dst: &UdpTargetAddr) -> TypesEndpoint {
+    match dst {
+        UdpTargetAddr::Ip(sa) => TypesEndpoint::from(*sa),
+        UdpTargetAddr::Domain { host, port } => TypesEndpoint::new(Host::parse(host), *port),
+    }
+}
+
+fn route_target_from_decision(decision: &RDecision) -> Option<RouteTarget> {
+    match decision {
+        RDecision::Direct => Some(RouteTarget::direct()),
+        RDecision::Proxy(Some(name)) => Some(RouteTarget::Named(name.clone())),
+        RDecision::Proxy(None) => Some(RouteTarget::Named("proxy".to_string())),
+        RDecision::Reject | RDecision::RejectDrop => Some(RouteTarget::block()),
+        _ => None,
+    }
+}
+
+fn route_target_label(target: &RouteTarget) -> String {
+    match target {
+        RouteTarget::Kind(OutboundKind::Direct) => "direct".to_string(),
+        RouteTarget::Kind(OutboundKind::Block) => "block".to_string(),
+        RouteTarget::Kind(other) => format!("{other:?}").to_ascii_lowercase(),
+        RouteTarget::Named(name) => name.clone(),
+    }
+}
+
+fn route_target_chain_label(target: &RouteTarget) -> String {
+    match target {
+        RouteTarget::Kind(OutboundKind::Direct) => "DIRECT".to_string(),
+        RouteTarget::Kind(OutboundKind::Block) => "BLOCK".to_string(),
+        RouteTarget::Kind(other) => format!("{other:?}").to_ascii_uppercase(),
+        RouteTarget::Named(name) => name.clone(),
+    }
+}
+
+fn target_port(dst: &UdpTargetAddr) -> u16 {
+    match dst {
+        UdpTargetAddr::Ip(sa) => sa.port(),
+        UdpTargetAddr::Domain { port, .. } => *port,
+    }
+}
+
+fn effective_udp_timeout(
+    dst: &UdpTargetAddr,
+    inbound_timeout: Option<Duration>,
+    options: &RouteActionOptions,
+) -> Duration {
+    options
+        .udp_timeout
+        .or(inbound_timeout)
+        .or_else(|| {
+            sb_core::router::conn::port_protocol(target_port(dst))
+                .and_then(sb_core::router::conn::protocol_timeout)
+        })
+        .unwrap_or(sb_core::router::conn::UDP_TIMEOUT)
+}
+
+fn reply_target_for_packet(
+    original_dst: &UdpTargetAddr,
+    from: SocketAddr,
+    options: &RouteActionOptions,
+) -> UdpTargetAddr {
+    match original_dst {
+        UdpTargetAddr::Domain { .. } if !options.udp_disable_domain_unmapping => {
+            original_dst.clone()
+        }
+        _ => UdpTargetAddr::Ip(from),
+    }
+}
+
+async fn open_registry_upstream(
+    outbounds: &OutboundRegistryHandle,
+    target: &RouteTarget,
+    dst: &UdpTargetAddr,
+) -> Result<Arc<dyn sb_core::outbound::UdpTransport>> {
+    let transport = outbounds
+        .connect_udp(target, outbound_endpoint_from_udp_target(dst))
+        .await?;
+    Ok(Arc::from(transport))
+}
+
+async fn open_direct_socket_upstream(
+    dst: &UdpTargetAddr,
+    options: &RouteActionOptions,
+) -> Result<Arc<UdpSocket>> {
+    let socket = direct_udp_socket_for(dst).await?;
+    if options.udp_connect {
+        let addr = resolve_target_socketaddr(dst).await?;
+        socket.connect(addr).await?;
+    }
+    Ok(Arc::new(socket))
+}
+
+async fn send_to_nat_upstream(
+    upstream: &UdpNatUpstream,
+    dst: &UdpTargetAddr,
+    payload: &[u8],
+    options: &RouteActionOptions,
+) -> Result<usize> {
+    match upstream {
+        UdpNatUpstream::Socket(socket) => {
+            if options.udp_connect && socket.peer_addr().is_ok() {
+                Ok(socket.send(payload).await?)
+            } else {
+                direct_sendto(socket.as_ref(), dst, payload).await
+            }
+        }
+        UdpNatUpstream::Transport(transport) => {
+            let endpoint = types_endpoint_from_udp_target(dst);
+            transport
+                .send_to(payload, &endpoint)
+                .await
+                .map_err(|err| anyhow::anyhow!("{err}"))
+        }
+    }
+}
+
+async fn recv_from_nat_upstream(
+    upstream: &UdpNatUpstream,
+    buf: &mut [u8],
+) -> Result<(usize, SocketAddr)> {
+    match upstream {
+        UdpNatUpstream::Socket(socket) => Ok(socket.recv_from(buf).await?),
+        UdpNatUpstream::Transport(transport) => transport
+            .recv_from(buf)
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}")),
+    }
+}
+
+fn spawn_reverse_relay(
+    listen: Arc<UdpSocket>,
+    key: UdpNatKey,
+    map: Arc<UdpNatMap>,
+    upstream: UdpNatUpstream,
+    original_dst: UdpTargetAddr,
+    route_options: RouteActionOptions,
+    idle_timeout: Duration,
+    traffic: Option<Arc<dyn TrafficRecorder>>,
+    cancel: tokio_util::sync::CancellationToken,
+) {
+    tokio::spawn(async move {
+        let mut rbuf = vec![0u8; 64 * 1024];
+        loop {
+            let res = tokio::select! {
+                _ = cancel.cancelled() => {
+                    let _ = map.remove(&key).await;
+                    return;
+                }
+                r = tokio::time::timeout(
+                    idle_timeout,
+                    recv_from_nat_upstream(&upstream, &mut rbuf)
+                ) => r,
+            };
+            let (rn, from) = match res {
+                Ok(Ok(packet)) => packet,
+                Ok(Err(err)) => {
+                    tracing::debug!(error=%err, "socks5-udp: upstream recv failed");
+                    let _ = map.remove(&key).await;
+                    break;
+                }
+                Err(_) => {
+                    cancel.cancel();
+                    let _ = map.remove(&key).await;
+                    break;
+                }
+            };
+            #[cfg(feature = "metrics")]
+            {
+                metrics::counter!("udp_pkts_in_total").increment(1);
+                metrics::counter!("udp_bytes_in_total").increment(rn as u64);
+            }
+            let reply_dst = reply_target_for_packet(&original_dst, from, &route_options);
+            let out = encode_udp_datagram(&reply_dst, &rbuf[..rn]);
+            if let Err(e) = listen.send_to(&out, key.client).await {
+                tracing::debug!("socks5 udp send back err: {e}");
+                let _ = map.remove(&key).await;
+                break;
+            }
+            if let Some(ref recorder) = traffic {
+                recorder.record_down(rn as u64);
+                recorder.record_down_packet(1);
+            }
+            #[cfg(feature = "metrics")]
+            {
+                metrics::counter!("udp_bytes_out_total").increment(out.len() as u64);
+                metrics::counter!("socks_udp_packets_out_total").increment(1);
+                metrics::counter!("udp_packets_in_total").increment(1);
+            }
+            let _ = map.get_upstream(&key).await;
+        }
+    });
 }
 
 /// SOCKS5 UDP 包头解析，返回 (目标地址, 头长)
@@ -346,7 +585,7 @@ async fn run_one_real(
                 UdpTargetAddr::Ip(sa) => Some(sa.ip()),
                 _ => None,
             };
-            let ctx = RouteCtx {
+            let ctx = RulesRouteCtx {
                 domain: dom,
                 ip,
                 transport_udp: true,
@@ -406,7 +645,7 @@ async fn run_one_real(
                 );
                 let sniffed_domain_owned: Option<String> = outcome.host;
                 let sniffed_dom_ref = sniffed_domain_owned.as_deref().or(dom);
-                let ctx2 = RouteCtx {
+                let ctx2 = RulesRouteCtx {
                     domain: sniffed_dom_ref,
                     ip,
                     transport_udp: true,
@@ -1051,6 +1290,25 @@ pub async fn serve_udp_datagrams(
     stats: Option<Arc<StatsManager>>,
     conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Result<()> {
+    serve_udp_datagrams_with_runtime(
+        sock,
+        timeout,
+        inbound_tag,
+        stats,
+        conn_tracker,
+        UdpDatagramRuntime::default(),
+    )
+    .await
+}
+
+pub async fn serve_udp_datagrams_with_runtime(
+    sock: Arc<UdpSocket>,
+    timeout: Option<Duration>,
+    inbound_tag: Option<String>,
+    stats: Option<Arc<StatsManager>>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
+    runtime: UdpDatagramRuntime,
+) -> Result<()> {
     let upstream_timeout = upstream_timeout_ms();
     let ttl = timeout.or_else(nat_ttl_from_env);
     let map = NAT_MAP
@@ -1200,10 +1458,12 @@ pub async fn serve_udp_datagrams(
         let mut proxy_pool: Option<String> = None;
         let mut _decision_label = "direct".to_string();
         let mut rule: Option<String> = None;
+        let mut route_decision = UdpRouteDecision::default();
+        let mut registry_target: Option<RouteTarget> = None;
 
         // 规则引擎（含 Sniff 支持）
         // Rule engine (with Sniff support)
-        if let Some(eng) = rules_global::global() {
+        if let Some(router) = runtime.router.as_ref() {
             let (dom, port) = match &dst {
                 UdpTargetAddr::Domain { host, port } => (Some(host.as_str()), Some(*port)),
                 UdpTargetAddr::Ip(sa) => (None, Some(sa.port())),
@@ -1212,7 +1472,147 @@ pub async fn serve_udp_datagrams(
                 UdpTargetAddr::Ip(sa) => Some(sa.ip()),
                 _ => None,
             };
-            let ctx = RouteCtx {
+            let ctx = RouterRouteCtx {
+                host: dom,
+                ip,
+                port,
+                transport: Transport::Udp,
+                network: "udp",
+                source_ip: Some(src.ip()),
+                source_port: Some(src.port()),
+                inbound_tag: inbound_tag.as_deref(),
+                ..Default::default()
+            };
+            let meta = router.decide_with_meta(&ctx);
+            route_decision = UdpRouteDecision {
+                decision: meta.decision,
+                rule: meta.rule,
+                route_options: meta.route_options,
+            };
+
+            if matches!(route_decision.decision, RDecision::Sniff { .. }) {
+                let payload = &buf[header_len..n];
+                let (mut outcome, mut quic_ctx) =
+                    sb_core::router::sniff::sniff_datagram_multi(payload);
+
+                if quic_ctx.is_some() {
+                    let mut extra_buf = vec![0u8; 64 * 1024];
+                    for _ in 0..4 {
+                        let ctx_val = match quic_ctx.take() {
+                            Some(c) => c,
+                            None => break,
+                        };
+                        match tokio::time::timeout(
+                            Duration::from_millis(300),
+                            sock.recv_from(&mut extra_buf),
+                        )
+                        .await
+                        {
+                            Ok(Ok((en, _epeer))) => {
+                                if let Ok((_edst, ehdr_len)) = parse_udp_datagram(&extra_buf[..en])
+                                {
+                                    let epayload = &extra_buf[ehdr_len..en];
+                                    let (result, new_ctx) =
+                                        sb_core::router::sniff::sniff_datagram_continue(
+                                            epayload, ctx_val,
+                                        );
+                                    if let Some(final_outcome) = result {
+                                        outcome = final_outcome;
+                                        break;
+                                    }
+                                    quic_ctx = new_ctx;
+                                } else {
+                                    break;
+                                }
+                            }
+                            _ => break,
+                        }
+                    }
+                }
+
+                tracing::debug!(
+                    protocol = ?outcome.protocol,
+                    host = ?outcome.host,
+                    "socks5-udp-balancer: sniffed datagram"
+                );
+                let sniffed_domain_owned: Option<String> = outcome.host;
+                let sniffed_dom_ref = sniffed_domain_owned.as_deref().or(dom);
+                let ctx2 = RouterRouteCtx {
+                    host: sniffed_dom_ref,
+                    ip,
+                    port,
+                    transport: Transport::Udp,
+                    network: "udp",
+                    source_ip: Some(src.ip()),
+                    source_port: Some(src.port()),
+                    inbound_tag: inbound_tag.as_deref(),
+                    protocol: outcome.protocol,
+                    ..Default::default()
+                };
+                let meta2 = router.decide_with_meta(&ctx2);
+                route_decision = if matches!(meta2.decision, RDecision::Sniff { .. }) {
+                    UdpRouteDecision {
+                        decision: RDecision::Direct,
+                        rule: meta2.rule,
+                        route_options: meta2.route_options,
+                    }
+                } else {
+                    UdpRouteDecision {
+                        decision: meta2.decision,
+                        rule: meta2.rule,
+                        route_options: meta2.route_options,
+                    }
+                };
+            }
+
+            #[cfg(feature = "metrics")]
+            {
+                counter!("router_decide_total", "decision"=> match route_decision.decision { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject | RDecision::RejectDrop=>"reject", _=>"other" }).increment(1);
+            }
+
+            match &route_decision.decision {
+                RDecision::Reject | RDecision::RejectDrop => {
+                    #[cfg(feature = "metrics")]
+                    counter!("socks_udp_error_total", "class"=>"reject").increment(1);
+                    continue;
+                }
+                RDecision::Proxy(name) => {
+                    _decision_label = "proxy".to_string();
+                    if runtime.outbounds.is_some() {
+                        registry_target = route_target_from_decision(&route_decision.decision);
+                    } else {
+                        use_proxy = true;
+                        proxy_pool = name.clone();
+                    }
+                }
+                RDecision::Direct => {
+                    _decision_label = "direct".to_string();
+                    registry_target = route_target_from_decision(&route_decision.decision);
+                }
+                RDecision::Hijack { .. }
+                | RDecision::Sniff { .. }
+                | RDecision::Resolve
+                | RDecision::HijackDns => {
+                    tracing::warn!(
+                        "socks5-udp: unsupported routing decision in UDP handler; direct fallback is disabled; packet dropped"
+                    );
+                    #[cfg(feature = "metrics")]
+                    counter!("socks_udp_error_total", "class"=>"unsupported_no_fallback")
+                        .increment(1);
+                    continue;
+                }
+            }
+            rule = route_decision.rule.clone();
+        } else if let Some(eng) = rules_global::global() {
+            let (dom, port) = match &dst {
+                UdpTargetAddr::Domain { host, port } => (Some(host.as_str()), Some(*port)),
+                UdpTargetAddr::Ip(sa) => (None, Some(sa.port())),
+            };
+            let ip = match &dst {
+                UdpTargetAddr::Ip(sa) => Some(sa.ip()),
+                _ => None,
+            };
+            let ctx = RulesRouteCtx {
                 domain: dom,
                 ip,
                 transport_udp: true,
@@ -1272,7 +1672,7 @@ pub async fn serve_udp_datagrams(
                 );
                 let sniffed_domain_owned: Option<String> = outcome.host;
                 let sniffed_dom_ref = sniffed_domain_owned.as_deref().or(dom);
-                let ctx2 = RouteCtx {
+                let ctx2 = RulesRouteCtx {
                     domain: sniffed_dom_ref,
                     ip,
                     transport_udp: true,
@@ -1380,9 +1780,17 @@ pub async fn serve_udp_datagrams(
             continue;
         }
 
-        let direct_traffic = stats
-            .as_ref()
-            .and_then(|stats| stats.traffic_recorder(inbound_tag.as_deref(), Some("direct"), None));
+        let registry_target_for_packet = registry_target.as_ref().filter(|target| {
+            runtime.outbounds.is_some()
+                && (route_decision.route_options.udp_connect
+                    || !matches!(target, RouteTarget::Kind(OutboundKind::Direct)))
+        });
+        let outbound_label = registry_target_for_packet
+            .map(route_target_label)
+            .unwrap_or_else(|| "direct".to_string());
+        let packet_traffic = stats.as_ref().and_then(|stats| {
+            stats.traffic_recorder(inbound_tag.as_deref(), Some(outbound_label.as_str()), None)
+        });
 
         if use_proxy {
             let proxy_tag = proxy_pool.clone().unwrap_or_else(|| "proxy".to_string());
@@ -1424,11 +1832,48 @@ pub async fn serve_udp_datagrams(
             client: src,
             dst: dst.clone(),
         };
-        let upstream = match map.get(&key).await {
-            Some(s) => s,
+        let upstream = match map.get_upstream(&key).await {
+            Some(upstream) => upstream,
             None => {
-                let s = Arc::new(direct_udp_socket_for(&dst).await?);
-                if !map.upsert_guarded(key.clone(), Arc::clone(&s)).await {
+                let (upstream, conntrack_target) = if let (Some(outbounds), Some(route_target)) =
+                    (runtime.outbounds.as_ref(), registry_target_for_packet)
+                {
+                    match open_registry_upstream(outbounds, route_target, &dst).await {
+                        Ok(transport) => {
+                            (UdpNatUpstream::Transport(transport), route_target.clone())
+                        }
+                        Err(err) => {
+                            tracing::warn!(
+                                error=%err,
+                                target=%route_target_label(route_target),
+                                "socks5-udp: outbound UDP associate failed; packet dropped"
+                            );
+                            #[cfg(feature = "metrics")]
+                            metrics::counter!(
+                                "socks_udp_error_total",
+                                "class" => "registry_udp_connect"
+                            )
+                            .increment(1);
+                            continue;
+                        }
+                    }
+                } else {
+                    match open_direct_socket_upstream(&dst, &route_decision.route_options).await {
+                        Ok(socket) => (UdpNatUpstream::Socket(socket), RouteTarget::direct()),
+                        Err(err) => {
+                            tracing::debug!(error=%err, "socks5-udp: direct UDP socket failed");
+                            #[cfg(feature = "metrics")]
+                            metrics::counter!("socks_udp_error_total", "class" => "direct_udp_open")
+                                .increment(1);
+                            continue;
+                        }
+                    }
+                };
+
+                if !map
+                    .upsert_upstream_guarded(key.clone(), upstream.clone())
+                    .await
+                {
                     #[cfg(feature = "metrics")]
                     {
                         use metrics::counter;
@@ -1440,6 +1885,7 @@ pub async fn serve_udp_datagrams(
                     UdpTargetAddr::Ip(sa) => (sa.ip().to_string(), sa.port()),
                     UdpTargetAddr::Domain { host, port } => (host.clone(), *port),
                 };
+                let conntrack_outbound_tag = route_target_label(&conntrack_target);
                 let wiring = sb_core::conntrack::register_inbound_udp_with_tracker(
                     conn_tracker.clone(),
                     src,
@@ -1448,76 +1894,39 @@ pub async fn serve_udp_datagrams(
                     dst_host,
                     "socks_udp",
                     inbound_tag.clone(),
-                    Some("direct".to_string()),
-                    vec!["DIRECT".to_string()],
+                    Some(conntrack_outbound_tag),
+                    vec![route_target_chain_label(&conntrack_target)],
                     rule.clone(),
                     None,
                     None,
-                    direct_traffic.clone(),
+                    packet_traffic.clone(),
                 );
                 let meta = sb_core::net::datagram::UdpConntrackMeta {
                     guard: wiring.guard,
                     cancel: wiring.cancel.clone(),
                     traffic: wiring.traffic.clone(),
                 };
-                map.upsert_with_meta(key.clone(), Arc::clone(&s), Some(meta))
+                map.upsert_upstream_with_meta(key.clone(), upstream.clone(), Some(meta))
                     .await;
 
-                {
-                    let listen = Arc::clone(&sock);
-                    let key_clone = key.clone();
-                    let map_clone = map.clone();
-                    let s_cloned = Arc::clone(&s);
-                    let traffic = Some(wiring.traffic.clone());
-                    let cancel = wiring.cancel.clone();
-                    tokio::spawn(async move {
-                        let mut rbuf = vec![0u8; 64 * 1024];
-                        loop {
-                            let res = tokio::select! {
-                                _ = cancel.cancelled() => return,
-                                r = s_cloned.recv_from(&mut rbuf) => r,
-                            };
-                            let Ok((rn, from)) = res else {
-                                break;
-                            };
-                            #[cfg(feature = "metrics")]
-                            {
-                                metrics::counter!("udp_pkts_in_total").increment(1);
-                                metrics::counter!("udp_bytes_in_total").increment(rn as u64);
-                            }
-                            let mut out = Vec::with_capacity(rn + 32);
-                            write_socks5_udp_header(&from, &mut out);
-                            out.extend_from_slice(&rbuf[..rn]);
-                            if let Err(e) = listen.send_to(&out, key_clone.client).await {
-                                tracing::debug!("socks5 udp send back err: {e}");
-                                break;
-                            }
-                            if let Some(ref recorder) = traffic {
-                                recorder.record_down(rn as u64);
-                                recorder.record_down_packet(1);
-                            }
-                            #[cfg(feature = "metrics")]
-                            {
-                                metrics::counter!("udp_bytes_out_total")
-                                    .increment(out.len() as u64);
-                            }
-                            #[cfg(feature = "metrics")]
-                            {
-                                use metrics::counter;
-                                counter!("socks_udp_packets_out_total").increment(1);
-                                counter!("udp_packets_in_total").increment(1);
-                            }
-                            let _ = map_clone.get(&key_clone).await;
-                        }
-                    });
-                }
+                spawn_reverse_relay(
+                    Arc::clone(&sock),
+                    key.clone(),
+                    map.clone(),
+                    upstream.clone(),
+                    dst.clone(),
+                    route_decision.route_options.clone(),
+                    effective_udp_timeout(&dst, timeout, &route_decision.route_options),
+                    Some(wiring.traffic.clone()),
+                    wiring.cancel.clone(),
+                );
                 #[cfg(feature = "metrics")]
                 {
                     let size = map.len().await as f64;
                     metrics::gauge!("socks_udp_assoc_size").set(size);
                     metrics::gauge!("udp_nat_size").set(size);
                 }
-                s
+                upstream
             }
         };
 
@@ -1527,11 +1936,12 @@ pub async fn serve_udp_datagrams(
                 continue;
             }
         }
-        let send_res: anyhow::Result<usize> = direct_sendto(upstream.as_ref(), &dst, body).await;
+        let send_res =
+            send_to_nat_upstream(&upstream, &dst, body, &route_decision.route_options).await;
 
         match send_res {
             Ok(_) => {
-                if let Some(ref recorder) = direct_traffic {
+                if let Some(ref recorder) = packet_traffic {
                     recorder.record_up(body.len() as u64);
                     recorder.record_up_packet(1);
                 }
@@ -1546,7 +1956,7 @@ pub async fn serve_udp_datagrams(
                 {
                     let reply = encode_udp_datagram(&dst, body);
                     if sock.send_to(&reply, src).await.is_ok() {
-                        if let Some(ref recorder) = direct_traffic {
+                        if let Some(ref recorder) = packet_traffic {
                             recorder.record_down(body.len() as u64);
                             recorder.record_down_packet(1);
                         }

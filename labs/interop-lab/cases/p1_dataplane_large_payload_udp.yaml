@@ -1,5 +1,5 @@
 id: p1_dataplane_large_payload_udp
-title: large UDP payload timeout observability (2KB) via SOCKS5
+title: large UDP payload roundtrip (2KB) via SOCKS5
 priority: p1
 kernel_mode: rust
 env_class: strict
@@ -42,6 +42,6 @@ assertions:
     expected: 200
   - key: traffic.large_udp_2kb.success
     op: eq
-    expected: false
+    expected: true
 oracle:
   tolerate_counter_jitter: true

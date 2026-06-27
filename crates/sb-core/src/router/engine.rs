@@ -246,6 +246,7 @@ pub struct RouterHandle {
 pub struct DecideWithMeta {
     pub decision: crate::router::rules::Decision,
     pub rule: Option<String>,
+    pub route_options: crate::router::rules::RouteActionOptions,
 }
 
 impl std::fmt::Debug for RouterHandle {
@@ -1440,6 +1441,7 @@ impl RouterHandle {
                     return DecideWithMeta {
                         decision: rule.decision.clone(),
                         rule: Some(format!("rule#{i}")),
+                        route_options: rule.route_options.clone(),
                     };
                 }
             }
@@ -1448,6 +1450,7 @@ impl RouterHandle {
             return DecideWithMeta {
                 decision: self.decide(ctx),
                 rule: Some("final".to_string()),
+                route_options: Default::default(),
             };
         }
 
@@ -1462,6 +1465,7 @@ impl RouterHandle {
                 return DecideWithMeta {
                     decision: self.decide(ctx),
                     rule: Some(kind.to_string()),
+                    route_options: Default::default(),
                 };
             }
         }
@@ -1469,6 +1473,7 @@ impl RouterHandle {
         DecideWithMeta {
             decision: self.decide(ctx),
             rule: Some("final".to_string()),
+            route_options: Default::default(),
         }
     }
 }

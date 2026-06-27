@@ -11,6 +11,7 @@ use tokio_util::sync::CancellationToken;
 
 use crate::conntrack::ConntrackGuard;
 use crate::net::metered::TrafficRecorder;
+use crate::outbound::traits::UdpTransport;
 
 /// 目标地址（避免强耦合上层 TargetAddr，保持最小依赖）
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -26,10 +27,29 @@ pub struct UdpNatKey {
     pub dst: UdpTargetAddr,
 }
 
-/// NAT 表项：保持上游 socket 与统计
+/// Upstream handle stored by the UDP NAT table.
+#[derive(Clone)]
+pub enum UdpNatUpstream {
+    Socket(Arc<UdpSocket>),
+    Transport(Arc<dyn UdpTransport>),
+}
+
+impl std::fmt::Debug for UdpNatUpstream {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        match self {
+            Self::Socket(socket) => f
+                .debug_tuple("Socket")
+                .field(&socket.local_addr().ok())
+                .finish(),
+            Self::Transport(_) => f.write_str("Transport(<udp-transport>)"),
+        }
+    }
+}
+
+/// NAT 表项：保持上游 socket/transport 与统计
 #[derive(Debug)]
 pub struct UdpNatEntry {
-    pub upstream: Arc<UdpSocket>,
+    pub upstream: UdpNatUpstream,
     pub last_seen: Instant,
     pub bytes_in: u64,
     pub bytes_out: u64,
@@ -73,10 +93,17 @@ impl UdpNatMap {
     }
 
     pub async fn get(&self, k: &UdpNatKey) -> Option<Arc<UdpSocket>> {
+        match self.get_upstream(k).await? {
+            UdpNatUpstream::Socket(socket) => Some(socket),
+            UdpNatUpstream::Transport(_) => None,
+        }
+    }
+
+    pub async fn get_upstream(&self, k: &UdpNatKey) -> Option<UdpNatUpstream> {
         let mut g = self.inner.lock().await;
         if let Some(e) = g.get_mut(k) {
             e.last_seen = Instant::now();
-            Some(Arc::clone(&e.upstream))
+            Some(e.upstream.clone())
         } else {
             None
         }
@@ -98,10 +125,15 @@ impl UdpNatMap {
     }
 
     pub async fn upsert(&self, k: UdpNatKey, upstream: Arc<UdpSocket>) {
+        self.upsert_upstream(k, UdpNatUpstream::Socket(upstream))
+            .await;
+    }
+
+    pub async fn upsert_upstream(&self, k: UdpNatKey, upstream: UdpNatUpstream) {
         let mut g = self.inner.lock().await;
         g.entry(k)
             .and_modify(|e| {
-                e.upstream = Arc::clone(&upstream);
+                e.upstream = upstream.clone();
                 e.last_seen = Instant::now();
             })
             .or_insert(UdpNatEntry {
@@ -120,11 +152,22 @@ impl UdpNatMap {
         upstream: Arc<UdpSocket>,
         conntrack: Option<UdpConntrackMeta>,
     ) {
+        self.upsert_upstream_with_meta(k, UdpNatUpstream::Socket(upstream), conntrack)
+            .await;
+    }
+
+    /// Upsert with optional conntrack metadata for any supported upstream handle.
+    pub async fn upsert_upstream_with_meta(
+        &self,
+        k: UdpNatKey,
+        upstream: UdpNatUpstream,
+        conntrack: Option<UdpConntrackMeta>,
+    ) {
         let mut g = self.inner.lock().await;
         match g.entry(k) {
             Entry::Occupied(mut e) => {
                 let entry = e.get_mut();
-                entry.upstream = Arc::clone(&upstream);
+                entry.upstream = upstream.clone();
                 entry.last_seen = Instant::now();
                 if conntrack.is_some() {
                     entry.conntrack = conntrack;
@@ -145,6 +188,12 @@ impl UdpNatMap {
     /// Guarded upsert with capacity check from env `SB_UDP_NAT_MAX` (default 65536).
     /// Returns true if inserted or updated; false if rejected due to capacity.
     pub async fn upsert_guarded(&self, k: UdpNatKey, upstream: Arc<UdpSocket>) -> bool {
+        self.upsert_upstream_guarded(k, UdpNatUpstream::Socket(upstream))
+            .await
+    }
+
+    /// Guarded upsert for any supported upstream handle.
+    pub async fn upsert_upstream_guarded(&self, k: UdpNatKey, upstream: UdpNatUpstream) -> bool {
         let max = std::env::var("SB_UDP_NAT_MAX")
             .ok()
             .and_then(|v| v.parse::<usize>().ok())
@@ -157,7 +206,7 @@ impl UdpNatMap {
         }
         g.entry(k)
             .and_modify(|e| {
-                e.upstream = Arc::clone(&upstream);
+                e.upstream = upstream.clone();
                 e.last_seen = Instant::now();
             })
             .or_insert(UdpNatEntry {
@@ -176,6 +225,10 @@ impl UdpNatMap {
 
     pub async fn is_empty(&self) -> bool {
         self.inner.lock().await.is_empty()
+    }
+
+    pub async fn remove(&self, k: &UdpNatKey) -> Option<UdpNatEntry> {
+        self.inner.lock().await.remove(k)
     }
 
     /// 真实淘汰：扫描并逐出过期项（统计留到调用侧埋点）

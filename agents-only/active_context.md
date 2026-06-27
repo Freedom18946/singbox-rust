@@ -10,21 +10,18 @@
 
 ---
 
-## Resume (2026-06-27) - P1313-08 Clash API and GUI channel contract
+## Resume (2026-06-27) - P1313-09 UDP NAT and packet dataplane
 
-- **P1313-08 DONE**: Clash-compatible API shape is more reliable for GUI 1.25.1:
-  `/configs` exposes `interface-name`, TUN/device and port fields from `ConfigIR`;
-  request-error responses for config patch, selector update and delay timeout use
-  Go-like JSON messages.
-- **Runtime wiring fixed**: legacy bootstrap and supervisor Clash API paths now use
-  the runtime `ConnTracker`, so `/connections` sees inbound/supervisor connection
-  state instead of an isolated API tracker.
-- **WebSocket posture**: lazy `/logs`, `/memory`, `/traffic`, and `/connections`
-  channels are covered by an independent disconnect regression test.
-- **Verification PASS**: P1313-08 package doc records tests/checks. Rust strict
-  interop replay passed; dual-core strict replay still needs a live Go API at
-  `127.0.0.1:9090`. No GitHub workflow automation was added and no dual-kernel
-  parity movement is claimed.
+- **P1313-09 DONE locally**: SOCKS UDP association now uses runtime router/outbound
+  handles, route UDP action metadata, generic UDP transports in the NAT map, and
+  bidirectional reverse relay for socket/transport upstreams.
+- **Route options wired**: `udp_disable_domain_unmapping`, `udp_connect`, and
+  `udp_timeout` parse through config IR/v2 lowering and are exposed by
+  `RouterHandle::decide_with_meta`.
+- **Dataplane proof**: domain unmapping is covered by adapter E2E; large UDP payload
+  interop now succeeds and its oracle is promoted to success.
+- **Verification PASS**: see `agents-only/post1313/p1313_09_udp_nat_and_packet_dataplane.md`.
+  No GitHub workflow automation was added and no dual-kernel parity movement is claimed.
 
 ## Strategic State
 

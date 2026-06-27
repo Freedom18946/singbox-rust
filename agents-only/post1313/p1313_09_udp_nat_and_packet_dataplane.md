@@ -3,6 +3,8 @@
 
 Priority: P1
 
+Status: **Closed locally** (2026-06-27)
+
 Primary evidence:
 
 - `agents-only/reference/GO_PARITY_MATRIX.md` PX-005
@@ -20,6 +22,24 @@ TCP-heavy scenarios.
 
 PX-005 states UDP NAT is still stubbed. Go route action options include
 `udp_disable_domain_unmapping`, `udp_connect`, and `udp_timeout`.
+
+## Closure Summary
+
+- Route action UDP options now parse through raw IR, v2 lowering, compiled router rules,
+  and `RouterHandle::decide_with_meta`.
+- SOCKS UDP association now receives the runtime `RouterHandle` and
+  `OutboundRegistryHandle` from the app path.
+- UDP NAT entries can hold either direct UDP sockets or generic outbound UDP transports.
+- SOCKS UDP reply relays honor domain unmapping: domain replies preserve the original
+  SOCKS domain target by default, and `udp_disable_domain_unmapping=true` returns the
+  actual upstream socket address.
+- Per-entry relay idle timeout uses route `udp_timeout` first, then inbound
+  `udp_timeout`, protocol defaults, and finally the Go-style default UDP timeout.
+- The self-contained large UDP payload interop oracle was promoted from expected
+  failure to expected success after the dataplane passed.
+
+No dual-kernel parity movement is claimed here; the dual-core `both` ledger remains
+owned by `labs/interop-lab/docs/dual_kernel_golden_spec.md`.
 
 ## Task Split
 
@@ -56,9 +76,16 @@ PX-005 states UDP NAT is still stubbed. Go route action options include
 
 ## Acceptance
 
-- `cargo test -p sb-core udp`
-- `cargo test -p sb-adapters udp`
-- Relevant interop UDP cases, if self-contained, promoted or extended.
+- `cargo fmt --check` — PASS
+- `cargo test -p sb-config route` — PASS
+- `cargo test -p sb-core udp --features router` — PASS
+- `cargo test -p sb-adapters udp --features socks,e2e` — PASS
+- `cargo test -p app udp` — PASS
+- `cargo run -p interop-lab -- case run p1_rust_core_udp_via_socks --kernel rust` — PASS
+  after rebuilding `app` with `--features gui_runtime` so the `target/debug/app`
+  binary includes adapters and Clash API.
+- `cargo run -p interop-lab -- case run p1_dataplane_large_payload_udp --kernel rust` — PASS
+  with oracle promoted to `success=true`.
 - No public network dependency.
 
 ## Non-Goals

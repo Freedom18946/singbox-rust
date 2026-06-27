@@ -444,6 +444,12 @@ pub struct RawRuleIR {
     pub fallback_network_type: Option<Vec<String>>,
     #[serde(default)]
     pub fallback_delay: Option<String>,
+    #[serde(default)]
+    pub udp_disable_domain_unmapping: Option<bool>,
+    #[serde(default)]
+    pub udp_connect: Option<bool>,
+    #[serde(default)]
+    pub udp_timeout: Option<String>,
     // Sniff Action Fields
     #[serde(default)]
     pub sniffer: Option<String>,
@@ -539,6 +545,9 @@ impl From<RawRuleIR> for RuleIR {
             network_strategy: raw.network_strategy,
             fallback_network_type: raw.fallback_network_type,
             fallback_delay: raw.fallback_delay,
+            udp_disable_domain_unmapping: raw.udp_disable_domain_unmapping,
+            udp_connect: raw.udp_connect,
+            udp_timeout: raw.udp_timeout,
             sniffer: raw.sniffer,
             sniff_timeout: raw.sniff_timeout,
         }

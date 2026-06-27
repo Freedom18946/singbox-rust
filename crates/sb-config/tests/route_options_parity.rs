@@ -58,3 +58,31 @@ fn test_route_options_object_parsing() {
     assert_eq!(dr.rewrite_ttl, Some(60));
     assert_eq!(dr.client_subnet, Some("1.2.3.0/24".to_string()));
 }
+
+#[test]
+fn test_rule_udp_route_action_options_parsing() {
+    let config = json!({
+        "route": {
+            "rules": [
+                {
+                    "domain": "example.test",
+                    "network": "udp",
+                    "action": "route-options",
+                    "outbound": "direct",
+                    "udp_disable_domain_unmapping": true,
+                    "udp_connect": true,
+                    "udp_timeout": "45s"
+                }
+            ]
+        }
+    });
+
+    let ir = to_ir_v1(&config);
+    let rule = ir.route.rules.first().expect("route rule");
+
+    assert_eq!(rule.domain, vec!["example.test".to_string()]);
+    assert_eq!(rule.network, vec!["udp".to_string()]);
+    assert_eq!(rule.udp_disable_domain_unmapping, Some(true));
+    assert_eq!(rule.udp_connect, Some(true));
+    assert_eq!(rule.udp_timeout.as_deref(), Some("45s"));
+}

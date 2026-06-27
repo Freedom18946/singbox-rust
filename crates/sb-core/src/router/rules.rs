@@ -3,6 +3,7 @@ use once_cell::sync::OnceCell;
 use regex::Regex;
 use std::fs;
 use std::sync::Arc;
+use std::time::Duration;
 use std::{net::IpAddr, str::FromStr};
 
 // Re-export RecordType from DNS module for routing use
@@ -121,6 +122,36 @@ impl Decision {
     }
 }
 
+/// Route action metadata carried alongside a matched routing decision.
+#[derive(Debug, Clone, PartialEq, Eq, Default)]
+pub struct RouteActionOptions {
+    pub udp_disable_domain_unmapping: bool,
+    pub udp_connect: bool,
+    pub udp_timeout: Option<Duration>,
+}
+
+impl RouteActionOptions {
+    #[must_use]
+    pub fn is_empty(&self) -> bool {
+        !self.udp_disable_domain_unmapping && !self.udp_connect && self.udp_timeout.is_none()
+    }
+
+    fn from_rule_ir(ir: &sb_config::ir::RuleIR) -> Result<Self, String> {
+        let udp_timeout = match ir.udp_timeout.as_deref() {
+            Some(raw) => Some(
+                humantime::parse_duration(raw)
+                    .map_err(|err| format!("route rule udp_timeout '{raw}' is invalid: {err}"))?,
+            ),
+            None => None,
+        };
+        Ok(Self {
+            udp_disable_domain_unmapping: ir.udp_disable_domain_unmapping.unwrap_or(false),
+            udp_connect: ir.udp_connect.unwrap_or(false),
+            udp_timeout,
+        })
+    }
+}
+
 /// Wrapper for Regex that implements PartialEq/Eq based on the pattern string
 #[derive(Debug, Clone)]
 pub struct DomainRegexMatcher {
@@ -194,11 +225,14 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             ir.override_port,
         );
 
+        let route_options = RouteActionOptions::from_rule_ir(ir)?;
+
         let rule = CompositeRule {
             rule_type,
             mode,
             sub_rules,
             decision,
+            route_options,
             domain: ir.domain.clone(),
             domain_suffix: ir.domain_suffix.clone(),
             domain_keyword: ir.domain_keyword.clone(),
@@ -634,6 +668,7 @@ pub struct CompositeRule {
     pub not_adguard: Vec<AdGuardRuleMatcher>,
 
     pub decision: Decision,
+    pub route_options: RouteActionOptions,
 }
 
 #[derive(Debug, Clone, Default)]
