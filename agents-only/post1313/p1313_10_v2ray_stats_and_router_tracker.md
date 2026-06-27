@@ -3,6 +3,8 @@
 
 Priority: P1
 
+Status: DONE locally (2026-06-27)
+
 Primary evidence:
 
 - `agents-only/reference/GO_PARITY_MATRIX.md` PX-012
@@ -15,10 +17,39 @@ Primary evidence:
 
 Finish the router-wide tracking and API policy decisions around the V2Ray StatsService.
 
-## Current Gap
+## Closed Gap
 
-PX-012 says gRPC StatsService and tracking are partly implemented, but router-wide
-ConnectionTracker parity and HTTP endpoint policy still need settlement.
+PX-012's open StatsService items are settled locally for the Rust mainline:
+router tracker wiring, Go-shaped stat names, query/reset behavior, and HTTP
+endpoint policy are covered below.
+
+## Closure Notes
+
+- Main parity path is `sb-core::services::v2ray_api::V2RayApiServer`; `sb-api`
+  simple V2Ray helpers remain Rust-only compatibility/testing surfaces.
+- V2Ray StatsService now uses Go-shaped lazy counters only:
+  `inbound|outbound|user>>>TAG>>>traffic>>>uplink|downlink`.
+  Rust-only `packet` stat names are not created or exposed by this path.
+- Configured inbound/outbound/user filters gate recorder creation. Empty query
+  patterns return all counters; substring and repeated regex patterns are
+  supported; invalid regex now returns gRPC `InvalidArgument`.
+- `GetStats(reset=true)` returns the pre-reset value and clears the counter.
+  `QueryStats(reset=true)` returns pre-reset values for matched counters.
+- `V2RayStatsPortAdapter` now implements router `ConnectionTrackerPort` hooks
+  by lazily requesting the matching stats recorder from route metadata. The
+  hook creates Go-shaped counters without double-counting; byte accounting stays
+  in the existing metered recorder paths.
+- HTTP JSON policy: upstream Go 1.13.13 exposes V2Ray StatsService through gRPC
+  here. No Go-compatible HTTP JSON V2Ray stats endpoint is claimed; Rust-only
+  simple API helpers stay outside the parity path.
+
+## Verification (2026-06-27)
+
+- `cargo test -p sb-core v2ray --features service_v2ray_api`: PASS
+- `cargo test -p sb-core --test adapter_surface_contract --features router`: PASS
+- `cargo test -p sb-api v2ray`: PASS
+- `cargo check -p app --features parity`: PASS
+- `cargo check --workspace --all-features`: PASS
 
 ## Task Split
 

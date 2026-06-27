@@ -430,20 +430,16 @@ impl std::fmt::Debug for V2RayStatsPortAdapter {
 }
 
 impl ConnectionTrackerPort for V2RayStatsPortAdapter {
-    fn routed_stream(
-        &self,
-        _metadata: &RouteMetadata,
-        _rule: Option<&str>,
-        _outbound: Option<&str>,
-    ) {
+    fn routed_stream(&self, metadata: &RouteMetadata, _rule: Option<&str>, outbound: Option<&str>) {
+        let inbound = metadata.inbound.as_ref().map(|tag| tag.as_str());
+        let user = metadata.user.as_deref();
+        let _ = self.inner.traffic_recorder(inbound, outbound, user);
     }
 
-    fn routed_packet(
-        &self,
-        _metadata: &RouteMetadata,
-        _rule: Option<&str>,
-        _outbound: Option<&str>,
-    ) {
+    fn routed_packet(&self, metadata: &RouteMetadata, _rule: Option<&str>, outbound: Option<&str>) {
+        let inbound = metadata.inbound.as_ref().map(|tag| tag.as_str());
+        let user = metadata.user.as_deref();
+        let _ = self.inner.traffic_recorder(inbound, outbound, user);
     }
 }
 
@@ -451,6 +447,7 @@ impl V2RayStatsPort for V2RayStatsPortAdapter {
     fn query(&self, pattern: &str, reset: bool) -> Vec<(String, i64)> {
         self.inner
             .query_stats(&[pattern.to_string()], false, reset)
+            .unwrap_or_default()
             .into_iter()
             .map(|(name, value)| (name, value as i64))
             .collect()

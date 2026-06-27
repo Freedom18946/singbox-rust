@@ -123,17 +123,25 @@ impl StatsManager {
         self.counters.read().get(name).map(|c| c.get())
     }
 
+    /// Reset counter by name and return the value observed before reset.
+    pub fn reset_stat(&self, name: &str) -> Option<u64> {
+        self.counters.read().get(name).map(|c| c.reset())
+    }
+
     /// Query stats matching patterns.
-    pub fn query_stats(&self, patterns: &[String], regex: bool, reset: bool) -> Vec<(String, u64)> {
+    pub fn query_stats(
+        &self,
+        patterns: &[String],
+        regex: bool,
+        reset: bool,
+    ) -> Result<Vec<(String, u64)>, regex::Error> {
         let counters = self.counters.read();
         let mut out = Vec::new();
 
         let mut matchers = Vec::new();
         if regex {
             for pattern in patterns {
-                if let Ok(re) = regex::Regex::new(pattern) {
-                    matchers.push(re);
-                }
+                matchers.push(regex::Regex::new(pattern)?);
             }
         }
 
@@ -156,7 +164,7 @@ impl StatsManager {
             }
         }
 
-        out
+        Ok(out)
     }
 
     fn should_track_inbound(&self, inbound: &str) -> bool {
@@ -207,17 +215,10 @@ impl StatsManager {
 
         let mut uplink = Vec::new();
         let mut downlink = Vec::new();
-        let mut uplink_packets = Vec::new();
-        let mut downlink_packets = Vec::new();
-
         if let Some(tag) = inbound {
             if self.should_track_inbound(tag) {
                 uplink.push(self.get_counter(&format!("inbound>>>{}>>>traffic>>>uplink", tag)));
                 downlink.push(self.get_counter(&format!("inbound>>>{}>>>traffic>>>downlink", tag)));
-                uplink_packets
-                    .push(self.get_counter(&format!("inbound>>>{}>>>packet>>>uplink", tag)));
-                downlink_packets
-                    .push(self.get_counter(&format!("inbound>>>{}>>>packet>>>downlink", tag)));
             }
         }
 
@@ -226,10 +227,6 @@ impl StatsManager {
                 uplink.push(self.get_counter(&format!("outbound>>>{}>>>traffic>>>uplink", tag)));
                 downlink
                     .push(self.get_counter(&format!("outbound>>>{}>>>traffic>>>downlink", tag)));
-                uplink_packets
-                    .push(self.get_counter(&format!("outbound>>>{}>>>packet>>>uplink", tag)));
-                downlink_packets
-                    .push(self.get_counter(&format!("outbound>>>{}>>>packet>>>downlink", tag)));
             }
         }
 
@@ -237,10 +234,6 @@ impl StatsManager {
             if self.should_track_user(name) {
                 uplink.push(self.get_counter(&format!("user>>>{}>>>traffic>>>uplink", name)));
                 downlink.push(self.get_counter(&format!("user>>>{}>>>traffic>>>downlink", name)));
-                uplink_packets
-                    .push(self.get_counter(&format!("user>>>{}>>>packet>>>uplink", name)));
-                downlink_packets
-                    .push(self.get_counter(&format!("user>>>{}>>>packet>>>downlink", name)));
             }
         }
 
@@ -248,43 +241,18 @@ impl StatsManager {
             return None;
         }
 
-        Some(Arc::new(TrafficCounters {
-            uplink,
-            downlink,
-            uplink_packets,
-            downlink_packets,
-        }))
+        Some(Arc::new(TrafficCounters { uplink, downlink }))
     }
 
-    /// Initialize standard V2Ray counters
-    pub fn init_standard_counters(&self) {
-        let counters = [
-            "inbound>>>api>>>traffic>>>uplink",
-            "inbound>>>api>>>traffic>>>downlink",
-            "outbound>>>direct>>>traffic>>>uplink",
-            "outbound>>>direct>>>traffic>>>downlink",
-            "outbound>>>proxy>>>traffic>>>uplink",
-            "outbound>>>proxy>>>traffic>>>downlink",
-            "inbound>>>api>>>packet>>>uplink",
-            "inbound>>>api>>>packet>>>downlink",
-            "outbound>>>direct>>>packet>>>uplink",
-            "outbound>>>direct>>>packet>>>downlink",
-            "outbound>>>proxy>>>packet>>>uplink",
-            "outbound>>>proxy>>>packet>>>downlink",
-        ];
-
-        for name in counters {
-            self.get_counter(name);
-        }
-    }
+    /// Keep the old lifecycle hook as a no-op: Go creates V2Ray counters lazily
+    /// when routed traffic requests them.
+    pub fn init_standard_counters(&self) {}
 }
 
 #[derive(Debug)]
 pub struct TrafficCounters {
     uplink: Vec<Arc<StatCounter>>,
     downlink: Vec<Arc<StatCounter>>,
-    uplink_packets: Vec<Arc<StatCounter>>,
-    downlink_packets: Vec<Arc<StatCounter>>,
 }
 
 impl crate::net::metered::TrafficRecorder for TrafficCounters {
@@ -297,18 +265,6 @@ impl crate::net::metered::TrafficRecorder for TrafficCounters {
     fn record_down(&self, bytes: u64) {
         for counter in &self.downlink {
             counter.add(bytes);
-        }
-    }
-
-    fn record_up_packet(&self, packets: u64) {
-        for counter in &self.uplink_packets {
-            counter.add(packets);
-        }
-    }
-
-    fn record_down_packet(&self, packets: u64) {
-        for counter in &self.downlink_packets {
-            counter.add(packets);
         }
     }
 }
@@ -842,10 +798,11 @@ impl StatsService for StatsServiceImpl {
                 return Err(Status::not_found(format!("stat '{}' not found", name)));
             }
         };
-        if reset {
-            let counter = self.stats.get_counter(&name);
-            counter.reset();
-        }
+        let value = if reset {
+            self.stats.reset_stat(&name).unwrap_or(value)
+        } else {
+            value
+        };
 
         Ok(Response::new(GetStatsResponse {
             stat: Some(Stat {
@@ -866,7 +823,10 @@ impl StatsService for StatsServiceImpl {
             patterns.push(req.pattern);
         }
 
-        let stats = self.stats.query_stats(&patterns, req.regexp, reset);
+        let stats = self
+            .stats
+            .query_stats(&patterns, req.regexp, reset)
+            .map_err(|error| Status::invalid_argument(error.to_string()))?;
         let stat_list = stats
             .into_iter()
             .map(|(name, value)| Stat {
@@ -926,7 +886,9 @@ mod tests {
         assert_eq!(counter.get(), 1024);
 
         // Query stats
-        let stats = manager.query_stats(&["traffic".to_string()], false, false);
+        let stats = manager
+            .query_stats(&["traffic".to_string()], false, false)
+            .expect("valid substring query");
         assert_eq!(stats.len(), 1);
         assert_eq!(stats[0].0, "test>>>traffic>>>uplink");
         assert_eq!(stats[0].1, 1024);
@@ -960,7 +922,7 @@ mod tests {
     }
 
     #[test]
-    fn test_packet_counters_from_recorder() {
+    fn test_go_shaped_traffic_counters_from_recorder() {
         let manager = StatsManager::new(Some(StatsIR {
             enabled: true,
             inbounds: vec!["dns".to_string()],
@@ -981,8 +943,6 @@ mod tests {
 
         let uplink = 10;
         let downlink = 20;
-        let up_packets = 2;
-        let down_packets = 3;
 
         let checks = [
             ("inbound>>>dns>>>traffic>>>uplink", uplink),
@@ -991,18 +951,78 @@ mod tests {
             ("outbound>>>direct>>>traffic>>>downlink", downlink),
             ("user>>>alice>>>traffic>>>uplink", uplink),
             ("user>>>alice>>>traffic>>>downlink", downlink),
-            ("inbound>>>dns>>>packet>>>uplink", up_packets),
-            ("inbound>>>dns>>>packet>>>downlink", down_packets),
-            ("outbound>>>direct>>>packet>>>uplink", up_packets),
-            ("outbound>>>direct>>>packet>>>downlink", down_packets),
-            ("user>>>alice>>>packet>>>uplink", up_packets),
-            ("user>>>alice>>>packet>>>downlink", down_packets),
         ];
 
         for (name, expected) in checks {
             let value = manager.get_stat(name).unwrap_or(0);
             assert_eq!(value, expected, "stat mismatch for {name}");
         }
+
+        assert!(manager
+            .get_stat("inbound>>>dns>>>packet>>>uplink")
+            .is_none());
+        assert!(manager
+            .get_stat("outbound>>>direct>>>packet>>>downlink")
+            .is_none());
+        assert!(manager.get_stat("user>>>alice>>>packet>>>uplink").is_none());
+    }
+
+    #[test]
+    fn test_stats_filters_and_reset_semantics() {
+        let manager = StatsManager::new(Some(StatsIR {
+            enabled: true,
+            inbounds: vec!["mixed-in".to_string()],
+            outbounds: vec!["direct".to_string()],
+            users: vec!["alice".to_string()],
+            inbound: None,
+            outbound: None,
+        }));
+
+        assert!(manager
+            .traffic_recorder(Some("other-in"), Some("block"), Some("bob"))
+            .is_none());
+
+        let recorder = manager
+            .traffic_recorder(Some("mixed-in"), Some("direct"), Some("alice"))
+            .expect("matching recorder expected");
+        recorder.record_up(7);
+        recorder.record_down(11);
+
+        let mut all = manager
+            .query_stats(&[], false, false)
+            .expect("empty pattern queries all");
+        all.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            all,
+            vec![
+                ("inbound>>>mixed-in>>>traffic>>>downlink".to_string(), 11),
+                ("inbound>>>mixed-in>>>traffic>>>uplink".to_string(), 7),
+                ("outbound>>>direct>>>traffic>>>downlink".to_string(), 11),
+                ("outbound>>>direct>>>traffic>>>uplink".to_string(), 7),
+                ("user>>>alice>>>traffic>>>downlink".to_string(), 11),
+                ("user>>>alice>>>traffic>>>uplink".to_string(), 7),
+            ]
+        );
+
+        let reset = manager
+            .query_stats(&["uplink$".to_string()], true, true)
+            .expect("valid regexp query");
+        assert_eq!(reset.len(), 3);
+        assert_eq!(
+            manager.get_stat("inbound>>>mixed-in>>>traffic>>>uplink"),
+            Some(0)
+        );
+        assert_eq!(
+            manager.get_stat("inbound>>>mixed-in>>>traffic>>>downlink"),
+            Some(11)
+        );
+
+        assert!(
+            manager
+                .query_stats(&["(".to_string()], true, false)
+                .is_err(),
+            "invalid regexp must be reported"
+        );
     }
 
     // ── SVC-V2RAY-API-01A + APP-SIDECAR-LIVENESS-01E lifecycle regression tests ──
@@ -1067,6 +1087,62 @@ mod tests {
             tokio::time::sleep(std::time::Duration::from_millis(25)).await;
         }
         false
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    async fn connect_grpc(
+        endpoint: String,
+    ) -> Option<tonic::client::Grpc<tonic::transport::Channel>> {
+        let endpoint = tonic::transport::Endpoint::from_shared(endpoint).ok()?;
+        for _ in 0..40 {
+            if let Ok(channel) = endpoint.clone().connect().await {
+                return Some(tonic::client::Grpc::new(channel));
+            }
+            tokio::time::sleep(std::time::Duration::from_millis(25)).await;
+        }
+        None
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    async fn grpc_get_stats(
+        grpc: &mut tonic::client::Grpc<tonic::transport::Channel>,
+        request: GetStatsRequest,
+    ) -> Result<GetStatsResponse, tonic::Status> {
+        grpc.ready()
+            .await
+            .map_err(|error| tonic::Status::unknown(format!("service not ready: {error}")))?;
+        let path = tonic::codegen::http::uri::PathAndQuery::from_static(
+            "/v2ray.core.app.stats.command.StatsService/GetStats",
+        );
+        let response: tonic::Response<GetStatsResponse> = grpc
+            .unary(
+                tonic::Request::new(request),
+                path,
+                tonic::codec::ProstCodec::default(),
+            )
+            .await?;
+        Ok(response.into_inner())
+    }
+
+    #[cfg(feature = "service_v2ray_api")]
+    async fn grpc_query_stats(
+        grpc: &mut tonic::client::Grpc<tonic::transport::Channel>,
+        request: QueryStatsRequest,
+    ) -> Result<QueryStatsResponse, tonic::Status> {
+        grpc.ready()
+            .await
+            .map_err(|error| tonic::Status::unknown(format!("service not ready: {error}")))?;
+        let path = tonic::codegen::http::uri::PathAndQuery::from_static(
+            "/v2ray.core.app.stats.command.StatsService/QueryStats",
+        );
+        let response: tonic::Response<QueryStatsResponse> = grpc
+            .unary(
+                tonic::Request::new(request),
+                path,
+                tonic::codec::ProstCodec::default(),
+            )
+            .await?;
+        Ok(response.into_inner())
     }
 
     /// Simulate the serve task ending WITHOUT a `close()` (no shutdown requested) by taking the
@@ -1428,6 +1504,117 @@ mod tests {
             Some(1)
         );
         server.close().unwrap();
+    }
+
+    // ── P1313-10. Stats gRPC exposes Go-shaped lazy counters and reset/error semantics ──
+    #[cfg(feature = "service_v2ray_api")]
+    #[tokio::test]
+    async fn grpc_stats_query_reset_and_regex_errors_match_go_shape() {
+        let port = match reserve_port() {
+            Some(p) => p,
+            None => {
+                eprintln!("Skipping grpc stats test (cannot bind)");
+                return;
+            }
+        };
+        let server = V2RayApiServer::new(V2RayApiIR {
+            listen: Some(format!("127.0.0.1:{port}")),
+            stats: Some(StatsIR {
+                enabled: true,
+                inbounds: vec!["in".to_string()],
+                outbounds: vec!["out".to_string()],
+                users: vec![],
+                inbound: None,
+                outbound: None,
+            }),
+        });
+
+        assert!(
+            server.start().is_ok(),
+            "server must bind for gRPC stats test"
+        );
+        let endpoint = format!("http://127.0.0.1:{port}");
+        let mut grpc = connect_grpc(endpoint)
+            .await
+            .expect("stats gRPC endpoint becomes reachable");
+
+        let recorder = server
+            .stats()
+            .traffic_recorder(Some("in"), Some("out"), None)
+            .expect("configured inbound/outbound recorder");
+        recorder.record_up(13);
+        recorder.record_down(17);
+        recorder.record_up_packet(2);
+        recorder.record_down_packet(3);
+
+        let query = grpc_query_stats(
+            &mut grpc,
+            QueryStatsRequest {
+                pattern: String::new(),
+                reset: false,
+                patterns: vec![".*".to_string()],
+                regexp: true,
+            },
+        )
+        .await
+        .expect("query stats succeeds");
+
+        let mut stats: Vec<_> = query
+            .stat
+            .into_iter()
+            .map(|stat| (stat.name, stat.value))
+            .collect();
+        stats.sort_by(|a, b| a.0.cmp(&b.0));
+        assert_eq!(
+            stats,
+            vec![
+                ("inbound>>>in>>>traffic>>>downlink".to_string(), 17),
+                ("inbound>>>in>>>traffic>>>uplink".to_string(), 13),
+                ("outbound>>>out>>>traffic>>>downlink".to_string(), 17),
+                ("outbound>>>out>>>traffic>>>uplink".to_string(), 13),
+            ]
+        );
+        assert!(
+            stats.iter().all(|(name, _)| !name.contains(">>>packet>>>")),
+            "V2Ray gRPC stats must not expose Rust-only packet counters"
+        );
+
+        let reset = grpc_get_stats(
+            &mut grpc,
+            GetStatsRequest {
+                name: "inbound>>>in>>>traffic>>>uplink".to_string(),
+                reset: true,
+            },
+        )
+        .await
+        .expect("get stats with reset succeeds")
+        .stat
+        .expect("stat response");
+        assert_eq!(reset.value, 13);
+        assert_eq!(
+            server.stats().get_stat("inbound>>>in>>>traffic>>>uplink"),
+            Some(0),
+            "reset must return the pre-reset value and clear the counter"
+        );
+
+        let error = grpc_query_stats(
+            &mut grpc,
+            QueryStatsRequest {
+                pattern: String::new(),
+                reset: false,
+                patterns: vec!["(".to_string()],
+                regexp: true,
+            },
+        )
+        .await
+        .expect_err("invalid regexp must be a gRPC error");
+        assert_eq!(error.code(), tonic::Code::InvalidArgument);
+
+        server.close().unwrap();
+        assert!(
+            wait_until_no_current(&server).await,
+            "serve task must terminate after close"
+        );
     }
 
     // ── (regression) restart after a failed bind; first success is generation 1 ──

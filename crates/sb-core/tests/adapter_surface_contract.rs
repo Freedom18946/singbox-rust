@@ -6,9 +6,10 @@ use sb_core::services::cache_file::CacheFileService;
 use sb_core::services::urltest_history::URLTestHistoryService;
 use sb_core::services::v2ray_api::V2RayApiServer;
 use sb_types::ports::{
-    AdapterServicePorts, CacheFilePort, ClashServerPort, UrlTestHistory, UrlTestHistoryPort,
-    V2RayServerPort,
+    AdapterServicePorts, CacheFilePort, ClashServerPort, RouteMetadata, UrlTestHistory,
+    UrlTestHistoryPort, V2RayServerPort,
 };
+use sb_types::InboundTag;
 use std::sync::Arc;
 use std::time::SystemTime;
 
@@ -39,7 +40,7 @@ fn adapter_services_expose_trait_object_contracts_without_downcast() {
         rdrc_timeout: Some("1h".into()),
     }));
     let history = Arc::new(URLTestHistoryService::new());
-    let v2ray = Arc::new(V2RayApiServer::new(V2RayApiIR {
+    let v2ray_impl = Arc::new(V2RayApiServer::new(V2RayApiIR {
         listen: None,
         stats: Some(StatsIR {
             enabled: true,
@@ -48,7 +49,7 @@ fn adapter_services_expose_trait_object_contracts_without_downcast() {
             ..Default::default()
         }),
     }));
-    v2ray
+    v2ray_impl
         .stats()
         .get_counter("inbound>>>mixed-in>>>traffic>>>uplink")
         .add(17);
@@ -56,7 +57,7 @@ fn adapter_services_expose_trait_object_contracts_without_downcast() {
     let context = Context::new()
         .with_cache_file(cache)
         .with_urltest_history(history)
-        .with_v2ray_server(v2ray);
+        .with_v2ray_server(v2ray_impl.clone());
     let registry = ContextRegistry::from(&context);
     let services = AdapterServices::from_context_registry_with_dns_router(
         &registry,
@@ -120,6 +121,44 @@ fn adapter_services_expose_trait_object_contracts_without_downcast() {
     assert_eq!(
         stats.query("traffic", false),
         vec![("inbound>>>mixed-in>>>traffic>>>uplink".into(), 17)]
+    );
+    stats.routed_stream(
+        &RouteMetadata {
+            inbound: Some(InboundTag::new("mixed-in")),
+            ..Default::default()
+        },
+        None,
+        Some("direct"),
+    );
+    assert_eq!(
+        v2ray_impl
+            .stats()
+            .get_stat("outbound>>>direct>>>traffic>>>downlink"),
+        Some(0)
+    );
+    assert!(v2ray_impl
+        .stats()
+        .get_stat("inbound>>>mixed-in>>>packet>>>uplink")
+        .is_none());
+    stats.routed_packet(
+        &RouteMetadata {
+            inbound: Some(InboundTag::new("dns-in")),
+            ..Default::default()
+        },
+        None,
+        Some("dns-out"),
+    );
+    assert_eq!(
+        v2ray_impl
+            .stats()
+            .get_stat("inbound>>>dns-in>>>traffic>>>uplink"),
+        Some(0)
+    );
+    assert_eq!(
+        v2ray_impl
+            .stats()
+            .get_stat("outbound>>>dns-out>>>traffic>>>downlink"),
+        Some(0)
     );
 
     assert!(services.ports().time_service.is_some());

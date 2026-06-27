@@ -10,17 +10,18 @@
 
 ---
 
-## Resume (2026-06-27) - P1313-09 UDP NAT and packet dataplane
+## Resume (2026-06-27) - P1313-10 V2Ray stats and router tracker
 
-- **P1313-09 DONE locally**: SOCKS UDP association now uses runtime router/outbound
-  handles, route UDP action metadata, generic UDP transports in the NAT map, and
-  bidirectional reverse relay for socket/transport upstreams.
-- **Route options wired**: `udp_disable_domain_unmapping`, `udp_connect`, and
-  `udp_timeout` parse through config IR/v2 lowering and are exposed by
-  `RouterHandle::decide_with_meta`.
-- **Dataplane proof**: domain unmapping is covered by adapter E2E; large UDP payload
-  interop now succeeds and its oracle is promoted to success.
-- **Verification PASS**: see `agents-only/post1313/p1313_09_udp_nat_and_packet_dataplane.md`.
+- **P1313-10 DONE locally**: V2Ray StatsService now uses Go-shaped lazy traffic
+  counters only (`inbound|outbound|user>>>TAG>>>traffic>>>uplink|downlink`);
+  Rust-only packet counters are not created on this path.
+- **Router tracker wired**: `V2RayStatsPortAdapter` handles routed stream/packet hooks by
+  requesting the matching stats recorder from route metadata; byte increments remain in the
+  existing metered recorder paths to avoid double counting.
+- **API policy settled**: Go 1.13.13 reference is gRPC StatsService here. No Go-compatible
+  HTTP JSON V2Ray stats endpoint is claimed; `sb-api` simple helpers remain Rust-only
+  compatibility/testing surfaces.
+- **Verification PASS**: see `agents-only/post1313/p1313_10_v2ray_stats_and_router_tracker.md`.
   No GitHub workflow automation was added and no dual-kernel parity movement is claimed.
 
 ## Strategic State
