@@ -228,6 +228,7 @@ impl ShadowsocksConnector {
                 self.cipher_method.clone(),
                 self.master_key.clone(),
             )?;
+            udp_socket.set_target(target).await;
 
             Ok(Box::new(udp_socket))
         }

@@ -5073,6 +5073,106 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn test_domain_resolver_dialer_uses_injected_dns_router() {
+        #[derive(Clone, Debug)]
+        struct FakeRouter {
+            ip: IpAddr,
+            lookups: Arc<std::sync::atomic::AtomicUsize>,
+            last_transport: Arc<std::sync::Mutex<Option<String>>>,
+        }
+
+        #[async_trait::async_trait]
+        impl DnsRouter for FakeRouter {
+            async fn exchange(
+                &self,
+                _ctx: &DnsQueryContext,
+                _message: &[u8],
+            ) -> anyhow::Result<Vec<u8>> {
+                Err(anyhow::anyhow!("not implemented"))
+            }
+
+            async fn lookup(
+                &self,
+                ctx: &DnsQueryContext,
+                domain: &str,
+            ) -> anyhow::Result<Vec<std::net::IpAddr>> {
+                assert_eq!(domain, "derp.test");
+                self.lookups.fetch_add(1, Ordering::Relaxed);
+                *self.last_transport.lock().unwrap() = ctx.transport.clone();
+                Ok(vec![self.ip])
+            }
+
+            async fn lookup_default(&self, _domain: &str) -> anyhow::Result<Vec<std::net::IpAddr>> {
+                Err(anyhow::anyhow!("not implemented"))
+            }
+
+            async fn resolve(
+                &self,
+                _ctx: &DnsQueryContext,
+                _domain: &str,
+            ) -> anyhow::Result<crate::dns::DnsAnswer> {
+                Err(anyhow::anyhow!("not implemented"))
+            }
+
+            fn clear_cache(&self) {}
+        }
+
+        let listener = match TcpListener::bind("127.0.0.1:0").await {
+            Ok(listener) => listener,
+            Err(e) if e.kind() == io::ErrorKind::PermissionDenied => {
+                eprintln!("skipping DERP domain_resolver test: {e}");
+                return;
+            }
+            Err(e) => panic!("failed to bind DERP domain_resolver test listener: {e}"),
+        };
+        let addr = listener.local_addr().unwrap();
+        let server = tokio::spawn(async move {
+            let (mut stream, _) = listener.accept().await.unwrap();
+            let mut buf = [0u8; 4];
+            stream.read_exact(&mut buf).await.unwrap();
+            assert_eq!(&buf, b"ping");
+            stream.write_all(b"pong").await.unwrap();
+        });
+
+        let lookups = Arc::new(std::sync::atomic::AtomicUsize::new(0));
+        let last_transport = Arc::new(std::sync::Mutex::new(None));
+        let runtime = DerpRuntimeCtx {
+            dns_router: Some(Arc::new(FakeRouter {
+                ip: addr.ip(),
+                lookups: lookups.clone(),
+                last_transport: last_transport.clone(),
+            })),
+            outbounds: None,
+        };
+        let dial = DerpDialOptionsIR {
+            domain_resolver: Some(StringOrObj(sb_config::ir::DerpDomainResolverIR {
+                server: Some("dns-a".to_string()),
+                ..Default::default()
+            })),
+            ..Default::default()
+        };
+        let dialer = DerpService::build_derp_dialer(&runtime, &dial, None, None)
+            .expect("domain_resolver dialer");
+
+        let mut stream = dialer
+            .connect("derp.test", addr.port())
+            .await
+            .expect("dial through domain_resolver");
+        stream.write_all(b"ping").await.unwrap();
+        let mut response = [0u8; 4];
+        stream.read_exact(&mut response).await.unwrap();
+        assert_eq!(&response, b"pong");
+
+        server.await.unwrap();
+        assert_eq!(lookups.load(Ordering::Relaxed), 1);
+        assert_eq!(
+            last_transport.lock().unwrap().as_deref(),
+            Some("dns-a"),
+            "domain_resolver.server should be passed as DNS lookup transport"
+        );
+    }
+
+    #[tokio::test]
     async fn test_verify_client_url_detour_uses_outbound_connector() {
         use crate::adapter::OutboundConnector;
         use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};

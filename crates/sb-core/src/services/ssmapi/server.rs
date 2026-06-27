@@ -1173,6 +1173,26 @@ mod tests {
     }
 
     #[test]
+    fn test_builder_rejects_unbound_endpoint() {
+        let (mut ir, _port) = create_test_ir();
+        ir.servers = Some(HashMap::from([(
+            "/server-a".to_string(),
+            "missing-ss-in".to_string(),
+        )]));
+
+        let ctx = ServiceContext::default();
+        let err = match SsmapiService::from_ir(&ir, &ctx) {
+            Ok(_) => panic!("missing managed inbound must reject SSMAPI service creation"),
+            Err(err) => err.to_string(),
+        };
+
+        assert!(
+            err.contains("inbound 'missing-ss-in' not found"),
+            "unexpected error: {err}"
+        );
+    }
+
+    #[test]
     fn test_create_router_does_not_panic() {
         let srv = Arc::new(DummyManagedServer {
             tag: "ss-in".to_string(),
@@ -1263,6 +1283,40 @@ mod tests {
         let json = std::fs::read_to_string(cache_path).unwrap();
         assert!(json.contains("\"user_uplink\""));
         assert!(!json.contains("\"userUplink\""));
+    }
+
+    #[test]
+    fn test_cache_corrupt_file_is_deleted() {
+        let srv = Arc::new(DummyManagedServer {
+            tag: "ss-in".to_string(),
+            tracker_set: AtomicUsize::new(0),
+            update_calls: AtomicUsize::new(0),
+        });
+        let srv_dyn: Arc<dyn super::super::ManagedSSMServer> = srv.clone();
+        registry::register_managed_ssm_server("ss-in", Arc::downgrade(&srv_dyn));
+
+        let temp = tempfile::tempdir().unwrap();
+        let cache_path = temp.path().join("ssmapi-cache.json");
+        std::fs::write(&cache_path, b"{not-json").unwrap();
+
+        let (mut ir, _port) = create_test_ir();
+        ir.cache_path = Some(cache_path.to_string_lossy().to_string());
+
+        let ctx = ServiceContext::default();
+        let service = SsmapiService::from_ir(&ir, &ctx).expect("Failed to create service");
+
+        let err = service
+            .load_cache()
+            .expect_err("corrupt cache should fail loudly");
+        assert!(
+            err.to_string().contains("expected value")
+                || err.to_string().contains("key must be a string"),
+            "unexpected cache error: {err}"
+        );
+        assert!(
+            !cache_path.exists(),
+            "corrupt cache file should be removed after decode failure"
+        );
     }
 
     // --- Auth middleware tests ---

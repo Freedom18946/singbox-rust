@@ -1289,7 +1289,6 @@ impl InboundService for ShadowsocksInboundAdapter {
         let (tx, rx) = mpsc::channel(1);
         *self.stop_tx.lock() = Some(tx);
 
-        let rt = tokio::runtime::Handle::current();
         #[cfg(feature = "service_ssmapi")]
         {
             let shared = RuntimeShared {
@@ -1298,13 +1297,35 @@ impl InboundService for ShadowsocksInboundAdapter {
                 tracker: self.tracker.clone(),
                 udp_sessions_seen: self.udp_sessions_seen.clone(),
             };
-            rt.block_on(async { serve_with_shared(self.config.clone(), rx, shared).await })
-                .map_err(|e| std::io::Error::other(e.to_string()))
+            let cfg = self.config.clone();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle
+                    .block_on(async { serve_with_shared(cfg, rx, shared).await })
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+            } else {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(std::io::Error::other)?;
+                rt.block_on(async { serve_with_shared(cfg, rx, shared).await })
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+            }
         }
         #[cfg(not(feature = "service_ssmapi"))]
         {
-            rt.block_on(async { serve(self.config.clone(), rx).await })
-                .map_err(|e| std::io::Error::other(e.to_string()))
+            let cfg = self.config.clone();
+            if let Ok(handle) = tokio::runtime::Handle::try_current() {
+                handle
+                    .block_on(async { serve(cfg, rx).await })
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+            } else {
+                let rt = tokio::runtime::Builder::new_current_thread()
+                    .enable_all()
+                    .build()
+                    .map_err(std::io::Error::other)?;
+                rt.block_on(async { serve(cfg, rx).await })
+                    .map_err(|e| std::io::Error::other(e.to_string()))
+            }
         }
     }
 

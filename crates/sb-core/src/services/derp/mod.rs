@@ -1,7 +1,8 @@
 //! DERP (Detached Encrypted Routing Protocol) service implementation.
 //!
-//! Currently implements a partial service with STUN server functionality.
-//! Full DERP relay protocol is not yet implemented.
+//! Implements the local DERP relay surface used by the service runtime,
+//! including HTTP upgrade/websocket DERP, mesh forwarding, STUN, bootstrap DNS,
+//! verify-client hooks, and Go-compatible service lifecycle wiring.
 
 pub mod client_registry;
 pub mod mesh_test;

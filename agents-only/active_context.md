@@ -10,16 +10,16 @@
 
 ---
 
-## Resume (2026-06-28) - P1313-04 route rule engine and network strategy
+## Resume (2026-06-28) - P1313-11 service regression closeout
 
-- **P1313-04 DONE locally**: route rule IR/lowering now covers Go 1.13.13 route fields for
-  inbound/auth user, `ip_cidr`, source IP/GeoIP/private flags, port ranges, process path regex,
-  `preferred_by`, interface-address maps, and rule-set IP CIDR source matching.
-- **Route actions wired**: `direct`/`bypass` actions map to direct routing; reject
-  `method=drop|reply|default` is enforced; `route-options` metadata carries override
-  address/port, network strategy, fallback delay, UDP flags, and TLS fragmentation flags.
-- **Verification PASS**: see `agents-only/post1313/p1313_04_route_rule_engine_and_network_strategy.md`.
+- **P1313-11 DONE locally**: SSMAPI managed-Shadowsocks E2E now covers API auth/lifecycle,
+  TCP multi-user auth, UDP relay target behavior, traffic stats, and cache-on-close persistence.
+- **Service tails revalidated**: SSMAPI failure/cache cases, DERP injected-DNS resolver dial,
+  Shadowsocks inbound no-current-runtime startup, public UDP relay dial target seeding, and
+  resolved DNS-forwarder bind/status proof are covered on this host.
+- **Verification PASS**: see `agents-only/post1313/p1313_11_service_regression_closeout.md`.
   No GitHub workflow automation was added and no dual-kernel parity movement is claimed.
+  Linux resolved/systemd runtime proof remains an accepted Linux-host limitation.
 
 ## Strategic State
 
