@@ -807,6 +807,14 @@ impl RouterHandle {
             network_is_expensive: ctx.network_is_expensive,
             network_is_constrained: ctx.network_is_constrained,
             outbound_tag: ctx.outbound_tag,
+            preferred_by: ctx.preferred_by,
+            interface_name: ctx.interface_name,
+            interface_address: ctx.interface_address,
+            default_interface_address: ctx.default_interface_address,
+            user: ctx.user,
+            user_id: ctx.user_id,
+            group: ctx.group,
+            group_id: ctx.group_id,
             // Negation fields are handled by CompositeRule::matches using the same context
             ..Default::default()
         };
@@ -836,6 +844,7 @@ impl RouterHandle {
             if let Some(rule_set_db) = &self.rule_set_db {
                 let mut matched_tags = Vec::new();
                 rule_set_db.match_ip(ip, &mut matched_tags);
+                rules_ctx.ip_rule_sets.extend(matched_tags.clone());
                 rules_ctx.rule_sets.extend(matched_tags);
             }
         }
@@ -846,6 +855,11 @@ impl RouterHandle {
                 if let Some(code) = geoip_db.lookup_country(ip) {
                     rules_ctx.source_geoip_code = Some(code);
                 }
+            }
+            if let Some(rule_set_db) = &self.rule_set_db {
+                let mut matched_tags = Vec::new();
+                rule_set_db.match_ip(ip, &mut matched_tags);
+                rules_ctx.source_ip_rule_sets.extend(matched_tags);
             }
         }
 
@@ -1397,6 +1411,14 @@ impl RouterHandle {
                 network_is_expensive: ctx.network_is_expensive,
                 network_is_constrained: ctx.network_is_constrained,
                 outbound_tag: ctx.outbound_tag,
+                preferred_by: ctx.preferred_by,
+                interface_name: ctx.interface_name,
+                interface_address: ctx.interface_address,
+                default_interface_address: ctx.default_interface_address,
+                user: ctx.user,
+                user_id: ctx.user_id,
+                group: ctx.group,
+                group_id: ctx.group_id,
                 ..Default::default()
             };
 
@@ -1419,6 +1441,7 @@ impl RouterHandle {
                 if let Some(rule_set_db) = &self.rule_set_db {
                     let mut matched_tags = Vec::new();
                     rule_set_db.match_ip(ip, &mut matched_tags);
+                    rules_ctx.ip_rule_sets.extend(matched_tags.clone());
                     rules_ctx.rule_sets.extend(matched_tags);
                 }
             }
@@ -1427,6 +1450,11 @@ impl RouterHandle {
                     if let Some(code) = geoip_db.lookup_country(ip) {
                         rules_ctx.source_geoip_code = Some(code);
                     }
+                }
+                if let Some(rule_set_db) = &self.rule_set_db {
+                    let mut matched_tags = Vec::new();
+                    rule_set_db.match_ip(ip, &mut matched_tags);
+                    rules_ctx.source_ip_rule_sets.extend(matched_tags);
                 }
             }
 

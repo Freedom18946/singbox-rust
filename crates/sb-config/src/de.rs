@@ -1,5 +1,7 @@
 use crate::model::ListenAddr;
 use serde::{de::Error as DeError, Deserialize, Deserializer, Serializer};
+use serde_json::Value;
+use std::collections::BTreeMap;
 
 /// Helper to deserialize a single value or a list into a Vec.
 pub fn deserialize_string_or_list<'de, T, D>(deserializer: D) -> Result<Vec<T>, D::Error>
@@ -17,6 +19,64 @@ where
     match StringOrList::deserialize(deserializer)? {
         StringOrList::Single(s) => Ok(vec![s]),
         StringOrList::List(l) => Ok(l),
+    }
+}
+
+/// Deserialize a map whose values are either a single scalar string/number or a list.
+pub fn deserialize_string_list_map<'de, D>(
+    deserializer: D,
+) -> Result<BTreeMap<String, Vec<String>>, D::Error>
+where
+    D: Deserializer<'de>,
+{
+    let value = Value::deserialize(deserializer)?;
+    let Value::Object(map) = value else {
+        return Err(D::Error::custom("expected object"));
+    };
+
+    let mut out = BTreeMap::new();
+    for (key, value) in map {
+        let values = string_list_from_value(value).map_err(D::Error::custom)?;
+        if !values.is_empty() {
+            out.insert(key, values);
+        }
+    }
+    Ok(out)
+}
+
+fn string_list_from_value(value: Value) -> Result<Vec<String>, String> {
+    match value {
+        Value::Array(items) => {
+            let mut out = Vec::new();
+            for item in items {
+                if let Some(value) = string_from_value(item)? {
+                    out.push(value);
+                }
+            }
+            Ok(out)
+        }
+        other => Ok(string_from_value(other)?.into_iter().collect()),
+    }
+}
+
+fn string_from_value(value: Value) -> Result<Option<String>, String> {
+    let value = match value {
+        Value::String(s) => s,
+        Value::Number(n) => n.to_string(),
+        Value::Object(mut obj) => obj
+            .remove("value")
+            .or_else(|| obj.remove("address"))
+            .or_else(|| obj.remove("url"))
+            .and_then(|v| v.as_str().map(ToOwned::to_owned))
+            .ok_or_else(|| "expected object with value/address/url string".to_string())?,
+        Value::Null => return Ok(None),
+        _ => return Err("expected string, number, object, or list".to_string()),
+    };
+    let trimmed = value.trim();
+    if trimmed.is_empty() {
+        Ok(None)
+    } else {
+        Ok(Some(trimmed.to_string()))
     }
 }
 

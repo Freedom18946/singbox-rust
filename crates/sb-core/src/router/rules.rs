@@ -1,6 +1,7 @@
-use ipnet::IpNet;
+use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use once_cell::sync::OnceCell;
 use regex::Regex;
+use std::collections::BTreeMap;
 use std::fs;
 use std::sync::Arc;
 use std::time::Duration;
@@ -103,6 +104,7 @@ impl Decision {
         use sb_config::ir::RuleAction;
         match action {
             RuleAction::Route => Self::from_outbound_or_unresolved(outbound.as_deref()),
+            RuleAction::Direct | RuleAction::Bypass => Decision::Direct,
             RuleAction::Reject => Decision::Reject,
             RuleAction::RejectDrop => Decision::RejectDrop,
             RuleAction::Hijack => Decision::Hijack {
@@ -120,20 +122,68 @@ impl Decision {
             },
         }
     }
+
+    fn from_rule_ir(ir: &sb_config::ir::RuleIR) -> Result<Self, String> {
+        use sb_config::ir::RuleAction;
+        if ir.action == RuleAction::Reject {
+            let method = match ir.method.as_deref() {
+                Some(method) => method,
+                None => "default",
+            };
+            return match method {
+                "" | "default" | "reply" => Ok(Decision::Reject),
+                "drop" => {
+                    if ir.no_drop.unwrap_or(false) {
+                        Err(
+                            "route reject action cannot combine method=drop with no_drop=true"
+                                .to_string(),
+                        )
+                    } else {
+                        Ok(Decision::RejectDrop)
+                    }
+                }
+                other => Err(format!("unknown route reject method: {other}")),
+            };
+        }
+        Ok(Self::from_rule_action(
+            &ir.action,
+            ir.outbound.clone(),
+            ir.override_address.clone(),
+            ir.override_port,
+        ))
+    }
 }
 
 /// Route action metadata carried alongside a matched routing decision.
 #[derive(Debug, Clone, PartialEq, Eq, Default)]
 pub struct RouteActionOptions {
+    pub override_address: Option<String>,
+    pub override_port: Option<u16>,
+    pub network_strategy: Option<String>,
+    pub fallback_network_type: Option<Vec<String>>,
+    pub fallback_delay: Option<Duration>,
     pub udp_disable_domain_unmapping: bool,
     pub udp_connect: bool,
     pub udp_timeout: Option<Duration>,
+    pub tls_fragment: bool,
+    pub tls_record_fragment: bool,
+    pub tls_fragment_fallback_delay: Option<Duration>,
 }
 
 impl RouteActionOptions {
     #[must_use]
     pub fn is_empty(&self) -> bool {
-        !self.udp_disable_domain_unmapping && !self.udp_connect && self.udp_timeout.is_none()
+        self.override_address.is_none()
+            && self.override_port.is_none()
+            && self.network_strategy.is_none()
+            && self.fallback_network_type.is_none()
+            && self.fallback_delay.is_none()
+            && !self.udp_disable_domain_unmapping
+            && !self.udp_connect
+            && self.udp_timeout.is_none()
+            && !self.tls_fragment
+            && !self.tls_record_fragment
+            && self.tls_fragment_fallback_delay.is_none()
     }
 
     fn from_rule_ir(ir: &sb_config::ir::RuleIR) -> Result<Self, String> {
@@ -144,10 +194,39 @@ impl RouteActionOptions {
             ),
             None => None,
         };
+        let fallback_delay =
+            match ir.fallback_delay.as_deref() {
+                Some(raw) => Some(humantime::parse_duration(raw).map_err(|err| {
+                    format!("route rule fallback_delay '{raw}' is invalid: {err}")
+                })?),
+                None => None,
+            };
+        let tls_fragment_fallback_delay = match ir.tls_fragment_fallback_delay.as_deref() {
+            Some(raw) => Some(humantime::parse_duration(raw).map_err(|err| {
+                format!("route rule tls_fragment_fallback_delay '{raw}' is invalid: {err}")
+            })?),
+            None => None,
+        };
+        let tls_fragment = ir.tls_fragment.unwrap_or(false);
+        let tls_record_fragment = ir.tls_record_fragment.unwrap_or(false);
+        if tls_fragment && tls_record_fragment {
+            return Err(
+                "route rule tls_fragment and tls_record_fragment are mutually exclusive"
+                    .to_string(),
+            );
+        }
         Ok(Self {
+            override_address: ir.override_address.clone(),
+            override_port: ir.override_port,
+            network_strategy: ir.network_strategy.clone(),
+            fallback_network_type: ir.fallback_network_type.clone(),
+            fallback_delay,
             udp_disable_domain_unmapping: ir.udp_disable_domain_unmapping.unwrap_or(false),
             udp_connect: ir.udp_connect.unwrap_or(false),
             udp_timeout,
+            tls_fragment,
+            tls_record_fragment,
+            tls_fragment_fallback_delay,
         })
     }
 }
@@ -182,6 +261,57 @@ impl PartialEq for DomainRegexMatcher {
 
 impl Eq for DomainRegexMatcher {}
 
+fn parse_ip_net(raw: &str) -> Option<IpNet> {
+    if let Ok(net) = raw.parse::<IpNet>() {
+        return Some(net);
+    }
+    match raw.parse::<IpAddr>().ok()? {
+        IpAddr::V4(ip) => Ipv4Net::new(ip, 32).ok().map(IpNet::V4),
+        IpAddr::V6(ip) => Ipv6Net::new(ip, 128).ok().map(IpNet::V6),
+    }
+}
+
+fn parse_port_values(values: &[String]) -> Vec<u16> {
+    values
+        .iter()
+        .filter(|s| !s.contains('-'))
+        .filter_map(|s| s.parse().ok())
+        .collect()
+}
+
+fn parse_port_ranges(values: &[String]) -> Vec<(u16, u16)> {
+    values
+        .iter()
+        .filter_map(|s| {
+            let (start, end) = s.split_once('-')?;
+            let start = start.trim().parse().ok()?;
+            let end = end.trim().parse().ok()?;
+            Some((start, end))
+        })
+        .collect()
+}
+
+fn parse_net_map(map: &BTreeMap<String, Vec<String>>) -> BTreeMap<String, Vec<IpNet>> {
+    map.iter()
+        .filter_map(|(key, values)| {
+            let nets: Vec<IpNet> = values.iter().filter_map(|s| parse_ip_net(s)).collect();
+            if nets.is_empty() {
+                None
+            } else {
+                Some((key.clone(), nets))
+            }
+        })
+        .collect()
+}
+
+fn contains_ignore_ascii_case(values: &[String], needle: &str) -> bool {
+    values.iter().any(|v| v.eq_ignore_ascii_case(needle))
+}
+
+fn ip_in_any_net(nets: &[IpNet], ip: IpAddr) -> bool {
+    nets.iter().any(|net| net.contains(&ip))
+}
+
 impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
     type Error = String;
 
@@ -212,18 +342,16 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             not_domain_regex.push(DomainRegexMatcher::new(s.clone()).map_err(|e| e.to_string())?);
         }
 
-        let process_path_regex = Vec::new();
-        // ir.process_path_regex not in RuleIR
+        let mut process_path_regex = Vec::new();
+        for s in &ir.process_path_regex {
+            process_path_regex
+                .push(ProcessPathRegexMatcher::new(s.clone()).map_err(|e| e.to_string())?);
+        }
 
         let not_process_path_regex = Vec::new();
         // ir.not_process_path_regex not in RuleIR
 
-        let decision = Decision::from_rule_action(
-            &ir.action,
-            ir.outbound.clone(),
-            ir.override_address.clone(),
-            ir.override_port,
-        );
+        let decision = Decision::from_rule_ir(ir)?;
 
         let route_options = RouteActionOptions::from_rule_ir(ir)?;
 
@@ -238,26 +366,24 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             domain_keyword: ir.domain_keyword.clone(),
             domain_regex,
             geosite: ir.geosite.clone(),
-            ip_cidr: ir.ipcidr.iter().filter_map(|s| s.parse().ok()).collect(),
+            ip_cidr: ir.ipcidr.iter().filter_map(|s| parse_ip_net(s)).collect(),
             geoip: ir.geoip.clone(),
-            source_ip_cidr: ir.source.iter().filter_map(|s| s.parse().ok()).collect(),
-            source_geoip: Vec::new(), // ir.source_geoip not available
-            port: ir.port.iter().filter_map(|s| s.parse().ok()).collect(),
-            port_range: ir
-                .port
+            source_ip_cidr: ir
+                .source
                 .iter()
-                .filter_map(|s| {
-                    if let Some((start, end)) = s.split_once('-') {
-                        let start = start.parse().ok()?;
-                        let end = end.parse().ok()?;
-                        Some((start, end))
-                    } else {
-                        None
-                    }
-                })
+                .chain(ir.source_ip_cidr.iter())
+                .filter_map(|s| parse_ip_net(s))
                 .collect(),
-            source_port: Vec::new(),
-            source_port_range: Vec::new(),
+            source_geoip: ir.source_geoip.clone(),
+            source_ip_is_private: ir.source_ip_is_private.unwrap_or(false),
+            port: parse_port_values(&ir.port),
+            port_range: {
+                let mut ranges = parse_port_ranges(&ir.port);
+                ranges.extend(parse_port_ranges(&ir.port_range));
+                ranges
+            },
+            source_port: parse_port_values(&ir.source_port),
+            source_port_range: parse_port_ranges(&ir.source_port_range),
             network: ir.network.clone(),
             protocol: ir.protocol.clone(),
             process_name: ir.process_name.clone(),
@@ -266,12 +392,14 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             wifi_ssid: ir.wifi_ssid.clone(),
             wifi_bssid: ir.wifi_bssid.clone(),
             rule_set: ir.rule_set.clone(),
+            rule_set_ipcidr: ir.rule_set_ipcidr.clone(),
+            rule_set_ip_cidr_match_source: ir.rule_set_ip_cidr_match_source.unwrap_or(false),
             user_agent: ir.user_agent.clone(),
-            inbound_tag: Vec::new(),
-            auth_user: Vec::new(),
+            inbound_tag: ir.inbound.clone(),
+            auth_user: ir.auth_user.clone(),
             query_type: Vec::new(), // RuleIR doesn't typically have query_type for routing
-            ip_is_private: false,   // Default
-            ip_version: Vec::new(),
+            ip_is_private: ir.ip_is_private.unwrap_or(false),
+            ip_version: ir.ip_version.clone(),
             clash_mode: ir.clash_mode.clone(),
             client: ir.client.clone(),
             package_name: ir.package_name.clone(),
@@ -306,13 +434,13 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             not_ip_cidr: ir
                 .not_ipcidr
                 .iter()
-                .filter_map(|s| s.parse().ok())
+                .filter_map(|s| parse_ip_net(s))
                 .collect(),
             not_geoip: ir.not_geoip.clone(),
             not_source_ip_cidr: ir
                 .not_source
                 .iter()
-                .filter_map(|s| s.parse().ok())
+                .filter_map(|s| parse_ip_net(s))
                 .collect(),
             not_source_geoip: Vec::new(), // ir.not_source_geoip doesn't exist?
             not_port: ir.not_port.iter().filter_map(|s| s.parse().ok()).collect(),
@@ -339,6 +467,7 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             not_wifi_ssid: ir.not_wifi_ssid.clone(),
             not_wifi_bssid: ir.not_wifi_bssid.clone(),
             not_rule_set: ir.not_rule_set.clone(),
+            not_rule_set_ipcidr: ir.not_rule_set_ipcidr.clone(),
             not_user_agent: ir.not_user_agent.clone(),
             not_inbound_tag: Vec::new(), // ir.not_inbound_tag missing
             not_auth_user: ir.not_user.clone(), // Map not_user to auth_user?
@@ -356,7 +485,15 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
 
             // Missing fields from CompositeRule definition I saw?
             // ip_accept_any?
-            ip_accept_any: false, // Default
+            ip_accept_any: ir.ip_accept_any.unwrap_or(false),
+            interface_address: parse_net_map(&ir.interface_address),
+            network_interface_address: parse_net_map(&ir.network_interface_address),
+            default_interface_address: ir
+                .default_interface_address
+                .iter()
+                .filter_map(|s| parse_ip_net(s))
+                .collect(),
+            preferred_by: ir.preferred_by.clone(),
             invert: ir.invert,
         };
 
@@ -584,6 +721,7 @@ pub struct CompositeRule {
     pub geoip: Vec<String>,
     pub source_ip_cidr: Vec<IpNet>,
     pub source_geoip: Vec<String>,
+    pub source_ip_is_private: bool,
     pub port: Vec<u16>,
     pub port_range: Vec<(u16, u16)>,
     pub source_port: Vec<u16>,
@@ -596,6 +734,8 @@ pub struct CompositeRule {
     pub wifi_ssid: Vec<String>,
     pub wifi_bssid: Vec<String>,
     pub rule_set: Vec<String>,
+    pub rule_set_ipcidr: Vec<String>,
+    pub rule_set_ip_cidr_match_source: bool,
     pub user_agent: Vec<String>,
     pub inbound_tag: Vec<String>,
     pub auth_user: Vec<String>,
@@ -612,6 +752,10 @@ pub struct CompositeRule {
     pub network_is_constrained: Option<bool>,
     pub ip_accept_any: bool,
     pub outbound_tag: Vec<String>,
+    pub interface_address: BTreeMap<String, Vec<IpNet>>,
+    pub network_interface_address: BTreeMap<String, Vec<IpNet>>,
+    pub default_interface_address: Vec<IpNet>,
+    pub preferred_by: Vec<String>,
     /// OS-level user name list (e.g., "root", "nobody")
     pub user: Vec<String>,
     /// OS-level user ID list (UID)
@@ -645,6 +789,7 @@ pub struct CompositeRule {
     pub not_wifi_ssid: Vec<String>,
     pub not_wifi_bssid: Vec<String>,
     pub not_rule_set: Vec<String>,
+    pub not_rule_set_ipcidr: Vec<String>,
     pub not_user_agent: Vec<String>,
     pub not_inbound_tag: Vec<String>,
     pub not_auth_user: Vec<String>,
@@ -692,6 +837,8 @@ pub struct RouteCtx<'a> {
     pub geoip_code: Option<String>,
     pub source_geoip_code: Option<String>,
     pub rule_sets: Vec<String>,
+    pub ip_rule_sets: Vec<String>,
+    pub source_ip_rule_sets: Vec<String>,
     pub source_ip: Option<IpAddr>,
     pub source_port: Option<u16>,
 
@@ -708,6 +855,14 @@ pub struct RouteCtx<'a> {
     pub network_is_expensive: Option<bool>,
     /// Whether the current network is constrained
     pub network_is_constrained: Option<bool>,
+    /// Outbound tag that prefers this route (Go field: `preferred_by`).
+    pub preferred_by: Option<&'a str>,
+    /// Current interface name for `interface_address`.
+    pub interface_name: Option<&'a str>,
+    /// Current interface address for interface-address rules.
+    pub interface_address: Option<IpAddr>,
+    /// Current default-interface address for default-interface rules.
+    pub default_interface_address: Option<IpAddr>,
     /// OS-level user name (e.g., "root", "nobody")
     pub user: Option<&'a str>,
     /// OS-level user ID (UID)
@@ -925,6 +1080,16 @@ impl CompositeRule {
         {
             return false;
         }
+        if !self.not_rule_set_ipcidr.is_empty()
+            && self.not_rule_set_ipcidr.iter().any(|rs| {
+                ctx.ip_rule_sets
+                    .iter()
+                    .chain(ctx.source_ip_rule_sets.iter())
+                    .any(|r| r == rs)
+            })
+        {
+            return false;
+        }
         if !self.not_user_agent.is_empty() {
             if let Some(ua) = ctx.user_agent {
                 if self.not_user_agent.iter().any(|u| ua.contains(u)) {
@@ -1060,6 +1225,16 @@ impl CompositeRule {
                 return false;
             }
         }
+        if self.source_ip_is_private {
+            let matched = if let Some(ip) = ctx.source_ip {
+                Engine::is_private_ip(&ip)
+            } else {
+                false
+            };
+            if !matched {
+                return false;
+            }
+        }
         if !self.port.is_empty() {
             let matched = if let Some(port) = ctx.port {
                 self.port.contains(&port)
@@ -1187,6 +1362,20 @@ impl CompositeRule {
                 .rule_set
                 .iter()
                 .any(|rs| ctx.rule_sets.iter().any(|r| r == rs));
+            if !matched {
+                return false;
+            }
+        }
+        if !self.rule_set_ipcidr.is_empty() {
+            let ip_rule_sets = if self.rule_set_ip_cidr_match_source {
+                &ctx.source_ip_rule_sets
+            } else {
+                &ctx.ip_rule_sets
+            };
+            let matched = self
+                .rule_set_ipcidr
+                .iter()
+                .any(|rs| ip_rule_sets.iter().any(|r| r == rs));
             if !matched {
                 return false;
             }
@@ -1382,6 +1571,46 @@ impl CompositeRule {
             } else {
                 false
             };
+            if !matched {
+                return false;
+            }
+        }
+        if !self.preferred_by.is_empty() {
+            let matched = ctx
+                .preferred_by
+                .is_some_and(|tag| contains_ignore_ascii_case(&self.preferred_by, tag));
+            if !matched {
+                return false;
+            }
+        }
+        if !self.interface_address.is_empty() {
+            let matched = match (ctx.interface_name, ctx.interface_address) {
+                (Some(name), Some(ip)) => self
+                    .interface_address
+                    .get(name)
+                    .is_some_and(|nets| ip_in_any_net(nets, ip)),
+                _ => false,
+            };
+            if !matched {
+                return false;
+            }
+        }
+        if !self.network_interface_address.is_empty() {
+            let matched = match (ctx.network_type, ctx.interface_address) {
+                (Some(network_type), Some(ip)) => self
+                    .network_interface_address
+                    .get(network_type)
+                    .is_some_and(|nets| ip_in_any_net(nets, ip)),
+                _ => false,
+            };
+            if !matched {
+                return false;
+            }
+        }
+        if !self.default_interface_address.is_empty() {
+            let matched = ctx
+                .default_interface_address
+                .is_some_and(|ip| ip_in_any_net(&self.default_interface_address, ip));
             if !matched {
                 return false;
             }

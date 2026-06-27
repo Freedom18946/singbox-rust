@@ -6,6 +6,7 @@ use super::{
     emit_issue, extract_string_list, insert_keys, object_keys, parse_u16_field, parse_u32_field,
 };
 use crate::ir::{ConfigIR, DomainResolveOptionsIR, RuleIR, RuleSetIR};
+use std::collections::BTreeMap;
 
 fn allowed_route_keys() -> HashSet<String> {
     let mut set = object_keys(crate::ir::RouteIR::default());
@@ -88,6 +89,8 @@ fn parse_rule_entry(val: &Value) -> RuleIR {
             }
         }
 
+        r.inbound = extract_string_list(condition_obj.get("inbound")).unwrap_or_default();
+        r.ip_version = extract_string_list(condition_obj.get("ip_version")).unwrap_or_default();
         r.domain = extract_string_list(condition_obj.get("domain")).unwrap_or_default();
         r.domain_suffix = extract_string_list(
             condition_obj
@@ -115,7 +118,18 @@ fn parse_rule_entry(val: &Value) -> RuleIR {
                 .or_else(|| condition_obj.get("ip_cidr")),
         )
         .unwrap_or_default();
+        r.ip_is_private = condition_obj.get("ip_is_private").and_then(|v| v.as_bool());
+        r.source_ip_cidr =
+            extract_string_list(condition_obj.get("source_ip_cidr")).unwrap_or_default();
+        r.source_geoip = extract_string_list(condition_obj.get("source_geoip")).unwrap_or_default();
+        r.source_ip_is_private = condition_obj
+            .get("source_ip_is_private")
+            .and_then(|v| v.as_bool());
         r.port = extract_string_list(condition_obj.get("port")).unwrap_or_default();
+        r.port_range = extract_string_list(condition_obj.get("port_range")).unwrap_or_default();
+        r.source_port = extract_string_list(condition_obj.get("source_port")).unwrap_or_default();
+        r.source_port_range =
+            extract_string_list(condition_obj.get("source_port_range")).unwrap_or_default();
         r.process_name = extract_string_list(
             condition_obj
                 .get("process_name")
@@ -123,14 +137,33 @@ fn parse_rule_entry(val: &Value) -> RuleIR {
         )
         .unwrap_or_default();
         r.process_path = extract_string_list(condition_obj.get("process_path")).unwrap_or_default();
+        r.process_path_regex =
+            extract_string_list(condition_obj.get("process_path_regex")).unwrap_or_default();
         r.network = extract_string_list(condition_obj.get("network")).unwrap_or_default();
         r.protocol = extract_string_list(condition_obj.get("protocol")).unwrap_or_default();
         r.source = extract_string_list(condition_obj.get("source")).unwrap_or_default();
         r.dest = extract_string_list(condition_obj.get("dest")).unwrap_or_default();
         r.user_agent = extract_string_list(condition_obj.get("user_agent")).unwrap_or_default();
+        r.auth_user = extract_string_list(condition_obj.get("auth_user")).unwrap_or_default();
         r.wifi_ssid = extract_string_list(condition_obj.get("wifi_ssid")).unwrap_or_default();
         r.wifi_bssid = extract_string_list(condition_obj.get("wifi_bssid")).unwrap_or_default();
         r.rule_set = extract_string_list(condition_obj.get("rule_set")).unwrap_or_default();
+        r.rule_set_ipcidr = extract_string_list(
+            condition_obj
+                .get("rule_set_ipcidr")
+                .or_else(|| condition_obj.get("rule_set_ip_cidr")),
+        )
+        .unwrap_or_default();
+        r.rule_set_ip_cidr_match_source = condition_obj
+            .get("rule_set_ip_cidr_match_source")
+            .or_else(|| condition_obj.get("rule_set_ipcidr_match_source"))
+            .and_then(|v| v.as_bool());
+        r.interface_address = extract_string_map(condition_obj.get("interface_address"));
+        r.network_interface_address =
+            extract_string_map(condition_obj.get("network_interface_address"));
+        r.default_interface_address =
+            extract_string_list(condition_obj.get("default_interface_address")).unwrap_or_default();
+        r.preferred_by = extract_string_list(condition_obj.get("preferred_by")).unwrap_or_default();
         r.query_type = extract_string_list(condition_obj.get("query_type")).unwrap_or_default();
 
         r.not_domain = extract_string_list(obj.get("not_domain")).unwrap_or_default();
@@ -158,6 +191,11 @@ fn parse_rule_entry(val: &Value) -> RuleIR {
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
         r.override_port = parse_u16_field(obj.get("override_port"));
+        r.method = obj
+            .get("method")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        r.no_drop = obj.get("no_drop").and_then(|v| v.as_bool());
         r.rewrite_ttl = parse_u32_field(obj.get("rewrite_ttl"));
         r.client_subnet = obj
             .get("client_subnet")
@@ -171,6 +209,15 @@ fn parse_rule_entry(val: &Value) -> RuleIR {
             .get("udp_timeout")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string());
+        r.network_strategy = obj
+            .get("network_strategy")
+            .and_then(|v| v.as_str())
+            .map(|s| s.to_string());
+        r.fallback_network_type = extract_string_list(obj.get("fallback_network_type"));
+        r.fallback_delay = duration_text(obj.get("fallback_delay"));
+        r.tls_fragment = obj.get("tls_fragment").and_then(|v| v.as_bool());
+        r.tls_record_fragment = obj.get("tls_record_fragment").and_then(|v| v.as_bool());
+        r.tls_fragment_fallback_delay = duration_text(obj.get("tls_fragment_fallback_delay"));
 
         r.outbound = obj
             .get("outbound")
@@ -180,6 +227,29 @@ fn parse_rule_entry(val: &Value) -> RuleIR {
         r.invert = obj.get("invert").and_then(|v| v.as_bool()).unwrap_or(false);
     }
     r
+}
+
+fn duration_text(value: Option<&Value>) -> Option<String> {
+    match value? {
+        Value::String(s) if !s.trim().is_empty() => Some(s.trim().to_string()),
+        Value::Number(n) => Some(format!("{n}ms")),
+        _ => None,
+    }
+}
+
+fn extract_string_map(value: Option<&Value>) -> BTreeMap<String, Vec<String>> {
+    let mut out = BTreeMap::new();
+    let Some(map) = value.and_then(|v| v.as_object()) else {
+        return out;
+    };
+    for (key, value) in map {
+        if let Some(items) = extract_string_list(Some(value)) {
+            if !items.is_empty() {
+                out.insert(key.clone(), items);
+            }
+        }
+    }
+    out
 }
 
 /// Lower the `/route` block from raw JSON into `ConfigIR.route`.

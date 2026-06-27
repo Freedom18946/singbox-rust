@@ -10,18 +10,15 @@
 
 ---
 
-## Resume (2026-06-27) - P1313-10 V2Ray stats and router tracker
+## Resume (2026-06-28) - P1313-04 route rule engine and network strategy
 
-- **P1313-10 DONE locally**: V2Ray StatsService now uses Go-shaped lazy traffic
-  counters only (`inbound|outbound|user>>>TAG>>>traffic>>>uplink|downlink`);
-  Rust-only packet counters are not created on this path.
-- **Router tracker wired**: `V2RayStatsPortAdapter` handles routed stream/packet hooks by
-  requesting the matching stats recorder from route metadata; byte increments remain in the
-  existing metered recorder paths to avoid double counting.
-- **API policy settled**: Go 1.13.13 reference is gRPC StatsService here. No Go-compatible
-  HTTP JSON V2Ray stats endpoint is claimed; `sb-api` simple helpers remain Rust-only
-  compatibility/testing surfaces.
-- **Verification PASS**: see `agents-only/post1313/p1313_10_v2ray_stats_and_router_tracker.md`.
+- **P1313-04 DONE locally**: route rule IR/lowering now covers Go 1.13.13 route fields for
+  inbound/auth user, `ip_cidr`, source IP/GeoIP/private flags, port ranges, process path regex,
+  `preferred_by`, interface-address maps, and rule-set IP CIDR source matching.
+- **Route actions wired**: `direct`/`bypass` actions map to direct routing; reject
+  `method=drop|reply|default` is enforced; `route-options` metadata carries override
+  address/port, network strategy, fallback delay, UDP flags, and TLS fragmentation flags.
+- **Verification PASS**: see `agents-only/post1313/p1313_04_route_rule_engine_and_network_strategy.md`.
   No GitHub workflow automation was added and no dual-kernel parity movement is claimed.
 
 ## Strategic State

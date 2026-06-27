@@ -16,6 +16,7 @@
 //! `planned.rs` / `normalize.rs` remain skeletons.
 
 use serde::{Deserialize, Serialize};
+use std::collections::BTreeMap;
 
 use super::raw::{RawDomainResolveOptionsIR, RawRouteIR, RawRuleIR, RawRuleSetIR};
 
@@ -28,6 +29,12 @@ pub enum RuleAction {
     /// 将流量路由到指定出站（默认）。
     #[default]
     Route,
+    /// Route directly using direct dialer options.
+    /// 使用直连拨号选项。
+    Direct,
+    /// Bypass route path and use direct behavior.
+    /// 绕过路由路径并使用直连行为。
+    Bypass,
     /// Reject connection (send RST/ICMP unreachable).
     /// 拒绝连接（发送 RST/ICMP 不可达）。
     Reject,
@@ -60,6 +67,8 @@ impl RuleAction {
     pub fn as_str(&self) -> &'static str {
         match self {
             RuleAction::Route => "route",
+            RuleAction::Direct => "direct",
+            RuleAction::Bypass => "bypass",
             RuleAction::Reject => "reject",
             RuleAction::RejectDrop => "reject-drop",
             RuleAction::Hijack => "hijack",
@@ -76,6 +85,8 @@ impl RuleAction {
     pub fn from_str_opt(s: &str) -> Option<Self> {
         match s.to_ascii_lowercase().as_str() {
             "route" => Some(RuleAction::Route),
+            "direct" => Some(RuleAction::Direct),
+            "bypass" => Some(RuleAction::Bypass),
             "reject" => Some(RuleAction::Reject),
             "reject-drop" | "reject_drop" => Some(RuleAction::RejectDrop),
             "hijack" => Some(RuleAction::Hijack),
@@ -97,6 +108,14 @@ impl RuleAction {
 #[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
 pub struct RuleIR {
     // Positive match conditions
+    /// Inbound tag match list.
+    /// 入站标签匹配列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub inbound: Vec<String>,
+    /// IP version match list (`4`/`6` or `ipv4`/`ipv6`).
+    /// IP 版本匹配列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub ip_version: Vec<String>,
     /// Domain exact match list.
     /// 域名精确匹配列表。
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
@@ -123,12 +142,44 @@ pub struct RuleIR {
     pub geoip: Vec<String>,
     /// IP CIDR list.
     /// IP CIDR 列表。
-    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "ip_cidr",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub ipcidr: Vec<String>,
+    /// Match private destination IP addresses.
+    /// 匹配私有目标 IP。
+    #[serde(default)]
+    pub ip_is_private: Option<bool>,
+    /// Source IP CIDR list.
+    /// 源 IP CIDR 列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_ip_cidr: Vec<String>,
+    /// Source GeoIP country code list.
+    /// 源 GeoIP 国家代码列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_geoip: Vec<String>,
+    /// Match private source IP addresses.
+    /// 匹配私有源 IP。
+    #[serde(default)]
+    pub source_ip_is_private: Option<bool>,
     /// Port or port range (e.g., `"80"`, `"80-90"`).
     /// 端口或端口范围（例如 `"80"`, `"80-90"`）。
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub port: Vec<String>,
+    /// Port range list (Go field: `port_range`).
+    /// 端口范围列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub port_range: Vec<String>,
+    /// Source port list.
+    /// 源端口列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_port: Vec<String>,
+    /// Source port range list.
+    /// 源端口范围列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_port_range: Vec<String>,
     /// Process name list.
     /// 进程名称列表。
     #[serde(
@@ -141,6 +192,10 @@ pub struct RuleIR {
     /// 进程路径列表。
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub process_path: Vec<String>,
+    /// Process path regex list.
+    /// 进程路径正则列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub process_path_regex: Vec<String>,
     /// Network type: `"tcp"` or `"udp"`.
     /// 网络类型：`"tcp"` 或 `"udp"`。
     #[serde(default)]
@@ -165,6 +220,10 @@ pub struct RuleIR {
     /// User-Agent 模式列表。
     #[serde(default)]
     pub user_agent: Vec<String>,
+    /// Authenticated user list.
+    /// 认证用户列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub auth_user: Vec<String>,
     /// WiFi SSID list.
     /// WiFi SSID 列表。
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
@@ -179,8 +238,32 @@ pub struct RuleIR {
     pub rule_set: Vec<String>,
     /// IP-based rule set list.
     /// 基于 IP 的规则集列表。
-    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "rule_set_ip_cidr",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub rule_set_ipcidr: Vec<String>,
+    /// Match source IP against IP-based rule sets.
+    /// 使用源 IP 匹配基于 IP 的规则集。
+    #[serde(default, alias = "rule_set_ipcidr_match_source")]
+    pub rule_set_ip_cidr_match_source: Option<bool>,
+    /// Interface-name scoped address prefixes.
+    /// 按接口名限定的地址前缀。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_list_map")]
+    pub interface_address: BTreeMap<String, Vec<String>>,
+    /// Network-type scoped interface address prefixes.
+    /// 按网络类型限定的接口地址前缀。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_list_map")]
+    pub network_interface_address: BTreeMap<String, Vec<String>>,
+    /// Default-interface address prefixes.
+    /// 默认接口地址前缀。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub default_interface_address: Vec<String>,
+    /// Preferred-by outbound tag list.
+    /// preferred_by 出站标签列表。
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub preferred_by: Vec<String>,
     /// User ID list (UID-based matching, Linux/macOS).
     /// 用户 ID 列表（基于 UID 的匹配，Linux/macOS）。
     #[serde(default)]
@@ -277,7 +360,11 @@ pub struct RuleIR {
     pub not_geoip: Vec<String>,
     /// Exclude IP CIDRs.
     /// 排除 IP CIDR。
-    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "not_ip_cidr",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub not_ipcidr: Vec<String>,
     /// Exclude ports.
     /// 排除端口。
@@ -333,7 +420,7 @@ pub struct RuleIR {
     pub not_rule_set: Vec<String>,
     /// Exclude IP-based rule sets.
     /// 排除基于 IP 的规则集。
-    #[serde(default)]
+    #[serde(default, alias = "not_rule_set_ip_cidr")]
     pub not_rule_set_ipcidr: Vec<String>,
     /// Exclude user IDs.
     /// 排除用户 ID。
@@ -403,6 +490,14 @@ pub struct RuleIR {
     /// 覆盖目标端口（用于 hijack 动作）。
     #[serde(default)]
     pub override_port: Option<u16>,
+    /// Reject method (`default`, `drop`, or `reply`).
+    /// 拒绝方法。
+    #[serde(default)]
+    pub method: Option<String>,
+    /// Go reject option: disallow drop behavior in the current context.
+    /// Go reject 选项。
+    #[serde(default)]
+    pub no_drop: Option<bool>,
 
     // DNS specific action fields
     /// DNS query type match (e.g. A, AAAA).
@@ -451,6 +546,15 @@ pub struct RuleIR {
     /// UDP timeout override for this route action.
     #[serde(default)]
     pub udp_timeout: Option<String>,
+    /// Enable TLS packet fragmentation for this route action.
+    #[serde(default)]
+    pub tls_fragment: Option<bool>,
+    /// Enable TLS record fragmentation for this route action.
+    #[serde(default)]
+    pub tls_record_fragment: Option<bool>,
+    /// TLS fragmentation fallback delay.
+    #[serde(default)]
+    pub tls_fragment_fallback_delay: Option<String>,
 
     // Sniff Action Fields
     /// Sniffer protocol (e.g. "http", "tls", "quic").

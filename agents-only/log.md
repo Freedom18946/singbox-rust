@@ -18,6 +18,27 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-06-28 00:39] Agent: Codex
+
+**任务**: P1313-04 Route rule engine and network strategy
+**变更**:
+- `crates/sb-config/src/ir/route.rs` / `ir/raw.rs` / `validator/v2/route.rs` - 补齐 Go
+  1.13.13 route rule/root/action 字段 lowering 与严格 Raw bridge aliases。
+- `crates/sb-core/src/router/rules.rs` / `router/mod.rs` / `router/engine.rs` - 接入
+  preferred/interface/source-rule-set matchers、direct/bypass/reject method 映射和 route-options
+  网络/TLS/UDP/override 元数据。
+- `crates/sb-config/tests/route_options_parity.rs` / `crates/sb-core/tests/router_select_ctx_meta.rs`
+  - 增加字段解析、route-options metadata、interface/preferred_by、rule_set_ip_cidr source
+  mode 和 reject method 回归测试。
+- `agents-only/active_context.md` /
+  `agents-only/post1313/p1313_04_route_rule_engine_and_network_strategy.md` - 记录 P1313-04
+  本地关闭与验证结果。
+**结果**: 成功。`cargo test -p sb-config route`、`cargo test -p sb-core router`、
+`cargo check -p app --features parity`、`cargo check --workspace --all-features`、一致性脚本、
+boundaries 和格式检查均通过。
+**备注**: 未新增 GitHub Actions，未声明 dual-kernel parity 数字变化；UDP NAT 仍按 P1313-09
+闭合口径处理。
+
 ### [2026-06-27 21:21] Agent: Codex
 
 **任务**: P1313-08 Clash API and GUI channel contract

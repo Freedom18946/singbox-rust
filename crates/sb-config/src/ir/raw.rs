@@ -128,6 +128,7 @@
 //!   pilot completed earlier) remain in their current location
 
 use serde::Deserialize;
+use std::collections::BTreeMap;
 
 pub use super::dns_raw::{RawDnsHostIR, RawDnsIR, RawDnsRuleIR, RawDnsServerIR};
 use super::inbound::{MasqueradeFileIR, MasqueradeIR, MasqueradeProxyIR, MasqueradeStringIR};
@@ -260,6 +261,10 @@ impl From<RawCertificateIR> for CertificateIR {
 pub struct RawRuleIR {
     // Positive match conditions
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub inbound: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub ip_version: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub domain: Vec<String>,
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub domain_suffix: Vec<String>,
@@ -271,10 +276,28 @@ pub struct RawRuleIR {
     pub geosite: Vec<String>,
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub geoip: Vec<String>,
-    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "ip_cidr",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub ipcidr: Vec<String>,
+    #[serde(default)]
+    pub ip_is_private: Option<bool>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_ip_cidr: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_geoip: Vec<String>,
+    #[serde(default)]
+    pub source_ip_is_private: Option<bool>,
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub port: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub port_range: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_port: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub source_port_range: Vec<String>,
     #[serde(
         default,
         alias = "process",
@@ -283,6 +306,8 @@ pub struct RawRuleIR {
     pub process_name: Vec<String>,
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub process_path: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub process_path_regex: Vec<String>,
     #[serde(default)]
     pub network: Vec<String>,
     #[serde(default)]
@@ -296,13 +321,29 @@ pub struct RawRuleIR {
     #[serde(default)]
     pub user_agent: Vec<String>,
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub auth_user: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub wifi_ssid: Vec<String>,
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub wifi_bssid: Vec<String>,
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub rule_set: Vec<String>,
-    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "rule_set_ip_cidr",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub rule_set_ipcidr: Vec<String>,
+    #[serde(default, alias = "rule_set_ipcidr_match_source")]
+    pub rule_set_ip_cidr_match_source: Option<bool>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_list_map")]
+    pub interface_address: BTreeMap<String, Vec<String>>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_list_map")]
+    pub network_interface_address: BTreeMap<String, Vec<String>>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub default_interface_address: Vec<String>,
+    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    pub preferred_by: Vec<String>,
     #[serde(default)]
     pub user_id: Vec<u32>,
     #[serde(
@@ -354,7 +395,11 @@ pub struct RawRuleIR {
     pub not_geosite: Vec<String>,
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_geoip: Vec<String>,
-    #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
+    #[serde(
+        default,
+        alias = "not_ip_cidr",
+        deserialize_with = "crate::de::deserialize_string_or_list"
+    )]
     pub not_ipcidr: Vec<String>,
     #[serde(default, deserialize_with = "crate::de::deserialize_string_or_list")]
     pub not_port: Vec<String>,
@@ -384,7 +429,7 @@ pub struct RawRuleIR {
     pub not_wifi_bssid: Vec<String>,
     #[serde(default)]
     pub not_rule_set: Vec<String>,
-    #[serde(default)]
+    #[serde(default, alias = "not_rule_set_ip_cidr")]
     pub not_rule_set_ipcidr: Vec<String>,
     #[serde(default)]
     pub not_user_id: Vec<u32>,
@@ -420,6 +465,10 @@ pub struct RawRuleIR {
     pub override_address: Option<String>,
     #[serde(default)]
     pub override_port: Option<u16>,
+    #[serde(default)]
+    pub method: Option<String>,
+    #[serde(default)]
+    pub no_drop: Option<bool>,
     // DNS specific action fields
     #[serde(default)]
     pub query_type: Vec<String>,
@@ -450,6 +499,12 @@ pub struct RawRuleIR {
     pub udp_connect: Option<bool>,
     #[serde(default)]
     pub udp_timeout: Option<String>,
+    #[serde(default)]
+    pub tls_fragment: Option<bool>,
+    #[serde(default)]
+    pub tls_record_fragment: Option<bool>,
+    #[serde(default)]
+    pub tls_fragment_fallback_delay: Option<String>,
     // Sniff Action Fields
     #[serde(default)]
     pub sniffer: Option<String>,
@@ -460,6 +515,8 @@ pub struct RawRuleIR {
 impl From<RawRuleIR> for RuleIR {
     fn from(raw: RawRuleIR) -> Self {
         Self {
+            inbound: raw.inbound,
+            ip_version: raw.ip_version,
             domain: raw.domain,
             domain_suffix: raw.domain_suffix,
             domain_keyword: raw.domain_keyword,
@@ -467,19 +524,33 @@ impl From<RawRuleIR> for RuleIR {
             geosite: raw.geosite,
             geoip: raw.geoip,
             ipcidr: raw.ipcidr,
+            ip_is_private: raw.ip_is_private,
+            source_ip_cidr: raw.source_ip_cidr,
+            source_geoip: raw.source_geoip,
+            source_ip_is_private: raw.source_ip_is_private,
             port: raw.port,
+            port_range: raw.port_range,
+            source_port: raw.source_port,
+            source_port_range: raw.source_port_range,
             process_name: raw.process_name,
             process_path: raw.process_path,
+            process_path_regex: raw.process_path_regex,
             network: raw.network,
             protocol: raw.protocol,
             alpn: raw.alpn,
             source: raw.source,
             dest: raw.dest,
             user_agent: raw.user_agent,
+            auth_user: raw.auth_user,
             wifi_ssid: raw.wifi_ssid,
             wifi_bssid: raw.wifi_bssid,
             rule_set: raw.rule_set,
             rule_set_ipcidr: raw.rule_set_ipcidr,
+            rule_set_ip_cidr_match_source: raw.rule_set_ip_cidr_match_source,
+            interface_address: raw.interface_address,
+            network_interface_address: raw.network_interface_address,
+            default_interface_address: raw.default_interface_address,
+            preferred_by: raw.preferred_by,
             user_id: raw.user_id,
             user: raw.user,
             group_id: raw.group_id,
@@ -534,6 +605,8 @@ impl From<RawRuleIR> for RuleIR {
             outbound: raw.outbound,
             override_address: raw.override_address,
             override_port: raw.override_port,
+            method: raw.method,
+            no_drop: raw.no_drop,
             query_type: raw.query_type,
             rewrite_ttl: raw.rewrite_ttl,
             client_subnet: raw.client_subnet,
@@ -548,6 +621,9 @@ impl From<RawRuleIR> for RuleIR {
             udp_disable_domain_unmapping: raw.udp_disable_domain_unmapping,
             udp_connect: raw.udp_connect,
             udp_timeout: raw.udp_timeout,
+            tls_fragment: raw.tls_fragment,
+            tls_record_fragment: raw.tls_record_fragment,
+            tls_fragment_fallback_delay: raw.tls_fragment_fallback_delay,
             sniffer: raw.sniffer,
             sniff_timeout: raw.sniff_timeout,
         }
@@ -620,6 +696,17 @@ impl From<RawRuleSetIR> for RuleSetIR {
     }
 }
 
+#[derive(Debug, Clone, Default, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawGeoAssetOptionsIR {
+    #[serde(default)]
+    pub path: Option<String>,
+    #[serde(default)]
+    pub download_url: Option<String>,
+    #[serde(default)]
+    pub download_detour: Option<String>,
+}
+
 /// Raw route subtree — strict nested input boundary for [`RouteIR`].
 #[derive(Debug, Clone, Default, Deserialize)]
 #[serde(deny_unknown_fields)]
@@ -633,6 +720,10 @@ pub struct RawRouteIR {
     #[serde(default, alias = "final")]
     pub final_outbound: Option<String>,
     // GeoIP/Geosite
+    #[serde(default)]
+    pub geoip: Option<RawGeoAssetOptionsIR>,
+    #[serde(default)]
+    pub geosite: Option<RawGeoAssetOptionsIR>,
     #[serde(default)]
     pub geoip_path: Option<String>,
     #[serde(default)]
@@ -657,18 +748,18 @@ pub struct RawRouteIR {
     #[serde(default)]
     pub default_interface: Option<String>,
     // Routing Mark
-    #[serde(default)]
+    #[serde(default, alias = "default_mark")]
     pub mark: Option<u32>,
     // DNS and Network Strategy
     #[serde(default)]
     pub default_domain_resolver: Option<RawDomainResolveOptionsIR>,
-    #[serde(default)]
+    #[serde(default, alias = "default_network_strategy")]
     pub network_strategy: Option<String>,
     #[serde(default)]
     pub default_network_type: Option<Vec<String>>,
     #[serde(default)]
     pub default_fallback_network_type: Option<Vec<String>>,
-    #[serde(default)]
+    #[serde(default, alias = "fallback_delay")]
     pub default_fallback_delay: Option<String>,
 }
 
@@ -679,12 +770,36 @@ impl From<RawRouteIR> for RouteIR {
             rule_set: raw.rule_set.into_iter().map(Into::into).collect(),
             default: raw.default,
             final_outbound: raw.final_outbound,
-            geoip_path: raw.geoip_path,
-            geoip_download_url: raw.geoip_download_url,
-            geoip_download_detour: raw.geoip_download_detour,
-            geosite_path: raw.geosite_path,
-            geosite_download_url: raw.geosite_download_url,
-            geosite_download_detour: raw.geosite_download_detour,
+            geoip_path: raw.geoip_path.or_else(|| {
+                raw.geoip
+                    .as_ref()
+                    .and_then(|geoip| geoip.path.as_ref().cloned())
+            }),
+            geoip_download_url: raw.geoip_download_url.or_else(|| {
+                raw.geoip
+                    .as_ref()
+                    .and_then(|geoip| geoip.download_url.as_ref().cloned())
+            }),
+            geoip_download_detour: raw.geoip_download_detour.or_else(|| {
+                raw.geoip
+                    .as_ref()
+                    .and_then(|geoip| geoip.download_detour.as_ref().cloned())
+            }),
+            geosite_path: raw.geosite_path.or_else(|| {
+                raw.geosite
+                    .as_ref()
+                    .and_then(|geosite| geosite.path.as_ref().cloned())
+            }),
+            geosite_download_url: raw.geosite_download_url.or_else(|| {
+                raw.geosite
+                    .as_ref()
+                    .and_then(|geosite| geosite.download_url.as_ref().cloned())
+            }),
+            geosite_download_detour: raw.geosite_download_detour.or_else(|| {
+                raw.geosite
+                    .as_ref()
+                    .and_then(|geosite| geosite.download_detour.as_ref().cloned())
+            }),
             default_rule_set_download_detour: raw.default_rule_set_download_detour,
             override_android_vpn: raw.override_android_vpn,
             find_process: raw.find_process,
