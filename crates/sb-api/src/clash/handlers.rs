@@ -9,6 +9,7 @@
 
 use crate::{clash::server::ApiState, types::*};
 use axum::{
+    extract::rejection::JsonRejection,
     extract::{ws::WebSocketUpgrade, Path, Query, State},
     http::StatusCode,
     response::{IntoResponse, Json, Response},
@@ -806,8 +807,19 @@ pub async fn get_proxy(
 pub async fn select_proxy(
     State(state): State<ApiState>,
     Path(proxy_name): Path<String>,
-    Json(request): Json<SelectProxyRequest>,
+    request: Result<Json<SelectProxyRequest>, JsonRejection>,
 ) -> impl IntoResponse {
+    let Json(request) = match request {
+        Ok(request) => request,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"message": "Body invalid"})),
+            )
+                .into_response()
+        }
+    };
+
     if let Some(registry) = &state.outbound_registry {
         let outbound_opt = {
             let reg = registry.read();
@@ -824,7 +836,7 @@ pub async fn select_proxy(
                             proxy_name
                         );
                         // CacheFile write is handled inside SelectorGroup (L2.6.3)
-                        return StatusCode::NO_CONTENT;
+                        return StatusCode::NO_CONTENT.into_response();
                     }
                     Err(e) => {
                         log::warn!(
@@ -833,14 +845,26 @@ pub async fn select_proxy(
                             proxy_name,
                             e
                         );
-                        return StatusCode::BAD_REQUEST;
+                        return (
+                            StatusCode::BAD_REQUEST,
+                            Json(json!({"message": format!("Selector update error: {e}")})),
+                        )
+                            .into_response();
                     }
                 }
             }
         }
-        return StatusCode::BAD_REQUEST;
+        return (
+            StatusCode::BAD_REQUEST,
+            Json(json!({"message": "Must be a Selector"})),
+        )
+            .into_response();
     }
-    StatusCode::SERVICE_UNAVAILABLE
+    (
+        StatusCode::SERVICE_UNAVAILABLE,
+        Json(json!({"message": "Outbound registry unavailable"})),
+    )
+        .into_response()
 }
 
 /// Get proxy delay/latency - matches Go's getProxyDelay()
@@ -859,10 +883,19 @@ pub async fn get_proxy_delay(
         None
     };
 
-    let timeout_ms = params
-        .get("timeout")
-        .and_then(|t| t.parse::<u64>().ok())
-        .unwrap_or(DEFAULT_DELAY_TIMEOUT_MS as u64);
+    let timeout_ms = match params.get("timeout") {
+        Some(timeout) => match timeout.parse::<u64>() {
+            Ok(value) => value,
+            Err(_) => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"message": "Body invalid"})),
+                )
+                    .into_response()
+            }
+        },
+        None => DEFAULT_DELAY_TIMEOUT_MS as u64,
+    };
 
     let url = params
         .get("url")
@@ -888,7 +921,11 @@ pub async fn get_proxy_delay(
             if let Some(h) = &state.urltest_history {
                 h.delete(&proxy_name);
             }
-            (status, Json(json!({"message": "An error occurred"}))).into_response()
+            (
+                status,
+                Json(json!({"message": "An error occurred in the delay test"})),
+            )
+                .into_response()
         }
     }
 }
@@ -1039,22 +1076,26 @@ pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
     };
 
     // Build tun info from config IR
-    let tun = if let Some(config) = &state.global_config {
+    let (interface_name, tun) = if let Some(config) = &state.global_config {
         let tun_ib = config
             .inbounds
             .iter()
             .find(|ib| matches!(ib.ty, sb_config::ir::InboundType::Tun));
         if let Some(tun_ib) = tun_ib {
-            json!({
-                "enable": true,
-                "device": tun_ib.tag.as_deref().unwrap_or(""),
-                "stack": ""
-            })
+            let device = tun_ib.tag.as_deref().unwrap_or("").to_string();
+            (
+                device.clone(),
+                json!({
+                    "enable": true,
+                    "device": device,
+                    "stack": ""
+                }),
+            )
         } else {
-            json!({})
+            (String::new(), json!({}))
         }
     } else {
-        json!({})
+        (String::new(), json!({}))
     };
 
     let config = Config {
@@ -1063,6 +1104,7 @@ pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
         redir_port: 0,
         tproxy_port: 0,
         mixed_port: mixed_port.unwrap_or(0),
+        interface_name,
         allow_lan,
         bind_address: "*".to_string(),
         mode,
@@ -1113,9 +1155,19 @@ fn extract_ports_from_config(config: &sb_config::ir::ConfigIR) -> (u16, u16, Opt
 ///
 /// Handles partial configuration updates. Currently only processes `mode` changes.
 pub async fn update_configs(
-    State(_state): State<ApiState>,
-    Json(config): Json<serde_json::Value>,
+    State(state): State<ApiState>,
+    config: Result<Json<serde_json::Value>, JsonRejection>,
 ) -> impl IntoResponse {
+    let Json(config) = match config {
+        Ok(config) => config,
+        Err(_) => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"message": "Body invalid"})),
+            )
+                .into_response()
+        }
+    };
     log::info!("Configuration update requested with payload: {:?}", config);
 
     let obj = match config.as_object() {
@@ -1136,7 +1188,7 @@ pub async fn update_configs(
             match mode.parse() {
                 Ok(parsed_mode) => {
                     sb_core::adapter::clash::set_mode(parsed_mode);
-                    if let Some(cache) = &_state.cache_file {
+                    if let Some(cache) = &state.cache_file {
                         cache.set_clash_mode(parsed_mode.to_string());
                     }
                     log::info!("Updated mode: {}", parsed_mode);

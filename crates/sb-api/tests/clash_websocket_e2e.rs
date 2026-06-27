@@ -204,6 +204,22 @@ where
     }
 }
 
+async fn next_json_frame<S>(
+    stream: &mut tokio_tungstenite::WebSocketStream<S>,
+) -> anyhow::Result<Value>
+where
+    S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin,
+{
+    match timeout(Duration::from_secs(3), stream.next()).await {
+        Ok(Some(Ok(Message::Text(text)))) => Ok(serde_json::from_str(&text)?),
+        Ok(Some(Ok(Message::Binary(data)))) => Ok(serde_json::from_slice(&data)?),
+        Ok(Some(Ok(other))) => Err(anyhow::anyhow!("unexpected websocket frame: {other:?}")),
+        Ok(Some(Err(err))) => Err(err.into()),
+        Ok(None) => Err(anyhow::anyhow!("websocket stream ended before JSON frame")),
+        Err(_) => Err(anyhow::anyhow!("timed out waiting for JSON frame")),
+    }
+}
+
 fn register_test_connection() -> sb_common::conntrack::ConnId {
     let tracker = shared_tracker();
     let id = tracker.next_id();
@@ -225,6 +241,40 @@ fn register_test_connection() -> sb_common::conntrack::ConnId {
     handle.add_upload(64);
     handle.add_download(128);
     id
+}
+
+#[tokio::test]
+#[serial]
+async fn test_lazy_channels_are_independent_after_one_disconnect() -> anyhow::Result<()> {
+    let _ = shared_tracker().close_all();
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+
+    let (mut logs, _) = connect_async(format!("{}/logs?level=debug", server.ws_base)).await?;
+    let (mut memory, _) = connect_async(format!("{}/memory", server.ws_base)).await?;
+    let (mut traffic, _) = connect_async(format!("{}/traffic", server.ws_base)).await?;
+    let (mut connections, _) = connect_async(format!("{}/connections", server.ws_base)).await?;
+
+    assert!(next_json_frame(&mut logs).await?.is_object());
+    assert!(next_json_frame(&mut memory).await?.get("inuse").is_some());
+    assert!(next_json_frame(&mut traffic).await?.get("up").is_some());
+    assert!(verify_connections_snapshot(
+        &next_json_frame(&mut connections).await?
+    ));
+
+    logs.send(Message::Close(None)).await?;
+
+    assert!(next_json_frame(&mut memory).await?.get("oslimit").is_some());
+    assert!(next_json_frame(&mut traffic).await?.get("down").is_some());
+    assert!(verify_connections_snapshot(
+        &next_json_frame(&mut connections).await?
+    ));
+
+    let _ = memory.send(Message::Close(None)).await;
+    let _ = traffic.send(Message::Close(None)).await;
+    let _ = connections.send(Message::Close(None)).await;
+    Ok(())
 }
 
 #[tokio::test]

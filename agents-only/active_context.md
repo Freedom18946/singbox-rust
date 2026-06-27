@@ -10,22 +10,21 @@
 
 ---
 
-## Resume (2026-06-27) - P1313-07 CacheFile persistence
+## Resume (2026-06-27) - P1313-08 Clash API and GUI channel contract
 
-- **P1313-07 DONE**: CacheFile is now a real persistent service for Clash mode,
-  selector selected/group expansion, rule-set payload metadata, FakeIP mappings,
-  FakeIP allocation metadata, and RDRC rejection state.
-- **Persistence posture**: Rust keeps its sled backend and implements Go-equivalent
-  behavior; Go bbolt `cache.db` file-level compatibility is explicitly out of
-  scope. A regular-file cache path now fails clearly instead of being overwritten.
-- **Lifecycle fixed**: enabled cache with no path defaults to `cache.db`; startup
-  and reload propagate cache initialization errors; corrupt sled directories are
-  moved to `.corrupt.<timestamp>` and rebuilt without falling back to memory.
-- **Runtime wiring**: app/supervisor/API paths share the same CacheFile instance,
-  restore persisted Clash mode, and wire FakeIP/RDRC/rule-set cache hooks through
-  object-safe context ports. Equivalent reloads reuse the existing sled handle.
-- **Verification PASS**: P1313-07 package doc records tests/checks. No GitHub
-  workflow automation was added and no dual-kernel parity movement is claimed.
+- **P1313-08 DONE**: Clash-compatible API shape is more reliable for GUI 1.25.1:
+  `/configs` exposes `interface-name`, TUN/device and port fields from `ConfigIR`;
+  request-error responses for config patch, selector update and delay timeout use
+  Go-like JSON messages.
+- **Runtime wiring fixed**: legacy bootstrap and supervisor Clash API paths now use
+  the runtime `ConnTracker`, so `/connections` sees inbound/supervisor connection
+  state instead of an isolated API tracker.
+- **WebSocket posture**: lazy `/logs`, `/memory`, `/traffic`, and `/connections`
+  channels are covered by an independent disconnect regression test.
+- **Verification PASS**: P1313-08 package doc records tests/checks. Rust strict
+  interop replay passed; dual-core strict replay still needs a live Go API at
+  `127.0.0.1:9090`. No GitHub workflow automation was added and no dual-kernel
+  parity movement is claimed.
 
 ## Strategic State
 

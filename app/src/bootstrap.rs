@@ -250,6 +250,9 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
     let (inbounds, outbounds, rules) = cfg.stats();
     info!("sb bootstrap: inbounds={inbounds}, outbounds={outbounds}, rules={rules}");
 
+    #[cfg(any(feature = "adapters", feature = "clash_api"))]
+    let runtime_conn_tracker = Arc::new(sb_common::conntrack::ConnTracker::new());
+
     // 2) 起入站（HTTP / SOCKS / TUN）：每个入站一个 stop 通道；当前不做热更新/回收
     // 2) Start Inbounds (HTTP / SOCKS / TUN): One stop channel per inbound; currently no hot-reload/reclaim
     let inbound_handles = crate::bootstrap_runtime::inbounds::InboundRuntimeDeps::new(
@@ -257,7 +260,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
         &rh,
         &oh,
         #[cfg(feature = "adapters")]
-        Arc::new(sb_common::conntrack::ConnTracker::new()),
+        runtime_conn_tracker.clone(),
     )
     .start_from_ir(&cfg_ir.inbounds);
 
@@ -275,6 +278,7 @@ pub async fn start_from_config(cfg: Config) -> Result<Runtime> {
                     rh.clone(),
                     oh.clone(),
                     cfg_ir.clone(),
+                    runtime_conn_tracker.clone(),
                     cache_service.clone(),
                     Some(urltest_history.clone()),
                 ) {

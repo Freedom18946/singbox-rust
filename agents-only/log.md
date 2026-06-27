@@ -18,6 +18,25 @@
 **备注**: [可选，风险/后续建议]
 
 ## 日志记录
+### [2026-06-27 21:21] Agent: Codex
+
+**任务**: P1313-08 Clash API and GUI channel contract
+**变更**:
+- `crates/sb-api/src/clash/handlers.rs` / `types.rs` - 补齐 GUI 1.25.1 `/configs`
+  shape、Go-like 错误 JSON、delay timeout 解析错误和 selector 失败响应。
+- `app/src/bootstrap.rs` / `app/src/bootstrap_runtime/api_services.rs` /
+  `app/src/run_engine_runtime/admin_start.rs` - Clash API 共享 runtime `ConnTracker`，
+  并增加 wiring pin。
+- `crates/sb-api/tests/clash_http_e2e.rs` / `clash_websocket_e2e.rs` - 增加 GUI
+  `/configs` shape、错误响应和独立 lazy WebSocket 通道回归测试。
+- `agents-only/post1313/p1313_08_clash_api_and_gui_channel_contract.md` /
+  `agents-only/active_context.md` - 记录 P1313-08 closure 与验证结果。
+**结果**: 成功。定向 sb-api/app 测试、workspace all-features check、一致性脚本、
+boundaries 和 Rust strict interop replay 均通过；dual-core strict replay 因本地 Go API
+未在 `127.0.0.1:9090` ready 而未完成。
+**备注**: 未新增 GitHub Actions，未声明 dual-kernel parity 变化，保留既有 documented
+oracle ignores。
+
 ### [2026-03-26 18:00] Agent: Claude Opus 4.6
 
 **任务**: validator/v2 route 子域拆分 — 从巨型 validate_v2() 中切出 route 逻辑

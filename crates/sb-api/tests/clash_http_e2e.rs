@@ -11,7 +11,10 @@ use sb_api::{
     clash::server::ApiState, clash::ClashApiServer, managers::Provider as ManagerProvider,
     types::ApiConfig,
 };
+use sb_config::ir::{ConfigIR, InboundIR, InboundType};
+use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 use sb_core::service::{Service, ServiceManager, StartStage};
+use std::collections::HashMap;
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -161,6 +164,19 @@ impl TestServer {
         self.client
             .patch(format!("{}{}", self.base_url, path))
             .json(&body)
+            .send()
+            .await
+    }
+
+    async fn patch_raw(
+        &self,
+        path: &str,
+        body: &'static str,
+    ) -> Result<reqwest::Response, reqwest::Error> {
+        self.client
+            .patch(format!("{}{}", self.base_url, path))
+            .header(reqwest::header::CONTENT_TYPE, "application/json")
+            .body(body)
             .send()
             .await
     }
@@ -411,6 +427,71 @@ async fn test_clash_get_configs_reads_cache_file_mode() -> anyhow::Result<()> {
     Ok(())
 }
 
+#[tokio::test]
+async fn test_get_configs_gui_1251_shape_from_config_ir() -> anyhow::Result<()> {
+    let ir = ConfigIR {
+        inbounds: vec![
+            InboundIR {
+                tag: Some("http-in".to_string()),
+                ty: InboundType::Http,
+                listen: "127.0.0.1".to_string(),
+                port: 18080,
+                ..InboundIR::default()
+            },
+            InboundIR {
+                tag: Some("socks-in".to_string()),
+                ty: InboundType::Socks,
+                listen: "127.0.0.1".to_string(),
+                port: 18081,
+                ..InboundIR::default()
+            },
+            InboundIR {
+                tag: Some("mixed-in".to_string()),
+                ty: InboundType::Mixed,
+                listen: "0.0.0.0".to_string(),
+                port: 18082,
+                ..InboundIR::default()
+            },
+            InboundIR {
+                tag: Some("utun-test".to_string()),
+                ty: InboundType::Tun,
+                listen: "127.0.0.1".to_string(),
+                ..InboundIR::default()
+            },
+        ],
+        ..ConfigIR::default()
+    };
+
+    let Some(server) =
+        TestServer::start_with_server(TestServer::new_server()?.with_config_ir(Arc::new(ir)))
+            .await?
+    else {
+        return Ok(());
+    };
+
+    let response = server.get("/configs").await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = response.json().await?;
+
+    assert_eq!(json.get("port").and_then(|v| v.as_u64()), Some(18080));
+    assert_eq!(json.get("socks-port").and_then(|v| v.as_u64()), Some(18081));
+    assert_eq!(json.get("mixed-port").and_then(|v| v.as_u64()), Some(18082));
+    assert_eq!(
+        json.get("interface-name").and_then(|v| v.as_str()),
+        Some("utun-test")
+    );
+    assert_eq!(json.get("allow-lan").and_then(|v| v.as_bool()), Some(true));
+    assert_eq!(
+        json.pointer("/tun/enable").and_then(|v| v.as_bool()),
+        Some(true)
+    );
+    assert_eq!(
+        json.pointer("/tun/device").and_then(|v| v.as_str()),
+        Some("utun-test")
+    );
+    Ok(())
+}
+
 /// Test PATCH /configs - Update configuration (valid)
 #[tokio::test]
 async fn test_patch_configs_valid() -> anyhow::Result<()> {
@@ -425,6 +506,22 @@ async fn test_patch_configs_valid() -> anyhow::Result<()> {
     let response = server.patch("/configs", body).await?;
     assert_eq!(response.status(), StatusCode::NO_CONTENT); // Matches Go: render.NoContent
     sb_core::adapter::clash::set_mode(sb_core::adapter::clash::ClashMode::Rule);
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_patch_configs_invalid_json_returns_go_like_message() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+
+    let response = server.patch_raw("/configs", "{").await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await?;
+    assert_eq!(
+        json.get("message").and_then(|v| v.as_str()),
+        Some("Body invalid")
+    );
     Ok(())
 }
 
@@ -551,6 +648,46 @@ async fn test_select_proxy() -> anyhow::Result<()> {
         response.status() == StatusCode::NO_CONTENT
             || response.status() == StatusCode::NOT_FOUND
             || response.status() == StatusCode::SERVICE_UNAVAILABLE
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_select_proxy_non_selector_returns_message_json() -> anyhow::Result<()> {
+    let mut map = HashMap::new();
+    map.insert("direct".to_string(), OutboundImpl::Direct);
+    let registry = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
+    let Some(server) =
+        TestServer::start_with_server(TestServer::new_server()?.with_outbound_registry(registry))
+            .await?
+    else {
+        return Ok(());
+    };
+
+    let response = server
+        .put("/proxies/direct", serde_json::json!({"name": "direct"}))
+        .await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await?;
+    assert_eq!(
+        json.get("message").and_then(|v| v.as_str()),
+        Some("Must be a Selector")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_proxy_delay_invalid_timeout_returns_message_json() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+
+    let response = server.get("/proxies/DIRECT/delay?timeout=bad").await?;
+    assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+    let json: serde_json::Value = response.json().await?;
+    assert_eq!(
+        json.get("message").and_then(|v| v.as_str()),
+        Some("Body invalid")
     );
     Ok(())
 }

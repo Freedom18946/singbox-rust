@@ -430,7 +430,8 @@ async fn start_clash_api_from_supervisor(
         .with_provider_manager(provider_manager)
         .with_service_manager(state_guard.context.service_manager.clone())
         .with_outbound_registry(build_outbound_registry_handle(&state_guard.bridge))
-        .with_config_ir(Arc::new(state_guard.current_ir.clone()));
+        .with_config_ir(Arc::new(state_guard.current_ir.clone()))
+        .with_conn_tracker(state_guard.context.conn_tracker.clone());
 
     if let Some(cache) = state_guard.context.cache_file.clone() {
         server = server.with_cache_file(cache);
@@ -641,6 +642,21 @@ mod tests {
         );
         assert!(!run_engine.contains("fn start_clash_api_from_supervisor("));
         assert!(!run_engine.contains("fn build_outbound_registry_handle("));
+    }
+
+    #[cfg(feature = "clash_api")]
+    #[test]
+    fn p1313_08_pin_run_engine_clash_api_uses_runtime_conn_tracker() {
+        let source = include_str!("admin_start.rs");
+        let implementation = source
+            .split("#[cfg(test)]")
+            .next()
+            .expect("implementation section exists before tests");
+
+        assert!(
+            implementation.contains(".with_conn_tracker(state_guard.context.conn_tracker.clone())"),
+            "run_engine Clash API must expose the runtime connection tracker to /connections"
+        );
     }
 
     // ── APP-SIDECAR-LIVENESS-01G-B: Clash runtime completion projection ──

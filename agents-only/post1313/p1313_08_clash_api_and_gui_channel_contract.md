@@ -1,6 +1,8 @@
 <!-- tier: B -->
 # P1313-08 Clash API And GUI Channel Contract
 
+Status: DONE (2026-06-27)
+
 Priority: P0
 
 Primary evidence:
@@ -82,3 +84,33 @@ channels and passes delay timeout.
 - Do not resume Wails click automation.
 - Do not remove existing documented oracle ignores without a separate parity decision.
 - Provider endpoints blocked by Go-fork structural divergence remain out of scope.
+
+## Closure Notes (2026-06-27)
+
+- `/configs` now includes GUI 1.25.1 `interface-name` and derives HTTP/SOCKS/mixed/TUN shape from
+  `ConfigIR`.
+- Clash API server startup paths now share the runtime `ConnTracker` with inbound/supervisor
+  context, so `/connections` observes the same tracker instead of an isolated API tracker.
+- `PATCH /configs`, selector `PUT /proxies/{name}`, and proxy delay timeout errors now return
+  Go-like JSON messages for invalid request bodies/parameters and selector failures.
+- Lazy WebSocket channels remain independent across `/logs`, `/memory`, `/traffic`, and
+  `/connections`; disconnecting one channel does not poison the others.
+- Dual-kernel oracle ignores `DIV-M-006` through `DIV-M-009` were preserved; no parity-count change
+  is claimed.
+
+## Verification (2026-06-27)
+
+- `cargo fmt --check`
+- `cargo test -p sb-api --test clash_http_e2e -- --nocapture`
+- `cargo test -p sb-api --test clash_websocket_e2e -- --nocapture`
+- `cargo test -p sb-api --test connections_snapshot_test -- --nocapture`
+- `cargo test -p app clash --features "router clash_api" -- --nocapture`
+- `cargo check --workspace --all-features`
+- `./agents-only/06-scripts/verify-consistency.sh`
+- `make boundaries`
+- `cargo run -p interop-lab -- case run p0_clash_api_contract_strict --kernel rust`
+
+Dual-core strict replay was attempted with `cargo run -p interop-lab -- case run
+p0_clash_api_contract_strict`; it did not reach diff because the local Go API was not ready at
+`http://127.0.0.1:9090/version` within 15000 ms. This is an environment precondition for the Go
+kernel, not a Rust contract failure.

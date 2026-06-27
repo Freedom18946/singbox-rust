@@ -57,6 +57,7 @@ pub(crate) fn start_clash_api_server(
     router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
     config_ir: Arc<sb_config::ir::ConfigIR>,
+    conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     cache_file: Option<Arc<dyn sb_core::context::CacheFile>>,
     urltest_history: Option<Arc<dyn sb_core::context::URLTestHistoryStorage>>,
 ) -> Option<ServiceHandle> {
@@ -88,7 +89,8 @@ pub(crate) fn start_clash_api_server(
                 .with_dns_resolver(Arc::new(sb_api::managers::DnsResolver::new()))
                 .with_provider_manager(provider_manager)
                 .with_outbound_registry(outbounds)
-                .with_config_ir(config_ir);
+                .with_config_ir(config_ir)
+                .with_conn_tracker(conn_tracker);
 
             if let Some(cache_file) = cache_file {
                 server = server.with_cache_file(cache_file);
@@ -271,6 +273,7 @@ mod tests {
             Arc::new(sb_core::router::dns_integration::setup_dns_routing()),
             empty_outbound_handle(),
             Arc::new(sb_config::ir::ConfigIR::default()),
+            Arc::new(sb_common::conntrack::ConnTracker::new()),
             None,
             Some(Arc::new(
                 sb_core::services::urltest_history::URLTestHistoryService::new(),
@@ -386,6 +389,7 @@ mod tests {
             Arc::new(sb_core::router::dns_integration::setup_dns_routing()),
             empty_outbound_handle(),
             Arc::new(sb_config::ir::ConfigIR::default()),
+            Arc::new(sb_common::conntrack::ConnTracker::new()),
             None,
             Some(Arc::new(
                 sb_core::services::urltest_history::URLTestHistoryService::new(),
@@ -475,12 +479,14 @@ mod tests {
         let bootstrap = include_str!("../bootstrap.rs");
 
         assert!(source.contains("pub(crate) struct ServiceHandle"));
+        assert!(source.contains(".with_conn_tracker(conn_tracker)"));
         assert!(!bootstrap.contains("struct ServiceHandle {"));
         assert!(!bootstrap.contains("fn start_clash_api_server("));
         assert!(!bootstrap.contains("fn start_v2ray_api_server("));
         assert!(
             bootstrap.contains("crate::bootstrap_runtime::api_services::start_clash_api_server(")
         );
+        assert!(bootstrap.contains("runtime_conn_tracker.clone()"));
         assert!(
             bootstrap.contains("crate::bootstrap_runtime::api_services::start_v2ray_api_server(")
         );
