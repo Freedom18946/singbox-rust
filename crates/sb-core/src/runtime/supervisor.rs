@@ -124,6 +124,7 @@ pub struct State {
     pub engine: Engine,
     pub bridge: Arc<Bridge>,
     pub context: Context,
+    dns_runtime: Option<RuntimeDns>,
     inbound_monitors: Vec<InboundRuntimeMonitor>,
     pub health: Option<tokio::task::JoinHandle<()>>,
     #[cfg(feature = "service_ntp")]
@@ -139,6 +140,7 @@ pub struct State {
 pub struct State {
     pub bridge: Arc<Bridge>,
     pub context: Context,
+    dns_runtime: Option<RuntimeDns>,
     inbound_monitors: Vec<InboundRuntimeMonitor>,
     pub health: Option<tokio::task::JoinHandle<()>>,
     #[cfg(feature = "service_ntp")]
@@ -167,16 +169,18 @@ pub struct SupervisorHandle {
 
 #[cfg(feature = "router")]
 impl State {
-    pub fn new(
+    fn new(
         engine: Engine,
         bridge: Bridge,
         context: Context,
+        dns_runtime: Option<RuntimeDns>,
         ir: sb_config::ir::ConfigIR,
     ) -> Self {
         Self {
             engine,
             bridge: Arc::new(bridge),
             context,
+            dns_runtime,
             inbound_monitors: Vec::new(),
             health: None,
             #[cfg(feature = "service_ntp")]
@@ -188,12 +192,359 @@ impl State {
     }
 }
 
+#[derive(Clone)]
+struct RuntimeDns {
+    resolver: Arc<dyn crate::dns::Resolver>,
+    router: Option<Arc<dyn crate::dns::dns_router::DnsRouter>>,
+}
+
+impl std::fmt::Debug for RuntimeDns {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("RuntimeDns")
+            .field("resolver", &self.resolver.name())
+            .field("has_router", &self.router.is_some())
+            .finish()
+    }
+}
+
+impl RuntimeDns {
+    async fn start(&self, stage: ServiceStage) -> Result<()> {
+        let Some(dns_stage) = dns_stage_for_service_stage(stage) else {
+            return Ok(());
+        };
+        self.resolver
+            .start(dns_stage)
+            .await
+            .with_context(|| format!("failed to start DNS runtime at {stage}"))?;
+        Ok(())
+    }
+
+    async fn close(&self) -> Result<()> {
+        self.resolver
+            .close()
+            .await
+            .context("failed to close DNS runtime")
+    }
+
+    fn publish_global(&self) {
+        crate::dns::global::set(self.resolver.clone());
+    }
+}
+
+fn dns_stage_for_service_stage(
+    stage: ServiceStage,
+) -> Option<crate::dns::transport::DnsStartStage> {
+    match stage {
+        ServiceStage::Initialize => Some(crate::dns::transport::DnsStartStage::Initialize),
+        ServiceStage::Start => Some(crate::dns::transport::DnsStartStage::Start),
+        ServiceStage::PostStart => Some(crate::dns::transport::DnsStartStage::PostStart),
+        // Rust DNS transports currently expose three stages. The coordinator
+        // still schedules DNS at `Started`; DNS treats it as a no-op.
+        ServiceStage::Started => None,
+    }
+}
+
+fn build_runtime_dns_from_ir(ir: &sb_config::ir::ConfigIR) -> Result<Option<RuntimeDns>> {
+    if ir.dns.is_none() {
+        return Ok(None);
+    }
+    let (resolver, router) = crate::dns::config_builder::build_dns_components(ir, None)
+        .context("failed to build DNS runtime")?;
+    Ok(Some(RuntimeDns { resolver, router }))
+}
+
+fn publish_runtime_dns(dns_runtime: Option<&RuntimeDns>) {
+    if let Some(dns) = dns_runtime {
+        dns.publish_global();
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LifecycleComponent {
+    Network,
+    Dns,
+    Connections,
+    TaskMonitor,
+    Platform,
+    Outbound,
+    Inbound,
+    Endpoint,
+    Service,
+}
+
+impl LifecycleComponent {
+    fn label(self) -> &'static str {
+        match self {
+            Self::Network => "NetworkManager",
+            Self::Dns => "DNSRuntime",
+            Self::Connections => "ConnectionManager",
+            Self::TaskMonitor => "TaskMonitor",
+            Self::Platform => "PlatformInterface",
+            Self::Outbound => "OutboundManager",
+            Self::Inbound => "InboundManager",
+            Self::Endpoint => "EndpointManager",
+            Self::Service => "ServiceManager",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+enum LifecyclePass {
+    Initialize,
+    StartCore,
+    StartEdge,
+    PostStart,
+    Started,
+}
+
+impl LifecyclePass {
+    const fn stage(self) -> ServiceStage {
+        match self {
+            Self::Initialize => ServiceStage::Initialize,
+            Self::StartCore | Self::StartEdge => ServiceStage::Start,
+            Self::PostStart => ServiceStage::PostStart,
+            Self::Started => ServiceStage::Started,
+        }
+    }
+}
+
+const INITIALIZE_COMPONENTS: &[LifecycleComponent] = &[
+    LifecycleComponent::Network,
+    LifecycleComponent::Dns,
+    LifecycleComponent::Connections,
+    LifecycleComponent::TaskMonitor,
+    LifecycleComponent::Platform,
+    LifecycleComponent::Outbound,
+    LifecycleComponent::Inbound,
+    LifecycleComponent::Endpoint,
+    LifecycleComponent::Service,
+];
+const START_CORE_COMPONENTS: &[LifecycleComponent] = &[
+    LifecycleComponent::Outbound,
+    LifecycleComponent::Dns,
+    LifecycleComponent::Network,
+    LifecycleComponent::Connections,
+    LifecycleComponent::TaskMonitor,
+    LifecycleComponent::Platform,
+];
+const START_EDGE_COMPONENTS: &[LifecycleComponent] = &[
+    LifecycleComponent::Inbound,
+    LifecycleComponent::Endpoint,
+    LifecycleComponent::Service,
+];
+const POST_START_COMPONENTS: &[LifecycleComponent] = &[
+    LifecycleComponent::Outbound,
+    LifecycleComponent::Network,
+    LifecycleComponent::Dns,
+    LifecycleComponent::Connections,
+    LifecycleComponent::TaskMonitor,
+    LifecycleComponent::Platform,
+    LifecycleComponent::Inbound,
+    LifecycleComponent::Endpoint,
+    LifecycleComponent::Service,
+];
+const STARTED_COMPONENTS: &[LifecycleComponent] = &[
+    LifecycleComponent::Network,
+    LifecycleComponent::Dns,
+    LifecycleComponent::Connections,
+    LifecycleComponent::TaskMonitor,
+    LifecycleComponent::Platform,
+    LifecycleComponent::Outbound,
+    LifecycleComponent::Inbound,
+    LifecycleComponent::Endpoint,
+    LifecycleComponent::Service,
+];
+const CLOSE_COMPONENTS: &[LifecycleComponent] = &[
+    LifecycleComponent::Service,
+    LifecycleComponent::Endpoint,
+    LifecycleComponent::Inbound,
+    LifecycleComponent::Outbound,
+    LifecycleComponent::Platform,
+    LifecycleComponent::TaskMonitor,
+    LifecycleComponent::Connections,
+    LifecycleComponent::Dns,
+    LifecycleComponent::Network,
+];
+
+fn lifecycle_components_for(pass: LifecyclePass) -> &'static [LifecycleComponent] {
+    match pass {
+        LifecyclePass::Initialize => INITIALIZE_COMPONENTS,
+        LifecyclePass::StartCore => START_CORE_COMPONENTS,
+        LifecyclePass::StartEdge => START_EDGE_COMPONENTS,
+        LifecyclePass::PostStart => POST_START_COMPONENTS,
+        LifecyclePass::Started => STARTED_COMPONENTS,
+    }
+}
+
+struct LifecycleCoordinator<'a> {
+    context: &'a Context,
+    dns: Option<&'a RuntimeDns>,
+}
+
+impl<'a> LifecycleCoordinator<'a> {
+    const fn new(context: &'a Context, dns: Option<&'a RuntimeDns>) -> Self {
+        Self { context, dns }
+    }
+
+    async fn run_pass(&self, pass: LifecyclePass) -> Result<()> {
+        let stage = pass.stage();
+        for component in lifecycle_components_for(pass) {
+            self.start_component(*component, stage)
+                .await
+                .with_context(|| {
+                    format!(
+                        "failed to run lifecycle pass {:?} for {}",
+                        pass,
+                        component.label()
+                    )
+                })?;
+        }
+        Ok(())
+    }
+
+    async fn close_all(&self, close_v2ray: bool) {
+        for component in CLOSE_COMPONENTS {
+            if let Err(e) = self.close_component(*component).await {
+                tracing::warn!(
+                    target: "sb_core::runtime",
+                    component = component.label(),
+                    error = %e,
+                    "failed to close lifecycle component"
+                );
+            }
+        }
+
+        if close_v2ray {
+            if let Some(v2ray) = &self.context.v2ray_server {
+                if let Err(e) = v2ray.close() {
+                    tracing::warn!(target: "sb_core::runtime", error = %e, "failed to close V2Ray API server");
+                }
+            }
+        }
+    }
+
+    async fn start_component(
+        &self,
+        component: LifecycleComponent,
+        stage: ServiceStage,
+    ) -> Result<()> {
+        match component {
+            LifecycleComponent::Network => self
+                .context
+                .network
+                .start(stage)
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Dns => {
+                if let Some(dns) = self.dns {
+                    dns.start(stage).await
+                } else {
+                    Ok(())
+                }
+            }
+            LifecycleComponent::Connections => self
+                .context
+                .connections
+                .start(stage)
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::TaskMonitor => self
+                .context
+                .task_monitor
+                .start(stage)
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Platform => self
+                .context
+                .platform
+                .start(stage)
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Outbound => self
+                .context
+                .outbound_manager
+                .start_all_ordered(stage)
+                .await
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Inbound => self
+                .context
+                .inbound_manager
+                .start(stage)
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Endpoint => self
+                .context
+                .endpoint_manager
+                .start(stage)
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Service => self
+                .context
+                .service_manager
+                .start(stage)
+                .map_err(|e| anyhow::anyhow!(e)),
+        }
+    }
+
+    async fn close_component(&self, component: LifecycleComponent) -> Result<()> {
+        match component {
+            LifecycleComponent::Network => {
+                self.context.network.close().map_err(|e| anyhow::anyhow!(e))
+            }
+            LifecycleComponent::Dns => {
+                if let Some(dns) = self.dns {
+                    dns.close().await
+                } else {
+                    Ok(())
+                }
+            }
+            LifecycleComponent::Connections => self
+                .context
+                .connections
+                .close()
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::TaskMonitor => self
+                .context
+                .task_monitor
+                .close()
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Platform => self
+                .context
+                .platform
+                .close()
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Outbound => self
+                .context
+                .outbound_manager
+                .close_all_ordered()
+                .await
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Inbound => self
+                .context
+                .inbound_manager
+                .close()
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Endpoint => self
+                .context
+                .endpoint_manager
+                .close()
+                .map_err(|e| anyhow::anyhow!(e)),
+            LifecycleComponent::Service => self
+                .context
+                .service_manager
+                .close()
+                .map_err(|e| anyhow::anyhow!(e)),
+        }
+    }
+}
+
 #[cfg(not(feature = "router"))]
 impl State {
-    pub fn new(_engine: (), bridge: Bridge, context: Context, ir: sb_config::ir::ConfigIR) -> Self {
+    fn new(
+        _engine: (),
+        bridge: Bridge,
+        context: Context,
+        dns_runtime: Option<RuntimeDns>,
+        ir: sb_config::ir::ConfigIR,
+    ) -> Self {
         Self {
             bridge: Arc::new(bridge),
             context,
+            dns_runtime,
             inbound_monitors: Vec::new(),
             health: None,
             #[cfg(feature = "service_ntp")]
@@ -241,14 +592,32 @@ impl Supervisor {
         // Create runtime context and wire experimental sidecars from IR
         let context = build_context_from_ir(&ir, None);
         ensure_geo_assets(&ir).await;
+        let dns_runtime = match build_runtime_dns_from_ir(&ir) {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                shutdown_context(&context);
+                return Err(e);
+            }
+        };
 
         // Initialize context managers (Box Runtime Parity: Go box.go lifecycle)
-        run_context_stage(&context, ServiceStage::Initialize)?;
+        {
+            let lifecycle = LifecycleCoordinator::new(&context, dns_runtime.as_ref());
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::Initialize).await {
+                lifecycle.close_all(true).await;
+                return Err(e);
+            }
+        }
         tracing::debug!(target: "sb_core::runtime", "Context managers initialized");
 
         // Build bridge via adapter bridge to enable routed inbounds/outbounds
         let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone(), context.clone());
-        ensure_bridge_startup_ready(&bridge).inspect_err(|_| shutdown_context(&context))?;
+        if let Err(e) = ensure_bridge_startup_ready(&bridge) {
+            LifecycleCoordinator::new(&context, dns_runtime.as_ref())
+                .close_all(true)
+                .await;
+            return Err(e);
+        }
 
         // Register bridge components (endpoints, services, outbounds) into the
         // context managers BEFORE Start stage, so EndpointManager.run_stage and
@@ -257,24 +626,30 @@ impl Supervisor {
         // registered after Start stage, the manager would never observe their
         // Start failures (regression: /services/health misreporting Failed
         // services as Running, see LC-003 p1_service_failure_isolation).
-        populate_bridge_managers(&context, &bridge).await.map_err(|e| {
+        if let Err(e) = populate_bridge_managers(&context, &bridge).await {
             tracing::error!(target: "sb_core::runtime", error = %e, "startup failed during outbound registration, rolling back");
-            shutdown_context(&context);
-            e
-        })?;
+            LifecycleCoordinator::new(&context, dns_runtime.as_ref())
+                .close_all(true)
+                .await;
+            return Err(e);
+        }
 
         // Start context managers (after bridge components are registered).
         // ServiceManager.start_stage(Start) iterates registered services and
         // writes Failed status on per-service bind errors with fault isolation.
-        run_context_stage(&context, ServiceStage::Start)
-            .inspect_err(|_| shutdown_context(&context))?;
+        {
+            let lifecycle = LifecycleCoordinator::new(&context, dns_runtime.as_ref());
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::StartCore).await {
+                lifecycle.close_all(true).await;
+                return Err(e);
+            }
+        }
         tracing::info!(target: "sb_core::runtime", "Context managers started");
 
-        let _ = apply_dns_resolver_from_ir(&ir, "startup");
         // Apply TLS certificate configuration (global trust augmentation)
         crate::tls::global::apply_from_ir(ir.certificate.as_ref());
 
-        let initial_state = State::new(engine_for_state, bridge, context, ir);
+        let initial_state = State::new(engine_for_state, bridge, context, dns_runtime.clone(), ir);
         let state = Arc::new(RwLock::new(initial_state));
 
         // Start inbound listeners
@@ -295,42 +670,61 @@ impl Supervisor {
                 tracing::error!(target: "sb_core::runtime", error = %e, "inbound startup failed, rolling back");
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&state.read().await.context);
+                let (context, dns_runtime) = {
+                    let state_guard = state.read().await;
+                    (state_guard.context.clone(), state_guard.dns_runtime.clone())
+                };
+                LifecycleCoordinator::new(&context, dns_runtime.as_ref())
+                    .close_all(true)
+                    .await;
                 return Err(e);
             }
         };
 
-        // Endpoints and services have already been driven through Initialize
-        // and Start stages by run_context_stage above. PostStart and Started
-        // follow next. The free-standing start_endpoints/start_services
-        // helpers are intentionally NOT invoked here; using them would create
-        // a second lifecycle driver that bypasses ServiceManager.statuses,
-        // recreating the LC-003 misreporting bug.
+        // The coordinator has already driven Initialize and core Start. The
+        // free-standing start_endpoints/start_services helpers are intentionally
+        // NOT invoked here; using them would create a second lifecycle driver
+        // that bypasses ServiceManager.statuses, recreating the LC-003
+        // misreporting bug.
 
         // PostStart stage for context managers (after all inbounds/endpoints/services started)
         {
-            let context = { state.read().await.context.clone() };
-            if let Err(e) = run_context_stage(&context, ServiceStage::PostStart) {
+            let (context, dns_runtime) = {
+                let state_guard = state.read().await;
+                (state_guard.context.clone(), state_guard.dns_runtime.clone())
+            };
+            let lifecycle = LifecycleCoordinator::new(&context, dns_runtime.as_ref());
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::StartEdge).await {
+                tracing::error!(target: "sb_core::runtime", error = %e, "Start edge failed, rolling back");
+                shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
+                    .await;
+                stop_endpoints(&endpoints);
+                stop_services(&services);
+                lifecycle.close_all(true).await;
+                return Err(e);
+            }
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::PostStart).await {
                 tracing::error!(target: "sb_core::runtime", error = %e, "PostStart failed, rolling back");
                 shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
                     .await;
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&context);
+                lifecycle.close_all(true).await;
                 return Err(e);
             }
-            if let Err(e) = run_context_stage(&context, ServiceStage::Started) {
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::Started).await {
                 tracing::error!(target: "sb_core::runtime", error = %e, "Started stage failed, rolling back");
                 shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
                     .await;
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&context);
+                lifecycle.close_all(true).await;
                 return Err(e);
             }
             tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete");
             let state_guard = state.read().await;
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
+            publish_runtime_dns(state_guard.dns_runtime.as_ref());
         }
 
         state.write().await.inbound_monitors = inbound_monitors;
@@ -435,32 +829,53 @@ impl Supervisor {
         // Create runtime context and wire experimental sidecars from IR
         let context = build_context_from_ir(&ir, None);
         ensure_geo_assets(&ir).await;
+        let dns_runtime = match build_runtime_dns_from_ir(&ir) {
+            Ok(runtime) => runtime,
+            Err(e) => {
+                shutdown_context(&context);
+                return Err(e);
+            }
+        };
 
         // Initialize context managers (Box Runtime Parity: Go box.go lifecycle)
-        run_context_stage(&context, ServiceStage::Initialize)?;
+        {
+            let lifecycle = LifecycleCoordinator::new(&context, dns_runtime.as_ref());
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::Initialize).await {
+                lifecycle.close_all(true).await;
+                return Err(e);
+            }
+        }
         tracing::debug!(target: "sb_core::runtime", "Context managers initialized (no-router)");
 
         let bridge = crate::adapter::bridge::build_bridge(&ir, (), context.clone());
-        ensure_bridge_startup_ready(&bridge).inspect_err(|_| shutdown_context(&context))?;
+        if let Err(e) = ensure_bridge_startup_ready(&bridge) {
+            LifecycleCoordinator::new(&context, dns_runtime.as_ref())
+                .close_all(true)
+                .await;
+            return Err(e);
+        }
 
         // Register bridge components into context managers BEFORE Start stage.
         // See router-init path for the rationale (LC-003 lifecycle fix).
-        populate_bridge_managers(&context, &bridge).await.map_err(|e| {
+        if let Err(e) = populate_bridge_managers(&context, &bridge).await {
             tracing::error!(target: "sb_core::runtime", error = %e, "startup failed during outbound registration (no-router), rolling back");
-            shutdown_context(&context);
-            e
-        })?;
+            LifecycleCoordinator::new(&context, dns_runtime.as_ref())
+                .close_all(true)
+                .await;
+            return Err(e);
+        }
 
         // Start context managers
-        run_context_stage(&context, ServiceStage::Start).map_err(|e| {
-            shutdown_context(&context);
-            e
-        })?;
+        {
+            let lifecycle = LifecycleCoordinator::new(&context, dns_runtime.as_ref());
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::StartCore).await {
+                lifecycle.close_all(true).await;
+                return Err(e);
+            }
+        }
         tracing::info!(target: "sb_core::runtime", "Context managers started (no-router)");
 
-        let _ = apply_dns_resolver_from_ir(&ir, "startup");
-
-        let initial_state = State::new((), bridge, context, ir);
+        let initial_state = State::new((), bridge, context, dns_runtime.clone(), ir);
 
         let state = Arc::new(RwLock::new(initial_state));
 
@@ -483,13 +898,19 @@ impl Supervisor {
                 tracing::error!(target: "sb_core::runtime", error = %e, "inbound startup failed (no-router), rolling back");
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&state.read().await.context);
+                let (context, dns_runtime) = {
+                    let state_guard = state.read().await;
+                    (state_guard.context.clone(), state_guard.dns_runtime.clone())
+                };
+                LifecycleCoordinator::new(&context, dns_runtime.as_ref())
+                    .close_all(true)
+                    .await;
                 return Err(e);
             }
         };
 
-        // Endpoints/services already driven through Initialize+Start by
-        // run_context_stage above; PostStart and Started follow.
+        // The coordinator has already driven Initialize and core Start;
+        // StartEdge/PostStart/Started follow.
 
         #[cfg(feature = "service_ntp")]
         {
@@ -499,28 +920,42 @@ impl Supervisor {
 
         // PostStart stage for context managers
         {
-            let context = { state.read().await.context.clone() };
-            if let Err(e) = run_context_stage(&context, ServiceStage::PostStart) {
+            let (context, dns_runtime) = {
+                let state_guard = state.read().await;
+                (state_guard.context.clone(), state_guard.dns_runtime.clone())
+            };
+            let lifecycle = LifecycleCoordinator::new(&context, dns_runtime.as_ref());
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::StartEdge).await {
+                tracing::error!(target: "sb_core::runtime", error = %e, "Start edge failed (no-router), rolling back");
+                shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
+                    .await;
+                stop_endpoints(&endpoints);
+                stop_services(&services);
+                lifecycle.close_all(true).await;
+                return Err(e);
+            }
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::PostStart).await {
                 tracing::error!(target: "sb_core::runtime", error = %e, "PostStart failed (no-router), rolling back");
                 shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
                     .await;
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&context);
+                lifecycle.close_all(true).await;
                 return Err(e);
             }
-            if let Err(e) = run_context_stage(&context, ServiceStage::Started) {
+            if let Err(e) = lifecycle.run_pass(LifecyclePass::Started).await {
                 tracing::error!(target: "sb_core::runtime", error = %e, "Started stage failed (no-router), rolling back");
                 shutdown_inbounds_and_monitors(&inbounds, inbound_monitors, "startup-rollback")
                     .await;
                 stop_endpoints(&endpoints);
                 stop_services(&services);
-                shutdown_context(&context);
+                lifecycle.close_all(true).await;
                 return Err(e);
             }
             tracing::debug!(target: "sb_core::runtime", "Context managers post-start complete (no-router)");
             let state_guard = state.read().await;
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
+            publish_runtime_dns(state_guard.dns_runtime.as_ref());
         }
 
         state.write().await.inbound_monitors = inbound_monitors;
@@ -664,13 +1099,22 @@ impl Supervisor {
             crate::log::configure(log_ir);
         }
 
-        let (old_inbounds, old_endpoints, old_services, old_context, old_v2ray_cfg, old_ir) = {
+        let (
+            old_inbounds,
+            old_endpoints,
+            old_services,
+            old_context,
+            old_dns_runtime,
+            old_v2ray_cfg,
+            old_ir,
+        ) = {
             let state_guard = state.read().await;
             (
                 state_guard.bridge.inbounds.clone(),
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
                 state_guard.context.clone(),
+                state_guard.dns_runtime.clone(),
                 state_guard
                     .current_ir
                     .experimental
@@ -708,10 +1152,15 @@ impl Supervisor {
         // see the 01A audit). The bridge is exported via `new_bridge_slot` so a failure after
         // bridge construction can still stop bridge-owned resources.
         let mut new_bridge_slot: Option<Arc<Bridge>> = None;
+        let mut new_dns_runtime_slot: Option<RuntimeDns> = None;
         let mut new_inbound_monitors_slot: Option<Vec<InboundRuntimeMonitor>> = None;
-        let activation_result: Result<(Arc<Bridge>, Vec<InboundRuntimeMonitor>)> = async {
+        let activation_result: Result<(Arc<Bridge>, Option<RuntimeDns>, Vec<InboundRuntimeMonitor>)> = async {
+            let new_dns_runtime = build_runtime_dns_from_ir(&new_ir)?;
+            new_dns_runtime_slot = new_dns_runtime.clone();
+
             // Initialize new context managers
-            run_context_stage(&new_context, ServiceStage::Initialize)?;
+            let lifecycle = LifecycleCoordinator::new(&new_context, new_dns_runtime.as_ref());
+            lifecycle.run_pass(LifecyclePass::Initialize).await?;
             tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload");
 
             // Build new bridge via adapter bridge
@@ -729,10 +1178,10 @@ impl Supervisor {
             populate_bridge_managers(&new_context, &new_bridge_arc).await?;
 
             // Start new context managers (drives Start stage on registered services)
-            run_context_stage(&new_context, ServiceStage::Start)?;
+            let lifecycle = LifecycleCoordinator::new(&new_context, new_dns_runtime.as_ref());
+            lifecycle.run_pass(LifecyclePass::StartCore).await?;
             tracing::info!(target: "sb_core::runtime", "New context managers started on reload");
 
-            let _ = apply_dns_resolver_from_ir(&new_ir, "reload");
             // Refresh global TLS trust configuration from IR
             crate::tls::global::apply_from_ir(new_ir.certificate.as_ref());
 
@@ -743,19 +1192,21 @@ impl Supervisor {
             // bypass ServiceManager.statuses).
 
             // PostStart stage for new managers
-            run_context_stage(&new_context, ServiceStage::PostStart)?;
-            run_context_stage(&new_context, ServiceStage::Started)?;
+            let lifecycle = LifecycleCoordinator::new(&new_context, new_dns_runtime.as_ref());
+            lifecycle.run_pass(LifecyclePass::StartEdge).await?;
+            lifecycle.run_pass(LifecyclePass::PostStart).await?;
+            lifecycle.run_pass(LifecyclePass::Started).await?;
             tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload");
 
             let new_inbound_monitors = new_inbound_monitors_slot
                 .take()
                 .expect("reload inbound monitors present after readiness");
-            Ok((new_bridge_arc, new_inbound_monitors))
+            Ok((new_bridge_arc, new_dns_runtime, new_inbound_monitors))
         }
         .await;
 
-        let (new_bridge_arc, new_inbound_monitors) = match activation_result {
-            Ok((bridge, monitors)) => (bridge, monitors),
+        let (new_bridge_arc, new_dns_runtime, new_inbound_monitors) = match activation_result {
+            Ok((bridge, dns_runtime, monitors)) => (bridge, dns_runtime, monitors),
             Err(error) => {
                 tracing::error!(target: "sb_core::runtime", error = %error, "reload activation failed before swap, rolling back new construction");
                 let (new_inbounds, new_endpoints, new_services) = new_bridge_slot
@@ -765,13 +1216,15 @@ impl Supervisor {
                 if let Some(monitors) = new_inbound_monitors_slot.take() {
                     shutdown_inbounds_and_monitors(new_inbounds, monitors, "reload-rollback").await;
                 }
-                shutdown_failed_reload_context(
+                shutdown_failed_reload_context_lifecycle(
                     &old_context,
                     &new_context,
+                    new_dns_runtime_slot.as_ref(),
                     &[],
                     new_endpoints,
                     new_services,
-                );
+                )
+                .await;
                 return Err(error);
             }
         };
@@ -803,10 +1256,12 @@ impl Supervisor {
             state_guard.engine = new_engine_for_state;
             state_guard.bridge = new_bridge_arc;
             state_guard.context = new_context;
+            state_guard.dns_runtime = new_dns_runtime;
             state_guard.current_ir = new_ir;
             let old_inbound_monitors =
                 std::mem::replace(&mut state_guard.inbound_monitors, new_inbound_monitors);
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
+            publish_runtime_dns(state_guard.dns_runtime.as_ref());
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
                 let health_bridge = state_guard.bridge.clone();
@@ -829,7 +1284,9 @@ impl Supervisor {
             .await;
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
-        shutdown_replaced_context(&old_context, preserve_v2ray);
+        LifecycleCoordinator::new(&old_context, old_dns_runtime.as_ref())
+            .close_all(!preserve_v2ray)
+            .await;
 
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully");
 
@@ -847,13 +1304,22 @@ impl Supervisor {
             crate::log::configure(log_ir);
         }
 
-        let (old_inbounds, old_endpoints, old_services, old_context, old_v2ray_cfg, old_ir) = {
+        let (
+            old_inbounds,
+            old_endpoints,
+            old_services,
+            old_context,
+            old_dns_runtime,
+            old_v2ray_cfg,
+            old_ir,
+        ) = {
             let state_guard = state.read().await;
             (
                 state_guard.bridge.inbounds.clone(),
                 state_guard.bridge.endpoints.clone(),
                 state_guard.bridge.services.clone(),
                 state_guard.context.clone(),
+                state_guard.dns_runtime.clone(),
                 state_guard
                     .current_ir
                     .experimental
@@ -884,10 +1350,15 @@ impl Supervisor {
         // path (see handle_reload) — any activation failure funnels into the shared
         // shutdown_failed_reload_context rollback instead of leaking the new construction.
         let mut new_bridge_slot: Option<Arc<Bridge>> = None;
+        let mut new_dns_runtime_slot: Option<RuntimeDns> = None;
         let mut new_inbound_monitors_slot: Option<Vec<InboundRuntimeMonitor>> = None;
-        let activation_result: Result<(Arc<Bridge>, Vec<InboundRuntimeMonitor>)> = async {
+        let activation_result: Result<(Arc<Bridge>, Option<RuntimeDns>, Vec<InboundRuntimeMonitor>)> = async {
+            let new_dns_runtime = build_runtime_dns_from_ir(&new_ir)?;
+            new_dns_runtime_slot = new_dns_runtime.clone();
+
             // Initialize new context managers (Box Runtime Parity)
-            run_context_stage(&new_context, ServiceStage::Initialize)?;
+            let lifecycle = LifecycleCoordinator::new(&new_context, new_dns_runtime.as_ref());
+            lifecycle.run_pass(LifecyclePass::Initialize).await?;
             tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload (no-router)");
 
             // Build new bridge (no engine needed)
@@ -901,29 +1372,30 @@ impl Supervisor {
             populate_bridge_managers(&new_context, &new_bridge_arc).await?;
 
             // Start new context managers
-            run_context_stage(&new_context, ServiceStage::Start)?;
+            let lifecycle = LifecycleCoordinator::new(&new_context, new_dns_runtime.as_ref());
+            lifecycle.run_pass(LifecyclePass::StartCore).await?;
             tracing::info!(target: "sb_core::runtime", "New context managers started on reload (no-router)");
-
-            let _ = apply_dns_resolver_from_ir(&new_ir, "reload");
 
             let new_inbound_monitors = start_inbounds_until_ready(&new_bridge_arc, "reload").await?;
             new_inbound_monitors_slot = Some(new_inbound_monitors);
             // Endpoints/services already driven through Start above.
 
             // PostStart stage for new managers (no-router)
-            run_context_stage(&new_context, ServiceStage::PostStart)?;
-            run_context_stage(&new_context, ServiceStage::Started)?;
+            let lifecycle = LifecycleCoordinator::new(&new_context, new_dns_runtime.as_ref());
+            lifecycle.run_pass(LifecyclePass::StartEdge).await?;
+            lifecycle.run_pass(LifecyclePass::PostStart).await?;
+            lifecycle.run_pass(LifecyclePass::Started).await?;
             tracing::debug!(target: "sb_core::runtime", "New context managers post-start complete on reload (no-router)");
 
             let new_inbound_monitors = new_inbound_monitors_slot
                 .take()
                 .expect("reload inbound monitors present after readiness");
-            Ok((new_bridge_arc, new_inbound_monitors))
+            Ok((new_bridge_arc, new_dns_runtime, new_inbound_monitors))
         }
         .await;
 
-        let (new_bridge_arc, new_inbound_monitors) = match activation_result {
-            Ok((bridge, monitors)) => (bridge, monitors),
+        let (new_bridge_arc, new_dns_runtime, new_inbound_monitors) = match activation_result {
+            Ok((bridge, dns_runtime, monitors)) => (bridge, dns_runtime, monitors),
             Err(error) => {
                 tracing::error!(target: "sb_core::runtime", error = %error, "reload activation failed before swap (no-router), rolling back new construction");
                 let (new_inbounds, new_endpoints, new_services) = new_bridge_slot
@@ -933,13 +1405,15 @@ impl Supervisor {
                 if let Some(monitors) = new_inbound_monitors_slot.take() {
                     shutdown_inbounds_and_monitors(new_inbounds, monitors, "reload-rollback").await;
                 }
-                shutdown_failed_reload_context(
+                shutdown_failed_reload_context_lifecycle(
                     &old_context,
                     &new_context,
+                    new_dns_runtime_slot.as_ref(),
                     &[],
                     new_endpoints,
                     new_services,
-                );
+                )
+                .await;
                 return Err(error);
             }
         };
@@ -960,10 +1434,12 @@ impl Supervisor {
             // Replace bridge, context, and current IR (no engine field in non-router State)
             state_guard.bridge = new_bridge_arc;
             state_guard.context = new_context;
+            state_guard.dns_runtime = new_dns_runtime;
             state_guard.current_ir = new_ir;
             let old_inbound_monitors =
                 std::mem::replace(&mut state_guard.inbound_monitors, new_inbound_monitors);
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
+            publish_runtime_dns(state_guard.dns_runtime.as_ref());
             // Start new health task if needed
             if std::env::var("SB_HEALTH_ENABLE").is_ok() {
                 let health_bridge = state_guard.bridge.clone();
@@ -986,7 +1462,9 @@ impl Supervisor {
             .await;
         stop_endpoints(&old_endpoints);
         stop_services(&old_services);
-        shutdown_replaced_context(&old_context, preserve_v2ray);
+        LifecycleCoordinator::new(&old_context, old_dns_runtime.as_ref())
+            .close_all(!preserve_v2ray)
+            .await;
 
         tracing::info!(target: "sb_core::runtime", "configuration reloaded successfully (no router)");
 
@@ -1147,12 +1625,13 @@ impl Supervisor {
             .as_millis();
         let shutdown_success = Instant::now() < deadline;
 
-        let (endpoints, services, ctx) = {
+        let (endpoints, services, ctx, dns_runtime) = {
             let guard = state.read().await;
             (
                 guard.bridge.endpoints.clone(),
                 guard.bridge.services.clone(),
                 guard.context.clone(),
+                guard.dns_runtime.clone(),
             )
         };
 
@@ -1170,7 +1649,9 @@ impl Supervisor {
 
         stop_endpoints(&endpoints);
         stop_services(&services);
-        shutdown_context(&ctx);
+        LifecycleCoordinator::new(&ctx, dns_runtime.as_ref())
+            .close_all(true)
+            .await;
         drain_inbound_monitors(inbound_monitors, "shutdown").await;
 
         // Log shutdown completion
@@ -1316,73 +1797,6 @@ pub async fn spawn_health_task_async(bridge: Arc<Bridge>, cancel: CancellationTo
 
 fn has_async_runtime() -> bool {
     tokio::runtime::Handle::try_current().is_ok()
-}
-
-fn apply_dns_resolver_from_ir(ir: &sb_config::ir::ConfigIR, phase: &'static str) -> Result<bool> {
-    if ir.dns.is_none() {
-        return Ok(false);
-    }
-
-    match crate::dns::config_builder::resolver_from_ir(ir) {
-        Ok(resolver) => {
-            crate::dns::global::set(resolver);
-            Ok(true)
-        }
-        Err(error) => {
-            tracing::warn!(
-                target: "sb_core::runtime",
-                component = "dns",
-                phase,
-                error = %error,
-                "DNS resolver construction failed; continuing without replacing global resolver"
-            );
-            Err(error)
-        }
-    }
-}
-
-fn run_context_stage(ctx: &Context, stage: ServiceStage) -> Result<()> {
-    let label = match stage {
-        ServiceStage::Initialize => "initialize",
-        ServiceStage::Start => "start",
-        ServiceStage::PostStart => "post-start",
-        ServiceStage::Started => "mark started",
-    };
-
-    ctx.network
-        .start(stage)
-        .map_err(|e| anyhow::anyhow!(e))
-        .context(format!("failed to {label} NetworkManager"))?;
-    ctx.connections
-        .start(stage)
-        .map_err(|e| anyhow::anyhow!(e))
-        .context(format!("failed to {label} ConnectionManager"))?;
-    ctx.task_monitor
-        .start(stage)
-        .map_err(|e| anyhow::anyhow!(e))
-        .context(format!("failed to {label} TaskMonitor"))?;
-    ctx.platform
-        .start(stage)
-        .map_err(|e| anyhow::anyhow!(e))
-        .context(format!("failed to {label} PlatformInterface"))?;
-    ctx.inbound_manager
-        .start(stage)
-        .map_err(|e| anyhow::anyhow!(e))
-        .context(format!("failed to {label} InboundManager"))?;
-    ctx.outbound_manager
-        .start(stage)
-        .map_err(|e| anyhow::anyhow!(e))
-        .context(format!("failed to {label} OutboundManager"))?;
-    ctx.endpoint_manager
-        .start(stage)
-        .map_err(|e| anyhow::anyhow!(e))
-        .context(format!("failed to {label} EndpointManager"))?;
-    ctx.service_manager
-        .start(stage)
-        .map_err(|e| anyhow::anyhow!(e))
-        .context(format!("failed to {label} ServiceManager"))?;
-
-    Ok(())
 }
 
 fn inbound_runtime_label(
@@ -1883,6 +2297,7 @@ async fn download_file(url: &str, path: &str) -> Result<()> {
 /// case the new context is the close owner, so this teardown must NOT close the shared server;
 /// all other managers close as usual. The flag is computed via `same_v2ray_server` BEFORE the
 /// swap, because the new context is moved into state at commit and is no longer reachable here.
+#[cfg(test)]
 fn shutdown_replaced_context(old_context: &Context, preserve_v2ray: bool) {
     shutdown_context_inner(old_context, !preserve_v2ray);
 }
@@ -1905,6 +2320,7 @@ fn shutdown_replaced_context(old_context: &Context, preserve_v2ray: bool) {
 ///
 /// Cleanup is best-effort and infallible: every stop/close helper logs failures internally and
 /// returns `()`, so the caller's original reload error is always preserved unchanged.
+#[cfg(test)]
 fn shutdown_failed_reload_context(
     old_context: &Context,
     new_context: &Context,
@@ -1918,6 +2334,24 @@ fn shutdown_failed_reload_context(
     stop_endpoints(new_endpoints);
     stop_services(new_services);
     shutdown_context_inner(new_context, !same_v2ray_server(old_context, new_context));
+}
+
+async fn shutdown_failed_reload_context_lifecycle(
+    old_context: &Context,
+    new_context: &Context,
+    new_dns_runtime: Option<&RuntimeDns>,
+    new_inbounds: &[Arc<dyn InboundService>],
+    new_endpoints: &[Arc<dyn Endpoint>],
+    new_services: &[Arc<dyn Service>],
+) {
+    for ib in new_inbounds {
+        ib.request_shutdown();
+    }
+    stop_endpoints(new_endpoints);
+    stop_services(new_services);
+    LifecycleCoordinator::new(new_context, new_dns_runtime)
+        .close_all(!same_v2ray_server(old_context, new_context))
+        .await;
 }
 
 /// Tear down a context's sidecars and managers. The public entry used by startup-rollback and
@@ -2264,7 +2698,10 @@ fn runtime_diff_from_env() -> bool {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    use std::sync::Mutex;
+    use std::sync::{Mutex, OnceLock};
+
+    static SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
+        once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
 
     #[derive(Clone)]
     struct DummyEndpoint {
@@ -2386,6 +2823,7 @@ mod tests {
 
     #[tokio::test]
     async fn start_with_registry_accepts_explicit_snapshot() {
+        let _serial = SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK.lock().await;
         let ir = sb_config::ir::ConfigIR {
             outbounds: vec![sb_config::ir::OutboundIR {
                 ty: sb_config::ir::OutboundType::Direct,
@@ -2544,8 +2982,224 @@ mod tests {
         }
     }
 
+    fn lifecycle_labels(pass: LifecyclePass) -> Vec<&'static str> {
+        lifecycle_components_for(pass)
+            .iter()
+            .map(|component| component.label())
+            .collect()
+    }
+
     #[test]
-    fn dns_resolver_build_failure_is_nonfatal_but_observable() {
+    fn lifecycle_stage_plans_are_go_shaped() {
+        assert_eq!(
+            lifecycle_labels(LifecyclePass::Initialize),
+            vec![
+                "NetworkManager",
+                "DNSRuntime",
+                "ConnectionManager",
+                "TaskMonitor",
+                "PlatformInterface",
+                "OutboundManager",
+                "InboundManager",
+                "EndpointManager",
+                "ServiceManager",
+            ]
+        );
+        assert_eq!(
+            lifecycle_labels(LifecyclePass::StartCore),
+            vec![
+                "OutboundManager",
+                "DNSRuntime",
+                "NetworkManager",
+                "ConnectionManager",
+                "TaskMonitor",
+                "PlatformInterface",
+            ]
+        );
+        assert_eq!(
+            lifecycle_labels(LifecyclePass::StartEdge),
+            vec!["InboundManager", "EndpointManager", "ServiceManager"]
+        );
+        assert_eq!(
+            lifecycle_labels(LifecyclePass::PostStart),
+            vec![
+                "OutboundManager",
+                "NetworkManager",
+                "DNSRuntime",
+                "ConnectionManager",
+                "TaskMonitor",
+                "PlatformInterface",
+                "InboundManager",
+                "EndpointManager",
+                "ServiceManager",
+            ]
+        );
+        assert_eq!(
+            lifecycle_labels(LifecyclePass::Started),
+            vec![
+                "NetworkManager",
+                "DNSRuntime",
+                "ConnectionManager",
+                "TaskMonitor",
+                "PlatformInterface",
+                "OutboundManager",
+                "InboundManager",
+                "EndpointManager",
+                "ServiceManager",
+            ]
+        );
+        assert_eq!(
+            CLOSE_COMPONENTS
+                .iter()
+                .map(|component| component.label())
+                .collect::<Vec<_>>(),
+            vec![
+                "ServiceManager",
+                "EndpointManager",
+                "InboundManager",
+                "OutboundManager",
+                "PlatformInterface",
+                "TaskMonitor",
+                "ConnectionManager",
+                "DNSRuntime",
+                "NetworkManager",
+            ]
+        );
+    }
+
+    struct TestDnsResolver {
+        name: &'static str,
+        starts: Arc<Mutex<Vec<crate::dns::transport::DnsStartStage>>>,
+        closes: Arc<AtomicUsize>,
+        fail_stage: Option<crate::dns::transport::DnsStartStage>,
+        fail_close: bool,
+    }
+
+    #[async_trait::async_trait]
+    impl crate::dns::Resolver for TestDnsResolver {
+        async fn resolve(&self, _domain: &str) -> Result<crate::dns::DnsAnswer> {
+            Ok(crate::dns::DnsAnswer::new(
+                Vec::new(),
+                Duration::from_secs(0),
+                crate::dns::cache::Source::Static,
+                crate::dns::cache::Rcode::NoError,
+            ))
+        }
+
+        fn name(&self) -> &str {
+            self.name
+        }
+
+        async fn start(&self, stage: crate::dns::transport::DnsStartStage) -> Result<()> {
+            self.starts.lock().unwrap().push(stage);
+            if self.fail_stage == Some(stage) {
+                anyhow::bail!("dns start failure at {stage:?}");
+            }
+            Ok(())
+        }
+
+        async fn close(&self) -> Result<()> {
+            self.closes.fetch_add(1, Ordering::SeqCst);
+            if self.fail_close {
+                anyhow::bail!("dns close failure");
+            }
+            Ok(())
+        }
+    }
+
+    fn test_dns_resolver(name: &'static str) -> Arc<TestDnsResolver> {
+        Arc::new(TestDnsResolver {
+            name,
+            starts: Arc::new(Mutex::new(Vec::new())),
+            closes: Arc::new(AtomicUsize::new(0)),
+            fail_stage: None,
+            fail_close: false,
+        })
+    }
+
+    #[tokio::test]
+    async fn lifecycle_start_failure_cleanup_preserves_original_error() {
+        let resolver = Arc::new(TestDnsResolver {
+            name: "failing-dns",
+            starts: Arc::new(Mutex::new(Vec::new())),
+            closes: Arc::new(AtomicUsize::new(0)),
+            fail_stage: Some(crate::dns::transport::DnsStartStage::Start),
+            fail_close: true,
+        });
+        let dns_runtime = RuntimeDns {
+            resolver: resolver.clone(),
+            router: None,
+        };
+        let context = Context::new();
+        let lifecycle = LifecycleCoordinator::new(&context, Some(&dns_runtime));
+
+        let err = lifecycle
+            .run_pass(LifecyclePass::StartCore)
+            .await
+            .expect_err("DNS start failure should abort the pass");
+        assert!(format!("{err:#}").contains("dns start failure at Start"));
+
+        lifecycle.close_all(true).await;
+        assert_eq!(resolver.closes.load(Ordering::SeqCst), 1);
+    }
+
+    struct DnsGlobalGuard(Option<Arc<dyn crate::dns::Resolver>>);
+
+    impl DnsGlobalGuard {
+        fn capture() -> Self {
+            Self(crate::dns::global::get())
+        }
+    }
+
+    impl Drop for DnsGlobalGuard {
+        fn drop(&mut self) {
+            if let Some(resolver) = self.0.take() {
+                crate::dns::global::set(resolver);
+            } else {
+                crate::dns::global::clear();
+            }
+        }
+    }
+
+    struct RuntimeRegistryGuard(crate::adapter::registry::RuntimeRegistrySnapshot);
+
+    impl RuntimeRegistryGuard {
+        fn capture() -> Self {
+            Self(crate::adapter::registry::runtime_snapshot())
+        }
+    }
+
+    impl Drop for RuntimeRegistryGuard {
+        fn drop(&mut self) {
+            crate::adapter::registry::install_runtime_snapshot(self.0.clone());
+        }
+    }
+
+    fn dns_global_test_lock() -> &'static Mutex<()> {
+        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| Mutex::new(()))
+    }
+
+    #[test]
+    fn runtime_dns_global_publish_is_commit_only() {
+        let _lock = dns_global_test_lock().lock().unwrap();
+        let _guard = DnsGlobalGuard::capture();
+        let old_resolver = test_dns_resolver("old-dns");
+        let new_resolver = test_dns_resolver("new-dns");
+        crate::dns::global::set(old_resolver);
+
+        let dns_runtime = RuntimeDns {
+            resolver: new_resolver,
+            router: None,
+        };
+        assert_eq!(crate::dns::global::get().unwrap().name(), "old-dns");
+
+        publish_runtime_dns(Some(&dns_runtime));
+        assert_eq!(crate::dns::global::get().unwrap().name(), "new-dns");
+    }
+
+    #[test]
+    fn configured_dns_build_failure_blocks_activation() {
         let mut ir = sb_config::ir::ConfigIR::default();
         ir.dns = Some(sb_config::ir::DnsIR {
             servers: vec![sb_config::ir::DnsServerIR {
@@ -2557,20 +3211,72 @@ mod tests {
             ..Default::default()
         });
 
-        let err = apply_dns_resolver_from_ir(&ir, "startup")
-            .expect_err("unsupported resolved DNS transport should be reported");
-        assert!(err.to_string().contains("resolved"));
+        let err = build_runtime_dns_from_ir(&ir)
+            .expect_err("unsupported resolved DNS transport should block activation");
+        assert!(format!("{err:#}").contains("resolved"));
+    }
 
-        let source = include_str!("supervisor.rs");
-        assert!(source.contains("component = \"dns\""));
-        assert!(source.contains("phase"));
+    #[tokio::test(flavor = "current_thread")]
+    async fn reload_dns_build_failure_keeps_global_resolver_and_registries() {
+        let _adapter_serial = SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK.lock().await;
+        let _dns_serial = dns_global_test_lock().lock().unwrap();
+        let _dns_guard = DnsGlobalGuard::capture();
+        let _registry_guard = RuntimeRegistryGuard::capture();
+        crate::adapter::registry::clear_runtime_registries();
+        crate::dns::global::set(test_dns_resolver("old-global-dns"));
+
+        fn direct_ir(tag: &str) -> sb_config::ir::ConfigIR {
+            let raw = serde_json::json!({
+                "outbounds": [{
+                    "type": "direct",
+                    "tag": tag
+                }],
+                "route": { "final": tag }
+            });
+            let (_cfg, ir) = sb_config::config_from_raw_value(raw).expect("test config parses");
+            ir
+        }
+
+        let supervisor = Supervisor::start_with_registry(direct_ir("old-direct-dns"), None)
+            .await
+            .expect("old runtime starts");
+        let old_runtime =
+            crate::adapter::registry::runtime_outbounds().expect("old runtime outbounds published");
+        assert!(old_runtime.resolve("old-direct-dns").is_some());
+
+        let mut new_ir = direct_ir("new-direct-dns");
+        new_ir.dns = Some(sb_config::ir::DnsIR {
+            servers: vec![sb_config::ir::DnsServerIR {
+                tag: "bad-resolved".to_string(),
+                server_type: Some("resolved".to_string()),
+                ..Default::default()
+            }],
+            default: Some("bad-resolved".to_string()),
+            ..Default::default()
+        });
+
+        let err = supervisor
+            .reload(new_ir)
+            .await
+            .expect_err("DNS build failure must fail reload activation");
+        assert!(err.to_string().contains("failed to build DNS runtime"));
+        assert_eq!(crate::dns::global::get().unwrap().name(), "old-global-dns");
+
+        let runtime = crate::adapter::registry::runtime_outbounds()
+            .expect("old runtime outbounds remain published");
+        assert!(runtime.resolve("old-direct-dns").is_some());
+        assert!(runtime.resolve("new-direct-dns").is_none());
+
+        supervisor
+            .shutdown_graceful(Duration::from_millis(500))
+            .await
+            .expect("shutdown old runtime");
     }
 
     mod reload_atomicity {
         use super::*;
         use crate::adapter::registry::{AdapterInboundContext, RegistrySnapshot};
         use crate::adapter::{InboundParam, InboundReadySender};
-        use once_cell::sync::Lazy;
         use sb_config::ir::ConfigIR;
         use serde_json::json;
         use std::io;
@@ -2578,23 +3284,6 @@ mod tests {
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::thread;
         use std::time::Duration as StdDuration;
-
-        static RELOAD_ATOMICITY_TEST_LOCK: Lazy<tokio::sync::Mutex<()>> =
-            Lazy::new(|| tokio::sync::Mutex::new(()));
-
-        struct RuntimeRegistryGuard(crate::adapter::registry::RuntimeRegistrySnapshot);
-
-        impl RuntimeRegistryGuard {
-            fn capture() -> Self {
-                Self(crate::adapter::registry::runtime_snapshot())
-            }
-        }
-
-        impl Drop for RuntimeRegistryGuard {
-            fn drop(&mut self) {
-                crate::adapter::registry::install_runtime_snapshot(self.0.clone());
-            }
-        }
 
         #[derive(Debug)]
         struct ReadyTcpInbound {
@@ -2723,7 +3412,7 @@ mod tests {
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
         async fn startup_bind_conflict_fails_before_supervisor_ready() {
-            let _serial = RELOAD_ATOMICITY_TEST_LOCK.lock().await;
+            let _serial = SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK.lock().await;
             let _guard = RuntimeRegistryGuard::capture();
             crate::adapter::registry::clear_runtime_registries();
             let Some(port) = reserve_port() else { return };
@@ -2762,7 +3451,7 @@ mod tests {
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
         async fn failed_reload_keeps_old_listener_and_registry() {
-            let _serial = RELOAD_ATOMICITY_TEST_LOCK.lock().await;
+            let _serial = SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK.lock().await;
             let _guard = RuntimeRegistryGuard::capture();
             crate::adapter::registry::clear_runtime_registries();
             let Some(old_port) = reserve_port() else {
@@ -2835,7 +3524,7 @@ mod tests {
 
         #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
         async fn same_port_reload_is_rejected_without_stopping_old_listener() {
-            let _serial = RELOAD_ATOMICITY_TEST_LOCK.lock().await;
+            let _serial = SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK.lock().await;
             let _guard = RuntimeRegistryGuard::capture();
             crate::adapter::registry::clear_runtime_registries();
             let Some(port) = reserve_port() else { return };

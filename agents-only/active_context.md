@@ -10,24 +10,23 @@
 
 ---
 
-## Resume (2026-06-27) - post004 WireGuard incoming TCP P6
+## Resume (2026-06-27) - P1313-05 lifecycle managers/start order
 
-- **post004 P6 DONE**: userspace WG endpoint now accepts incoming in-tunnel TCP on
-  configured endpoint `listen_ports`. Flow: v2 `listen_ports` → EndpointIR →
-  `WireGuardConfig` → smoltcp listener → `TcpAccept` → endpoint
-  `ConnectionHandler::route_connection`; local WG destinations translate to loopback
-  while preserving `origin_destination`.
-- **04b harness extended PASS**: original Rust→Go→stub→Go→Rust curl remains green,
-  and a new independent Go→Rust curl is green: Go mixed → `wg-go` → Rust smoltcp
-  listener → route handler → direct stub. Evidence:
-  `/tmp/pf04b-wg-live-p6/result.json` status=PASS, both curls 200, all stub/Go/Rust
-  hit assertions true, cleanup=complete.
-- **Audit result**: post004 Phase 1-5 claims match their sealed commits/evidence;
-  the prior "No Phase 6 planned" note is superseded by this user-directed P6.
-  Sealed commits: P1 `8f976824`, P2 `069c1e96`/`7964e5a6`, P3 `9dadcd10`,
-  P4 `c0e11036`, P5 `9f0bf903`.
-- **P7/P8 posture**: P7 `system:true` kernel WireGuard is planning-only; P8
-  smoltcp→lwIP is deferred until performance/correctness evidence requires it.
+- **P1313-05 DONE**: `sb-core` startup/reload now uses a private
+  `LifecycleCoordinator` with Go-shaped Initialize, StartCore, StartEdge,
+  PostStart, Started, and close ordering. Router and no-router activation share
+  the same transaction shape.
+- **DNS runtime folded in**: configured DNS is built/started inside activation;
+  build/start failure aborts startup/reload. Global DNS resolver publication now
+  happens only after activation commit, so failed reload keeps the old resolver.
+- **Atomic reload preserved**: same-port in-process reload remains rejected; failed
+  activation closes only new resources and keeps old listeners, context, runtime
+  registries, and committed DNS resolver serving.
+- **Boundary retained**: no public `RuntimePlan`/`PlannedConfigIR`, no legacy
+  inbound migration into `InboundManager`, no GUI desktop automation, no
+  dual-kernel parity movement claim.
+- **Verification PASS**: package5 doc records command evidence; consistency and
+  boundary gates are green.
 
 ## Resume (2026-06-20b) - post003 TUN UDP/IPv6 + proxy egress
 

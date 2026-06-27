@@ -353,19 +353,36 @@ impl OutboundManager {
         default.clone()
     }
 
-    /// Start all adapters at the given lifecycle stage.
-    /// 在给定的生命周期阶段启动所有适配器。
-    ///
-    /// Note: Legacy connectors don't have lifecycle support and are skipped.
-    /// 注意：传统连接器没有生命周期支持，会被跳过。
+    /// Start all lifecycle-capable adapters at the given lifecycle stage.
+    /// Legacy connectors are included in dependency/default accounting but
+    /// skipped here because they do not implement lifecycle.
     pub async fn start_all(&self, stage: StartStage) {
-        let adapters = self.adapters.read().await;
-        for (tag, adapter) in adapters.iter() {
-            debug!(tag = %tag, stage = ?stage, "outbound: starting adapter");
-            if let Err(e) = adapter.start(stage) {
-                warn!(tag = %tag, stage = ?stage, error = %e, "outbound: failed to start adapter");
-            }
+        if let Err(e) = self.start_all_ordered(stage).await {
+            warn!(stage = ?stage, error = %e, "outbound: failed to start all adapters");
         }
+    }
+
+    /// Start lifecycle-capable adapters in dependency order.
+    ///
+    /// This is the fallible path used by the runtime lifecycle coordinator.
+    pub async fn start_all_ordered(&self, stage: StartStage) -> Result<(), String> {
+        let order = self.get_startup_order().await?;
+        let adapters = self.adapters.read().await;
+        for tag in order {
+            let Some(adapter) = adapters.get(&tag) else {
+                debug!(
+                    tag = %tag,
+                    stage = ?stage,
+                    "outbound: skipping legacy connector without lifecycle"
+                );
+                continue;
+            };
+            debug!(tag = %tag, stage = ?stage, "outbound: starting adapter");
+            adapter
+                .start(stage)
+                .map_err(|e| format!("failed to start outbound/{tag} at {stage}: {e}"))?;
+        }
+        Ok(())
     }
 
     /// Close all adapters.
@@ -374,13 +391,26 @@ impl OutboundManager {
     /// Note: Legacy connectors don't have lifecycle support and are skipped.
     /// 注意：传统连接器没有生命周期支持，会被跳过。
     pub async fn close_all(&self) {
-        let adapters = self.adapters.read().await;
-        for (tag, adapter) in adapters.iter() {
-            debug!(tag = %tag, "outbound: closing adapter");
-            if let Err(e) = adapter.close() {
-                warn!(tag = %tag, error = %e, "outbound: failed to close adapter");
-            }
+        if let Err(e) = self.close_all_ordered().await {
+            warn!(error = %e, "outbound: failed to close all adapters");
         }
+    }
+
+    /// Close lifecycle-capable adapters in reverse dependency order.
+    pub async fn close_all_ordered(&self) -> Result<(), String> {
+        let mut order = self.get_startup_order().await?;
+        order.reverse();
+        let adapters = self.adapters.read().await;
+        for tag in order {
+            let Some(adapter) = adapters.get(&tag) else {
+                continue;
+            };
+            debug!(tag = %tag, "outbound: closing adapter");
+            adapter
+                .close()
+                .map_err(|e| format!("failed to close outbound/{tag}: {e}"))?;
+        }
+        Ok(())
     }
 
     // =========================================================================
@@ -435,7 +465,8 @@ impl OutboundManager {
             }
         }
         // 2. First registered outbound
-        let tags = self.list_tags().await;
+        let mut tags = self.list_tags().await;
+        tags.sort();
         if let Some(first) = tags.first() {
             self.set_default(Some(first.clone())).await;
             info!(
@@ -465,7 +496,75 @@ impl Default for OutboundManager {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::error::{ErrorClass, SbError};
+    use crate::outbound::traits::UdpTransport;
     use crate::outbound::DirectConnector;
+    use crate::types::ConnCtx;
+    use std::sync::Mutex;
+    use tokio::net::TcpStream;
+
+    #[derive(Debug)]
+    struct RecordingAdapter {
+        tag: String,
+        events: Arc<Mutex<Vec<String>>>,
+    }
+
+    impl RecordingAdapter {
+        fn new(tag: &str, events: Arc<Mutex<Vec<String>>>) -> Self {
+            Self {
+                tag: tag.to_string(),
+                events,
+            }
+        }
+    }
+
+    #[async_trait::async_trait]
+    impl OutboundConnector for RecordingAdapter {
+        async fn connect_tcp(&self, _ctx: &ConnCtx) -> crate::error::SbResult<TcpStream> {
+            Err(SbError::network(
+                ErrorClass::Connection,
+                "recording adapter does not dial",
+            ))
+        }
+
+        async fn connect_udp(
+            &self,
+            _ctx: &ConnCtx,
+        ) -> crate::error::SbResult<Box<dyn UdpTransport>> {
+            Err(SbError::network(
+                ErrorClass::Connection,
+                "recording adapter does not dial",
+            ))
+        }
+    }
+
+    impl Lifecycle for RecordingAdapter {
+        fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("start:{}:{stage}", self.tag));
+            Ok(())
+        }
+
+        fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+            self.events
+                .lock()
+                .unwrap()
+                .push(format!("close:{}", self.tag));
+            Ok(())
+        }
+    }
+
+    impl OutboundAdapter for RecordingAdapter {
+        fn tag(&self) -> &str {
+            &self.tag
+        }
+
+        fn outbound_type(&self) -> &str {
+            "recording"
+        }
+    }
 
     #[tokio::test]
     async fn test_outbound_manager_basic_operations() {
@@ -699,18 +798,16 @@ mod tests {
     async fn test_resolve_default_first_registered() {
         let manager = OutboundManager::new();
         manager
-            .add_connector("alpha".to_string(), Arc::new(DirectConnector::new()))
+            .add_connector("beta".to_string(), Arc::new(DirectConnector::new()))
             .await;
         manager
-            .add_connector("beta".to_string(), Arc::new(DirectConnector::new()))
+            .add_connector("alpha".to_string(), Arc::new(DirectConnector::new()))
             .await;
 
         let result = manager.resolve_default(None).await;
         assert!(result.is_ok());
-        // Should pick one of the registered connectors
-        let default = result.unwrap();
-        assert!(default == "alpha" || default == "beta");
-        assert!(manager.get_default().await.is_some());
+        assert_eq!(result.unwrap(), "alpha");
+        assert_eq!(manager.get_default().await.as_deref(), Some("alpha"));
     }
 
     #[tokio::test]
@@ -738,5 +835,40 @@ mod tests {
         let pos_direct = order.iter().position(|t| t == "direct").unwrap();
         let pos_proxy = order.iter().position(|t| t == "proxy").unwrap();
         assert!(pos_direct < pos_proxy);
+    }
+
+    #[tokio::test]
+    async fn lifecycle_adapters_start_and_close_in_dependency_order() {
+        let manager = OutboundManager::new();
+        let events = Arc::new(Mutex::new(Vec::new()));
+        manager
+            .add_adapter(
+                "proxy".to_string(),
+                Arc::new(RecordingAdapter::new("proxy", events.clone())),
+            )
+            .await;
+        manager
+            .add_adapter(
+                "direct".to_string(),
+                Arc::new(RecordingAdapter::new("direct", events.clone())),
+            )
+            .await;
+        manager
+            .add_connector("legacy".to_string(), Arc::new(DirectConnector::new()))
+            .await;
+        manager.add_dependency("proxy", "direct").await;
+
+        manager.start_all_ordered(StartStage::Start).await.unwrap();
+        assert_eq!(
+            events.lock().unwrap().clone(),
+            vec!["start:direct:Start", "start:proxy:Start"]
+        );
+
+        events.lock().unwrap().clear();
+        manager.close_all_ordered().await.unwrap();
+        assert_eq!(
+            events.lock().unwrap().clone(),
+            vec!["close:proxy", "close:direct"]
+        );
     }
 }
