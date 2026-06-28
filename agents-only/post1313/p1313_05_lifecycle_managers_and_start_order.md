@@ -121,6 +121,16 @@ staged `Initialize`, `Start`, `PostStart`, and `Started` order, plus internal se
 - `make boundaries` — PASS.
 - `cargo fmt --check` and `git diff --check` — PASS.
 
+## Revalidation (2026-06-28)
+
+- Strict post1313 revalidation is recorded in
+  `agents-only/post1313/p1313_strict_revalidation_2026_06_28.md`.
+- The previously default-ignored reload integration tests were refreshed for the runtime-capable
+  `gui_runtime` profile and explicitly re-run with `--ignored`: `reload_basic` and
+  `reload_rule_switch` both pass locally.
+- Core admin `/explain` now reads the supervisor's current IR when available, so route previews
+  reflect successful reloads. Same-port in-process reload remains intentionally rejected.
+
 ## Non-Goals
 
 - Do not re-open old MT maintenance line names.

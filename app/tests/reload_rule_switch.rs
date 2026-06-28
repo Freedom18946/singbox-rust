@@ -5,13 +5,54 @@
 //! verifying route decision changes through Admin API.
 
 use serde_json::json;
+use std::path::PathBuf;
 use std::time::Duration;
-use tokio::process::Command;
+use tokio::process::{Child, Command};
 use tokio::time::timeout;
+
+fn run_binary() -> PathBuf {
+    if let Some(path) = option_env!("CARGO_BIN_EXE_run") {
+        return PathBuf::from(path);
+    }
+
+    let mut path = std::env::current_exe().expect("current test executable path");
+    path.pop();
+    if path.ends_with("deps") {
+        path.pop();
+    }
+    path.push("run");
+    path
+}
+
+async fn wait_for_admin(child: &mut Child, port: u16, token: &str) -> anyhow::Result<()> {
+    let client = reqwest::Client::new();
+    let url = format!("http://127.0.0.1:{port}/healthz");
+
+    for _ in 0..30 {
+        if let Some(status) = child.try_wait()? {
+            anyhow::bail!("run binary exited before admin became ready: {status}");
+        }
+
+        if let Ok(Ok(response)) = timeout(
+            Duration::from_millis(200),
+            client.get(&url).header("X-Admin-Token", token).send(),
+        )
+        .await
+        {
+            if response.status().is_success() {
+                return Ok(());
+            }
+        }
+
+        tokio::time::sleep(Duration::from_millis(100)).await;
+    }
+
+    anyhow::bail!("admin endpoint did not become ready on port {port}");
+}
 
 /// Test rule switching via reload
 #[tokio::test]
-#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_rule_switch -- --ignored"]
+#[ignore = "requires runtime-capable run binary - run with: cargo test --features gui_runtime --test reload_rule_switch -- --ignored"]
 async fn test_rule_switch_reload() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");
@@ -21,16 +62,16 @@ async fn test_rule_switch_reload() -> anyhow::Result<()> {
         "inbounds": [{
             "type": "http",
             "listen": "127.0.0.1",
-            "port": 19120
+            "port": 19122
         }],
         "outbounds": [
             {
                 "type": "direct",
-                "name": "direct"
+                "tag": "direct"
             },
             {
                 "type": "http",
-                "name": "proxy",
+                "tag": "proxy",
                 "server": "127.0.0.1",
                 "port": 19181
             }
@@ -47,7 +88,7 @@ async fn test_rule_switch_reload() -> anyhow::Result<()> {
     std::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?)?;
 
     // Start the application
-    let mut child = Command::new("target/debug/run")
+    let mut child = Command::new(run_binary())
         .arg("-c")
         .arg(&config_path)
         .arg("--format")
@@ -58,12 +99,12 @@ async fn test_rule_switch_reload() -> anyhow::Result<()> {
         .arg("rule-test-token")
         .arg("--grace")
         .arg("1500")
+        .env("SB_RUNTIME_DIFF", "1")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
 
-    // Wait for startup
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_for_admin(&mut child, 19193, "rule-test-token").await?;
 
     // Test initial route decision
     let initial_route = query_route_decision("example.com:80", "rule-test-token", 19193).await?;
@@ -82,18 +123,18 @@ async fn test_rule_switch_reload() -> anyhow::Result<()> {
         "outbounds": [
             {
                 "type": "direct",
-                "name": "direct"
+                "tag": "direct"
             },
             {
                 "type": "http",
-                "name": "proxy",
+                "tag": "proxy",
                 "server": "127.0.0.1",
                 "port": 19181
             },
             {
                 "type": "selector",
-                "name": "auto",
-                "members": ["proxy", "direct"]
+                "tag": "auto",
+                "outbounds": ["proxy", "direct"]
             }
         ],
         "route": {
@@ -176,7 +217,7 @@ async fn test_rule_switch_reload() -> anyhow::Result<()> {
 
 /// Test complex rule modifications
 #[tokio::test]
-#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_rule_switch -- --ignored"]
+#[ignore = "requires runtime-capable run binary - run with: cargo test --features gui_runtime --test reload_rule_switch -- --ignored"]
 async fn test_complex_rule_modifications() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");
@@ -186,20 +227,20 @@ async fn test_complex_rule_modifications() -> anyhow::Result<()> {
         "inbounds": [{
             "type": "http",
             "listen": "127.0.0.1",
-            "port": 19121
+            "port": 19123
         }],
         "outbounds": [
             {
                 "type": "direct",
-                "name": "direct"
+                "tag": "direct"
             },
             {
                 "type": "block",
-                "name": "block"
+                "tag": "block"
             },
             {
                 "type": "http",
-                "name": "proxy1",
+                "tag": "proxy1",
                 "server": "proxy1.example.com",
                 "port": 8080
             }
@@ -227,7 +268,7 @@ async fn test_complex_rule_modifications() -> anyhow::Result<()> {
     std::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?)?;
 
     // Start the application
-    let mut child = Command::new("target/debug/run")
+    let mut child = Command::new(run_binary())
         .arg("-c")
         .arg(&config_path)
         .arg("--format")
@@ -236,12 +277,12 @@ async fn test_complex_rule_modifications() -> anyhow::Result<()> {
         .arg("127.0.0.1:19194")
         .arg("--admin-token")
         .arg("complex-rule-token")
+        .env("SB_RUNTIME_DIFF", "1")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
 
-    // Wait for startup
-    tokio::time::sleep(Duration::from_millis(500)).await;
+    wait_for_admin(&mut child, 19194, "complex-rule-token").await?;
 
     // Test initial route decisions
     let blocked_route =
@@ -262,15 +303,15 @@ async fn test_complex_rule_modifications() -> anyhow::Result<()> {
         "outbounds": [
             {
                 "type": "direct",
-                "name": "direct"
+                "tag": "direct"
             },
             {
                 "type": "block",
-                "name": "block"
+                "tag": "block"
             },
             {
                 "type": "http",
-                "name": "proxy2",
+                "tag": "proxy2",
                 "server": "proxy2.example.com",
                 "port": 8080
             }

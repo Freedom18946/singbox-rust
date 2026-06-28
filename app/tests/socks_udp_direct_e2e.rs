@@ -109,7 +109,7 @@ fn parse_socks_udp_packet(buf: &[u8]) -> (&[u8], SocketAddr) {
 }
 
 #[test]
-#[ignore = "requires full runtime wiring for UDP relay after MIG-02 (global router default is unresolved without bridge)"]
+#[ignore = "legacy core Socks5 direct UDP path; P1313-09 runtime coverage uses app/adapter bridge plus interop p1_rust_core_udp_via_socks"]
 fn socks_udp_via_direct_nat_echo() {
     // Start UDP echo server
     let Some((echo_addr, _echo_h)) = start_udp_echo() else {

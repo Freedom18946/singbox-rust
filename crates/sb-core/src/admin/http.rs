@@ -526,7 +526,16 @@ fn handle(
             } else {
                 (dest.to_string(), 0)
             };
-            let d = engine.decide(
+            let current_engine = supervisor.zip(rt_handle).map(|(supervisor, handle)| {
+                let ir = handle.block_on(async {
+                    let state = supervisor.state().await;
+                    let guard = state.read().await;
+                    guard.current_ir.clone()
+                });
+                Engine::new(Arc::new(ir))
+            });
+            let engine_ref = current_engine.as_ref().unwrap_or(engine);
+            let d = engine_ref.decide(
                 &Input {
                     host: &host,
                     port,

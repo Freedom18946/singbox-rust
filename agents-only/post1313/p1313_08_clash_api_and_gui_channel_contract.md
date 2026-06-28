@@ -114,3 +114,13 @@ Dual-core strict replay was attempted with `cargo run -p interop-lab -- case run
 p0_clash_api_contract_strict`; it did not reach diff because the local Go API was not ready at
 `http://127.0.0.1:9090/version` within 15000 ms. This is an environment precondition for the Go
 kernel, not a Rust contract failure.
+
+## Revalidation (2026-06-28)
+
+- Strict post1313 revalidation is recorded in
+  `agents-only/post1313/p1313_strict_revalidation_2026_06_28.md`.
+- The two stale `/connections` WebSocket snapshot quarantines were repaired by using the same
+  explicit `ConnTracker` for test registration and server state. They are now part of the default
+  `clash_websocket_e2e` suite.
+- The long-running `/connections` WebSocket soak remains ignored by default but was explicitly run
+  and passed in the strict revalidation.

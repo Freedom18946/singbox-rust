@@ -88,6 +88,15 @@ owned by `labs/interop-lab/docs/dual_kernel_golden_spec.md`.
   with oracle promoted to `success=true`.
 - No public network dependency.
 
+## Revalidation (2026-06-28)
+
+- Strict post1313 revalidation is recorded in
+  `agents-only/post1313/p1313_strict_revalidation_2026_06_28.md`.
+- The legacy `app/tests/socks_udp_direct_e2e.rs` ignored-test message was updated: that test uses
+  the old core-inbound-only SOCKS5 path and is not the P1313-09 runtime acceptance path.
+- The P1313-09 runtime acceptance path remains the non-ignored `sb-adapters` UDP suite, `app udp`,
+  and the Rust interop cases listed above.
+
 ## Non-Goals
 
 - TUN privileged dataplane proof remains environment-limited.

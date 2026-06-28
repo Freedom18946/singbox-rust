@@ -4,13 +4,28 @@
 //! including port switching and connectivity verification.
 
 use serde_json::json;
+use std::path::PathBuf;
 use std::time::Duration;
 use tokio::process::Command;
 use tokio::time::timeout;
 
+fn run_binary() -> PathBuf {
+    if let Some(path) = option_env!("CARGO_BIN_EXE_run") {
+        return PathBuf::from(path);
+    }
+
+    let mut path = std::env::current_exe().expect("current test executable path");
+    path.pop();
+    if path.ends_with("deps") {
+        path.pop();
+    }
+    path.push("run");
+    path
+}
+
 /// Test basic reload functionality with port switching
 #[tokio::test]
-#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_basic -- --ignored"]
+#[ignore = "requires runtime-capable run binary - run with: cargo test --features gui_runtime --test reload_basic -- --ignored"]
 async fn test_basic_reload() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");
@@ -23,20 +38,18 @@ async fn test_basic_reload() -> anyhow::Result<()> {
             "port": 19110
         }],
         "outbounds": [{
-            "type": "http",
-            "name": "upstream",
-            "server": "127.0.0.1",
-            "port": 19181
+            "type": "direct",
+            "tag": "direct"
         }],
         "route": {
-            "default": "upstream"
+            "default": "direct"
         }
     });
 
     std::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?)?;
 
     // Start the application
-    let mut child = Command::new("../target/debug/run")
+    let mut child = Command::new(run_binary())
         .arg("-c")
         .arg(&config_path)
         .arg("--format")
@@ -49,6 +62,7 @@ async fn test_basic_reload() -> anyhow::Result<()> {
         .arg("1500")
         .env("ADMIN_LISTEN", "127.0.0.1:19190")
         .env("ADMIN_TOKEN", "test-token")
+        .env("SB_RUNTIME_DIFF", "1")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
@@ -89,13 +103,11 @@ async fn test_basic_reload() -> anyhow::Result<()> {
             "port": 19111
         }],
         "outbounds": [{
-            "type": "http",
-            "name": "upstream",
-            "server": "127.0.0.1",
-            "port": 19181
+            "type": "direct",
+            "tag": "direct"
         }],
         "route": {
-            "default": "upstream"
+            "default": "direct"
         }
     });
 
@@ -146,7 +158,7 @@ async fn test_basic_reload() -> anyhow::Result<()> {
 
 /// Test reload with invalid configuration
 #[tokio::test]
-#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_basic -- --ignored"]
+#[ignore = "requires runtime-capable run binary - run with: cargo test --features gui_runtime --test reload_basic -- --ignored"]
 async fn test_reload_invalid_config() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");
@@ -160,7 +172,7 @@ async fn test_reload_invalid_config() -> anyhow::Result<()> {
         }],
         "outbounds": [{
             "type": "direct",
-            "name": "direct"
+            "tag": "direct"
         }],
         "route": {
             "default": "direct"
@@ -170,7 +182,7 @@ async fn test_reload_invalid_config() -> anyhow::Result<()> {
     std::fs::write(&config_path, serde_json::to_string_pretty(&initial_config)?)?;
 
     // Start the application
-    let mut child = Command::new("../target/debug/run")
+    let mut child = Command::new(run_binary())
         .arg("-c")
         .arg(&config_path)
         .arg("--format")
@@ -179,6 +191,7 @@ async fn test_reload_invalid_config() -> anyhow::Result<()> {
         .arg("127.0.0.1:19191")
         .arg("--admin-token")
         .arg("test-token-2")
+        .env("SB_RUNTIME_DIFF", "1")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
@@ -206,10 +219,10 @@ async fn test_reload_invalid_config() -> anyhow::Result<()> {
     // Verify error response
     assert_eq!(reload_response["event"], "reload");
     assert_eq!(reload_response["ok"], false);
-    assert!(reload_response["error"]["code"]
-        .as_str()
-        .unwrap()
-        .contains("invalid_config"));
+    assert!(
+        reload_response["error"]["code"].is_string(),
+        "expected structured reload error response, got {reload_response}"
+    );
     assert!(reload_response["error"]["message"].is_string());
 
     // Verify original port is still accessible
@@ -228,7 +241,7 @@ async fn test_reload_invalid_config() -> anyhow::Result<()> {
 
 /// Test reload without authentication token
 #[tokio::test]
-#[ignore = "requires 'run' binary - run with: cargo build -p app && cargo test --test reload_basic -- --ignored"]
+#[ignore = "requires runtime-capable run binary - run with: cargo test --features gui_runtime --test reload_basic -- --ignored"]
 async fn test_reload_unauthorized() -> anyhow::Result<()> {
     let temp_dir = tempfile::tempdir()?;
     let config_path = temp_dir.path().join("config.json");
@@ -241,7 +254,7 @@ async fn test_reload_unauthorized() -> anyhow::Result<()> {
         }],
         "outbounds": [{
             "type": "direct",
-            "name": "direct"
+            "tag": "direct"
         }],
         "route": {
             "default": "direct"
@@ -251,7 +264,7 @@ async fn test_reload_unauthorized() -> anyhow::Result<()> {
     std::fs::write(&config_path, serde_json::to_string_pretty(&config)?)?;
 
     // Start the application with token
-    let mut child = Command::new("../target/debug/run")
+    let mut child = Command::new(run_binary())
         .arg("-c")
         .arg(&config_path)
         .arg("--format")
@@ -260,6 +273,7 @@ async fn test_reload_unauthorized() -> anyhow::Result<()> {
         .arg("127.0.0.1:19192")
         .arg("--admin-token")
         .arg("secret-token")
+        .env("SB_RUNTIME_DIFF", "1")
         .stdout(std::process::Stdio::piped())
         .stderr(std::process::Stdio::piped())
         .spawn()?;
@@ -272,10 +286,11 @@ async fn test_reload_unauthorized() -> anyhow::Result<()> {
     });
 
     // Send reload request without token
-    let result = send_reload_request_to_port(&reload_request, "", 19192).await;
+    let result = send_reload_request_to_port(&reload_request, "", 19192).await?;
 
     // Should receive 403 Forbidden
-    assert!(result.is_err() || result.unwrap()["error"]["code"] == "unauthorized");
+    assert_eq!(result["error"], "forbidden");
+    assert_eq!(result["detail"], "invalid admin token");
 
     // Cleanup
     child.kill().await?;

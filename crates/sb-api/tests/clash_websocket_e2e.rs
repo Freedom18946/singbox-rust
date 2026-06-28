@@ -4,12 +4,13 @@
 
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
+use std::sync::Arc;
 use std::time::Duration;
 
 use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
 use sb_api::{clash::ClashApiServer, types::ApiConfig};
-use sb_common::conntrack::{shared_tracker, ConnMetadata, Network};
+use sb_common::conntrack::{shared_tracker, ConnMetadata, ConnTracker, Network};
 use serde_json::Value;
 use serial_test::serial;
 use tokio::sync::oneshot;
@@ -46,10 +47,21 @@ struct TestServer {
 
 impl TestServer {
     async fn start() -> anyhow::Result<Option<Self>> {
-        Self::start_with_auth(None).await
+        Self::start_with_tracker(Arc::new(ConnTracker::new())).await
     }
 
     async fn start_with_auth(auth_token: Option<String>) -> anyhow::Result<Option<Self>> {
+        Self::start_with_auth_and_tracker(auth_token, Arc::new(ConnTracker::new())).await
+    }
+
+    async fn start_with_tracker(tracker: Arc<ConnTracker>) -> anyhow::Result<Option<Self>> {
+        Self::start_with_auth_and_tracker(None, tracker).await
+    }
+
+    async fn start_with_auth_and_tracker(
+        auth_token: Option<String>,
+        tracker: Arc<ConnTracker>,
+    ) -> anyhow::Result<Option<Self>> {
         let config = ApiConfig {
             listen_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
             enable_cors: true,
@@ -61,7 +73,7 @@ impl TestServer {
             log_buffer_size: 100,
         };
 
-        let server = ClashApiServer::new(config)?.with_conn_tracker(shared_tracker());
+        let server = ClashApiServer::new(config)?.with_conn_tracker(tracker);
         let listener =
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(listener) => listener,
@@ -224,8 +236,7 @@ where
     }
 }
 
-fn register_test_connection() -> sb_common::conntrack::ConnId {
-    let tracker = shared_tracker();
+fn register_test_connection(tracker: &ConnTracker) -> sb_common::conntrack::ConnId {
     let id = tracker.next_id();
     let meta = ConnMetadata::new(
         id,
@@ -353,17 +364,13 @@ async fn test_connections_ws_single_client_snapshot() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-// QUARANTINE 2026-05-01: pre-existing failure (R68'' bisected; fails at
-// c9499a39 onward, independent of LC-003). Symptom: ws snapshot omits
-// tracked connection 1. Re-enable by deleting #[ignore] after fixing race.
-#[ignore = "pre-existing ws snapshot race; bisected pre-LC-003 (R68'')"]
 #[serial]
 async fn test_connections_ws_reflects_close_all_updates() -> anyhow::Result<()> {
-    let tracker = shared_tracker();
+    let tracker = Arc::new(ConnTracker::new());
     let _ = tracker.close_all();
-    let tracked_id = register_test_connection();
+    let tracked_id = register_test_connection(tracker.as_ref());
 
-    let Some(server) = TestServer::start().await? else {
+    let Some(server) = TestServer::start_with_tracker(tracker.clone()).await? else {
         let _ = tracker.close_all();
         return Ok(());
     };
@@ -573,17 +580,13 @@ async fn test_connections_ws_closes_on_server_shutdown() -> anyhow::Result<()> {
 }
 
 #[tokio::test]
-// QUARANTINE 2026-05-01: pre-existing failure (R68'' bisected; fails at
-// c9499a39 onward, independent of LC-003). Symptom: ws snapshot omits
-// tracked connection 1. Re-enable by deleting #[ignore] after fixing race.
-#[ignore = "pre-existing ws snapshot race; bisected pre-LC-003 (R68'')"]
 #[serial]
 async fn test_connections_ws_memory_remains_bounded_over_time() -> anyhow::Result<()> {
-    let tracker = shared_tracker();
+    let tracker = Arc::new(ConnTracker::new());
     let _ = tracker.close_all();
-    let tracked_id = register_test_connection();
+    let tracked_id = register_test_connection(tracker.as_ref());
 
-    let Some(server) = TestServer::start().await? else {
+    let Some(server) = TestServer::start_with_tracker(tracker.clone()).await? else {
         let _ = tracker.close_all();
         return Ok(());
     };
