@@ -45,20 +45,17 @@ pub struct UpstreamArgs {
     pub format: Format,
 }
 
-pub fn run(global: &GlobalArgs, args: DnsArgs) -> Result<()> {
+pub async fn run(global: &GlobalArgs, args: DnsArgs) -> Result<()> {
     let entries = config_loader::collect_config_entries(&global.config, &global.config_directory)?;
     let cfg = config_loader::load_config(&entries).with_context(|| "load config for DNS tools")?;
     match args.command {
-        DnsCommands::Query(query_args) => run_query(&cfg, query_args),
+        DnsCommands::Query(query_args) => run_query(&cfg, query_args).await,
         DnsCommands::Cache(cache_args) => run_cache(&cfg, cache_args),
         DnsCommands::Upstream(upstream_args) => run_upstream(&cfg, upstream_args),
     }
 }
 
-fn run_query(cfg: &sb_config::Config, args: QueryArgs) -> Result<()> {
-    // Build DNS resolver from config IR
-    let rt = tokio::runtime::Runtime::new().context("create tokio runtime")?;
-
+async fn run_query(cfg: &sb_config::Config, args: QueryArgs) -> Result<()> {
     if cfg.ir().dns.is_none() {
         anyhow::bail!("No DNS configuration found in config");
     }
@@ -67,21 +64,19 @@ fn run_query(cfg: &sb_config::Config, args: QueryArgs) -> Result<()> {
         .context("build DNS resolver from config")?;
 
     // Query DNS
-    let result = rt.block_on(async {
-        if args.explain {
-            resolver.explain(&args.domain).await
-        } else {
-            // Regular query
-            let answer = resolver.resolve(&args.domain).await?;
-            Ok(serde_json::json!({
-                "domain": args.domain,
-                "ips": answer.ips,
-                "ttl_secs": answer.ttl.as_secs(),
-                "source": format!("{:?}", answer.source),
-                "rcode": answer.rcode.as_str(),
-            }))
-        }
-    })?;
+    let result = if args.explain {
+        resolver.explain(&args.domain).await
+    } else {
+        // Regular query
+        let answer = resolver.resolve(&args.domain).await?;
+        Ok(serde_json::json!({
+            "domain": args.domain,
+            "ips": answer.ips,
+            "ttl_secs": answer.ttl.as_secs(),
+            "source": format!("{:?}", answer.source),
+            "rcode": answer.rcode.as_str(),
+        }))
+    }?;
 
     // Output result
     output::emit(
@@ -100,9 +95,6 @@ fn run_query(cfg: &sb_config::Config, args: QueryArgs) -> Result<()> {
 }
 
 fn run_cache(cfg: &sb_config::Config, args: CacheArgs) -> Result<()> {
-    // Build DNS resolver and get cache statistics
-    let rt = tokio::runtime::Runtime::new().context("create tokio runtime")?;
-
     let stats = if cfg.ir().dns.is_some() {
         match sb_core::dns::config_builder::resolver_from_ir(cfg.ir()) {
             Ok(resolver) => {
@@ -129,9 +121,6 @@ fn run_cache(cfg: &sb_config::Config, args: CacheArgs) -> Result<()> {
             "cache_capacity": 0,
         })
     };
-
-    // Silence unused warning for runtime (resolver is sync constructed)
-    drop(rt);
 
     output::emit(args.format, || "DNS cache stats".to_string(), &stats);
 

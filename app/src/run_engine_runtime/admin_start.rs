@@ -431,6 +431,7 @@ async fn start_clash_api_from_supervisor(
         .with_service_manager(state_guard.context.service_manager.clone())
         .with_outbound_registry(build_outbound_registry_handle(&state_guard.bridge))
         .with_config_ir(Arc::new(state_guard.current_ir.clone()))
+        .with_runtime_state(state_lock.clone())
         .with_conn_tracker(state_guard.context.conn_tracker.clone());
 
     if let Some(cache) = state_guard.context.cache_file.clone() {

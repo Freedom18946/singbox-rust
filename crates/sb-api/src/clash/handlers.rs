@@ -19,6 +19,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use std::collections::{BTreeMap, HashMap};
 use std::path::PathBuf;
+use std::sync::Arc;
 
 // ===== Constants =====
 
@@ -588,8 +589,6 @@ fn lookup_proxy_history(
     }
 }
 
-use std::sync::Arc;
-
 /// Get all proxies - matches Go's getProxies() + proxyInfo()
 ///
 /// Returns a map of all available proxies including the GLOBAL virtual group.
@@ -1038,9 +1037,19 @@ pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
 ///
 /// Returns the current runtime configuration matching the Go configSchema exactly.
 pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
+    let (config_snapshot, cache_file_snapshot) =
+        if let Some(runtime_state) = &state.runtime_state {
+            let guard = runtime_state.read().await;
+            (
+                Some(Arc::new(guard.current_ir.clone())),
+                guard.context.cache_file.clone(),
+            )
+        } else {
+            (state.global_config.clone(), state.cache_file.clone())
+        };
+
     // Read mode from cache file if available
-    let mode = state
-        .cache_file
+    let mode = cache_file_snapshot
         .as_ref()
         .and_then(|cache| cache.get_clash_mode())
         .and_then(
@@ -1059,14 +1068,14 @@ pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
         .unwrap_or_else(|| sb_core::adapter::clash::get_mode().to_string());
 
     // Read actual ports from config IR if available
-    let (port, socks_port, mixed_port) = if let Some(config) = &state.global_config {
+    let (port, socks_port, mixed_port) = if let Some(config) = &config_snapshot {
         extract_ports_from_config(config)
     } else {
         (0u16, 0u16, None)
     };
 
     // Determine allow-lan from inbound listen addresses
-    let allow_lan = if let Some(config) = &state.global_config {
+    let allow_lan = if let Some(config) = &config_snapshot {
         config
             .inbounds
             .iter()
@@ -1076,7 +1085,7 @@ pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
     };
 
     // Build tun info from config IR
-    let (interface_name, tun) = if let Some(config) = &state.global_config {
+    let (interface_name, tun) = if let Some(config) = &config_snapshot {
         let tun_ib = config
             .inbounds
             .iter()
@@ -1158,6 +1167,13 @@ pub async fn update_configs(
     State(state): State<ApiState>,
     config: Result<Json<serde_json::Value>, JsonRejection>,
 ) -> impl IntoResponse {
+    let cache_file_snapshot = if let Some(runtime_state) = &state.runtime_state {
+        let guard = runtime_state.read().await;
+        guard.context.cache_file.clone()
+    } else {
+        state.cache_file.clone()
+    };
+
     let Json(config) = match config {
         Ok(config) => config,
         Err(_) => {
@@ -1188,8 +1204,9 @@ pub async fn update_configs(
             match mode.parse() {
                 Ok(parsed_mode) => {
                     sb_core::adapter::clash::set_mode(parsed_mode);
-                    if let Some(cache) = &state.cache_file {
+                    if let Some(cache) = &cache_file_snapshot {
                         cache.set_clash_mode(parsed_mode.to_string());
+                        cache.flush();
                     }
                     log::info!("Updated mode: {}", parsed_mode);
                 }

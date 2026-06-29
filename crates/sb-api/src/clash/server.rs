@@ -21,9 +21,10 @@ use sb_common::conntrack::ConnTracker;
 use sb_config::ir::ConfigIR;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
+use sb_core::runtime::supervisor::State as RuntimeState;
 use sb_core::service::ServiceManager;
 use std::{net::SocketAddr, sync::Arc};
-use tokio::sync::{broadcast, oneshot, watch};
+use tokio::sync::{broadcast, oneshot, watch, RwLock};
 use tower_http::cors::{Any, CorsLayer};
 
 /// Clash API server state shared across handlers
@@ -53,6 +54,8 @@ pub struct ApiState {
     pub service_manager: Option<Arc<ServiceManager>>,
     /// Global configuration IR
     pub global_config: Option<Arc<ConfigIR>>,
+    /// Live supervisor state for handlers that must reflect hot reloads.
+    pub runtime_state: Option<Arc<RwLock<RuntimeState>>>,
     /// Cache file service for persistence
     pub cache_file: Option<Arc<dyn sb_core::context::CacheFile>>,
     /// URL test history storage for delay tracking
@@ -88,6 +91,7 @@ impl ApiState {
             provider_manager: Some(Arc::new(ProviderManager::default())),
             service_manager: None,
             global_config: None,
+            runtime_state: None,
             cache_file: None,
             urltest_history: None,
             shutdown_tx,
@@ -122,6 +126,7 @@ impl ApiState {
             provider_manager: Some(Arc::new(ProviderManager::default())),
             service_manager: None,
             global_config: None,
+            runtime_state: None,
             cache_file: None,
             urltest_history: None,
             shutdown_tx,
@@ -199,6 +204,12 @@ impl ClashApiServer {
     /// Set global configuration IR
     pub fn with_config_ir(mut self, config: Arc<ConfigIR>) -> Self {
         self.state.global_config = Some(config);
+        self
+    }
+
+    /// Set live supervisor state for hot-reload-aware read endpoints.
+    pub fn with_runtime_state(mut self, state: Arc<RwLock<RuntimeState>>) -> Self {
+        self.state.runtime_state = Some(state);
         self
     }
 

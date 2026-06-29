@@ -997,6 +997,10 @@ impl crate::context::CacheFile for CacheFileService {
         self.set_clash_mode(mode);
     }
 
+    fn flush(&self) {
+        CacheFileService::flush(self);
+    }
+
     fn set_selected(&self, group: &str, selected: &str) {
         self.set_selected(group, selected);
     }

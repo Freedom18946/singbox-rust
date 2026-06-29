@@ -10,7 +10,23 @@
 
 ---
 
-## Resume (2026-06-29) - GO parity matrix refresh
+## Resume (2026-06-29) - PX-ACCEPT-01 local drop-in release rehearsal
+
+- **PX-ACCEPT-01 DONE locally**: `gui_runtime` built the real `target/debug/app` binary and
+  `agents-only/px_accept_01_release_rehearsal_probe.sh` completed the local drop-in rehearsal
+  from the GUI 1.25.1 composite fixture.
+- **Verification PASS**: see `agents-only/px_accept_01_release_rehearsal.md`. Probe summary:
+  31 PASS / 0 FAIL / 1 WARN (valid `/connections` snapshot; best-effort active slow request not
+  observed). Focused P1313 subset, app build, and probe passed on the final code.
+- **Local blockers fixed in-line**: DNS CLI nested-runtime panic, Clash `/configs` stale reload
+  snapshot, and CacheFile mode persistence flush. Mode switching remains the existing
+  `PATCH /configs` GUI/strict contract; `PUT /configs` stays Go-compatible no-op.
+- **Scope note**: release rehearsal pass only, not new dual-kernel BHV/parity movement. No Wails
+  desktop click automation, root TUN, Linux resolved, official REALITY JA4/ext-order/camouflage,
+  public fresh-cohort gate, workflow automation, or `agents-only/a0_reality_spike/` touch is
+  claimed.
+
+## Previous Resume (2026-06-29) - GO parity matrix refresh
 
 - **GO_PARITY refreshed**: `agents-only/reference/GO_PARITY_MATRIX.md` now leads with the
   current post-FABLE/post1313 PX calibration and keeps old closure accounting only as a

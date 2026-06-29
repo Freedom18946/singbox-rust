@@ -766,6 +766,7 @@ pub trait CacheFile: Send + Sync + std::fmt::Debug {
 
     fn get_clash_mode(&self) -> Option<String>;
     fn set_clash_mode(&self, mode: String);
+    fn flush(&self) {}
     fn set_selected(&self, group: &str, selected: &str);
     fn get_selected(&self, group: &str) -> Option<String>;
     fn get_expand(&self, group: &str) -> Option<bool>;

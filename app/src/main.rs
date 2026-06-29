@@ -148,7 +148,7 @@ async fn main() -> anyhow::Result<()> {
         }
         #[cfg(feature = "router")]
         cli::Commands::Dns(a) => {
-            cli::dns_cli::run(&args.global, a)?;
+            cli::dns_cli::run(&args.global, a).await?;
             Ok(())
         }
         #[cfg(feature = "tools")]
