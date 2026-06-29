@@ -125,10 +125,10 @@ re-binding.
 
 ```bash
 # One-shot smoke test (no kernels involved):
-bash agents-only/mt_gui_02_evidence/mock_infra_smoke.sh
+bash agents-only/archive/MT-GUI/mt_gui_02_evidence/mock_infra_smoke.sh
 
 # Manual:
-python3 agents-only/mt_gui_02_evidence/mock_public_infra.py &
+python3 agents-only/archive/MT-GUI/mt_gui_02_evidence/mock_public_infra.py &
 MOCK_PID=$!
 curl -s http://127.0.0.1:18080/get
 curl -sk https://127.0.0.1:18443/get

@@ -82,19 +82,19 @@
 
 The exact commands that produced this matrix are committed at:
 
-- `agents-only/mt_gui_01_evidence/control_plane_test.sh`
-- `agents-only/mt_gui_01_evidence/data_plane_test.sh`
+- `agents-only/archive/MT-GUI/mt_gui_01_evidence/control_plane_test.sh`
+- `agents-only/archive/MT-GUI/mt_gui_01_evidence/data_plane_test.sh`
 
 Raw output:
 
-- `agents-only/mt_gui_01_evidence/control_plane.txt`
-- `agents-only/mt_gui_01_evidence/data_plane.txt`
+- `agents-only/archive/MT-GUI/mt_gui_01_evidence/control_plane.txt`
+- `agents-only/archive/MT-GUI/mt_gui_01_evidence/data_plane.txt`
 
 To re-run:
 
 ```bash
-bash agents-only/mt_gui_01_evidence/control_plane_test.sh
-bash agents-only/mt_gui_01_evidence/data_plane_test.sh
+bash agents-only/archive/MT-GUI/mt_gui_01_evidence/control_plane_test.sh
+bash agents-only/archive/MT-GUI/mt_gui_01_evidence/data_plane_test.sh
 ```
 
 ---

@@ -13,8 +13,8 @@
 ### 1.1 为何开此卡
 
 singbox-rust 仓库在 2026-02 前完成了一次全量静态审计（以下简称"5.4pro 第二次审稿"，材料见
-`重构package相关/singbox_rust_audit_report.md`，约 506 KB；结构化命中清单见
-`重构package相关/singbox_rust_audit_processed_findings.json`，约 608 KB）。该审计系统性地识别出
+`agents-only/archive/MT-AUDIT/restructure_package_related/singbox_rust_audit_report.md`，约 506 KB；结构化命中清单见
+`agents-only/archive/MT-AUDIT/restructure_package_related/singbox_rust_audit_processed_findings.json`，约 608 KB）。该审计系统性地识别出
 6 大风险类别，并标定了约 649 个生产源文件的原始计数基线。
 
 此后，一系列 maintenance 线（MT-OBS-01 → MT-CONV-03，含 WP-30 系列子任务）陆续修复或降级了
@@ -502,8 +502,8 @@ DERP 是一个自包含的转发协议实现，其逻辑（连接管理、消息
 
 | 数据 | 来源 |
 |------|------|
-| 原始审计基线数值 | `重构package相关/singbox_rust_audit_report.md`（L1–L6 统计表） |
-| 维护线工作内容 | `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md` |
+| 原始审计基线数值 | `agents-only/archive/MT-AUDIT/restructure_package_related/singbox_rust_audit_report.md`（L1–L6 统计表） |
+| 维护线工作内容 | `agents-only/archive/MT-AUDIT/restructure_package_related/2026-03-25_5.4pro第三次审计核验记录.md` |
 | 本次 grep 计数 | MT-AUDIT-01 执行产出，HEAD `89182778` |
 | 测试结果 | `cargo test` 实际输出，HEAD `89182778` |
 | Clippy 结果 | `make clippy` 实际输出，HEAD `89182778` |

@@ -478,7 +478,7 @@ sweep that this card classifies:
 
 ```bash
 cd /Users/bob/Desktop/Projects/ING/sing/singbox-rust
-bash agents-only/mt_gui_02_evidence/run_acceptance.sh
+bash agents-only/archive/MT-GUI/mt_gui_02_evidence/run_acceptance.sh
 ```
 
 To verify the spec update this card made:

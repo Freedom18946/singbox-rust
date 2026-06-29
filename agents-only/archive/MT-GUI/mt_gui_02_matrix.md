@@ -153,7 +153,7 @@ remains deferred (see acceptance §6, §7).
 
 ```bash
 cd /Users/bob/Desktop/Projects/ING/sing/singbox-rust
-bash agents-only/mt_gui_02_evidence/run_acceptance.sh
+bash agents-only/archive/MT-GUI/mt_gui_02_evidence/run_acceptance.sh
 ```
 
 The orchestrator:
@@ -164,7 +164,7 @@ The orchestrator:
    `extra_shape_probe.sh` sequentially.
 4. SIGTERMs both kernels and the mock; reports exit cleanliness.
 5. Writes `run_acceptance.txt` + per-section `.txt` files + `rust_kernel.log` / `go_kernel.log`
-   / `mock_public_infra.log` under `agents-only/mt_gui_02_evidence/`.
+   / `mock_public_infra.log` under `agents-only/archive/MT-GUI/mt_gui_02_evidence/`.
 
 Run is idempotent: clean kill of any leftover PIDs on entry, `SO_REUSEADDR` on all mock
 sockets, graceful shutdown on exit.

@@ -14,7 +14,7 @@
   - `AGENTS.md`
   - `agents-only/{active_context,workpackage_latest,maintenance_recap_2026-04-03}.md`
   - `agents-only/{mt_obs_01,mt_rtc_01,mt_rtc_02,mt_rtc_03,mt_mlog_01,mt_adm_01,mt_contract_01,mt_contract_02}_inventory.md`
-  - `重构package相关/{2026-03-25_5.4pro第三次审计核验记录,singbox_rust_rebuild_workpackage}.md`
+  - `agents-only/archive/MT-AUDIT/restructure_package_related/{2026-03-25_5.4pro第三次审计核验记录,singbox_rust_rebuild_workpackage}.md`
 - 复核后确认最值得继续收敛的是两层重复 seam：
   - metrics exporter lifecycle 在 `RuntimeContext` 与 `tracing_init` 间存在平行 owner/install 路径
   - admin read/query path 在 `AdminDebugState`、endpoint glue、`SecuritySnapshot` 间仍有重复 query 语义

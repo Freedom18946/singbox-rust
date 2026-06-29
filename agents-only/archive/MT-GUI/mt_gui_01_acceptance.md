@@ -104,10 +104,10 @@ go_fork_source/sing-box-1.13.13/sing-box run -c labs/interop-lab/configs/l18_gui
 
 ### Reproducible scripts
 
-- `agents-only/mt_gui_01_evidence/control_plane_test.sh` — orchestrates 10 control-plane scenarios
-- `agents-only/mt_gui_01_evidence/data_plane_test.sh` — verifies SOCKS5 data plane through both kernels
-- `agents-only/mt_gui_01_evidence/control_plane.txt` — raw control-plane output captured 2026-04-10
-- `agents-only/mt_gui_01_evidence/data_plane.txt` — raw data-plane output captured 2026-04-10
+- `agents-only/archive/MT-GUI/mt_gui_01_evidence/control_plane_test.sh` — orchestrates 10 control-plane scenarios
+- `agents-only/archive/MT-GUI/mt_gui_01_evidence/data_plane_test.sh` — verifies SOCKS5 data plane through both kernels
+- `agents-only/archive/MT-GUI/mt_gui_01_evidence/control_plane.txt` — raw control-plane output captured 2026-04-10
+- `agents-only/archive/MT-GUI/mt_gui_01_evidence/data_plane.txt` — raw data-plane output captured 2026-04-10
 
 ---
 
@@ -232,14 +232,14 @@ ls target/release/app
 ls go_fork_source/sing-box-1.13.13/sing-box
 
 # 2. Run control-plane comparison (10 scenarios)
-bash agents-only/mt_gui_01_evidence/control_plane_test.sh
+bash agents-only/archive/MT-GUI/mt_gui_01_evidence/control_plane_test.sh
 
 # 3. Run data-plane comparison (SOCKS5 + connection counter)
-bash agents-only/mt_gui_01_evidence/data_plane_test.sh
+bash agents-only/archive/MT-GUI/mt_gui_01_evidence/data_plane_test.sh
 
 # 4. Inspect raw evidence
-cat agents-only/mt_gui_01_evidence/control_plane.txt
-cat agents-only/mt_gui_01_evidence/data_plane.txt
+cat agents-only/archive/MT-GUI/mt_gui_01_evidence/control_plane.txt
+cat agents-only/archive/MT-GUI/mt_gui_01_evidence/data_plane.txt
 ```
 
 ---

@@ -10,7 +10,17 @@
 
 ---
 
-## Resume (2026-06-28) - P1313-12 GUI 1.25.1 low-priority contract
+## Resume (2026-06-29) - root / agents cleanup
+
+- **Cleanup complete**: ignored local run artifacts were removed; MT-GUI evidence directories
+  moved under `agents-only/archive/MT-GUI/`; root `重构package相关/` moved under
+  `agents-only/archive/MT-AUDIT/restructure_package_related/`.
+- **Deferred by user**: top-level untracked `agents-only/fable5审计报告/*.md` audit reports stay
+  untouched until the stage summary decides whether to keep or drop them.
+- **Scope note**: `agents-only/a0_reality_spike/` remains untouched; no `.github/workflows/*`
+  automation was added or restored.
+
+## Previous Resume (2026-06-28) - P1313-12 GUI 1.25.1 low-priority contract
 
 - **P1313-12 DONE locally**: GUI 1.25.1 generated-config shape is refreshed with a composite
   route/DNS/system-proxy fixture, Clash HTTP Bearer and lazy WebSocket `?token=` contracts are

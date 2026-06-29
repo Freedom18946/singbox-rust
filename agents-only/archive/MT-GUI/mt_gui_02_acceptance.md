@@ -95,7 +95,7 @@ Unchanged from MT-GUI-01:
 ## 3. Reproducible artefacts
 
 ```
-agents-only/mt_gui_02_evidence/
+agents-only/archive/MT-GUI/mt_gui_02_evidence/
 ├── mock_public_infra.py          ← the simulator (≈ 450 lines, pure stdlib)
 ├── mock_public_certs/server.pem  ← auto-generated self-signed cert (gitignored in practice)
 ├── mock_infra_smoke.sh           ← kernel-less smoke test for the mock
@@ -318,14 +318,14 @@ ls target/release/app
 ls go_fork_source/sing-box-1.13.13/sing-box
 
 # 2. Run full acceptance (mock + 2 kernels + 4 test scripts + cleanup)
-bash agents-only/mt_gui_02_evidence/run_acceptance.sh
+bash agents-only/archive/MT-GUI/mt_gui_02_evidence/run_acceptance.sh
 
 # 3. Inspect raw evidence
-cat agents-only/mt_gui_02_evidence/run_acceptance.txt          # aggregated
-cat agents-only/mt_gui_02_evidence/control_plane.txt
-cat agents-only/mt_gui_02_evidence/data_plane.txt
-cat agents-only/mt_gui_02_evidence/subscription_refresh.txt
-cat agents-only/mt_gui_02_evidence/extra_shape_probe.txt
+cat agents-only/archive/MT-GUI/mt_gui_02_evidence/run_acceptance.txt          # aggregated
+cat agents-only/archive/MT-GUI/mt_gui_02_evidence/control_plane.txt
+cat agents-only/archive/MT-GUI/mt_gui_02_evidence/data_plane.txt
+cat agents-only/archive/MT-GUI/mt_gui_02_evidence/subscription_refresh.txt
+cat agents-only/archive/MT-GUI/mt_gui_02_evidence/extra_shape_probe.txt
 ```
 
 The run takes roughly 25–30 seconds on the MT-DEPLOY-01 baseline macOS host.

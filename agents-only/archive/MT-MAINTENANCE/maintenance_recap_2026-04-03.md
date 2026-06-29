@@ -16,8 +16,8 @@
   - `AGENTS.md`
   - `agents-only/{active_context,workpackage_latest,planned_preflight_inventory}.md`
   - `agents-only/{mt_obs_01,mt_rtc_01,mt_rtc_02,mt_rtc_03,mt_hot_obs_01,mt_svc_01,mt_test_01,mt_rd_01,mt_perf_01,mt_adp_01,mt_mlog_01,mt_adm_01,mt_deep_01}_inventory.md`
-  - `重构package相关/2026-03-25_5.4pro第三次审计核验记录.md`
-  - `重构package相关/singbox_rust_rebuild_workpackage.md`
+  - `agents-only/archive/MT-AUDIT/restructure_package_related/2026-03-25_5.4pro第三次审计核验记录.md`
+  - `agents-only/archive/MT-AUDIT/restructure_package_related/singbox_rust_rebuild_workpackage.md`
 
 ### Git / 工作区事实
 

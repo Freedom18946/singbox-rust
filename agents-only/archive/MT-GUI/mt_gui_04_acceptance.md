@@ -233,10 +233,10 @@ ls target/release/app
 ls go_fork_source/sing-box-1.13.13/sing-box
 
 # Run the exhaustive sweep
-bash agents-only/mt_gui_04_evidence/exhaustive_sweep.sh
+bash agents-only/archive/MT-GUI/mt_gui_04_evidence/exhaustive_sweep.sh
 
 # Inspect raw evidence
-cat agents-only/mt_gui_04_evidence/raw_sweep.txt
+cat agents-only/archive/MT-GUI/mt_gui_04_evidence/raw_sweep.txt
 ```
 
 ---

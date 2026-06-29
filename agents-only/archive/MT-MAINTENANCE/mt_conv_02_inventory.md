@@ -12,7 +12,7 @@
 - 已重读：
   - `AGENTS.md`
   - `agents-only/{active_context,workpackage_latest,maintenance_recap_2026-04-03,mt_mlog_01_inventory,mt_conv_01_inventory}.md`
-  - `重构package相关/{2026-03-25_5.4pro第三次审计核验记录,singbox_rust_rebuild_workpackage}.md`
+  - `agents-only/archive/MT-AUDIT/restructure_package_related/{2026-03-25_5.4pro第三次审计核验记录,singbox_rust_rebuild_workpackage}.md`
 - `git status --short --branch` 起点为 `main...origin/main`，workspace 干净
 - 复核目标切口后确认真正还重复的是 install contract：
   - `logging.rs` 仍由 `init_logging(...)` / `init_logging_with_owner(...)` 承载 owner install 与 compat install 两层语义

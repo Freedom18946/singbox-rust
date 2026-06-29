@@ -20,10 +20,10 @@
 | Go binary | `go_fork_source/sing-box-1.13.13/sing-box` |
 | Rust config | `labs/interop-lab/configs/l18_gui_rust.json` (API 19090, SOCKS5 11810) |
 | Go config | `labs/interop-lab/configs/l18_gui_go.json` (API 9090, SOCKS5 11811) |
-| Mock infra | `agents-only/mt_gui_02_evidence/mock_public_infra.py` (HTTP 18080, HTTPS 18443, WS 18081, TCP 18083) |
+| Mock infra | `agents-only/archive/MT-GUI/mt_gui_02_evidence/mock_public_infra.py` (HTTP 18080, HTTPS 18443, WS 18081, TCP 18083) |
 | Auth | Bearer `test-secret` |
-| Script | `agents-only/mt_gui_04_evidence/exhaustive_sweep.sh` |
-| Raw output | `agents-only/mt_gui_04_evidence/raw_sweep.txt` |
+| Script | `agents-only/archive/MT-GUI/mt_gui_04_evidence/exhaustive_sweep.sh` |
+| Raw output | `agents-only/archive/MT-GUI/mt_gui_04_evidence/raw_sweep.txt` |
 
 ---
 

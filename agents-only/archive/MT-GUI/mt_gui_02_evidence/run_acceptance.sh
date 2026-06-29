@@ -3,7 +3,7 @@
 #
 # Starts mock_public_infra, both kernels with the GUI-shape l18_gui_{rust,go}.json
 # configs, and runs control-plane / data-plane / subscription refresh / shape
-# probe in sequence. All raw output is captured under agents-only/mt_gui_02_evidence/.
+# probe in sequence. All raw output is captured under agents-only/archive/MT-GUI/mt_gui_02_evidence/.
 #
 # Intended to be idempotent and self-contained. No repository state changes.
 set -u
