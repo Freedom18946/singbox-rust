@@ -4,19 +4,26 @@
 > Purpose: high-frequency project navigation. S-tier: read every
 > session.
 > Discipline: keep only current-stage facts. This file must stay
-> under 100 lines.
+> under 300 lines.
 > **This file is the single source of truth for volatile state**
 > (phase, parity-BHV, build/gate). Other docs point here, not copy.
 
 ---
 
-## Resume (2026-06-29) - root / agents cleanup
+## Resume (2026-06-29) - fable5 report triage and cleanup
+
+- **Fable5 report triage complete**: the 8 top-level
+  `agents-only/fable5审计报告/*.md` audit reports were reviewed and kept in place as
+  B-tier historical calibration input, with a stage-summary extract in the fable5
+  audit directory.
+- **Use with caution**: fable5 is a 2026-06-10 pre-closeout snapshot at HEAD `02d8d16e`.
+  It seeded the post-FABLE packages (GUI P0s, reload/liveness P1 cluster, docs/lint/test
+  hygiene), but raw fable5 P0/P1 findings must not be quoted as current blockers without
+  checking the post-FABLE package map, `agents-only/post1313/`, and this file.
 
 - **Cleanup complete**: ignored local run artifacts were removed; MT-GUI evidence directories
   moved under `agents-only/archive/MT-GUI/`; root `重构package相关/` moved under
   `agents-only/archive/MT-AUDIT/restructure_package_related/`.
-- **Deferred by user**: top-level untracked `agents-only/fable5审计报告/*.md` audit reports stay
-  untouched until the stage summary decides whether to keep or drop them.
 - **Scope note**: `agents-only/a0_reality_spike/` remains untouched; no `.github/workflows/*`
   automation was added or restored.
 

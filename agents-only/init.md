@@ -59,7 +59,7 @@ agents-only/reference/SCRIPTS-MAP.md       # scripts/ 与 06-scripts/ 全景
 
 1. **先读后写**：任何修改前先完成本检查清单。
 2. **单一真相源**：易变数字（parity / 测试数 / 门禁）只活在权威源里，引用不复制（见 `CLAUDE.md`）。
-3. **更新上下文**：任务结束前更新 `agents-only/active_context.md`（≤100 行，先删旧快照）。
+3. **更新上下文**：任务结束前更新 `agents-only/active_context.md`（≤300 行，先删旧快照）。
 4. **记录经验**：学到模式/踩到坑 → 更新 `agents-only/memory/`（注意：是 `memory/`，不是 `07-memory/`）。
 5. **关闭即归档**：工作线关闭后产物 `git mv` 进 `archive/{track}/`，不留顶层、不在根目录建工作目录。
 6. **查阅术语**：不确定术语查 `reference/GLOSSARY.md`；操作规则参考 `archive/AI-RULES.md`（C-tier）。
