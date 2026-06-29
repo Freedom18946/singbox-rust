@@ -41,7 +41,7 @@
 
 ## 0.2 Closure 与行为证据的关系
 
-- `GO_PARITY_MATRIX.md` 记录的是 closure / matrix 口径
+- `GO_PARITY_MATRIX.md` 当前记录 PX 实现/API 校准，并把历史 closure 账本降为附录
 - `reports/capabilities.json` 记录的是 capability tri-state
 - 强完成度声明必须落到行为级证据，不能只靠矩阵或文档文字闭环
 
@@ -53,9 +53,9 @@
 
 | 指标 | 目标 | 当前口径 | 证据要求 |
 |------|------|---------|---------|
-| 收口状态 | `Remaining = 0` | `209/209 closed`（acceptance baseline；含 accepted limitations / de-scoped 决策） | `GO_PARITY_MATRIX.md` + 对应历史/行为证据 |
+| 收口状态 | `Remaining = 0` | `209/209 closed` 是历史 closure 指标（含 accepted limitations / de-scoped 决策），不再作为当前主文口径 | `GO_PARITY_MATRIX.md` 历史附录 + 对应历史/行为证据 |
 | 行为级能力声明 | 高风险声明必须有行为证据 | 不允许仅靠 closure 矩阵证明“全部行为完全对齐” | capability evidence + 可执行验证 |
-| Inbound / Outbound / DNS / Rules | 保持矩阵与实现说明一致 | 具体项见 `GO_PARITY_MATRIX.md` | 测试、运行、限制说明 |
+| Inbound / Outbound / DNS / Rules | 保持矩阵与实现说明一致 | 当前实现/API 差异看 `GO_PARITY_MATRIX.md` 的 Current PX Ledger | 测试、运行、限制说明 |
 
 ### 1.2 协议验收检查表
 

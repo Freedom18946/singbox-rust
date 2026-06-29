@@ -21,14 +21,14 @@ Use these in order:
 1. `agents-only/active_context.md` for volatile status, gates, and next step.
 2. `agents-only/fable5审计报告/post_fable_packages/README.md` for post-FABLE package state.
 3. `labs/interop-lab/docs/dual_kernel_golden_spec.md` for the behavior parity ledger.
-4. `agents-only/reference/GO_PARITY_MATRIX.md` for historical acceptance closure accounting.
+4. `agents-only/reference/GO_PARITY_MATRIX.md` for current PX calibration plus the historical closure appendix.
 5. `docs/capabilities.md` and `reports/capabilities.json` for docs-only capability snapshots.
 
 ## Current Status Summary
 
 - L1-L25 are closed, but the repository remains on the GUI.for SingBox 1.25.1
   drop-in replacement path rather than pure maintenance.
-- `GO_PARITY_MATRIX.md` expresses closure status, not blanket proof that every closed item has full behavior-level parity evidence.
+- `GO_PARITY_MATRIX.md` now leads with current PX calibration; its historical closure appendix must not be read as blanket proof that every closed item has full behavior-level parity evidence.
 - `reports/capabilities.json` remains `docs-only` / `snapshot_unverified`; it is a capability ledger, not a substitute for runtime proof.
 - Historical L18/L3 reports remain in the tree as historical snapshots and provenance, not as live certification.
 - MT-GUI-04, BHV, REALITY/T3, and ledger counts are scoped evidence. They must

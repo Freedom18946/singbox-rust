@@ -33,7 +33,7 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 |------|------|
 | [`reference/ACCEPTANCE-CRITERIA.md`](./agents-only/reference/ACCEPTANCE-CRITERIA.md) | 验收标准 |
 | [`reference/ARCHITECTURE-SPEC.md`](./agents-only/reference/ARCHITECTURE-SPEC.md) | 架构规范 |
-| [`reference/GO_PARITY_MATRIX.md`](./agents-only/reference/GO_PARITY_MATRIX.md) | Go 对照矩阵（历史 + 当前审议口径） |
+| [`reference/GO_PARITY_MATRIX.md`](./agents-only/reference/GO_PARITY_MATRIX.md) | Go 对照矩阵（当前 PX 校准 + 历史附录） |
 | [`reference/PROJECT-STRUCTURE.md`](./agents-only/reference/PROJECT-STRUCTURE.md) | 项目结构权威导航 |
 | [`workpackage_latest.md`](./agents-only/workpackage_latest.md) | 阶段总览 |
 | [`memory/README.md`](./agents-only/memory/README.md) | 长期记忆索引 |

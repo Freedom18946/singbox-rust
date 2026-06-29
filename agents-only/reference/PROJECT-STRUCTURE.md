@@ -7,7 +7,7 @@
 
 - 仓库状态：L1-L25 + MT-* 维护/验收线已关闭；MT-REAL-02 REALITY 本地主线已封箱（T3 收口）。当前状态与下一步以 `agents-only/active_context.md` 为准；REALITY 历史长报告见 `agents-only/mt_real_02_baseline.md` + `agents-only/mt_real_02_evidence/`
 - `.github/` 目录仍存在，但 workflow automation 已永久停用；不能再把 workflow 文件或 CI 叙事当作当前结构的一部分
-- 根 `GO_PARITY_MATRIX.md` 是跳转入口；权威正文在 `agents-only/reference/GO_PARITY_MATRIX.md`
+- 根 `GO_PARITY_MATRIX.md` 是跳转入口；权威正文在 `agents-only/reference/GO_PARITY_MATRIX.md`，当前以 PX 校准为主、历史 closure 仅作附录。
 
 ## 顶层目录（当前有效）
 
@@ -126,7 +126,7 @@ singbox-rust/
 | 阶段总览 / phase map | `agents-only/workpackage_latest.md` |
 | 架构边界 | `agents-only/reference/ARCHITECTURE-SPEC.md` |
 | 验收口径 | `agents-only/reference/ACCEPTANCE-CRITERIA.md` |
-| Closure / parity 矩阵 | `agents-only/reference/GO_PARITY_MATRIX.md` |
+| 当前 PX 校准 / 历史 closure 附录 | `agents-only/reference/GO_PARITY_MATRIX.md` |
 | capability ledger 说明 | `docs/capabilities.md` |
 | 历史报告入口 | `reports/README.md` |
 

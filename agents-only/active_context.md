@@ -10,7 +10,15 @@
 
 ---
 
-## Resume (2026-06-29) - fable5 report triage and cleanup
+## Resume (2026-06-29) - GO parity matrix refresh
+
+- **GO_PARITY refreshed**: `agents-only/reference/GO_PARITY_MATRIX.md` now leads with the
+  current post-FABLE/post1313 PX calibration and keeps old closure accounting only as a
+  historical appendix.
+- **Scope note**: no new dual-kernel BHV movement, GUI-ready/drop-in-ready claim, code change,
+  workflow automation, or `agents-only/a0_reality_spike/` touch is implied by this docs pass.
+
+## Previous Resume (2026-06-29) - fable5 report triage and cleanup
 
 - **Fable5 report triage complete**: the 8 top-level
   `agents-only/fable5审计报告/*.md` audit reports were reviewed and kept in place as
