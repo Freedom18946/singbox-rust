@@ -5,7 +5,7 @@ Read-only follow-up to T3-0. **Local capture re-review + official-JA4 cross-chec
 GREASE cross-field correlation + deterministic test-seam & formal-harness DESIGN only.**
 No Rust/Go business-source change, no formal harness committed, no GREASE micro-fix, no
 public network, no entry into T3-1B/T3-1C. Machine summary (sanitized):
-`agents-only/t31a_clienthello_grease_correlation_summary.json`.
+`agents-only/archive/release-cleanup-2026-06/reality-tier3/t31a_clienthello_grease_correlation_summary.json`.
 
 > **Two headline results:** (1) the T3-0 local JA4-equivalent digest is **byte-identical
 > to a from-spec reimplementation of the official FoxIO JA4 algorithm**

@@ -257,7 +257,7 @@ the guard must use `stop_services` (do not rely on `shutdown_context` to stop se
 
 ## U. Files modified
 
-`agents-only/active_context.md` + `agents-only/app_reload_context_cleanup_01a_audit.md` only. No
+`agents-only/active_context.md` + `agents-only/archive/release-cleanup-2026-06/runtime-sidecar/app_reload_context_cleanup_01a_audit.md` only. No
 Rust / Cargo / crate / fixture / `a0_reality_spike/` change.
 
 ## V. Checkpoint commit + push

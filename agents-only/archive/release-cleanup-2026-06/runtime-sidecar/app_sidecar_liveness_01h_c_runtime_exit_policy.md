@@ -199,7 +199,7 @@ as a deferred future proposal, not the immediate next step.
 
 ## R. Files modified
 
-`agents-only/active_context.md` + `agents-only/app_sidecar_liveness_01h_c_runtime_exit_policy.md` only.
+`agents-only/active_context.md` + `agents-only/archive/release-cleanup-2026-06/runtime-sidecar/app_sidecar_liveness_01h_c_runtime_exit_policy.md` only.
 No Rust / Cargo / crate / fixture change.
 
 ## S. Checkpoint commit + push

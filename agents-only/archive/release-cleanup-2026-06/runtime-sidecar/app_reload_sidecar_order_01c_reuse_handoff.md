@@ -117,7 +117,7 @@ that leak.
 
 `crates/sb-core/src/runtime/supervisor.rs` only (impl + tests; `context.rs` not needed —
 `with_v2ray_server` already existed). Checkpoint docs: `agents-only/active_context.md` +
-`agents-only/app_reload_sidecar_order_01c_reuse_handoff.md`. No `app/`, `sb-api/`, Cargo, fixture,
+`agents-only/archive/release-cleanup-2026-06/runtime-sidecar/app_reload_sidecar_order_01c_reuse_handoff.md`. No `app/`, `sb-api/`, Cargo, fixture,
 or `a0_reality_spike/` change.
 
 ## P. Tests added (11, in `runtime::supervisor::tests::reuse_handoff`)

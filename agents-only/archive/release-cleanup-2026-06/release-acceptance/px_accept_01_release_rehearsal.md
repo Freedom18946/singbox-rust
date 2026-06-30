@@ -6,7 +6,7 @@ Branch: `main`
 Profile: `gui_runtime`
 Binary: `target/debug/app`
 Source fixture: `crates/sb-config/tests/golden/gui1251/composite_route_dns_profile.json`
-Probe script: `agents-only/px_accept_01_release_rehearsal_probe.sh`
+Probe script: `agents-only/archive/release-cleanup-2026-06/release-acceptance/px_accept_01_release_rehearsal_probe.sh`
 Probe workdir: `/tmp/px_accept_01_release_rehearsal`
 Probe summary: `/tmp/px_accept_01_release_rehearsal/summary.json`
 
@@ -67,7 +67,7 @@ cargo test -p sb-api --test clash_websocket_e2e test_connections_ws_single_clien
 cargo test -p sb-api --test connections_snapshot_test
 cargo test -p sb-api --test clash_http_e2e test_patch_configs_flushes_cache_file_mode
 cargo build -p app --bin app --features gui_runtime
-WORK=/tmp/px_accept_01_release_rehearsal bash agents-only/px_accept_01_release_rehearsal_probe.sh
+WORK=/tmp/px_accept_01_release_rehearsal bash agents-only/archive/release-cleanup-2026-06/release-acceptance/px_accept_01_release_rehearsal_probe.sh
 ```
 
 ## Local Fixes Made During Rehearsal

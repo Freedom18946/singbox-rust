@@ -1,3 +1,4 @@
+<!-- tier: A -->
 # Agents-Only 文档索引
 
 > **AI 必读**：执行任何任务前，先完成 [init.md](./init.md) 检查清单。
@@ -27,7 +28,7 @@ agents-only/
 ├── memory/                      # A: 经验 + C: implementation-history
 ├── 06-scripts/                  # 本地治理/一致性辅助脚本
 ├── templates/                   # 文档模板
-└── archive/                     # C: 历史归档（含 MT-* 已关闭轨迹）
+└── archive/                     # C: 历史归档（含 release-cleanup-2026-06）
 ```
 
 ---
@@ -41,6 +42,7 @@ agents-only/
 | 阶段总览 / 全局位置 | [workpackage_latest.md](./workpackage_latest.md) |
 | Go 1.13.13 / GUI 1.25.1 后续差异规划 | [post1313/README.md](./post1313/README.md) |
 | REALITY 基线长报告（已封箱，历史参考） | [mt_real_02_baseline.md](./mt_real_02_baseline.md) |
+| 发布前清理归档浓缩索引 | [archive/release-cleanup-2026-06/README.md](./archive/release-cleanup-2026-06/README.md) |
 | 稳定约定 / 硬规则 | [../CLAUDE.md](../CLAUDE.md)、[../AGENTS.md](../AGENTS.md) |
 | 后续开发准则 | [reference/AGENT-DEVELOPMENT-GUIDELINES.md](./reference/AGENT-DEVELOPMENT-GUIDELINES.md) |
 | Rust 规则原文 | [reference/Rust_spec_v2.md](./reference/Rust_spec_v2.md) |

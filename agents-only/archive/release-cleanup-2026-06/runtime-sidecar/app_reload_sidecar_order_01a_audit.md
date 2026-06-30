@@ -197,7 +197,7 @@ ownership.
 
 ## T. Files modified
 
-`agents-only/active_context.md` + `agents-only/app_reload_sidecar_order_01a_audit.md` only. No Rust /
+`agents-only/active_context.md` + `agents-only/archive/release-cleanup-2026-06/runtime-sidecar/app_reload_sidecar_order_01a_audit.md` only. No Rust /
 Cargo / crate / fixture change.
 
 ## U. Checkpoint commit + push

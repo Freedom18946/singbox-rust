@@ -5,7 +5,7 @@ Read-only scoping for tier-3 of the REALITY acceptance model (ClientHello byte-l
 fingerprint parity). **Code review + local controlled capture + normalized diff +
 engineering decision only. No uTLS-equivalent implementation, no public network, no
 business-source change, no T3-1.** Machine summary:
-`agents-only/t30_clienthello_capture_summary.json` (sanitized: normalized/hashed only).
+`agents-only/archive/release-cleanup-2026-06/reality-tier3/t30_clienthello_capture_summary.json` (sanitized: normalized/hashed only).
 
 > **Headline:** the Rust REALITY client is **not** naive rustls — it carries a
 > hand-rolled uTLS-Chrome emulation (the FIX-04/FIX-05 work) that **already achieves

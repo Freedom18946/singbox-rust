@@ -357,7 +357,7 @@ Follow-up queue (registered, **not** the next card):
 
 ## V. Checkpoint commit + push
 
-Two docs only — `agents-only/active_context.md` + `agents-only/app_reload_sidecar_order_01b_fix_proposal.md`.
+Two docs only — `agents-only/active_context.md` + `agents-only/archive/release-cleanup-2026-06/runtime-sidecar/app_reload_sidecar_order_01b_fix_proposal.md`.
 Gates run before commit: `git diff --check`, `verify-consistency.sh`, `check-boundaries.sh`.
 Checkpoint `checkpoint: propose v2ray reload continuity fix`; `a0_reality_spike/` left untracked;
 pushed to `origin main`. No Rust / Cargo / crate / fixture change.

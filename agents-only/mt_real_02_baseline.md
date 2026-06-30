@@ -1,3 +1,4 @@
+<!-- tier: B -->
 # MT-REAL-02: Go uTLS vs Rust REALITY ClientHello Baseline Harness
 
 > **Superseded-governance pointer (2026-06-06).** Current closure governance is

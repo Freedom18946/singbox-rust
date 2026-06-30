@@ -10,7 +10,22 @@
 
 ---
 
-## Resume (2026-06-30) - root files release acceptance
+## Resume (2026-06-30) - agents-only release cleanup
+
+- **Agents-only strong cleanup DONE locally**: top-level closed release/runtime/REALITY-T3
+  documents were moved under `agents-only/archive/release-cleanup-2026-06/`, with a
+  phase summary at `agents-only/archive/release-cleanup-2026-06/README.md`. Live entry
+  files, fresh intake files, post1313, reference, memory, templates, and current evidence
+  working sets stayed in place.
+- **Ignored local artifacts removed**: Python `__pycache__`, `*.log`, and `*.pid` files
+  under `agents-only/` were deleted. Ignored but still-referenced REALITY local configs
+  and snapshots, including `agents-only/mt_real_01_evidence/phase3_ip_direct.json`, were
+  retained.
+- **Scope note**: documentation/navigation and local-artifact hygiene only. No product
+  behavior claim, REALITY closure, dual-kernel BHV/parity movement, workflow automation,
+  or release packaging completion is claimed.
+
+## Previous Resume (2026-06-30) - root files release acceptance
 
 - **Root file acceptance DONE locally**: the requested root release/navigation/config
   file set received a release-level hygiene pass. The stale workspace fuzz exclude
@@ -21,7 +36,7 @@
   `sb-core`, and `interop-lab`; russh moved to 0.60.3 for SSH adapters; app JWT
   dropped direct `rsa`/`pkcs1` and now builds RS256 JWK decoding keys from RSA
   components. Root and fuzz lockfiles were refreshed by local gates.
-- **Verification PASS**: see `agents-only/root_files_release_acceptance.md`.
+- **Verification PASS**: see `agents-only/archive/release-cleanup-2026-06/release-acceptance/root_files_release_acceptance.md`.
   Format, focused JWT test, app/adapters all-features checks, workspace check,
   workspace all-features/all-targets clippy, cargo-deny advisories/license/bans/
   sources, fuzz-check, metadata workspace-membership check, Makefile dry-run,
@@ -42,7 +57,7 @@
   received a release-level hygiene pass. Stale `planning/` directory text was removed
   from the top index, the update stamp was refreshed, and `06-scripts` now lists
   `verify-consistency.sh` / `restore-context.sh` as local governance helpers.
-- **Verification PASS**: see `agents-only/github_agents_only_release_acceptance.md`.
+- **Verification PASS**: see `agents-only/archive/release-cleanup-2026-06/release-acceptance/github_agents_only_release_acceptance.md`.
   Entry links, all `agents-only` shell syntax, Python helper compile, YAML parse,
   JSON parse with the documented zero-byte historical endpoint-capture exception,
   consistency, boundaries, and `git diff --check` passed.
@@ -56,7 +71,7 @@
   `scripts/e2e/` entrypoints received a release-level hygiene pass. Root discovery now
   resolves to the repository root, documented `pids/` and `soak/` anchors are tracked,
   and cleanup oldest-file selection no longer depends on GNU `find -printf`.
-- **Verification PASS**: see `agents-only/e2e_dir_release_acceptance.md`. Bash/zsh
+- **Verification PASS**: see `agents-only/archive/release-cleanup-2026-06/release-acceptance/e2e_dir_release_acceptance.md`. Bash/zsh
   syntax checks, zsh source guard, dry-run cleanup modes, `.e2e/config.yaml` app check,
   `git diff --check`, and the expected `GO_SINGBOX_BIN`-disabled diff path were
   verified locally.
@@ -79,7 +94,7 @@
 - **`.cargo` DONE locally**: `.cargo/config.toml` received release-level review. The ignored
   `[doc] rustdocflags` placement was corrected to `[build].rustdocflags`, making rustdoc warning
   denial effective; two exposed CLI rustdoc comment warnings were fixed.
-- **Verification PASS**: see `agents-only/cargo_config_release_acceptance.md`. Focused HTTP/3
+- **Verification PASS**: see `agents-only/archive/release-cleanup-2026-06/release-acceptance/cargo_config_release_acceptance.md`. Focused HTTP/3
   feature checks, fallback-linker check, real `app` link, `cargo xtask help`, app rustdoc build,
   workspace all-features check, boundaries, consistency, and `git diff --check` passed.
 - **Scope note**: Cargo-configuration hygiene only. No REALITY closure, dual-kernel BHV/parity
@@ -96,9 +111,9 @@
 ## Previous Resume (2026-06-29) - PX-ACCEPT-01 local drop-in release rehearsal
 
 - **PX-ACCEPT-01 DONE locally**: `gui_runtime` built the real `target/debug/app` binary and
-  `agents-only/px_accept_01_release_rehearsal_probe.sh` completed the local drop-in rehearsal
+  `agents-only/archive/release-cleanup-2026-06/release-acceptance/px_accept_01_release_rehearsal_probe.sh` completed the local drop-in rehearsal
   from the GUI 1.25.1 composite fixture.
-- **Verification PASS**: see `agents-only/px_accept_01_release_rehearsal.md`. Probe summary:
+- **Verification PASS**: see `agents-only/archive/release-cleanup-2026-06/release-acceptance/px_accept_01_release_rehearsal.md`. Probe summary:
   31 PASS / 0 FAIL / 1 WARN (valid `/connections` snapshot; best-effort active slow request not
   observed). Focused P1313 subset, app build, and probe passed on the final code.
 - **Local blockers fixed in-line**: DNS CLI nested-runtime panic, Clash `/configs` stale reload
