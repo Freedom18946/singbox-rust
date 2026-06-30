@@ -24,7 +24,8 @@ members = [
   "xtests",
 ]
 exclude = [
-  "crates/sb-adapters/fuzz"
+  # Independent cargo-fuzz workspace; validate via Makefile.fuzz, not root workspace.
+  "fuzz"
 ]
 # Default to building only app (other crates pulled in as needed dependencies)
 default-members = ["app"]

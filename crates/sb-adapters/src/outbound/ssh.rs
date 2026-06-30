@@ -137,13 +137,12 @@ mod inner {
         shared: Arc<SshShared>,
     }
 
-    #[async_trait::async_trait]
     impl russh::client::Handler for SshClient {
         type Error = russh::Error;
 
         async fn check_server_key(
             &mut self,
-            server_public_key: &ssh_key::PublicKey,
+            server_public_key: &russh::keys::PublicKey,
         ) -> Result<bool, Self::Error> {
             if !self.shared.verify {
                 return Ok(true);
@@ -322,27 +321,28 @@ mod inner {
                     .authenticate_password(&config.username, password)
                     .await
                     .map_err(|e| anyhow::anyhow!("SSH password auth failed: {}", e))?
+                    .success()
             } else if let Some(private_key_data) = &config.private_key {
                 let private_key = if private_key_data.starts_with("-----BEGIN") {
-                    russh_keys::decode_secret_key(
+                    russh::keys::decode_secret_key(
                         private_key_data,
                         config.private_key_passphrase.as_deref(),
                     )
                     .map_err(|e| anyhow::anyhow!("Failed to decode private key: {}", e))?
                 } else {
-                    russh_keys::load_secret_key(
+                    russh::keys::load_secret_key(
                         private_key_data,
                         config.private_key_passphrase.as_deref(),
                     )
                     .map_err(|e| anyhow::anyhow!("Failed to load private key: {}", e))?
                 };
                 let key_with_hash =
-                    russh_keys::key::PrivateKeyWithHashAlg::new(Arc::new(private_key), None)
-                        .map_err(|e| anyhow::anyhow!("Failed to create key hash alg: {}", e))?;
+                    russh::keys::PrivateKeyWithHashAlg::new(Arc::new(private_key), None);
                 session
                     .authenticate_publickey(&config.username, key_with_hash)
                     .await
                     .map_err(|e| anyhow::anyhow!("SSH pubkey auth failed: {}", e))?
+                    .success()
             } else {
                 return Err(anyhow::anyhow!("No SSH authentication method provided"));
             };

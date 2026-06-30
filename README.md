@@ -26,7 +26,7 @@ A pragmatic rewrite path for sing-box in Rust. Focused on **good taste**, **neve
 | 文档 | 要求 |
 |------|------|
 | [`init.md`](./agents-only/init.md) | **必须首先执行** - AI 初始化检查 |
-| [`log.md`](./agents-only/log.md) | **任务结束前必须写入** - AI 行为日志 |
+| [`log.md`](./agents-only/log.md) | 历史流水（C-tier，按需；不要替代 `active_context.md`） |
 
 ### 📚 参考文档
 | 文档 | 内容 |

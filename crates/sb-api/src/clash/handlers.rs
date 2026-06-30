@@ -1037,16 +1037,15 @@ pub async fn get_rules(State(state): State<ApiState>) -> impl IntoResponse {
 ///
 /// Returns the current runtime configuration matching the Go configSchema exactly.
 pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
-    let (config_snapshot, cache_file_snapshot) =
-        if let Some(runtime_state) = &state.runtime_state {
-            let guard = runtime_state.read().await;
-            (
-                Some(Arc::new(guard.current_ir.clone())),
-                guard.context.cache_file.clone(),
-            )
-        } else {
-            (state.global_config.clone(), state.cache_file.clone())
-        };
+    let (config_snapshot, cache_file_snapshot) = if let Some(runtime_state) = &state.runtime_state {
+        let guard = runtime_state.read().await;
+        (
+            Some(Arc::new(guard.current_ir.clone())),
+            guard.context.cache_file.clone(),
+        )
+    } else {
+        (state.global_config.clone(), state.cache_file.clone())
+    };
 
     // Read mode from cache file if available
     let mode = cache_file_snapshot

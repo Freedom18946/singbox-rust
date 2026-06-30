@@ -10,7 +10,31 @@
 
 ---
 
-## Resume (2026-06-30) - .github and agents-only acceptance
+## Resume (2026-06-30) - root files release acceptance
+
+- **Root file acceptance DONE locally**: the requested root release/navigation/config
+  file set received a release-level hygiene pass. The stale workspace fuzz exclude
+  now points at root `fuzz/`, README no longer treats `agents-only/log.md` as the
+  volatile-state source, and `deny.toml` records the remaining no-fixed-release
+  `rsa` advisory exception for the optional Arti/Tor graph.
+- **Dependency/API hygiene DONE locally**: hickory moved to 0.26 across `app`,
+  `sb-core`, and `interop-lab`; russh moved to 0.60.3 for SSH adapters; app JWT
+  dropped direct `rsa`/`pkcs1` and now builds RS256 JWK decoding keys from RSA
+  components. Root and fuzz lockfiles were refreshed by local gates.
+- **Verification PASS**: see `agents-only/root_files_release_acceptance.md`.
+  Format, focused JWT test, app/adapters all-features checks, workspace check,
+  workspace all-features/all-targets clippy, cargo-deny advisories/license/bans/
+  sources, fuzz-check, metadata workspace-membership check, Makefile dry-run,
+  docs-link check, and boundaries passed locally. Clippy and deny still emit
+  existing warning-level diagnostics but exit 0.
+- **Spike note**: no spike artifact was deleted in this round. Tracked A41/A42
+  spike materials remain historical projection/mapping evidence, not an expiry
+  cleanup target.
+- **Scope note**: root/config/dependency hygiene only. No product behavior claim,
+  REALITY closure, dual-kernel BHV/parity movement, workflow automation, or release
+  packaging completion is claimed.
+
+## Previous Resume (2026-06-30) - .github and agents-only acceptance
 
 - **`.github` DONE locally**: `.github/` contains only the workflow-disablement README;
   no tracked or untracked `.github/workflows/*` path exists.
@@ -133,8 +157,9 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 
 ## Current Build And Gate
 
-- check/build/clippy (all-features,all-targets): **all PASS, 0 clippy warn**
-  (lint relaxed 2026-06-03: warnings/dead_code deny→warn, safety kept deny).
+- check/build/clippy (all-features,all-targets): **PASS** locally on 2026-06-30.
+  Clippy exits 0 with existing warning-level lint reports (lint relaxed 2026-06-03:
+  warnings/dead_code deny→warn, safety kept deny).
 - cargo check --workspace --all-features: **PASS**. strict check-boundaries.sh: **exit 0**.
 - python3 unittest (reality_probe_tools / clienthello_family /
   dual_kernel_verification): **PASS**. trojan_integration: **20 PASS, 0 ignored**.

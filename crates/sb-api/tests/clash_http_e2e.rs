@@ -543,10 +543,8 @@ async fn test_patch_configs_valid() -> anyhow::Result<()> {
 
 #[tokio::test]
 async fn test_patch_configs_flushes_cache_file_mode() -> anyhow::Result<()> {
-    let cache_path = std::env::temp_dir().join(format!(
-        "sb-api-clash-mode-cache-{}",
-        uuid::Uuid::new_v4()
-    ));
+    let cache_path =
+        std::env::temp_dir().join(format!("sb-api-clash-mode-cache-{}", uuid::Uuid::new_v4()));
     let cache_ir = sb_config::ir::CacheFileIR {
         enabled: true,
         path: Some(cache_path.to_string_lossy().to_string()),
@@ -559,10 +557,9 @@ async fn test_patch_configs_flushes_cache_file_mode() -> anyhow::Result<()> {
         &cache_ir,
     ));
     let cache_for_server: Arc<dyn sb_core::context::CacheFile> = cache.clone();
-    let Some(server) = TestServer::start_with_server(
-        TestServer::new_server()?.with_cache_file(cache_for_server),
-    )
-    .await?
+    let Some(server) =
+        TestServer::start_with_server(TestServer::new_server()?.with_cache_file(cache_for_server))
+            .await?
     else {
         let _ = std::fs::remove_dir_all(&cache_path);
         return Ok(());

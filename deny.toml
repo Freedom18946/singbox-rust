@@ -17,6 +17,10 @@ ignore = [
   "RUSTSEC-2024-0384", # instant unmaintained (via sled->parking_lot 0.11)
   "RUSTSEC-2024-0388", # derivative unmaintained
   "RUSTSEC-2024-0436", # paste unmaintained
+  # No fixed rsa release exists; reachable only through the optional Arti/Tor
+  # adapter graph (tor-llcrypto 0.23). Revisit when the Arti line is upgraded
+  # or upstream rsa publishes a non-vulnerable replacement.
+  "RUSTSEC-2023-0071", # Marvin Attack timing side-channel in rsa
 ]
 
 [licenses]

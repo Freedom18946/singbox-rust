@@ -1,7 +1,8 @@
 use anyhow::{Context, Result};
 use hickory_resolver::{
     config::{ResolverConfig, ResolverOpts},
-    TokioAsyncResolver,
+    net::runtime::TokioRuntimeProvider,
+    TokioResolver,
 };
 use std::net::IpAddr;
 use std::time::Instant;
@@ -9,11 +10,14 @@ use url::Url;
 
 type SecurityMetricsState = crate::admin_debug::security_metrics::SecurityMetricsState;
 
-fn build_resolver() -> TokioAsyncResolver {
+fn build_resolver() -> Result<TokioResolver> {
     let mut opts = ResolverOpts::default();
     opts.cache_size = 1024;
     opts.timeout = std::time::Duration::from_secs(5);
-    TokioAsyncResolver::tokio(ResolverConfig::default(), opts)
+    TokioResolver::builder_with_config(ResolverConfig::default(), TokioRuntimeProvider::default())
+        .with_options(opts)
+        .build()
+        .context("failed to build DNS resolver")
 }
 
 /// Shared DNS resolution logic with optional metrics recording.
@@ -38,7 +42,7 @@ async fn resolve_checked_inner(
         .with_context(|| format!("IDNA normalization failed for host: {host}"))?;
 
     let t0 = Instant::now();
-    let resolver = build_resolver();
+    let resolver = build_resolver()?;
     let resp = resolver.lookup_ip(&normalized_host).await;
     let ms = t0.elapsed().as_millis() as u64;
 

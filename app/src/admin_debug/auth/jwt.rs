@@ -26,16 +26,10 @@ use jsonwebtoken::{
 };
 
 #[cfg(feature = "jwt")]
-use rsa::pkcs1::EncodeRsaPublicKey;
-
-#[cfg(feature = "jwt")]
 use p256::elliptic_curve::sec1::FromEncodedPoint;
 
 #[cfg(feature = "jwt")]
 use pkcs8::EncodePublicKey;
-
-#[cfg(feature = "jwt")]
-use pkcs1;
 
 /// JWT algorithm support levels
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -361,26 +355,7 @@ impl JwtProvider {
                     .as_ref()
                     .ok_or_else(|| AuthError::internal("Missing 'e' in RSA key"))?;
 
-                // Decode base64url
-                let n_bytes = URL_SAFE_NO_PAD.decode(n).map_err(|e| {
-                    AuthError::internal(format!("Invalid base64 in RSA modulus: {e}"))
-                })?;
-                let e_bytes = URL_SAFE_NO_PAD.decode(e).map_err(|e| {
-                    AuthError::internal(format!("Invalid base64 in RSA exponent: {e}"))
-                })?;
-
-                // Build RSA public key
-                let public_key = rsa::RsaPublicKey::new(
-                    rsa::BigUint::from_bytes_be(&n_bytes),
-                    rsa::BigUint::from_bytes_be(&e_bytes),
-                )
-                .map_err(|e| AuthError::internal(format!("Invalid RSA key: {e}")))?;
-
-                let pem = public_key
-                    .to_pkcs1_pem(pkcs1::LineEnding::LF)
-                    .map_err(|e| AuthError::internal(format!("Failed to encode RSA key: {e}")))?;
-
-                DecodingKey::from_rsa_pem(pem.as_bytes()).map_err(|e| {
+                DecodingKey::from_rsa_components(n, e).map_err(|e| {
                     AuthError::internal(format!("Failed to create RSA decoding key: {e}"))
                 })
             }
@@ -706,5 +681,29 @@ mod tests {
 
         // Should not find non-existent key
         assert!(cached.find_key("key3").is_none());
+    }
+
+    #[test]
+    #[cfg(feature = "jwt")]
+    fn test_rs256_jwk_uses_rsa_components() {
+        let config = JwtConfig {
+            jwks_url: Some("https://example.com/.well-known/jwks.json".to_string()),
+            ..Default::default()
+        };
+        let provider = JwtProvider::new(config).unwrap();
+        let jwk = JsonWebKey {
+            kty: "RSA".to_string(),
+            kid: Some("key1".to_string()),
+            alg: Some("RS256".to_string()),
+            n: Some("AQAB".to_string()),
+            e: Some("AQAB".to_string()),
+            crv: None,
+            x: None,
+            y: None,
+        };
+
+        assert!(provider
+            .jwk_to_decoding_key(&jwk, &JwtAlgorithm::RS256)
+            .is_ok());
     }
 }

@@ -17,9 +17,8 @@ use tracing::{debug, info, trace, warn};
 
 #[cfg(feature = "ssh")]
 use {
-    async_trait::async_trait,
     russh::server::{self, Auth, Msg, Session},
-    russh::{Channel, ChannelId, CryptoVec},
+    russh::{Channel, ChannelId},
     std::path::Path,
     tokio::io::{AsyncReadExt, AsyncWriteExt},
 };
@@ -171,7 +170,6 @@ mod ssh_server {
         }
     }
 
-    #[async_trait]
     impl server::Handler for SshServerHandler {
         type Error = anyhow::Error;
 
@@ -189,19 +187,22 @@ mod ssh_server {
             warn!(user = %user, "SSH password authentication failed");
             Ok(Auth::Reject {
                 proceed_with_methods: None,
+                partial_success: false,
             })
         }
 
         async fn auth_publickey(
             &mut self,
             user: &str,
-            public_key: &ssh_key::PublicKey,
+            public_key: &russh::keys::PublicKey,
         ) -> Result<Auth, Self::Error> {
             debug!(user = %user, "SSH public key authentication attempt");
 
             if let Some(authorized) = self.authorized_keys.get(user) {
                 // Get base64 encoding of the key
-                let key_fingerprint = public_key.fingerprint(ssh_key::HashAlg::Sha256).to_string();
+                let key_fingerprint = public_key
+                    .fingerprint(russh::keys::HashAlg::Sha256)
+                    .to_string();
                 for auth_key in authorized {
                     // Compare fingerprints or raw key data
                     if auth_key.contains(&key_fingerprint) {
@@ -215,6 +216,7 @@ mod ssh_server {
             warn!(user = %user, "SSH public key authentication failed");
             Ok(Auth::Reject {
                 proceed_with_methods: None,
+                partial_success: false,
             })
         }
 
@@ -300,7 +302,7 @@ mod ssh_server {
                                 }
                                 Ok(n) => {
                                     traffic_read.record_down(n as u64);
-                                    let data = CryptoVec::from_slice(&buf[..n]);
+                                    let data = buf[..n].to_vec();
                                     if session_handle.data(channel_id, data).await.is_err() {
                                         break;
                                     }
@@ -380,12 +382,12 @@ mod ssh_server {
 
     impl SshInboundAdapter {
         /// Load or generate server key
-        pub async fn get_server_key(&self) -> Result<ssh_key::PrivateKey, anyhow::Error> {
+        pub async fn get_server_key(&self) -> Result<russh::keys::PrivateKey, anyhow::Error> {
             if let Some(path) = &self.host_key_path {
                 // Try to load existing key
                 if Path::new(path).exists() {
                     let key_data = tokio::fs::read_to_string(path).await?;
-                    match russh_keys::decode_secret_key(&key_data, None) {
+                    match russh::keys::decode_secret_key(&key_data, None) {
                         Ok(key) => {
                             info!(path = %path, "Loaded SSH host key");
                             return Ok(key);
@@ -397,9 +399,10 @@ mod ssh_server {
                 }
             }
 
-            // Generate new Ed25519 key using ssh_key crate
+            // Generate a new Ed25519 key using russh's forked ssh-key API.
+            let mut rng = rand_0_10::rng();
             let private_key =
-                ssh_key::PrivateKey::random(&mut rand::thread_rng(), ssh_key::Algorithm::Ed25519)
+                russh::keys::PrivateKey::random(&mut rng, russh::keys::Algorithm::Ed25519)
                     .map_err(|e| anyhow::anyhow!("Failed to generate Ed25519 key: {}", e))?;
             info!("Generated new Ed25519 SSH host key");
 

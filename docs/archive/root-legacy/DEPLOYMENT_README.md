@@ -71,13 +71,13 @@ sudo systemctl enable --now singbox-rust
 ## 📚 Documentation
 
 ### Deployment & Operations
-- **[Deployment Guide](../../DEPLOYMENT_GUIDE.md)** - Complete deployment instructions
+- **[Deployment](../../DEPLOYMENT.md)** - Complete deployment instructions
 - **[Troubleshooting](../../TROUBLESHOOTING.md)** - Problem diagnosis and solutions
 - **[Docker Compose README](../../../deployments/docker-compose/README.md)** - Docker stack guide
 
 ### Configuration Examples
-- **[Trojan Server](../../../deployments/config-examples/trojan-server.json)** - Production Trojan config
-- **[Shadowsocks Server](../../../deployments/config-examples/shadowsocks-server.json)** - SS server config
+- `deployments/config-examples/trojan-server.json` - Historical production Trojan config path
+- `deployments/config-examples/shadowsocks-server.json` - Historical SS server config path
 - **[Client Multi-hop](../../../deployments/config-examples/client-multi-hop.json)** - Client with failover
 
 ### Development & Testing
@@ -216,7 +216,7 @@ See [Third-Party Licenses](../../../LICENSES/THIRD-PARTY.md)
 
 - **Documentation**: [GitHub Wiki](#)
 - **Issues**: [GitHub Issues](https://github.com/Freedom18946/singbox-rust/issues)
-- **Roadmap**: [NEXT_STEPS.md](../../../NEXT_STEPS.md)
+- **Roadmap**: [workpackage_latest.md](../../../agents-only/workpackage_latest.md)
 - **Parity Matrix**: [GO_PARITY_MATRIX.md](../../../GO_PARITY_MATRIX.md)
 
 ---

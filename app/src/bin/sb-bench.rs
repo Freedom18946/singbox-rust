@@ -184,11 +184,8 @@ async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
                 let sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
                     .await
                     .expect("failed to bind DNS socket");
-                let mut msg = Message::new();
-                msg.set_id((i & 0xffff) as u16);
-                msg.set_op_code(OpCode::Query);
-                msg.set_message_type(MessageType::Query);
-                msg.set_recursion_desired(true);
+                let mut msg = Message::new((i & 0xffff) as u16, MessageType::Query, OpCode::Query);
+                msg.metadata.recursion_desired = true;
                 msg.add_query(Query::query(name, RecordType::A));
                 let mut data = Vec::with_capacity(64);
                 msg.emit(&mut BinEncoder::new(&mut data))

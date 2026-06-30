@@ -446,15 +446,17 @@ async fn start_single_upstream(
                                         if delay_ms > 0 {
                                             tokio::time::sleep(Duration::from_millis(delay_ms)).await;
                                         }
-                                        let mut resp = Message::new();
-                                        resp.set_id(req.id());
-                                        resp.set_message_type(MessageType::Response);
-                                        resp.set_op_code(req.op_code());
-                                        resp.set_recursion_desired(req.recursion_desired());
-                                        resp.set_recursion_available(true);
-                                        resp.set_authoritative(false);
-                                        resp.set_response_code(ResponseCode::NoError);
-                                        for q in req.queries() {
+                                        let mut resp = Message::new(
+                                            req.metadata.id,
+                                            MessageType::Response,
+                                            req.metadata.op_code,
+                                        );
+                                        resp.metadata.recursion_desired =
+                                            req.metadata.recursion_desired;
+                                        resp.metadata.recursion_available = true;
+                                        resp.metadata.authoritative = false;
+                                        resp.metadata.response_code = ResponseCode::NoError;
+                                        for q in &req.queries {
                                             resp.add_query(q.clone());
                                             // Add synthetic A record (TEST-NET-2, RFC 5737)
                                             if q.query_type() == RecordType::A {
@@ -2168,11 +2170,8 @@ fn format_host_port(host: &str, port: u16) -> String {
 }
 
 async fn dns_query(addr: &str, qname: &str, proxy: Option<&str>) -> Result<serde_json::Value> {
-    let mut message = Message::new();
-    message.set_id(0x1234);
-    message.set_op_code(OpCode::Query);
-    message.set_message_type(MessageType::Query);
-    message.set_recursion_desired(true);
+    let mut message = Message::new(0x1234, MessageType::Query, OpCode::Query);
+    message.metadata.recursion_desired = true;
 
     let name = Name::from_ascii(qname).with_context(|| format!("invalid dns name {qname}"))?;
     message.add_query(Query::query(name, RecordType::A));
@@ -2209,10 +2208,10 @@ async fn dns_query(addr: &str, qname: &str, proxy: Option<&str>) -> Result<serde
 
     let decoded = Message::from_vec(&response).with_context(|| "decoding dns response")?;
     Ok(json!({
-        "id": decoded.id(),
-        "message_type": format!("{:?}", decoded.message_type()),
-        "rcode": format!("{:?}", decoded.response_code()),
-        "answers": decoded.answers().len(),
+        "id": decoded.metadata.id,
+        "message_type": format!("{:?}", decoded.metadata.message_type),
+        "rcode": format!("{:?}", decoded.metadata.response_code),
+        "answers": decoded.answers.len(),
     }))
 }
 
