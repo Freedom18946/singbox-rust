@@ -1,17 +1,7 @@
-//! Service Daemon / 服务守护进程
+//! Service daemon command.
 //!
-//! # Global Strategic Logic / 全局战略逻辑
-//! This module implements the **Main Service Loop** of the application.
-//! 本模块实现了应用程序的 **主服务循环**。
-//!
-//! ## Core Responsibilities / 核心职责
-//! 1. **Initialization / 初始化**: Sets up panic hooks, observability, and loads the initial configuration.
-//! 2. **Bootstrapping / 引导**: Invokes `app::bootstrap` to start the proxy runtime.
-//! 3. **Hot Reload / 热重载**: Monitors the configuration file for changes and reloads the runtime dynamically.
-//! 4. **Signal Handling / 信号处理**: Gracefully handles OS signals (Ctrl+C, SIGTERM) to ensure proper shutdown.
-//!
-//! ## Strategic Flow / 战略流程
-//! `CLI Args` -> `Config Load` -> `Bootstrap` -> `Event Loop (Watch/Signal)` -> `Shutdown`
+//! Prepares run options, one-shot config validation, and optional diagnostics,
+//! then delegates the runtime loop to `app::run_engine::run_supervisor`.
 
 use anyhow::Result;
 use clap::Args;

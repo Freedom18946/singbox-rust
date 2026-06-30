@@ -63,7 +63,7 @@ OUTBOUND_PROTOCOLS = {
     "vmess":       {"impl": "crates/sb-adapters/src/outbound/vmess.rs", "tests": None},
     "vless":       {"impl": "crates/sb-adapters/src/outbound/vless.rs", "tests": None},
     "trojan":      {"impl": "crates/sb-adapters/src/outbound/trojan.rs", "tests": None},
-    "tuic":        {"impl": "crates/sb-core/src/outbound/tuic.rs", "tests": "app/tests/tuic_outbound_e2e.rs"},
+    "tuic":        {"impl": "crates/sb-adapters/src/outbound/tuic.rs", "tests": None},
     "hysteria":    {"impl": "crates/sb-core/src/outbound/hysteria/v1.rs", "tests": "app/tests/hysteria_outbound_test.rs"},
     "hysteria2":   {"impl": "crates/sb-core/src/outbound/hysteria2.rs", "tests": "app/tests/hysteria2_udp_e2e.rs"},
     "shadowtls":   {"impl": "crates/sb-adapters/src/outbound/shadowtls.rs", "tests": None},

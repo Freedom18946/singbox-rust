@@ -1,25 +1,8 @@
-//! singbox-rust — Entrypoint (P1.2)
+//! singbox-rust process entrypoint.
 //!
-//! # Global Strategic Logic / 全局战略逻辑
-//!
-//! This is the application entry point. Its primary responsibility is **Lifecycle Management** and **Environment Initialization**.
-//! It acts as the "Command Dispatcher" rather than the core logic engine.
-//!
-//! 本文件是应用程序入口点。其主要职责是 **生命周期管理** 和 **环境初始化**。
-//! 它充当“命令分发器”，而非核心逻辑引擎。
-//!
-//! ## Key Responsibilities / 核心职责
-//! 1. **Tracing Initialization / 链路追踪初始化**: Sets up the global logging and telemetry system before any logic runs.
-//! 2. **CLI Parsing / 命令行解析**: Parses arguments to determine the operation mode (Check, Run, Route, etc.).
-//! 3. **Config Loading / 配置加载**: For the `run` command, it triggers the loading of the configuration file.
-//! 4. **Feature Gating / 特性门控**: Dispatches commands based on enabled compile-time features (e.g., `router`, `admin_debug`).
-//!
-//! ## Strategic Relations / 战略关联
-//! - **Upstream**: Invoked by the OS process manager.
-//! - **Downstream**:
-//!     - `app::bootstrap`: Used by `run` command to initialize the actual proxy runtime.
-//!     - `app::cli`: Delegates specific command logic to submodules.
-//!     - `sb_config`: Used for configuration parsing and validation.
+//! Owns CLI parsing, global logging setup, process guards, and command dispatch.
+//! Runtime startup for `run` flows through `app::run_engine`; `bootstrap.rs`
+//! remains a legacy compatibility path.
 
 #[cfg(feature = "admin_debug")]
 mod admin_debug;

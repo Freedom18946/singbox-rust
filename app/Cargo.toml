@@ -277,6 +277,10 @@ name = "sb-version"
 path = "src/bin/sb-version.rs"
 
 [[bin]]
+name = "merge"
+path = "src/bin/merge.rs"
+
+[[bin]]
 name = "handshake"
 path = "src/bin/handshake.rs"
 required-features = ["handshake_alpha"]

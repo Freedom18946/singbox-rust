@@ -7,5 +7,5 @@ cd crates/sb-core && cargo run -q --example router_eval -- ../../${R}
 echo "[OK] router_eval ran"
 
 echo "[INFO] router unit tests"
-cd ../.. && cargo test -q --test router_rules -- --nocapture
+cd ../.. && cargo test -q -p sb-core --test router_rules -- --nocapture
 echo "[OK] tests passed"

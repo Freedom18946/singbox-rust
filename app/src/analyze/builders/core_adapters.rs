@@ -1,18 +1,14 @@
-#![allow(dead_code)]
-
-use crate::analyze::builders::wrap_patch_text;
 use crate::analyze::registry::AnalyzeRegistry;
+#[cfg(feature = "sbcore_rules_tool")]
 use anyhow::{Context, Result};
+#[cfg(feature = "sbcore_rules_tool")]
+use sb_core::router::analyze_fix::CliPatch;
+#[cfg(feature = "sbcore_rules_tool")]
+use serde_json::json;
+#[cfg(feature = "sbcore_rules_tool")]
 use serde_json::Value;
 
-/// 将 `sb_core` 的功能适配为注册表 builder
-/// 输入 JSON 约定:
-/// {
-///   "kind": "...",
-///   "text": "<rules content>",
-///   "file": "<optional filename>",
-///   "report": {...}   // 可选，若未提供则由调用方自行分析
-/// }
+#[cfg(feature = "sbcore_rules_tool")]
 fn get_text_file(v: &Value) -> Result<(String, Option<String>)> {
     let text = v
         .get("text")
@@ -26,49 +22,70 @@ fn get_text_file(v: &Value) -> Result<(String, Option<String>)> {
     Ok((text, file))
 }
 
+#[cfg(feature = "sbcore_rules_tool")]
+fn patch_json(patch: Option<CliPatch>) -> Value {
+    match patch {
+        Some(patch) => json!({
+            "noop": false,
+            "patch": {
+                "text": patch.patch_text,
+                "file": patch.file,
+            }
+        }),
+        None => json!({
+            "noop": true,
+            "patch": {
+                "text": "",
+                "file": null,
+            }
+        }),
+    }
+}
+
+#[cfg(feature = "sbcore_rules_tool")]
 fn portrange_merge(input: &Value) -> Result<Value> {
-    let (text, _file) = get_text_file(input)?;
-    // 简化实现，返回模拟补丁
-    let patch_text = format!(
-        "# Portrange merge patch for: {}\n# (placeholder implementation)",
-        text.chars().take(50).collect::<String>()
-    );
-    Ok(wrap_patch_text(patch_text))
+    let (text, file) = get_text_file(input)?;
+    let report = sb_core::router::analyze::analyze(&text);
+    Ok(patch_json(
+        sb_core::router::analyze_fix::build_portrange_merge_patch(&report, &text, file.as_deref()),
+    ))
 }
 
+#[cfg(feature = "sbcore_rules_tool")]
 fn suffix_shadow_cleanup(input: &Value) -> Result<Value> {
-    let (text, _file) = get_text_file(input)?;
-    // 简化实现，返回模拟补丁
-    let patch_text = format!(
-        "# Suffix shadow cleanup patch for: {}\n# (placeholder implementation)",
-        text.chars().take(50).collect::<String>()
-    );
-    Ok(wrap_patch_text(patch_text))
+    let (text, file) = get_text_file(input)?;
+    let report = sb_core::router::analyze::analyze(&text);
+    Ok(patch_json(
+        sb_core::router::analyze_fix::build_suffix_shadow_cleanup_patch(&report, file.as_deref()),
+    ))
 }
 
+#[cfg(feature = "sbcore_rules_tool")]
 fn port_aggregate(input: &Value) -> Result<Value> {
-    let (text, _file) = get_text_file(input)?;
-    // 简化实现，返回模拟补丁
-    let patch_text = format!(
-        "# Port aggregate patch for: {}\n# (placeholder implementation)",
-        text.chars().take(50).collect::<String>()
-    );
-    Ok(wrap_patch_text(patch_text))
+    let (text, file) = get_text_file(input)?;
+    Ok(patch_json(
+        sb_core::router::analyze_fix::build_port_aggregate_patch(&text, file.as_deref()),
+    ))
 }
 
+#[cfg(feature = "sbcore_rules_tool")]
 fn lint_autofix(input: &Value) -> Result<Value> {
-    let (text, _file) = get_text_file(input)?;
-    // 简化实现，返回模拟补丁
-    let patch_text = format!(
-        "# Lint autofix patch for: {}\n# (placeholder implementation)",
-        text.chars().take(50).collect::<String>()
-    );
-    Ok(wrap_patch_text(patch_text))
+    let (text, file) = get_text_file(input)?;
+    let report = sb_core::router::analyze::analyze(&text);
+    Ok(patch_json(
+        sb_core::router::analyze_fix::build_lint_autofix_patch(&report, &text, file.as_deref()),
+    ))
 }
 
 pub fn register_core_adapters(registry: &AnalyzeRegistry) {
-    registry.register("portrange_merge", portrange_merge as _);
-    registry.register("suffix_shadow_cleanup", suffix_shadow_cleanup as _);
-    registry.register("port_aggregate", port_aggregate as _);
-    registry.register("lint_autofix", lint_autofix as _);
+    #[cfg(feature = "sbcore_rules_tool")]
+    {
+        registry.register("portrange_merge", portrange_merge as _);
+        registry.register("suffix_shadow_cleanup", suffix_shadow_cleanup as _);
+        registry.register("port_aggregate", port_aggregate as _);
+        registry.register("lint_autofix", lint_autofix as _);
+    }
+
+    #[cfg(not(feature = "sbcore_rules_tool"))]
+    let _ = registry;
 }

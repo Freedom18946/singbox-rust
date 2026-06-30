@@ -760,9 +760,3 @@ async fn test_trojan_auth_failure() {
         );
     }
 }
-
-#[tokio::test]
-async fn test_trojan_replay_protection() {
-    // Verify replay protection mechanisms
-    // Placeholder for implementation
-}

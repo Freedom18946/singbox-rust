@@ -10,7 +10,22 @@
 
 ---
 
-## Resume (2026-06-30) - agents-only archive strong compression
+## Resume (2026-06-30) - app release hygiene
+
+- **`app/` release hygiene DONE locally**: removed dead/undiscoverable app source, empty or
+  permanently disabled placeholder tests, simulated performance/validation tests, and ignored
+  stale `app/target/rc` artifacts.
+- **Analyze patch API fixed**: app registry now delegates supported patch kinds to real
+  `sb_core::router::analyze_fix` builders; `supported_patch_kinds()` accepts current
+  `patch_kinds` payloads. The implicit `merge` bin is now explicit in `app/Cargo.toml`.
+- **Verification PASS**: `cargo test -p app --all-features --test registry_demo`;
+  `cargo test -p app --all-features supported_patch_kinds_parse_current_core_payload`;
+  `cargo check -p app --all-targets --all-features`; focused performance/protocol/
+  Shadowsocks/HTTP-chain tests; `cargo fmt --check`; `git diff --check`.
+- **Scope note**: app hygiene only. No REALITY closure, dual-kernel BHV/parity movement,
+  workflow automation, or release packaging completion is claimed.
+
+## Previous Resume (2026-06-30) - agents-only archive strong compression
 
 - **Archive strong compression DONE locally**: raw closed-phase archive packets under
   `agents-only/archive/` were replaced by compact summaries:

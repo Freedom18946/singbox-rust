@@ -304,13 +304,19 @@ pub fn supported_patch_kinds() -> &'static [String] {
         #[cfg(feature = "sbcore_rules_tool")]
         {
             let json = sb_core::router::analyze_fix::supported_patch_kinds_json();
-            // Parse the JSON to extract kinds array
+            // Accept both historical `kinds` and current `patch_kinds` payloads.
             if let Ok(value) = serde_json::from_str::<serde_json::Value>(&json) {
-                if let Some(kinds_array) = value.get("kinds").and_then(|k| k.as_array()) {
-                    return kinds_array
-                        .iter()
-                        .filter_map(|v| v.as_str().map(std::string::ToString::to_string))
-                        .collect();
+                for key in ["patch_kinds", "kinds"] {
+                    if let Some(kinds_array) = value.get(key).and_then(|k| k.as_array()) {
+                        return kinds_array
+                            .iter()
+                            .filter_map(|v| {
+                                v.as_str()
+                                    .or_else(|| v.get("kind").and_then(|kind| kind.as_str()))
+                                    .map(std::string::ToString::to_string)
+                            })
+                            .collect();
+                    }
                 }
             }
         }
@@ -326,6 +332,18 @@ pub fn is_networking_allowed() -> bool {
     match std::env::var("SB_ADMIN_ALLOW_NET") {
         Ok(val) => val != "0" && !val.is_empty(),
         Err(_) => true, // Default to allowed if not set
+    }
+}
+
+#[cfg(all(test, feature = "sbcore_rules_tool"))]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn supported_patch_kinds_parse_current_core_payload() {
+        let kinds = supported_patch_kinds();
+        assert!(kinds.iter().any(|kind| kind == "port_aggregate"));
+        assert!(kinds.iter().any(|kind| kind == "portrange_merge"));
     }
 }
 

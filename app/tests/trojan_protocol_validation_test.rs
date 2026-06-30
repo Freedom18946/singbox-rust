@@ -1,10 +1,8 @@
 #![cfg(feature = "tls_reality")]
-//! Comprehensive Trojan Protocol Validation Tests
+//! Trojan protocol validation tests.
 //!
-//! Test Coverage (Milestone 1, Week 48):
-//! 1. TLS Handshake Testing (1000+ successful TLS 1.3 handshakes)
-//! 2. Connection Management (100+ concurrent connections)
-//! 3. Security Validation (replay attack, auth failures, TLS enforcement)
+//! Covers TLS configuration, connection management, and security-related
+//! configuration invariants.
 //!
 //! Run with:
 //!   cargo test --package app --test trojan_protocol_validation_test --features tls_reality -- --nocapture
@@ -136,53 +134,6 @@ async fn test_tls_handshake_single_connection() {
     // Just verify config can be created
     assert_eq!(password_str(&config), "test-password-123");
     println!("✓ Single TLS handshake config created");
-}
-
-#[tokio::test]
-#[ignore] // Run with --ignored flag for full validation
-async fn test_tls_handshake_1000_connections() {
-    // Test 1000+ successful TLS 1.3 handshakes
-    println!("\n=== Testing 1000+ TLS Handshakes ===");
-
-    let (cert_path, key_path) = generate_test_certificate();
-    let bind_addr: SocketAddr = "127.0.0.1:0".parse().unwrap();
-    let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
-
-    let config = trojan_config(
-        bind_addr,
-        "test-password-handshake",
-        cert_path,
-        key_path,
-        router,
-    );
-
-    // Simulate 1000 handshakes
-    let num_handshakes = 1000;
-    let start = Instant::now();
-    let mut success_count = 0;
-
-    for i in 0..num_handshakes {
-        // In a real test, we'd actually perform TLS handshakes here
-        // For now, we verify config can handle the load
-        let _cfg = config.clone();
-        success_count += 1;
-
-        if i % 100 == 0 {
-            println!("Completed {} handshakes", i);
-        }
-    }
-
-    let elapsed = start.elapsed();
-    let rate = success_count as f64 / elapsed.as_secs_f64();
-
-    println!("Total handshakes: {}", success_count);
-    println!("Success rate: 100%");
-    println!("Time elapsed: {:.2}s", elapsed.as_secs_f64());
-    println!("Handshake rate: {:.2} handshakes/sec", rate);
-
-    assert_eq!(success_count, num_handshakes);
-    assert!(rate > 100.0, "Handshake rate should be > 100/sec");
-    println!("✓ 1000+ TLS handshakes completed successfully");
 }
 
 #[tokio::test]
@@ -380,25 +331,6 @@ async fn test_authentication_password_validation() {
         "Password should be sufficiently long"
     );
     println!("✓ Password-based authentication configured");
-}
-
-#[tokio::test]
-async fn test_authentication_failure_scenario() {
-    // Test authentication failure handling
-    let (cert_path, key_path) = generate_test_certificate();
-    let router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
-
-    let _config = trojan_config(
-        "127.0.0.1:0".parse().unwrap(),
-        "correct-password",
-        cert_path,
-        key_path,
-        router,
-    );
-
-    // In a real scenario, we'd attempt connection with wrong password
-    // and verify it's rejected
-    println!("✓ Authentication failure scenario validated");
 }
 
 #[tokio::test]

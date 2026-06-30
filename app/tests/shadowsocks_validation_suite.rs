@@ -243,22 +243,15 @@ async fn test_ss_chacha20_poly1305() {
 }
 
 // ============================================================================
-// UDP Relay Validation
+// TCP Connectivity Foundation
 // ============================================================================
 
 #[tokio::test]
-async fn test_ss_udp_relay() {
+async fn test_ss_tcp_connectivity_foundation() {
     // Start UDP echo server
     let Some(echo_addr) = start_udp_echo_server().await else {
         return;
     };
-
-    // Note: Full UDP relay testing requires UDP support in both client and server
-    // This is a basic connectivity test. Full UDP relay would need:
-    // - UDP associate command support
-    // - SOCKS5 UDP relay protocol
-    // - NAT session management
-    // For now, we verify TCP connectivity works, which is the foundation
 
     let Some((server_addr, _stop_tx)) = start_ss_server("aes-256-gcm", "test-pass").await else {
         return;
@@ -277,17 +270,13 @@ async fn test_ss_udp_relay() {
     let target = Target {
         host: echo_addr.ip().to_string(),
         port: echo_addr.port(),
-        kind: TransportKind::Tcp, // UDP relay needs special SOCKS5 handling
+        kind: TransportKind::Tcp,
     };
 
-    // Verify basic connectivity (foundation for UDP relay)
     let result = connector.dial(target, DialOpts::default()).await;
-    assert!(
-        result.is_ok(),
-        "Basic connectivity should work as foundation for UDP relay"
-    );
+    assert!(result.is_ok(), "TCP connectivity should work");
 
-    println!("UDP relay test: Basic connectivity verified (full UDP relay requires SOCKS5 UDP associate)");
+    println!("Shadowsocks TCP connectivity verified");
 }
 
 // ============================================================================

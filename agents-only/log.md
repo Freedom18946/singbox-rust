@@ -8570,3 +8570,28 @@ L2.8.4-6 Handlers + WebSocket:
 - `cargo fmt --check`
 
 **结果**: P1313-07 DONE。未添加 GitHub Actions，未声明 dual-kernel parity 变化。
+
+---
+
+## 2026-06-30 app release hygiene
+
+**任务**: 执行 `app/` release-level cleanup：移除死代码、纯占位/永禁测试、假补丁 builder 和 stale 本地 artifact。
+
+**完成内容**:
+- 删除未接入的 `app/src/run_go.rs`、`app/src/cli/probe.rs`、空 tracked 测试、永禁 legacy E2E、纯占位 TLS/TUIC/UDP/TUN 测试，以及模拟式 multihop/performance validation 噪声。
+- `app` analyze registry 改为调用真实 `sb_core::router::analyze_fix` patch builder；`supported_patch_kinds()` 同时支持当前 `patch_kinds` 与历史 `kinds` payload。
+- `merge` bin 在 `app/Cargo.toml` 显式声明；误导性的 `bootstrap`/战略大段注释压缩为当前 `run_engine` 口径。
+- 修正删测后的脚本/feature scanner stale 引用；清理 ignored `app/target/rc` 残留。
+
+**验证**:
+- `cargo test -p app --all-features --test registry_demo`
+- `cargo test -p app --all-features supported_patch_kinds_parse_current_core_payload`
+- `cargo check -p app --all-targets --all-features`
+- `cargo test -p app --all-features --test performance_validation`
+- `cargo test -p app --all-features --test protocol_integration_validation_test`
+- `cargo test -p app --all-features --test protocol_chain_e2e test_http_to_direct_chain`
+- `cargo test -p app --all-features --test shadowsocks_validation_suite test_ss_tcp_connectivity_foundation`
+- `cargo fmt --check`
+- `git diff --check`
+
+**结果**: `app/` hygiene DONE locally。未添加 GitHub Actions，未声明 REALITY/dual-kernel parity 变化。

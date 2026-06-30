@@ -377,11 +377,11 @@ async fn test_socks5_to_direct_chain() {
     assert_eq!(&buf, test_data, "Echo server should return same data");
 }
 
-/// Test: HTTP inbound → SOCKS5 outbound chain
+/// Test: HTTP inbound → direct outbound chain
 ///
-/// Tests protocol chain: Client → HTTP Proxy → Router → SOCKS5 Proxy → Target
+/// Tests protocol chain: Client → HTTP Proxy → Router → Direct → Target
 #[tokio::test]
-async fn test_http_to_socks5_chain() {
+async fn test_http_to_direct_chain() {
     use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
     use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
     use sb_core::router::{Router, RouterHandle};
@@ -398,20 +398,14 @@ async fn test_http_to_socks5_chain() {
         Err(e) => panic!("Failed to start echo server: {}", e),
     };
 
-    // Start a SOCKS5 proxy that will be our outbound
-    // For simplicity, we'll use a direct connection for now
-    // In a full implementation, this would be an actual SOCKS5 server
-
-    // Build outbound registry with SOCKS5 outbound
-    // Note: For this test to work properly, we'd need a real SOCKS5 server
-    // For now, we'll use Direct as a placeholder to test the infrastructure
+    // Build outbound registry with a direct outbound.
     let mut map = std::collections::HashMap::new();
-    map.insert("socks5-out".to_string(), OutboundImpl::Direct);
+    map.insert("direct-out".to_string(), OutboundImpl::Direct);
     let registry = OutboundRegistry::new(map);
     let outbounds = Arc::new(OutboundRegistryHandle::new(registry));
 
-    // Build router with default to socks5-out
-    let router = Router::with_default("socks5-out");
+    // Build router with default to direct-out.
+    let router = Router::with_default("direct-out");
     let router_handle = Arc::new(RouterHandle::new(router));
 
     // Start HTTP CONNECT inbound server

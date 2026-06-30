@@ -14,3 +14,23 @@ fn register_builder_and_use() {
     assert!(out["ok"].as_bool().unwrap());
     assert_eq!(out["data"]["x"].as_i64().unwrap(), 1);
 }
+
+#[cfg(feature = "sbcore_rules_tool")]
+#[test]
+fn default_registry_uses_real_core_patch_builder() {
+    let registry = app::analyze::registry::AnalyzeRegistry::default();
+    let out = registry
+        .build_by_kind(
+            "port_aggregate",
+            &json!({
+                "text": "port:80=direct\nport:443=direct\n",
+                "file": "rules.conf"
+            }),
+        )
+        .expect("registered core patch builder");
+
+    let patch_text = out["patch"]["text"].as_str().expect("patch text");
+    assert!(patch_text.contains("+portset:80,443=direct"));
+    assert!(!patch_text.contains("placeholder implementation"));
+    assert_eq!(out["noop"].as_bool(), Some(false));
+}

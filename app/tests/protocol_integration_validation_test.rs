@@ -1,16 +1,12 @@
-//! Protocol Integration Validation Tests
+//! Local protocol integration smoke tests.
 //!
-//! Test Coverage (Milestone 1, Week 48):
-//! 1. Protocol Chaining (Trojan → Shadowsocks, reverse)
-//! 2. Failover Scenarios (primary failure → fallback)
-//! 3. DNS Integration (leak prevention, FakeIP, various transports)
+//! Covers socket-level timeout, reconnect, concurrency, and cleanup behavior.
 //!
 //! Run with:
 //!   cargo test --package app --test protocol_integration_validation_test -- --nocapture
 
 use std::io;
 use std::net::SocketAddr;
-use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -55,78 +51,6 @@ async fn start_echo_server() -> Option<SocketAddr> {
 
     tokio::time::sleep(Duration::from_millis(100)).await;
     Some(addr)
-}
-
-// ============================================================================
-// PROTOCOL CHAINING TESTS
-// ============================================================================
-
-#[tokio::test]
-async fn test_protocol_chain_config_creation() {
-    // Test that protocol chain configurations can be created
-    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
-
-    // Simulated chain: Trojan inbound → Router → Shadowsocks outbound
-    println!("✓ Protocol chain configuration validated");
-}
-
-#[tokio::test]
-async fn test_trojan_to_shadowsocks_chain_routing() {
-    // Test Trojan → Shadowsocks multi-hop
-    // In a real scenario, this would:
-    // 1. Accept connection on Trojan inbound
-    // 2. Route through router based on rules
-    // 3. Forward to Shadowsocks outbound
-
-    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
-
-    // Verify router is available for chaining
-
-    println!("✓ Trojan → Shadowsocks chain routing validated");
-}
-
-#[tokio::test]
-async fn test_shadowsocks_to_trojan_reverse_chain() {
-    // Test Shadowsocks → Trojan reverse chain
-    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
-
-    // Verify router is available for reverse chaining
-
-    println!("✓ Shadowsocks → Trojan reverse chain validated");
-}
-
-#[tokio::test]
-async fn test_multi_hop_latency_overhead() {
-    // Test multi-hop latency overhead
-    let Some(echo_addr) = start_echo_server().await else {
-        return;
-    };
-
-    // Measure single-hop latency
-    let single_start = std::time::Instant::now();
-    if let Ok(mut stream) = TcpStream::connect(echo_addr).await {
-        let data = b"test";
-        stream.write_all(data).await.expect("write");
-        let mut buf = [0u8; 4];
-        stream.read_exact(&mut buf).await.expect("read");
-    }
-    let single_latency = single_start.elapsed();
-
-    // In a real test, we'd measure multi-hop latency
-    // and verify overhead is acceptable (e.g., ≤10%)
-    println!("Single-hop latency: {:?}", single_latency);
-    println!("✓ Multi-hop latency overhead validated");
-}
-
-#[tokio::test]
-async fn test_routing_decision_based_on_rules() {
-    // Test routing decisions based on domain/IP rules
-    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
-
-    // In a real test, we'd configure routing rules and verify
-    // connections are routed to the correct outbound
-
-    println!("✓ Routing decision based on rules validated");
 }
 
 // ============================================================================
@@ -225,77 +149,12 @@ async fn test_connection_timeout_fallback() {
 }
 
 // ============================================================================
-// DNS INTEGRATION
-// ============================================================================
-
-#[tokio::test]
-async fn test_dns_leak_prevention_concept() {
-    // Test DNS leak prevention concept
-    // In a real implementation, this would verify that DNS queries
-    // go through the configured resolver, not the system resolver
-
-    println!("✓ DNS leak prevention concept validated");
-}
-
-#[tokio::test]
-async fn test_dns_over_various_transports() {
-    // Test DNS over various transports (UDP, DoH, DoT)
-    // This validates that the DNS system supports multiple transports
-
-    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
-
-    println!("✓ DNS transport variety validated (UDP, DoH, DoT, DoQ supported)");
-}
-
-#[tokio::test]
-async fn test_fakeip_integration_concept() {
-    // Test FakeIP integration concept
-    // FakeIP should work with both Trojan and Shadowsocks protocols
-
-    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
-
-    println!("✓ FakeIP integration concept validated");
-}
-
-#[tokio::test]
-async fn test_dns_caching_behavior() {
-    // Test DNS caching behavior
-    // Cached DNS queries should be faster than uncached ones
-
-    // In a real test, we'd measure query times with and without cache
-    println!("✓ DNS caching behavior validated");
-}
-
-// ============================================================================
 // END-TO-END INTEGRATION TESTS
 // ============================================================================
 
 #[tokio::test]
-async fn test_e2e_trojan_shadowsocks_chain() {
-    // End-to-end test: Trojan inbound → Router → Shadowsocks outbound → Echo
-    println!("\n=== E2E: Trojan → Shadowsocks Chain ===");
-
-    let Some(echo_addr) = start_echo_server().await else {
-        return;
-    };
-    let _router = Arc::new(sb_core::router::RouterHandle::new_for_tests());
-
-    // In a real test, this would:
-    // 1. Start Trojan inbound server
-    // 2. Configure router with rules
-    // 3. Configure Shadowsocks outbound to echo server
-    // 4. Connect via Trojan client
-    // 5. Verify data flows through entire chain
-
-    // For now, verify components can be instantiated
-    assert!(echo_addr.port() > 0);
-
-    println!("✓ E2E Trojan → Shadowsocks chain validated");
-}
-
-#[tokio::test]
-async fn test_e2e_concurrent_multi_protocol() {
-    // Test concurrent connections through multiple protocols
+async fn test_concurrent_local_tcp_echo() {
+    // Exercise concurrent TCP echo traffic through local sockets.
     let Some(echo_addr) = start_echo_server().await else {
         return;
     };
@@ -328,37 +187,7 @@ async fn test_e2e_concurrent_multi_protocol() {
     }
 
     assert_eq!(success_count, num_concurrent);
-    println!("✓ Concurrent multi-protocol connections validated");
-}
-
-#[tokio::test]
-#[ignore] // Run with --ignored for full stability test
-async fn test_7_day_stability_simulation() {
-    // 7-day stability test simulation (shortened for testing)
-    println!("\n=== 7-Day Stability Test (Simulated) ===");
-
-    let Some(echo_addr) = start_echo_server().await else {
-        return;
-    };
-    let iterations = 100; // In real test, this would be much higher
-
-    for i in 0..iterations {
-        if let Ok(mut stream) = TcpStream::connect(echo_addr).await {
-            let data = b"stability-test";
-            stream.write_all(data).await.expect("write");
-            let mut buf = [0u8; 14];
-            stream.read_exact(&mut buf).await.expect("read");
-        }
-
-        if i % 10 == 0 {
-            println!("Stability check: {} iterations", i);
-        }
-
-        tokio::time::sleep(Duration::from_millis(10)).await;
-    }
-
-    println!("✓ Stability test completed ({} iterations)", iterations);
-    println!("Note: Run with extended iterations for full 7-day test");
+    println!("✓ Concurrent local TCP echo connections validated");
 }
 
 // ============================================================================
@@ -406,20 +235,4 @@ async fn test_memory_stability_short() {
     }
 
     println!("✓ Short memory stability test passed");
-}
-
-// ============================================================================
-// SUMMARY TEST
-// ============================================================================
-
-#[test]
-fn test_integration_validation_summary() {
-    println!("\n=== Protocol Integration Validation Summary ===");
-    println!("✓ Protocol Chaining: Trojan ↔ Shadowsocks");
-    println!("✓ Failover: Primary failure → fallback");
-    println!("✓ DNS Integration: Leak prevention, multiple transports");
-    println!("✓ E2E: Multi-protocol concurrent connections");
-    println!("✓ Resource Management: Connection cleanup, memory stability");
-    println!("\nNote: Run with --ignored flag for extended tests");
-    println!("===============================================\n");
 }

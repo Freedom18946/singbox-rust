@@ -363,8 +363,7 @@ async fn bench_baseline_direct_tcp() {
 
 /// Benchmark SOCKS5 proxy performance
 ///
-/// This test requires a SOCKS5 server to be running.
-/// For now, it's a placeholder that tests the measurement framework.
+/// Starts a local SOCKS5 server and local echo target.
 #[tokio::test]
 #[ignore] // Run with --ignored
 async fn bench_socks5_proxy() {
