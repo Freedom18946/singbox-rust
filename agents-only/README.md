@@ -25,9 +25,8 @@ agents-only/
 ├── post1313/                    # B: Go 1.13.13 / GUI 1.25.1 差异分析与任务包规划
 ├── reference/                   # A: 权威参考（含 Rust_spec_v2.md）
 ├── memory/                      # A: 经验 + C: implementation-history
-├── 06-scripts/                  # 辅助脚本
+├── 06-scripts/                  # 本地治理/一致性辅助脚本
 ├── templates/                   # 文档模板
-├── planning/                    # 空（活跃规划用；旧 layer12 工作包已归档）
 └── archive/                     # C: 历史归档（含 MT-* 已关闭轨迹）
 ```
 
@@ -57,4 +56,4 @@ agents-only/
 
 ---
 
-*更新时间: 2026-06-19*
+*更新时间: 2026-06-30*

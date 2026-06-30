@@ -10,7 +10,23 @@
 
 ---
 
-## Resume (2026-06-30) - .e2e release acceptance
+## Resume (2026-06-30) - .github and agents-only acceptance
+
+- **`.github` DONE locally**: `.github/` contains only the workflow-disablement README;
+  no tracked or untracked `.github/workflows/*` path exists.
+- **`agents-only` DONE locally**: entry/navigation docs and governance script index
+  received a release-level hygiene pass. Stale `planning/` directory text was removed
+  from the top index, the update stamp was refreshed, and `06-scripts` now lists
+  `verify-consistency.sh` / `restore-context.sh` as local governance helpers.
+- **Verification PASS**: see `agents-only/github_agents_only_release_acceptance.md`.
+  Entry links, all `agents-only` shell syntax, Python helper compile, YAML parse,
+  JSON parse with the documented zero-byte historical endpoint-capture exception,
+  consistency, boundaries, and `git diff --check` passed.
+- **Scope note**: repository-governance hygiene only. No product behavior, REALITY
+  closure, dual-kernel BHV/parity movement, workflow automation, or release packaging
+  completion is claimed.
+
+## Previous Resume (2026-06-30) - .e2e release acceptance
 
 - **`.e2e` DONE locally**: the runtime artifact tree and directly associated
   `scripts/e2e/` entrypoints received a release-level hygiene pass. Root discovery now

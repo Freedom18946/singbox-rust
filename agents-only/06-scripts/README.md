@@ -11,7 +11,9 @@
 |------|------|---------|
 | [analyze-deps.sh](./analyze-deps.sh) | 分析依赖关系 | `./analyze-deps.sh` |
 | [find-violations.sh](./find-violations.sh) | 查找违规代码 | `./find-violations.sh` |
-| [check-boundaries.sh](./check-boundaries.sh) | CI 边界检查 | `./check-boundaries.sh` |
+| [check-boundaries.sh](./check-boundaries.sh) | 本地边界检查 | `./check-boundaries.sh` |
+| [verify-consistency.sh](./verify-consistency.sh) | active_context / workpackage 一致性检查 | `./verify-consistency.sh` |
+| [restore-context.sh](./restore-context.sh) | active_context 灾难恢复草案生成 | `./restore-context.sh` |
 
 ---
 
