@@ -10,7 +10,17 @@
 
 ---
 
-## Resume (2026-06-30) - .cargo release acceptance
+## Resume (2026-06-30) - .claude release acceptance
+
+- **`.claude` DONE locally**: ignored, untracked local Claude tooling state was reviewed and kept
+  local per user direction. It holds stale local permission prompts and an obsolete FIX-04 REALITY
+  plan superseded by committed A1/T3 evidence and current governance, so it remains outside git.
+- **Verification PASS**: see `agents-only/claude_dir_release_acceptance.md`. Ignore/tracking checks,
+  reference search, restored-file proof, consistency, `git diff --check`, and status check passed.
+- **Scope note**: local tooling hygiene only. No product behavior, workflow automation, REALITY
+  closure, release packaging, or dual-kernel BHV/parity movement is claimed.
+
+## Previous Resume (2026-06-30) - .cargo release acceptance
 
 - **`.cargo` DONE locally**: `.cargo/config.toml` received release-level review. The ignored
   `[doc] rustdocflags` placement was corrected to `[build].rustdocflags`, making rustdoc warning
