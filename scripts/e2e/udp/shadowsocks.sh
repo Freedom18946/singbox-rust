@@ -14,7 +14,7 @@ set -euo pipefail
 
 # Configuration
 SCRIPT_DIR="${0:A:h}"
-PROJECT_ROOT="${SCRIPT_DIR}/.."
+PROJECT_ROOT="${SCRIPT_DIR:h:h:h}"
 BINARY_PATH="${PROJECT_ROOT}/target/release/run"
 TEST_CONFIG="/tmp/ss_udp_test_config.json"
 TEST_PID_FILE="/tmp/ss_udp_test.pid"
@@ -315,7 +315,7 @@ check_dependencies() {
 }
 
 # Script entry point
-if [[ "${BASH_SOURCE[0]}" == "${0}" ]]; then
+if [[ "${ZSH_EVAL_CONTEXT:-}" != *:file ]]; then
     if ! check_dependencies; then
         exit 1
     fi

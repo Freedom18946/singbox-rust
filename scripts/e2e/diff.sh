@@ -4,8 +4,8 @@ set -euo pipefail
 # E2E compatibility difference reporter
 # Compares Rust vs Go sing-box outputs and generates diff summaries
 
-SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+SCRIPT_DIR="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(CDPATH= cd -- "$SCRIPT_DIR/../.." && pwd)"
 DIFF_DIR="$ROOT_DIR/target/e2e-diff"
 
 # Ensure diff output directory exists

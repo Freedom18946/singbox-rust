@@ -2,7 +2,7 @@
 # Enhanced E2E cleanup script with smart cleaning capabilities
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
+ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT="$ROOT/.e2e"
 
 # Color output
@@ -30,7 +30,7 @@ OPTIONS:
   --smart                  Smart clean: remove temp files, keep important reports
   --dry-run                Show what would be deleted without actually deleting
   --verbose                Show detailed information about each deletion
-  (no options)             Clean all generated files (preserves README, config, .gitignore)
+  (no options)             Clean all generated files (preserves README, config, .gitignore, .gitkeep)
 
 EXAMPLES:
   $(basename "$0")                         # Full clean
@@ -108,8 +108,8 @@ while [[ $# -gt 0 ]]; do
   esac
 done
 
-# Ensure .e2e directory exists
-mkdir -p "$OUT"
+# Ensure .e2e directory structure exists
+mkdir -p "$OUT/logs" "$OUT/reports" "$OUT/pids" "$OUT/visualizations" "$OUT/artifacts" "$OUT/soak" "$OUT/archives"
 
 # Helper functions
 log_info() {
@@ -136,15 +136,15 @@ count_files() {
   fi
 }
 
-# Remove files with optional dry-run
+# Remove files matched by a safe find invocation with optional dry-run
 remove_files() {
-  local pattern="$1"
-  local description="$2"
-  
-  if [[ -z "$pattern" ]]; then
+  local description="$1"
+  shift
+
+  if [[ $# -eq 0 ]]; then
     return
   fi
-  
+
   local count=0
   while IFS= read -r -d '' file; do
     count=$((count + 1))
@@ -154,8 +154,8 @@ remove_files() {
       log_verbose "Deleting: $file"
       rm -f "$file"
     fi
-  done < <(eval "find $pattern -print0 2>/dev/null || true")
-  
+  done < <(find "$@" -print0 2>/dev/null || true)
+
   if [[ $count -gt 0 ]]; then
     if [[ $DRY_RUN -eq 1 ]]; then
       log_info "Would delete $count $description file(s)"
@@ -163,6 +163,32 @@ remove_files() {
       log_info "Deleted $count $description file(s)"
     fi
   fi
+}
+
+oldest_files() {
+  local dir="$1"
+  local limit="$2"
+
+  python3 - "$dir" "$limit" <<'PY'
+import os
+import sys
+
+root = sys.argv[1]
+limit = int(sys.argv[2])
+files = []
+
+if os.path.isdir(root):
+    for current, _, names in os.walk(root):
+        for name in names:
+            if name == ".gitkeep":
+                continue
+            path = os.path.join(current, name)
+            if os.path.isfile(path):
+                files.append((os.path.getmtime(path), path))
+
+for _, path in sorted(files)[:limit]:
+    sys.stdout.buffer.write(os.fsencode(path) + b"\0")
+PY
 }
 
 # Remove directory contents while preserving .gitkeep
@@ -258,19 +284,15 @@ clean_keep_last() {
     local to_delete=$((total - keep_n))
     log_info "Directory $dir: keeping $keep_n, removing $to_delete file(s)"
     
-    # Find oldest files and delete them
-    if [[ $DRY_RUN -eq 1 ]]; then
-      find "$full_dir" -type f ! -name '.gitkeep' -printf '%T@ %p\n' 2>/dev/null | \
-        sort -n | head -n "$to_delete" | cut -d' ' -f2- | while read -r file; do
-          log_verbose "Would delete: $file"
-        done
-    else
-      find "$full_dir" -type f ! -name '.gitkeep' -printf '%T@ %p\n' 2>/dev/null | \
-        sort -n | head -n "$to_delete" | cut -d' ' -f2- | while read -r file; do
-          log_verbose "Deleting: $file"
-          rm -f "$file"
-        done
-    fi
+    # Find oldest files and delete them.
+    while IFS= read -r -d '' file; do
+      if [[ $DRY_RUN -eq 1 ]]; then
+        log_verbose "Would delete: $file"
+      else
+        log_verbose "Deleting: $file"
+        rm -f "$file"
+      fi
+    done < <(oldest_files "$full_dir" "$to_delete")
   done
 }
 
@@ -301,18 +323,14 @@ smart_clean() {
       local to_delete=$((total - 3))
       log_info "Keeping 3 most recent reports, removing $to_delete older report(s)"
       
-      if [[ $DRY_RUN -eq 1 ]]; then
-        find "$reports_dir" -type f ! -name '.gitkeep' -printf '%T@ %p\n' 2>/dev/null | \
-          sort -n | head -n "$to_delete" | cut -d' ' -f2- | while read -r file; do
-            log_verbose "Would delete: $file"
-          done
-      else
-        find "$reports_dir" -type f ! -name '.gitkeep' -printf '%T@ %p\n' 2>/dev/null | \
-          sort -n | head -n "$to_delete" | cut -d' ' -f2- | while read -r file; do
-            log_verbose "Deleting: $file"
-            rm -f "$file"
-          done
-      fi
+      while IFS= read -r -d '' file; do
+        if [[ $DRY_RUN -eq 1 ]]; then
+          log_verbose "Would delete: $file"
+        else
+          log_verbose "Deleting: $file"
+          rm -f "$file"
+        fi
+      done < <(oldest_files "$reports_dir" "$to_delete")
     fi
   fi
   
@@ -322,19 +340,25 @@ smart_clean() {
   log_info "Smart clean completed"
 }
 
+if [[ $DRY_RUN -eq 1 ]]; then
+  log_warn "DRY RUN MODE - No files will be deleted"
+fi
+
 # Main cleaning logic
 if [[ -n "$OLDER_THAN_DAYS" ]]; then
   clean_older_than
+  if [[ $DRY_RUN -eq 1 ]]; then
+    log_warn "Dry run completed. Run without --dry-run to actually delete files."
+  fi
   exit 0
 fi
 
 if [[ -n "$KEEP_LAST" ]]; then
   clean_keep_last
+  if [[ $DRY_RUN -eq 1 ]]; then
+    log_warn "Dry run completed. Run without --dry-run to actually delete files."
+  fi
   exit 0
-fi
-
-if [[ $DRY_RUN -eq 1 ]]; then
-  log_warn "DRY RUN MODE - No files will be deleted"
 fi
 
 case $MODE in
@@ -382,24 +406,14 @@ case $MODE in
     clean_directory "$OUT/soak" "soak test results"
     
     # Clean any stray files in root (preserving protected files)
-    if [[ $DRY_RUN -eq 1 ]]; then
-      find "$OUT" -maxdepth 1 -type f \
-        ! -name 'README.md' \
-        ! -name 'config.yaml' \
-        ! -name '.gitignore' \
-        -print0 2>/dev/null | while IFS= read -r -d '' file; do
-          log_verbose "Would delete: $file"
-        done
-    else
-      find "$OUT" -maxdepth 1 -type f \
-        ! -name 'README.md' \
-        ! -name 'config.yaml' \
-        ! -name '.gitignore' \
-        -delete 2>/dev/null || true
-    fi
+    remove_files "root generated" "$OUT" -maxdepth 1 -type f \
+      ! -name 'README.md' \
+      ! -name 'config.yaml' \
+      ! -name '.gitignore' \
+      ! -name '.gitkeep'
     
     if [[ $DRY_RUN -eq 0 ]]; then
-      log_info "Cleaned $OUT (preserved README.md, config.yaml, .gitignore)"
+      log_info "Cleaned $OUT (preserved README.md, config.yaml, .gitignore, .gitkeep)"
     fi
     ;;
 esac

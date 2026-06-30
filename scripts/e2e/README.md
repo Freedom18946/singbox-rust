@@ -97,6 +97,7 @@ Tests use the `.e2e/` directory for runtime artifacts:
 ├── pids/              Process IDs
 ├── visualizations/    Test visualizations
 ├── artifacts/         Test artifacts
+├── soak/              Soak test results
 └── archives/          Archived results
 ```
 
@@ -146,7 +147,7 @@ export GO_SINGBOX_BIN=/path/to/sing-box
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT="$(cd "$(dirname "$0")/../.." && pwd)"
+ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../../.." && pwd)"
 cd "$ROOT"
 
 # Setup

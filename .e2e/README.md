@@ -1,6 +1,6 @@
 # E2E Test Artifacts Directory
 
-存放端到端测试的临时文件、日志和测试报告。除 `README.md`、`config.yaml`、`.gitignore` 外，所有文件均不纳入版本控制。
+存放端到端测试的临时文件、日志和测试报告。除 `README.md`、`config.yaml`、`.gitignore` 和目录 `.gitkeep` 外，所有生成文件均不纳入版本控制。
 
 ## 目录结构
 

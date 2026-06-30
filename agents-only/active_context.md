@@ -10,7 +10,20 @@
 
 ---
 
-## Resume (2026-06-30) - Claude memory cleanup policy refresh
+## Resume (2026-06-30) - .e2e release acceptance
+
+- **`.e2e` DONE locally**: the runtime artifact tree and directly associated
+  `scripts/e2e/` entrypoints received a release-level hygiene pass. Root discovery now
+  resolves to the repository root, documented `pids/` and `soak/` anchors are tracked,
+  and cleanup oldest-file selection no longer depends on GNU `find -printf`.
+- **Verification PASS**: see `agents-only/e2e_dir_release_acceptance.md`. Bash/zsh
+  syntax checks, zsh source guard, dry-run cleanup modes, `.e2e/config.yaml` app check,
+  `git diff --check`, and the expected `GO_SINGBOX_BIN`-disabled diff path were
+  verified locally.
+- **Scope note**: E2E artifact/script hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, workflow automation, or release packaging completion is claimed.
+
+## Previous Resume (2026-06-30) - Claude memory cleanup policy refresh
 
 - **`.claude` record reverted**: pushed commit `0a7c3abc` (tracked `agents-only` documentation about
   `.claude/`) was reverted by `5bca4f5f`; local `.claude/` remains present, ignored, and untracked.

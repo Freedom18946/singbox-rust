@@ -1,5 +1,5 @@
 # E2E Test Artifacts - Ignore all generated files but keep structure
-# Only README.md, config.yaml, and this .gitignore are tracked in git
+# README.md, config.yaml, this .gitignore, and directory .gitkeep files are tracked in git
 
 # Generated logs
 logs/**
@@ -52,4 +52,3 @@ MIGRATION_SUMMARY.txt
 !README.md
 !config.yaml
 !.gitignore
-

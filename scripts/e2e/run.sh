@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-ROOT=$(cd "$(dirname "$0")/.." && pwd)
+ROOT="$(CDPATH= cd -- "$(dirname -- "${BASH_SOURCE[0]}")/../.." && pwd)"
 OUT="${ROOT}/.e2e"
 # Create new directory structure
 mkdir -p "$OUT/logs" "$OUT/reports" "$OUT/pids" "$OUT/visualizations" "$OUT/artifacts" "$OUT/soak" "$OUT/archives" "$ROOT/target"
