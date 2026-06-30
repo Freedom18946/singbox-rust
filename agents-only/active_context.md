@@ -10,7 +10,15 @@
 
 ---
 
-## Resume (2026-06-29) - PX-ACCEPT-01 local drop-in release rehearsal
+## Resume (2026-06-30) - A0 REALITY scratch spike cleanup
+
+- **A0 scratch spike deleted locally**: `agents-only/a0_reality_spike/` was a pre-existing
+  untracked feasibility spike from 2026-06-03 and has been removed per user request. Its
+  conclusions are superseded by the committed A1 fixture at `labs/interop-lab/reality_local_fixture/`.
+- **Scope note**: hygiene cleanup only. No REALITY closure, dual-kernel BHV/parity movement,
+  workflow automation, code behavior change, or fixture gate change is claimed.
+
+## Previous Resume (2026-06-29) - PX-ACCEPT-01 local drop-in release rehearsal
 
 - **PX-ACCEPT-01 DONE locally**: `gui_runtime` built the real `target/debug/app` binary and
   `agents-only/px_accept_01_release_rehearsal_probe.sh` completed the local drop-in rehearsal
@@ -87,7 +95,6 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 - OPEN: official FoxIO-tool JA4 crosscheck, extension-order statistical parity,
   `HelloChrome_Auto` drift, tier-2 camouflage. NON-GOAL: L4 byte identity.
 - A2.3 runtime status-JSON rehearsal DEFERRED. Detail: t32 governance; T3-1B `052d4392`.
-- agents-only/a0_reality_spike/ stays pre-existing untracked (do not commit/delete).
 
 ## REALITY Acceptance (3-tier; golden_spec S4)
 
