@@ -12,8 +12,6 @@ rustflags = [
   "--cfg", "reqwest_unstable",
 ]
 
-# Documentation build settings
-[doc]
 rustdocflags = ["-D", "warnings"]
 
 # Target-specific configurations

@@ -45,7 +45,7 @@ pub enum PromCmd {
     ///
     /// 支持：
     /// - --label key=val（可多次）：对 bucket/sum/count 三类样本统一标签过滤
-    /// - --group-by <label>：按某个 label 分组输出每组的 p50/p90/p99/sum/count
+    /// - `--group-by <label>`：按某个 label 分组输出每组的 p50/p90/p99/sum/count
     ///   若分组 label 缺失则归为组名 "_"
     Hist {
         #[arg(long = "metric")]

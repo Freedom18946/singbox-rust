@@ -10,7 +10,18 @@
 
 ---
 
-## Resume (2026-06-30) - A0 REALITY scratch spike cleanup
+## Resume (2026-06-30) - .cargo release acceptance
+
+- **`.cargo` DONE locally**: `.cargo/config.toml` received release-level review. The ignored
+  `[doc] rustdocflags` placement was corrected to `[build].rustdocflags`, making rustdoc warning
+  denial effective; two exposed CLI rustdoc comment warnings were fixed.
+- **Verification PASS**: see `agents-only/cargo_config_release_acceptance.md`. Focused HTTP/3
+  feature checks, fallback-linker check, real `app` link, `cargo xtask help`, app rustdoc build,
+  workspace all-features check, boundaries, consistency, and `git diff --check` passed.
+- **Scope note**: Cargo-configuration hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, workflow automation, or release packaging completion is claimed.
+
+## Previous Resume (2026-06-30) - A0 REALITY scratch spike cleanup
 
 - **A0 scratch spike deleted locally**: `agents-only/a0_reality_spike/` was a pre-existing
   untracked feasibility spike from 2026-06-03 and has been removed per user request. Its

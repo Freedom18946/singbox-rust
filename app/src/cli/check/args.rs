@@ -81,7 +81,7 @@ pub struct CheckArgs {
     /// Migrate input config to the latest schema (v2) before validation/output
     #[arg(long = "migrate", default_value_t = false)]
     pub migrate: bool,
-    /// Output file for --write-normalized (default: <config>.normalized.json)
+    /// Output file for --write-normalized (default: `<config>.normalized.json`)
     #[arg(long = "out")]
     pub out: Option<String>,
 }
