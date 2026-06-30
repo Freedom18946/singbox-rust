@@ -49,7 +49,8 @@
 - 跨会话自动加载的 `MEMORY.md` 索引 + 每条一事一文件。
 - 放：用户画像、对我的工作反馈、代码/历史推不出的项目约束、外部资源指针。
 - **不放**：代码结构、过往修复、git 历史能查到的、只在本次对话有效的东西。
-- 当前已存校正笔记（均经 2026-06-03 复核仍准确）：parity 三轴、boundary 门禁漂移、REALITY arch-limit 实为可动。
+- 当前已存校正笔记（2026-06-30 刷新）：parity 三轴、boundary 门禁漂移、REALITY
+  local mainline 已封箱、cleanup delete-vs-update 必须先问用户、`.claude/` 仅属本地 Claude Code 状态。
 
 **2. agents-only 项目内记忆**（仓库内，团队共享）
 - `active_context.md`：当前易变状态的唯一权威（见上）。
@@ -66,7 +67,12 @@
 - **仓库根目录只放工程结构**（crate、配置、Makefile、LICENSE、README 等）。
 - Agent 的分析/审计/规划草稿一律落 `agents-only/`，**不在根目录新建工作目录**。
 - 关闭轨迹的产物 → `agents-only/archive/{track}/`，不滞留顶层。
-- `.DS_Store`、`*.orig`、`*.tmp`、构建产物等**永不提交**（`.gitignore` 已覆盖；发现即删）。
+- 清理类任务（包括 ignored / scratch / stale / local tooling）**必须先问用户**：删除、更新/保留、
+  还是只记录；不要自行决定。
+- `.DS_Store`、`*.orig`、`*.tmp`、构建产物等**永不提交**（`.gitignore` 已覆盖）；处置前遵守上一条
+  delete-vs-update 询问纪律。
+- `.claude/` 是 Claude Code 本地状态，**永不 track / stage / commit / push**；除非用户明确要求，
+  不为 `.claude/` 生成 tracked 验收报告或上下文记录。
 - Go/GUI 参考源码（`go_fork_source/`、`GUI_fork_source/`）为 gitignore 的外部 fork，体积大但保留。
 
 ---

@@ -10,7 +10,18 @@
 
 ---
 
-## Resume (2026-06-30) - .cargo release acceptance
+## Resume (2026-06-30) - Claude memory cleanup policy refresh
+
+- **`.claude` record reverted**: pushed commit `0a7c3abc` (tracked `agents-only` documentation about
+  `.claude/`) was reverted by `5bca4f5f`; local `.claude/` remains present, ignored, and untracked.
+- **Cleanup discipline updated**: root `CLAUDE.md` and Claude project memory now record the user rule:
+  cleanup tasks must ask delete vs update/keep before acting; `.claude/` is Claude Code local state
+  and must not be tracked, staged, committed, pushed, or documented in tracked artifacts unless
+  explicitly requested.
+- **Scope note**: memory/policy correction only. No product behavior, workflow automation, release
+  packaging, REALITY closure, or dual-kernel BHV/parity movement is claimed.
+
+## Previous Resume (2026-06-30) - .cargo release acceptance
 
 - **`.cargo` DONE locally**: `.cargo/config.toml` received release-level review. The ignored
   `[doc] rustdocflags` placement was corrected to `[build].rustdocflags`, making rustdoc warning
