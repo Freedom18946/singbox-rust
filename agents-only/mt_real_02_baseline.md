@@ -5902,10 +5902,8 @@ sampler/dataplane signal.
 
 ### Archive pointers
 
-- Evidence timeline and falsified hypotheses:
-  agents-only/archive/mt_real_02/round_45_60_evidence_framework.md
-- Closure rationale and stage-3 options:
-  agents-only/archive/mt_real_02/closure_report.md
+- Evidence timeline, falsified hypotheses, closure rationale, and stage-3 options:
+  agents-only/archive/reality_summary.md
 
 ### Framework fields
 

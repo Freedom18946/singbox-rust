@@ -7946,8 +7946,8 @@ L2.8.4-6 Handlers + WebSocket:
 
 **任务**: 关闭 L22 阶段，归档所有规划文档
 **变更**:
-- `agents-only/planning/` → `agents-only/archive/L22/` — 移动 5 个规划文档
-- `agents-only/archive/logs/workpackage_L22_closed.md` — workpackage 快照
+- `agents-only/planning/` → `agents-only/archive/l01_l25_summary.md` — L22 历史已强压缩
+- workpackage 快照 → `agents-only/archive/legacy_research_summary.md` — 旧日志已强压缩
 - `agents-only/active_context.md` — 重写为”无活跃工作包”
 - `agents-only/workpackage_latest.md` — L22 压缩为一行, 清空活跃段
 - `CLAUDE.md` — 阶段更新为 “L1-L22 全部 Closed”

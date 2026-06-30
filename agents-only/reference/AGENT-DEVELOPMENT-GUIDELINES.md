@@ -21,9 +21,7 @@
 6. `agents-only/reference/Rust_spec_v2.md`
 7. `agents-only/reference/ACCEPTANCE-CRITERIA.md`
 8. `agents-only/reference/ARCHITECTURE-SPEC.md`
-9. `agents-only/archive/MT-MAINTENANCE/maintenance_recap_2026-04-03.md`
-10. `agents-only/archive/MT-AUDIT/mt_audit_01_reconciliation.md`
-11. `agents-only/archive/MT-AUDIT/mt_audit_01_full_report.md`
+9. `agents-only/archive/mt_summary.md`（维护复盘 + MT-AUDIT 压缩结论）
 
 解释：
 
@@ -182,4 +180,3 @@
   - 如果不阻塞，是否值得作为高层 regroup 主题推进？
 
 若答案都是否定的（且与 MT-REAL-02 前沿无关），就不应继续开维护卡。
-

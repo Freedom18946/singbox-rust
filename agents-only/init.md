@@ -62,7 +62,7 @@ agents-only/reference/SCRIPTS-MAP.md       # scripts/ 与 06-scripts/ 全景
 3. **更新上下文**：任务结束前更新 `agents-only/active_context.md`（≤300 行，先删旧快照）。
 4. **记录经验**：学到模式/踩到坑 → 更新 `agents-only/memory/`（注意：是 `memory/`，不是 `07-memory/`）。
 5. **关闭即归档**：工作线关闭后产物 `git mv` 进 `archive/{track}/`，不留顶层、不在根目录建工作目录。
-6. **查阅术语**：不确定术语查 `reference/GLOSSARY.md`；操作规则参考 `archive/AI-RULES.md`（C-tier）。
+6. **查阅术语**：不确定术语查 `reference/GLOSSARY.md`；操作规则参考 `archive/README.md`（C-tier）。
 
 ---
 

@@ -100,7 +100,7 @@
 
 | 条目 | 验收标准 |
 |------|---------|
-| ADR 对齐 | 存在 `agents-only/archive/L19-L21-MIG/ADR-L19.3.1-sb-core-role.md` 且当前 reference 文档不再使用旧纯引擎层口径 |
+| ADR 对齐 | 存在 `agents-only/archive/adr_l19_3_1_sb_core_role.md` 且当前 reference 文档不再使用旧纯引擎层口径 |
 | 文档对齐 | `ARCHITECTURE-SPEC.md`、`GLOSSARY.md`、`07-DEPENDENCY-AUDIT.md` 口径一致 |
 | 门禁对齐 | `boundary-policy.json` 与 `check-boundaries.sh` 描述一致 |
 

@@ -1,7 +1,7 @@
 # 架构规范（Architecture Specification）
 
 > **整合自 singbox_archspec_v2**：定义 crate 边界、依赖方向和核心接口。  
-> **L19.3.1 决议生效**：`sb-core` 角色按“内核合集层（Kernel Aggregate）”执行，详见 `agents-only/archive/L19-L21-MIG/ADR-L19.3.1-sb-core-role.md`。
+> **L19.3.1 决议生效**：`sb-core` 角色按“内核合集层（Kernel Aggregate）”执行，详见 `agents-only/archive/adr_l19_3_1_sb_core_role.md`。
 
 ---
 

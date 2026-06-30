@@ -18,7 +18,7 @@
 | L25 | 生产加固 + 跨平台补全 + 文档完善，10/10 任务 | 2026-03-17 |
 | MT-* 维护/验收线（见下表） | 运行时/路由/服务/观测/审计/GUI/部署逐线收口 | 2026-04 |
 
-> 各阶段产物已 `git mv` 进 `archive/{L*,MT-*}/`，C-tier 不主动加载。
+> 各阶段产物已强压缩进 `archive/*_summary.md`，C-tier 不主动加载。
 
 ---
 
@@ -38,19 +38,19 @@
 
 | 线 | 归档位置 |
 |--------|------|
-| MT-OBS/RTC/HOT-OBS/SVC/TEST/RD/PERF/ADP/MLOG/ADM/DEEP/CONTRACT/CONV | `archive/MT-MAINTENANCE/` |
-| MT-RECAP-01（maintenance_recap） | `archive/MT-MAINTENANCE/` |
-| MT-AUDIT-01（reconciliation + full report） | `archive/MT-AUDIT/` |
-| MT-DEPLOY-01 | `archive/MT-DEPLOY/` |
-| MT-GUI-01/02/03/04 | `archive/MT-GUI/` |
-| MT-REAL-01（ARCH-LIMIT-REALITY 收口，2026-04-15） | `archive/MT-REAL-01/` |
-| 旧 deployment-acceptance 下一阶段口径（已被 MT-REAL-02 取代） | `archive/MT-MAINTENANCE/deployment_acceptance_next_stage.md` |
+| MT-OBS/RTC/HOT-OBS/SVC/TEST/RD/PERF/ADP/MLOG/ADM/DEEP/CONTRACT/CONV | `archive/mt_summary.md` |
+| MT-RECAP-01（maintenance_recap） | `archive/mt_summary.md` |
+| MT-AUDIT-01（reconciliation + full report） | `archive/mt_summary.md` |
+| MT-DEPLOY-01 | `archive/mt_summary.md` |
+| MT-GUI-01/02/03/04 | `archive/mt_summary.md` |
+| MT-REAL-01（ARCH-LIMIT-REALITY 收口，2026-04-15） | `archive/reality_summary.md` |
+| 旧 deployment-acceptance 下一阶段口径（已被 MT-REAL-02 取代） | `archive/mt_summary.md` |
 
 ### MT-GUI-04 结论（验收基线，非 parity completion）
 
 - 对所有声明完成项的 exhaustive per-capability acceptance（55 项能力 / 6 类别）。
 - 双内核同时运行 + mock 公网逐项测试，三态：PASS-STRICT / PASS-DIV-COVERED / PASS-ENV-LIMITED。
-- 报告：`archive/MT-GUI/mt_gui_04_acceptance.md`（+ matrix / capability_inventory / gap_list）。
+- 历史摘要：`archive/mt_summary.md`。
 
 ### 下一阶段默认路线
 
