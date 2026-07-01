@@ -13,19 +13,20 @@ cargo build -p app
 ## Validate A Known-Good Example
 
 ```bash
-cargo run -p app -- check -c examples/quick-start/01-minimal.yaml
+cargo run -p app -- check -c examples/quick-start/01-minimal.json --schema-v2-validate --strict
 ```
 
 ## Run A Local Proxy
 
 ```bash
-cargo run -p app -- run -c examples/quick-start/01-minimal.yaml
+cargo run -p app -- run -c examples/quick-start/01-minimal.json
 ```
 
-The default quick-start config listens on `127.0.0.1:1080`. Test it with:
+The JSON quick-start config exposes an HTTP proxy on `127.0.0.1:28090`. Test it
+with:
 
 ```bash
-curl --proxy http://127.0.0.1:1080 https://example.com
+curl --proxy http://127.0.0.1:28090 https://example.com
 ```
 
 ## Useful Follow-Ups

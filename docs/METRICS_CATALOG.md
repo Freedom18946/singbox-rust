@@ -1,4 +1,4 @@
-Singbox‑Rust Metrics Catalog (WS7)
+# Singbox-Rust Metrics Catalog
 
 Purpose
 - Provide a stable catalog of metric families, label keys and accepted value sets.
@@ -6,7 +6,10 @@ Purpose
 - Document noise‑reduction defaults and sensitive data redaction guidance.
 
 Exporters
-- Prometheus (prometheus crate): `sb-metrics` exposes `/metrics` when `SB_METRICS_ADDR=host:port`.
+- Current app operations path: enable admin HTTP with `ADMIN_LISTEN` and scrape
+  `GET /metricsz`.
+- Developer/standalone path: `sb-metrics` exposes `GET /metrics` when
+  `SB_METRICS_ADDR=host:port` is set and the metrics exporter is installed.
 - metrics crate (metrics macros): optionally used by modules; when a recorder is installed, these names will appear under that exporter.
 
 Label Whitelist
@@ -20,7 +23,7 @@ Label Whitelist
 
 Guardrails
 - Enforcement: `crates/sb-core/src/metrics/label_guard.rs` and `crates/sb-metrics/src/labels.rs` validate label keys during metric registration. New label keys must be added deliberately to these lists.
-- CI intent: any unregistered label key causes a panic during tests/startup, surfacing changes early.
+- Local gate intent: any unregistered label key causes a panic during tests/startup, surfacing changes early.
 
 Families (selected)
 - http_method_total {method}
@@ -78,7 +81,7 @@ Notes
 
 Noise Reduction
 - Logging sampling: `SB_LOG_SAMPLE=<N>` enables per‑target rate limiting (per second) in `app/src/logging.rs`.
-- Exporter error suppression: `/metrics` HTTP accept/serve errors are rate‑limited (max once/30s per class) in `sb-metrics`.
+- Exporter error suppression: standalone `/metrics` HTTP accept/serve errors are rate‑limited (max once/30s per class) in `sb-metrics`.
 - Cardinality monitor: `sb-metrics::cardinality` tracks unique label combinations and warns when thresholds are exceeded.
 - Unified error classification: use `sb_core::metrics::ErrorClass` helpers to map errors to a stable `{timeout|dns|tls|io|auth|protocol|other}` set. Convenience wrappers:
   - `sb_core::metrics::record_outbound_error(kind, &err)`
@@ -98,9 +101,12 @@ Sensitive Data Redaction
 - Avoid dumping full configs. If necessary, prefer structured logs with redacted fields.
 
 Operational Notes
-- Enable Prometheus exporter: set `SB_METRICS_ADDR=127.0.0.1:9090` and call `sb_metrics::maybe_spawn_http_exporter_from_env()` during startup.
+- Current app runtime: set `ADMIN_LISTEN=127.0.0.1:19090` and scrape
+  `http://127.0.0.1:19090/metricsz`.
 - Build info and uptime gauges are emitted automatically once metrics are initialized.
-- Build with metrics enabled:
-  - Recommended: app with `--features observe` or `--features acceptance` (includes `sb-metrics`).
-  - Run example exporter: `cargo run -p app --features observe --bin metrics-serve` then curl `http://127.0.0.1:9090/metrics`.
-  - Or run main: set `SB_METRICS_ADDR=127.0.0.1:9090` and run any `app` binary; exporter spawns automatically (see app/src/tracing_init.rs).
+- Developer exporter path:
+  - Build with `--features observe` or `--features acceptance` (includes `sb-metrics`).
+  - Run `cargo run -p app --features observe --bin metrics-serve` and scrape
+    `http://127.0.0.1:9090/metrics`.
+  - Or set `SB_METRICS_ADDR=127.0.0.1:9090` before starting a metrics-enabled
+    runtime that installs the standalone exporter.

@@ -273,10 +273,10 @@ cargo build -p app --features "acceptance,adapters,router" --release
 ./target/release/app route -c config.json --dest example.com:443 --explain --with-trace
 
 # 3. Start with verbose logging
-RUST_LOG=info ./target/release/app run -c config.json
+ADMIN_LISTEN=127.0.0.1:19090 RUST_LOG=info ./target/release/app run -c config.json
 
 # 4. Monitor metrics (if enabled)
-curl http://127.0.0.1:9090/metrics
+curl http://127.0.0.1:19090/metricsz
 ```
 
 **Performance comparison:**
@@ -293,7 +293,7 @@ curl http://127.0.0.1:9090/metrics
 **Systemd (Linux):**
 ```bash
 # Copy service file
-sudo cp packaging/systemd/singbox-rs.service /etc/systemd/system/
+sudo cp deployments/systemd/singbox-rust.service /etc/systemd/system/
 
 # Enable and start
 sudo systemctl daemon-reload
@@ -306,13 +306,15 @@ sudo systemctl status singbox-rs
 **Docker:**
 ```bash
 # Build image
-docker build -f packaging/docker/Dockerfile.musl -t singbox-rs:latest .
+docker build -f deployments/docker/Dockerfile -t singbox-rust:0.1.0 .
 
 # Run container
 docker run -d \
-  -p 18088:18088 \
-  -v /path/to/config:/data \
-  singbox-rs:latest --config /data/config.json
+  -p 1080:1080 \
+  -p 19090:19090 \
+  -e ADMIN_LISTEN=0.0.0.0:19090 \
+  -v /path/to/config.json:/etc/singbox/config.json:ro \
+  singbox-rust:0.1.0 app run -c /etc/singbox/config.json
 ```
 
 ---
@@ -468,11 +470,11 @@ export SB_WIREGUARD_INTERFACE=wg0
 # Run benchmarks
 ./scripts/run_benchmarks.sh --quick
 
-# Enable metrics
-export SB_METRICS_ADDR=127.0.0.1:9090
+# Enable admin metrics endpoint
+export ADMIN_LISTEN=127.0.0.1:19090
 
 # Monitor resource usage
-curl http://127.0.0.1:9090/metrics | grep -E "(cpu|memory|connections)"
+curl http://127.0.0.1:19090/metricsz | grep -E "(cpu|memory|connections)"
 ```
 
 **Known Performance:**

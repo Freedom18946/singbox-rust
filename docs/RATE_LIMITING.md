@@ -127,7 +127,7 @@ cargo test --test rate_limit_integration_test --features net_e2e
 
 ### Monitor Metrics
 ```bash
-curl http://localhost:9090/metrics | grep -i rate_limit
+curl http://127.0.0.1:19090/metricsz | grep -i rate_limit
 ```
 
 ## Threat Model Mappings

@@ -1,56 +1,74 @@
-Data Pipeline — Rules & Geodata
-================================
+# Data Pipeline: Rules And Geodata
 
-Repository Layout (suggested)
-- rules/: Source rule-sets in JSON (sing-box rule-set source format)
-- out/: Compiled binary rule-sets (.srs)
-- data/: GeoIP/Geosite databases (geoip.db, geosite.db)
-- bundle/: Release bundles (tar.gz + sha256)
+Workflow automation is disabled in this repository. Build, fetch, bundle, and
+verification steps are local/manual operations.
 
-Local Workflow
-- Compile rules:
-  - cargo build -q
-  - scripts/tools/compile-rulesets.sh --in ./rules --out ./out --bin target/debug/app
-- Fetch geodata:
-  - scripts/tools/update-geodata.sh --dest ./data
-- Bundle:
-  - scripts/tools/make-data-bundle.sh --data ./data --rules ./out --out ./bundle
- - Manifest (checksums and sizes):
-   - scripts/tools/gen-data-manifest.sh --data ./data --rules ./out --out ./bundle
+## Repository Layout
 
-CI Workflow (GitHub Actions)
-- File: .github/workflows/data-bundle.yml
-- Trigger: push (rules/**.json) or manual dispatch
-- Inputs (workflow_dispatch):
-  - geoip_url / geosite_url: pin specific release URLs
-  - geoip_sha256 / geosite_sha256: integrity checks
-  - features: override cargo features (default: router,explain)
-  - artifact_suffix: override artifact name suffix
-- Steps:
-  - Build CLI with features router,explain
-  - Compile rules into ./out
-  - Fetch geodata into ./data
-  - Produce bundle in ./bundle
-  - Generate manifest.txt and manifest.json in ./bundle
-  - Upload ./bundle as artifacts
-  - Artifact name defaults to: singbox-data-bundle-<ref>-<shortsha>
+- `rules/`: source rule sets in sing-box JSON rule-set format
+- `out/`: compiled binary rule sets (`.srs`)
+- `data/`: GeoIP/Geosite databases (`geoip.db`, `geosite.db`)
+- `bundle/`: local release bundle outputs and checksums
 
-Integrity & Rollback
-- You may pin checksums for geodata via env (used by update-geodata.sh):
-  - GEOIP_SHA256, GEOSITE_SHA256
-- If checksum fails, the CI job aborts and previous bundles remain intact.
+## Local Workflow
 
-Verification
-- Verify a manifest (text or JSON):
-  - scripts/tools/verify-data-manifest.sh --manifest ./bundle/manifest.txt --root .
-  - scripts/tools/verify-data-manifest.sh --manifest ./bundle/manifest.json --root .
+Build the current CLI:
 
-Pinned Example (manual dispatch)
-- geoip_url: https://github.com/SagerNet/sing-geoip/releases/download/2024-10-01/geoip.db
-- geosite_url: https://github.com/SagerNet/sing-geosite/releases/download/2024-10-01/geosite.db
-- geoip_sha256: <paste expected sha256>
-- geosite_sha256: <paste expected sha256>
+```bash
+cargo build -p app
+```
 
-Notes
-- Source format version is kept in JSON (`version` field). When compiling, you can force a target version with `--version`.
-- Rule-set conversion, merge, and upgrade are available via `app ruleset ...` for ad-hoc tasks.
+Compile rule sets:
+
+```bash
+scripts/tools/compile-rulesets.sh --in ./rules --out ./out --bin target/debug/app
+```
+
+Fetch geodata:
+
+```bash
+scripts/tools/update-geodata.sh --dest ./data
+```
+
+Create the bundle and manifest:
+
+```bash
+scripts/tools/make-data-bundle.sh --data ./data --rules ./out --out ./bundle
+scripts/tools/gen-data-manifest.sh --data ./data --rules ./out --out ./bundle
+```
+
+## Integrity And Rollback
+
+You may pin checksums for geodata with `update-geodata.sh` arguments:
+
+- `--geoip-sha256`
+- `--geosite-sha256`
+
+If checksum verification fails, stop and keep the previous bundle in place.
+
+## Verification
+
+Verify the generated manifest before publishing or copying the bundle:
+
+```bash
+scripts/tools/verify-data-manifest.sh --manifest ./bundle/manifest.txt --root .
+scripts/tools/verify-data-manifest.sh --manifest ./bundle/manifest.json --root .
+```
+
+## Pinned Source Example
+
+```bash
+scripts/tools/update-geodata.sh \
+  --dest ./data \
+  --geoip-url https://github.com/SagerNet/sing-geoip/releases/download/2024-10-01/geoip.db \
+  --geosite-url https://github.com/SagerNet/sing-geosite/releases/download/2024-10-01/geosite.db \
+  --geoip-sha256 <expected-geoip-sha256> \
+  --geosite-sha256 <expected-geosite-sha256>
+```
+
+## Notes
+
+- Source format version is kept in JSON (`version` field). When compiling, you
+  can force a target version with `--version`.
+- Rule-set conversion, merge, and upgrade are available via `app ruleset ...`
+  for ad-hoc tasks.

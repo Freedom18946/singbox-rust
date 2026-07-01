@@ -282,18 +282,19 @@ On loopback benchmarks:
 
 ### Cross-compilation
 
-The release workflow produces binaries for all supported targets. For manual builds:
+Workflow automation is disabled in this repository. Build artifacts are produced
+locally from source:
 
 ```bash
 # Build for current platform
 cargo build -p app --release --features parity
 
-# Build with specific features
-cargo build -p app --release --features "adapters,clash_api"
+# Build the GUI/process-contract runtime profile
+cargo build -p app --release --features gui_runtime
 ```
 
 Feature flags:
-- `adapters`: Enables SOCKS/HTTP/mixed inbounds
-- `clash_api`: Enables Clash API server
-- `parity`: Full feature set (adapters + clash_api + DNS + NTP + services)
-- `router`: Minimal routing (no inbound adapters)
+- `router`: minimal routing build
+- `gui_runtime`: proxy-capable process-contract profile
+- `parity`: broad Go-parity aggregation profile
+- `acceptance`: local acceptance/gate aggregation profile

@@ -24,5 +24,5 @@ Example:
 
 ```bash
 ADMIN_LISTEN=127.0.0.1:19090 \
-cargo run -p app -- run -c examples/quick-start/01-minimal.yaml
+cargo run -p app -- run -c examples/quick-start/01-minimal.json
 ```

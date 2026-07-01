@@ -15,6 +15,8 @@ Purpose: replace the raw `release-cleanup-2026-06/` folder with a compact releas
 - `.cargo` acceptance moved rustdoc warning denial to effective `[build].rustdocflags` and fixed exposed CLI rustdoc warnings.
 - `deployments/` acceptance cleaned compose/Docker/Helm/Kubernetes samples, pinned
   default image tags, wired Helm serviceAccount values, and revalidated config samples.
+- `docs/` acceptance aligned live examples, deployment, data-pipeline, and metrics docs
+  with current local-only gates and admin `/metricsz` operations.
 - PX-ACCEPT-01 local drop-in rehearsal built the real debug app binary and passed the GUI 1.25.1 composite-fixture probe with one non-blocking warning.
 
 ## Runtime / Sidecar Notes

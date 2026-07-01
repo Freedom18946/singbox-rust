@@ -42,8 +42,8 @@ Optional runtime probe (Batch B):
 ```bash
 SB_CAPABILITY_PROBE_ONLY=1 \
 SB_CAPABILITY_PROBE_OUT=reports/runtime/capability_probe.json \
-cargo run -q -p app --features parity --bin run -- \
-  -c examples/quick-start/01-minimal.json
+cargo run -q -p app --features parity -- \
+  run -c examples/quick-start/01-minimal.json
 
 python3 scripts/capabilities/generate.py \
   --out reports/capabilities.json \

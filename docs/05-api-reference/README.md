@@ -7,7 +7,7 @@ Enable it with:
 ```bash
 ADMIN_LISTEN=127.0.0.1:19090 \
 ADMIN_TOKEN=change-me \
-cargo run -p app -- run -c examples/quick-start/01-minimal.yaml
+cargo run -p app -- run -c examples/quick-start/01-minimal.json
 ```
 
 Current endpoints confirmed from source and runtime:

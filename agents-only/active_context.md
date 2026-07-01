@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-07-01) - docs release hygiene
+
+- **`docs/` release hygiene DONE locally**: live docs were aligned with current
+  source-first examples, disabled workflow policy, `app` binary invocation, maintained
+  `deployments/` assets, and admin `/metricsz` operations path. Historical docs keep
+  provenance banners; live docs no longer advertise workflow-generated release artifacts.
+- **Verification PASS**: strict `app check`, `route --explain --with-trace`, and
+  `run --check` for `examples/quick-start/01-minimal.json`; docs local-link scan;
+  active-doc stale-command scan; `git diff --check`.
+- **Scope note**: documentation hygiene only. No product behavior, release packaging
+  completion, REALITY closure, dual-kernel BHV/parity movement, or workflow automation
+  is claimed.
+
 ## Resume (2026-07-01) - deployments release hygiene
 
 - **`deployments/` release hygiene DONE locally**: compose, Docker, Helm, Kubernetes, and

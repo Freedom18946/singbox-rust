@@ -310,7 +310,7 @@ sudo perf top -p $(pgrep singbox-rust)
 **Diagnosis**:
 ```bash
 # Check rate limiting metrics
-curl localhost:9090/metrics | grep rate_limited_total
+curl http://127.0.0.1:19090/metricsz | grep rate_limited_total
 
 # View rate limiting logs
 sudo journalctl -u singbox-rust | grep "rate.limit" | tail -50
@@ -350,7 +350,7 @@ sudo journalctl -u singbox-rust | grep "rate.limit" | tail -50
 env | grep SB_INBOUND
 
 # Check metrics
-curl localhost:9090/metrics | grep rate_limited_total
+curl http://127.0.0.1:19090/metricsz | grep rate_limited_total
 
 # Verify config
 sudo journalctl -u singbox-rust | grep -i "rate.limit.config"
@@ -366,7 +366,7 @@ export SB_INBOUND_RATE_LIMIT_WINDOW_SEC=10
 sudo systemctl restart singbox-rust
 
 # Verify it's working
-curl localhost:9090/metrics | grep rate_limited_total
+curl http://127.0.0.1:19090/metricsz | grep rate_limited_total
 ```
 
 ---
@@ -603,7 +603,7 @@ sudo iptables -A INPUT -s <ATTACKER_IP> -j DROP
 
 # 3. Monitor
 watch -n 1 'netstat -an | grep :1080 | wc -l'
-curl localhost:9090/metrics | grep rate_limited_total
+curl http://127.0.0.1:19090/metricsz | grep rate_limited_total
 ```
 
 ### Data Recovery
@@ -631,7 +631,7 @@ tar -czf singbox-debug-$(date +%Y%m%d-%H%M%S).tar.gz \
   <(systemctl status singbox-rust) \
   <(journalctl -u singbox-rust -n 500) \
   /etc/singbox/config.json \
-  <(curl -s localhost:9090/metrics)
+  <(curl -s http://127.0.0.1:19090/metricsz)
 ```
 
 ---

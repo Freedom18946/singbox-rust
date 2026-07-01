@@ -3,7 +3,8 @@
 > Historical deployment snapshot. This checklist is retained as provenance for an
 > older rollout plan. It is not a current release approval, GUI readiness claim,
 > or drop-in replacement certificate. For live gate posture, read
-> [`agents-only/active_context.md`](../agents-only/active_context.md).
+> [`agents-only/active_context.md`](../agents-only/active_context.md). Current
+> deployment templates live under `deployments/` and run the `app` binary.
 
 ## Pre-Deployment Validation ✅
 
@@ -39,9 +40,9 @@
 ### Binary
 ```bash
 # Build optimized release binary
-cargo build --release --package app --bin run --features acceptance
+cargo build --release --package app --bin app --features acceptance
 
-# Location: target/release/run
+# Location: target/release/app
 # Size: ~50-80 MB (with all features)
 ```
 
@@ -116,13 +117,13 @@ cargo bench --features bench
 **Build:**
 ```bash
 cargo build --release --features acceptance
-strip target/release/run  # Reduce binary size
+strip target/release/app  # Reduce binary size
 ```
 
 **Deploy to Staging:**
 ```bash
 # Copy binary
-scp target/release/run staging-server:/opt/singbox/
+scp target/release/app staging-server:/opt/singbox/
 
 # Copy configuration
 scp configs/production.yaml staging-server:/opt/singbox/config.yaml
@@ -160,10 +161,10 @@ upstream singbox {
 **Monitoring Setup:**
 ```bash
 # Prometheus metrics
-curl http://rust-singbox-1:9090/metrics
+curl http://rust-singbox-1:19090/metricsz
 
 # Watch for errors
-watch -n 1 'curl -s http://rust-singbox-1:9090/metrics | grep error'
+watch -n 1 'curl -s http://rust-singbox-1:19090/metricsz | grep error'
 ```
 
 ### 4. Progressive Rollout

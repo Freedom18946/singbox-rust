@@ -5,7 +5,7 @@
 ```bash
 ADMIN_LISTEN=127.0.0.1:19090 \
 ADMIN_TOKEN=change-me \
-cargo run -p app -- run -c examples/quick-start/01-minimal.yaml
+cargo run -p app -- run -c examples/quick-start/01-minimal.json
 ```
 
 The current `run` command also accepts `--admin-listen` and `--admin-token`.
@@ -29,7 +29,7 @@ curl \
   -X POST \
   -H 'Content-Type: application/json' \
   -H 'X-Admin-Token: change-me' \
-  -d '{"path":"examples/quick-start/01-minimal.yaml"}' \
+  -d '{"path":"examples/quick-start/01-minimal.json"}' \
   http://127.0.0.1:19090/reload
 ```
 
