@@ -11,7 +11,7 @@ services:
     ports:
       - "1080:1080"
     volumes:
-      - ./config:/etc/singbox:ro
+      - ../config-template.json:/etc/singbox/config.json:ro
       - singbox-data:/var/lib/singbox
     environment:
       RUST_LOG: info

@@ -13,6 +13,8 @@ Purpose: replace the raw `release-cleanup-2026-06/` folder with a compact releas
 - `agents-only` acceptance cleaned entry/navigation/governance docs and kept current evidence/reference/memory working sets in place.
 - `.e2e` acceptance cleaned runtime artifact/script hygiene: repo-root discovery, tracked `pids/` and `soak/` anchors, and portable cleanup selection.
 - `.cargo` acceptance moved rustdoc warning denial to effective `[build].rustdocflags` and fixed exposed CLI rustdoc warnings.
+- `deployments/` acceptance cleaned compose/Docker/Helm/Kubernetes samples, pinned
+  default image tags, wired Helm serviceAccount values, and revalidated config samples.
 - PX-ACCEPT-01 local drop-in rehearsal built the real debug app binary and passed the GUI 1.25.1 composite-fixture probe with one non-blocking warning.
 
 ## Runtime / Sidecar Notes

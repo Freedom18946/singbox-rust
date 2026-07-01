@@ -14,22 +14,26 @@
     {
       "type": "shadowsocks",
       "name": "ss-primary",
-      "server": "primary.example.com",
+      "server": "primary.invalid",
       "port": 8388,
       "method": "chacha20-poly1305",
-      "password": "CHANGE_THIS_PASSWORD"
+      "credentials": {
+        "password_env": "SINGBOX_SS_PASSWORD"
+      }
     },
     {
       "type": "trojan",
       "name": "trojan-backup",
-      "server": "backup.example.com",
+      "server": "backup.invalid",
       "port": 443,
-      "password": "CHANGE_THIS_TROJAN_PASSWORD",
+      "credentials": {
+        "password_env": "SINGBOX_TROJAN_PASSWORD"
+      },
       "transport": [
         "tls",
         "grpc"
       ],
-      "tls_sni": "backup.example.com",
+      "tls_sni": "backup.invalid",
       "grpc_service": "proxy.Service"
     },
     {
@@ -55,7 +59,7 @@
       {
         "when": {
           "suffix": [
-            "backup.example.com"
+            "backup.invalid"
           ]
         },
         "to": "trojan-backup"

@@ -1,6 +1,6 @@
 services:
   singbox-rust:
-    image: ${SINGBOX_IMAGE:-ghcr.io/freedom18946/singbox-rust:latest}
+    image: ${SINGBOX_IMAGE:-ghcr.io/freedom18946/singbox-rust:0.1.0}
     container_name: singbox-rust
     restart: unless-stopped
     command: ["app", "run", "-c", "/etc/singbox/config.json"]
@@ -19,7 +19,7 @@ services:
       start_period: 10s
 
   prometheus:
-    image: prom/prometheus:latest
+    image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.11.3}
     container_name: singbox-prometheus
     restart: unless-stopped
     ports:

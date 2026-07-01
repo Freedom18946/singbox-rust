@@ -14,6 +14,7 @@ spec:
       labels:
         app: singbox-rust
     spec:
+      serviceAccountName: default
       securityContext:
         runAsNonRoot: true
         runAsUser: 1000
@@ -22,7 +23,7 @@ spec:
           type: RuntimeDefault
       containers:
         - name: singbox-rust
-          image: ghcr.io/freedom18946/singbox-rust:latest
+          image: ghcr.io/freedom18946/singbox-rust:0.1.0
           imagePullPolicy: IfNotPresent
           command: ["app", "run", "-c", "/etc/singbox/config.json"]
           env:

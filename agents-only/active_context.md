@@ -10,6 +10,23 @@
 
 ---
 
+## Resume (2026-07-01) - deployments release hygiene
+
+- **`deployments/` release hygiene DONE locally**: compose, Docker, Helm, Kubernetes, and
+  sample config surfaces were cleaned for reproducible defaults and current config
+  validation. Example proxy secrets now use env-backed credentials with `.invalid`
+  sample hosts; compose/Kubernetes/Helm image defaults use explicit app-version tags;
+  Docker build context now includes all workspace members needed by the root manifest;
+  Helm serviceAccount values are wired into rendered pods.
+- **Verification PASS**: strict `app check` for deployment config samples, JSON parse,
+  non-template YAML parse, both Docker Compose config expansions, residual placeholder/
+  `latest` scans, serviceAccount wiring scan, and `git diff --check`.
+- **Unavailable local gates**: Helm rendering was not run because `helm` is not installed;
+  Docker build/manifest probes were blocked by the local Docker/registry environment;
+  Kubernetes client dry-run was blocked by the absent local API server.
+- **Scope note**: deployment-template hygiene only. No release packaging completion,
+  REALITY closure, dual-kernel BHV/parity movement, or workflow automation is claimed.
+
 ## Resume (2026-06-30) - app release hygiene
 
 - **`app/` release hygiene DONE locally**: removed dead/undiscoverable app source, empty or

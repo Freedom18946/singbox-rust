@@ -21,7 +21,9 @@ COPY Cargo.toml Cargo.lock ./
 COPY crates ./crates
 COPY app ./app
 COPY benches ./benches
+COPY labs ./labs
 COPY xtask ./xtask
+COPY xtests ./xtests
 
 RUN cargo build --locked --release --package app \
     --features "${BUILD_FEATURES}" \

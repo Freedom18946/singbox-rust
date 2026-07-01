@@ -31,5 +31,8 @@ cargo run -p app -- check -c deployments/config-template.json
 ## Notes
 
 - `SINGBOX_IMAGE` can override the default image reference.
+- `PROMETHEUS_IMAGE` can override the pinned Prometheus image reference.
+- Use a release tag or digest for reproducible deployments; override
+  `SINGBOX_IMAGE` when deploying a different build.
 - `deployments/config-examples/client-multi-hop.json` remains available as a separate validated client-side sample.
 - Grafana is no longer promised by this sample because the compose file does not provision a complete dashboard stack.
