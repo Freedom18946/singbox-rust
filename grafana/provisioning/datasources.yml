@@ -35,11 +35,11 @@ datasources:
 # For Docker Compose:
 #   services:
 #     prometheus:
-#       image: prom/prometheus:latest
+#       image: ${PROMETHEUS_IMAGE:-prom/prometheus:v3.11.3}
 #       ports:
 #         - "9090:9090"
 #     grafana:
-#       image: grafana/grafana:latest
+#       image: ${GRAFANA_IMAGE:?set a pinned grafana image tag}
 #       volumes:
 #         - ./grafana/provisioning/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
 #

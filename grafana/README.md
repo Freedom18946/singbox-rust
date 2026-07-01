@@ -12,39 +12,48 @@ These dashboards track the metrics that are currently exported by the repository
 
 ## Recommended Metrics Source
 
-Prometheus can scrape either of the following:
+Prometheus should scrape the app admin metrics endpoint used by the current
+operations docs:
 
-1. Admin debug endpoint
+```bash
+ADMIN_LISTEN=0.0.0.0:19090 \
+cargo run -p app -- run -c /etc/singbox/config.json
+```
 
 ```yaml
 scrape_configs:
   - job_name: "singbox-rust"
-    metrics_path: /__metrics
+    metrics_path: /metricsz
     static_configs:
-      - targets: ["localhost:18088"]
+      - targets: ["singbox-rust:19090"]
 ```
 
-Start singbox-rust with:
+For a single-host smoke test, use `127.0.0.1:19090` instead of the Compose
+service name.
+
+The developer-only standalone exporter is still available when a metrics-enabled
+runtime installs it. Keep it on a different port from the admin endpoint:
 
 ```bash
-export SB_ADMIN_ENABLE=1
-export SB_ADMIN_LISTEN=0.0.0.0:18088
-singbox-rust run -c config.yaml
-```
-
-2. Dedicated Prometheus exporter
-
-```bash
-export SB_METRICS_ADDR=127.0.0.1:19090
-singbox-rust run -c config.yaml
+SB_METRICS_ADDR=127.0.0.1:9090 \
+cargo run -p app --features observe --bin metrics-serve
 ```
 
 ```yaml
 scrape_configs:
-  - job_name: "singbox-rust"
+  - job_name: "singbox-rust-standalone"
     metrics_path: /metrics
     static_configs:
-      - targets: ["localhost:19090"]
+      - targets: ["localhost:9090"]
+```
+
+## Local Validation
+
+Run the Grafana metadata gate after changing dashboards, alerts, provisioning, or
+this README:
+
+```bash
+python3 grafana/verify_metadata.py
 ```
 
 ## Manual Import
@@ -71,7 +80,7 @@ sudo systemctl restart grafana-server
 ```yaml
 services:
   grafana:
-    image: grafana/grafana:latest
+    image: ${GRAFANA_IMAGE:?set a pinned grafana image tag}
     volumes:
       - grafana-data:/var/lib/grafana
       - ./grafana/provisioning/datasources.yml:/etc/grafana/provisioning/datasources/datasources.yml:ro
@@ -92,16 +101,16 @@ rule_files:
 
 ## Troubleshooting
 
-Verify admin metrics:
+Verify app admin metrics:
 
 ```bash
-curl -s http://127.0.0.1:18088/__metrics | grep -E "^(dns_|http_|proxy_|outbound_|udp_|route_explain_total|adapter_retries_total)"
+curl -s http://127.0.0.1:19090/metricsz | grep -E "^(dns_|http_|proxy_|outbound_|udp_|route_explain_total|adapter_retries_total)"
 ```
 
-Verify dedicated exporter metrics:
+Verify developer standalone exporter metrics:
 
 ```bash
-curl -s http://127.0.0.1:19090/metrics | grep -E "^(dns_|http_|proxy_|outbound_|udp_|route_explain_total|adapter_retries_total)"
+curl -s http://127.0.0.1:9090/metrics | grep -E "^(dns_|http_|proxy_|outbound_|udp_|route_explain_total|adapter_retries_total)"
 ```
 
 If a panel shows `No data`, confirm that:

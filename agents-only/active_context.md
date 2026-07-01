@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-07-02) - grafana release hygiene
+
+- **`grafana/` release hygiene DONE locally**: Grafana README/provisioning/docs now
+  point at the current admin `ADMIN_LISTEN=:19090` + `/metricsz` scrape path, keep
+  standalone `/metrics` on a separate developer exporter port, and no longer suggest
+  mutable `latest` image tags.
+- **Verification PASS**: Grafana metadata verifier checks dashboard datasource
+  variables, unique dashboard UIDs, alert expressions, source-backed metric names, and
+  stale scrape-token regressions.
+- **Scope note**: Grafana monitoring asset hygiene only. No product behavior, release
+  packaging completion, REALITY closure, dual-kernel BHV/parity movement, or workflow
+  automation is claimed.
+
 ## Resume (2026-07-02) - fuzz release hygiene
 
 - **`fuzz/` release hygiene DONE locally**: root core-dump ignore no longer hides
@@ -219,21 +232,6 @@
   historical records are now compressed in `agents-only/archive/mt_summary.md`.
 - **Scope note**: `agents-only/a0_reality_spike/` remains untouched; no `.github/workflows/*`
   automation was added or restored.
-
-## Previous Resume (2026-06-28) - P1313-12 GUI 1.25.1 low-priority contract
-
-- **P1313-12 DONE locally**: GUI 1.25.1 generated-config shape is refreshed with a composite
-  route/DNS/system-proxy fixture, Clash HTTP Bearer and lazy WebSocket `?token=` contracts are
-  pinned, and a local GUI-style process/log contract probe is available.
-- **Post1313 strict revalidation PASS**: see
-  `agents-only/post1313/p1313_strict_revalidation_2026_06_28.md`. The revalidation repaired
-  reload-aware admin `/explain`, refreshed runtime-capable reload integration tests, and unboxed the
-  two stale `/connections` WebSocket snapshot quarantines.
-- **Verification PASS**: see `agents-only/post1313/p1313_12_gui1251_low_priority_contract.md`.
-  Targeted GUI fixture/API/runtime probes, `cargo check -p app --features parity`,
-  `cargo check --workspace --all-features`, `make boundaries`, and consistency validation passed.
-- **Scope note**: no Wails/desktop automation was resumed, no GitHub workflow automation was
-  added, and no dual-kernel parity movement is claimed.
 
 ## Strategic State
 

@@ -16,3 +16,7 @@ Prometheus scrape target:
 Health endpoint:
 
 - `http://singbox-rust:19090/healthz`
+
+Local asset gate:
+
+- `python3 grafana/verify_metadata.py`
