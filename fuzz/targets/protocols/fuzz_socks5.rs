@@ -89,10 +89,8 @@ fuzz_target!(|data: &[u8]| {
                     let domain_len = data[4] as usize;
                     if data.len() >= 4 + 1 + domain_len + 2 {
                         let _domain = &data[5..5 + domain_len];
-                        let _port = u16::from_be_bytes([
-                            data[5 + domain_len],
-                            data[5 + domain_len + 1],
-                        ]);
+                        let _port =
+                            u16::from_be_bytes([data[5 + domain_len], data[5 + domain_len + 1]]);
 
                         // Validate domain length
                         if domain_len == 0 || domain_len > 253 {
@@ -115,13 +113,16 @@ fuzz_target!(|data: &[u8]| {
     }
 
     // Test 4: Encode/decode roundtrip (if we have valid data)
-    if let Ok((target_addr, header_len)) = sb_adapters::inbound::socks::udp::parse_udp_datagram(data) {
+    if let Ok((target_addr, header_len)) =
+        sb_adapters::inbound::socks::udp::parse_udp_datagram(data)
+    {
         // Get the payload
         if header_len < data.len() {
             let payload = &data[header_len..];
 
             // Encode it back
-            let encoded = sb_adapters::inbound::socks::udp::encode_udp_datagram(&target_addr, payload);
+            let encoded =
+                sb_adapters::inbound::socks::udp::encode_udp_datagram(&target_addr, payload);
 
             // Parse the encoded data
             let _ = sb_adapters::inbound::socks::udp::parse_udp_datagram(&encoded);

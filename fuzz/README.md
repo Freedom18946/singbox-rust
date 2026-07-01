@@ -10,6 +10,7 @@ From the project root:
 
 ```bash
 make -f Makefile.fuzz fuzz-list
+make -f Makefile.fuzz fuzz-verify
 make -f Makefile.fuzz fuzz-build
 make -f Makefile.fuzz fuzz-corpus
 ./fuzz/run_regression.sh --seeds-only
@@ -18,6 +19,7 @@ make -f Makefile.fuzz fuzz-corpus
 The maintained fuzz entrypoints are:
 
 - `Makefile.fuzz`
+- `fuzz/verify_metadata.py`
 - `fuzz/generate_seeds.sh`
 - `fuzz/run_regression.sh`
 
@@ -124,6 +126,7 @@ Run the maintained seed replay and regression script with:
 
 The script:
 
+- verifies target, script, Makefile, and seed metadata alignment
 - builds all fuzz targets first
 - replays deterministic seeds with `-runs=0`
 - optionally replays saved regression inputs from `fuzz/regression/`
@@ -132,6 +135,7 @@ The script:
 
 ```bash
 make -f Makefile.fuzz fuzz-list
+make -f Makefile.fuzz fuzz-verify
 make -f Makefile.fuzz fuzz-build
 make -f Makefile.fuzz fuzz-quick
 make -f Makefile.fuzz fuzz-corpus
@@ -155,7 +159,8 @@ cargo +nightly fuzz run fuzz_mixed_protocol fuzz/corpus/seeds/mixed -- -runs=0
 - Prefer deterministic seeds over random corpus generators in repo-tracked scripts
 - If a target only reaches shared parsing helpers indirectly, document that clearly
 - Prefer real production entrypoints over simulated protocol logic when public APIs exist
-- Keep `Makefile.fuzz`, `fuzz/generate_seeds.sh`, and `fuzz/run_regression.sh` aligned
+- Keep `Makefile.fuzz`, `fuzz/verify_metadata.py`, `fuzz/generate_seeds.sh`,
+  and `fuzz/run_regression.sh` aligned
 
 ## Troubleshooting
 

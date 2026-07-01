@@ -70,6 +70,15 @@ declare -A TARGET_REGRESSION=(
     [fuzz_v2ray_api]=api
 )
 
+DEFAULT_TARGETS=(
+    fuzz_config fuzz_dns_message fuzz_route_decide
+    fuzz_sniff_tls fuzz_sniff_http fuzz_sniff_quic fuzz_sniff_stream
+    fuzz_vmess fuzz_vless fuzz_shadowsocks fuzz_trojan
+    fuzz_hysteria fuzz_tuic fuzz_socks5 fuzz_http_connect
+    fuzz_tun_packet fuzz_mixed_protocol fuzz_v2ray_api
+    fuzz_config_structured fuzz_vmess_structured
+)
+
 run_target_seeds() {
     local target="$1"
     local seed_dir="${TARGET_SEEDS[$target]:-}"
@@ -147,6 +156,20 @@ run_target_regression() {
 echo "=== singbox-rust fuzz regression runner ==="
 echo ""
 
+python3 "$FUZZ_DIR/verify_metadata.py"
+echo ""
+
+# Determine which targets to run
+if [[ -n "$SINGLE_TARGET" ]]; then
+    if [[ -z "${TARGET_REGRESSION[$SINGLE_TARGET]:-}" ]]; then
+        echo "ERROR: unknown fuzz target: $SINGLE_TARGET"
+        exit 2
+    fi
+    TARGETS=("$SINGLE_TARGET")
+else
+    TARGETS=("${DEFAULT_TARGETS[@]}")
+fi
+
 # Build all fuzz targets first
 echo "Building fuzz targets..."
 if ! cargo +nightly fuzz build 2>&1 | tail -1; then
@@ -154,20 +177,6 @@ if ! cargo +nightly fuzz build 2>&1 | tail -1; then
     exit 1
 fi
 echo ""
-
-# Determine which targets to run
-if [[ -n "$SINGLE_TARGET" ]]; then
-    TARGETS=("$SINGLE_TARGET")
-else
-    TARGETS=(
-        fuzz_config fuzz_dns_message fuzz_route_decide
-        fuzz_sniff_tls fuzz_sniff_http fuzz_sniff_quic fuzz_sniff_stream
-        fuzz_vmess fuzz_vless fuzz_shadowsocks fuzz_trojan
-        fuzz_hysteria fuzz_tuic fuzz_socks5 fuzz_http_connect
-        fuzz_tun_packet fuzz_mixed_protocol fuzz_v2ray_api
-        fuzz_config_structured fuzz_vmess_structured
-    )
-fi
 
 # Run seed smoke tests
 echo "--- Seed corpus smoke tests ---"

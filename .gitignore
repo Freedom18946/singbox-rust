@@ -283,7 +283,7 @@ scripts/.e2e/
 # *.zip
 
 # Core dumps
-core
+/core
 core.*
 
 # SQLite databases (if used for testing)

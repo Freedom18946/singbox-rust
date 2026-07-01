@@ -1,7 +1,7 @@
 # Fuzz Testing Makefile for singbox-rust
 # Usage: make -f Makefile.fuzz <target>
 
-.PHONY: fuzz-all fuzz-quick fuzz-sanity fuzz-build fuzz-check fuzz-list fuzz-help
+.PHONY: fuzz-all fuzz-quick fuzz-sanity fuzz-build fuzz-check fuzz-list fuzz-help fuzz-verify
 .PHONY: fuzz-core fuzz-protocols fuzz-network fuzz-api
 .PHONY: fuzz-corpus fuzz-with-corpus fuzz-regression fuzz-clean fuzz-clean-all
 .PHONY: fuzz-vmess fuzz-vless fuzz-trojan fuzz-shadowsocks fuzz-hysteria fuzz-tuic fuzz-socks5 fuzz-http fuzz-v2ray-api
@@ -133,12 +133,17 @@ fuzz-with-corpus:
 fuzz-regression:
 	@./fuzz/run_regression.sh
 
+fuzz-verify:
+	@python3 fuzz/verify_metadata.py
+
 fuzz-build:
 	@echo "🔨 Building all fuzz targets..."
+	@python3 fuzz/verify_metadata.py
 	cargo +nightly fuzz build
 
 fuzz-check:
 	@echo "✅ Checking all fuzz targets..."
+	@python3 fuzz/verify_metadata.py
 	@cd fuzz && cargo +nightly check --all-targets
 
 fuzz-list:
@@ -153,8 +158,8 @@ fuzz-clean:
 fuzz-clean-all:
 	@echo "🧹 Cleaning fuzz artifacts and corpus..."
 	rm -rf fuzz/artifacts/*
-	rm -rf fuzz/corpus/*
-	@echo "✅ Cleaned fuzz artifacts and corpus"
+	rm -rf fuzz/corpus/generated/*
+	@echo "✅ Cleaned fuzz artifacts and generated corpus"
 
 fuzz-coverage-%:
 	@echo "📊 Generating coverage for $*..."
@@ -178,6 +183,7 @@ fuzz-help:
 	@echo "  fuzz-build        - Build all fuzz targets"
 	@echo "  fuzz-check        - Check all targets compile"
 	@echo "  fuzz-list         - List available targets"
+	@echo "  fuzz-verify       - Verify target/script/corpus metadata alignment"
 	@echo ""
 	@echo "Category Commands:"
 	@echo "  fuzz-core         - Fuzz core targets"

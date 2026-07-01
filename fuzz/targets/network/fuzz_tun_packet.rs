@@ -33,21 +33,16 @@ fuzz_target!(|data: &[u8]| {
                         6 => {
                             // TCP: minimum 20 bytes after IP header
                             if data.len() >= ihl + 20 {
-                                let _src_port =
-                                    u16::from_be_bytes([data[ihl], data[ihl + 1]]);
-                                let _dst_port =
-                                    u16::from_be_bytes([data[ihl + 2], data[ihl + 3]]);
+                                let _src_port = u16::from_be_bytes([data[ihl], data[ihl + 1]]);
+                                let _dst_port = u16::from_be_bytes([data[ihl + 2], data[ihl + 3]]);
                             }
                         }
                         17 => {
                             // UDP: 8 bytes after IP header
                             if data.len() >= ihl + 8 {
-                                let _src_port =
-                                    u16::from_be_bytes([data[ihl], data[ihl + 1]]);
-                                let _dst_port =
-                                    u16::from_be_bytes([data[ihl + 2], data[ihl + 3]]);
-                                let _udp_len =
-                                    u16::from_be_bytes([data[ihl + 4], data[ihl + 5]]);
+                                let _src_port = u16::from_be_bytes([data[ihl], data[ihl + 1]]);
+                                let _dst_port = u16::from_be_bytes([data[ihl + 2], data[ihl + 3]]);
+                                let _udp_len = u16::from_be_bytes([data[ihl + 4], data[ihl + 5]]);
                             }
                         }
                         _ => {}
@@ -75,26 +70,18 @@ fuzz_target!(|data: &[u8]| {
                     match next_header {
                         6 => {
                             if data.len() >= hdr_end + 20 {
-                                let _src_port = u16::from_be_bytes([
-                                    data[hdr_end],
-                                    data[hdr_end + 1],
-                                ]);
-                                let _dst_port = u16::from_be_bytes([
-                                    data[hdr_end + 2],
-                                    data[hdr_end + 3],
-                                ]);
+                                let _src_port =
+                                    u16::from_be_bytes([data[hdr_end], data[hdr_end + 1]]);
+                                let _dst_port =
+                                    u16::from_be_bytes([data[hdr_end + 2], data[hdr_end + 3]]);
                             }
                         }
                         17 => {
                             if data.len() >= hdr_end + 8 {
-                                let _src_port = u16::from_be_bytes([
-                                    data[hdr_end],
-                                    data[hdr_end + 1],
-                                ]);
-                                let _dst_port = u16::from_be_bytes([
-                                    data[hdr_end + 2],
-                                    data[hdr_end + 3],
-                                ]);
+                                let _src_port =
+                                    u16::from_be_bytes([data[hdr_end], data[hdr_end + 1]]);
+                                let _dst_port =
+                                    u16::from_be_bytes([data[hdr_end + 2], data[hdr_end + 3]]);
                             }
                         }
                         _ => {}

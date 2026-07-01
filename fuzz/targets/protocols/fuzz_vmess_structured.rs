@@ -30,10 +30,10 @@ impl AddressBlock {
 
         // Map to valid address types for parse_ss_addr: 1=IPv4, 3=Domain, 4=IPv6
         let atyp = match self.address_type % 4 {
-            0 => 1u8,  // IPv4
-            1 => 3u8,  // Domain
-            2 => 4u8,  // IPv6 (SS uses 4, not 3)
-            _ => 1u8,  // Default to IPv4
+            0 => 1u8, // IPv4
+            1 => 3u8, // Domain
+            2 => 4u8, // IPv6 (SS uses 4, not 3)
+            _ => 1u8, // Default to IPv4
         };
         data.push(atyp);
 
@@ -93,7 +93,11 @@ impl TrojanRequest {
         data.extend_from_slice(b"\r\n");
 
         // Command (constrain to valid values)
-        data.push(if self.command.is_multiple_of(2) { 0x01 } else { 0x02 });
+        data.push(if self.command.is_multiple_of(2) {
+            0x01
+        } else {
+            0x02
+        });
 
         // Address block
         data.extend_from_slice(&self.address.to_ss_bytes());

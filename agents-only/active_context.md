@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-07-02) - fuzz release hygiene
+
+- **`fuzz/` release hygiene DONE locally**: root core-dump ignore no longer hides
+  `fuzz/targets/core/` or `fuzz/regression/core/`; core fuzz targets and regression
+  anchor are tracked, fuzz metadata verification is wired into maintained entrypoints,
+  unknown regression targets fail fast, and clean-all no longer removes tracked seeds.
+- **Verification PASS**: metadata verifier, shell syntax, fmt, fuzz check/build,
+  deterministic seed regeneration, invalid-target negative check, full seed replay,
+  regression no-input path, consistency, and `git diff --check`.
+- **Scope note**: fuzz harness/release hygiene only. No product behavior, release
+  packaging completion, REALITY closure, dual-kernel BHV/parity movement, or workflow
+  automation is claimed.
+
 ## Resume (2026-07-01) - examples release hygiene
 
 - **`examples/` release hygiene DONE locally**: runnable samples stay on current
