@@ -1,8 +1,9 @@
-# Trojan Server Configuration Template
-# Production-ready configuration for deployment
+# Trojan server configuration template.
+# Example only: replace password and certificate paths before deployment.
 #
-# Usage: singbox-rust run -c configs/trojan-server.yaml
+# Usage: app run -c configs/trojan-server.yaml
 
+schema_version: 2
 log:
   level: info
   output: /var/log/singbox-rust/singbox.log
@@ -10,9 +11,8 @@ log:
 
 inbounds:
   - type: trojan
-    tag: trojan-in
-    listen: 0.0.0.0
-    listen_port: 443
+    name: trojan-in
+    listen: "0.0.0.0:443"
 
     # SECURITY: Change this to a strong password (>= 20 characters)
     users:
@@ -23,15 +23,11 @@ inbounds:
     cert: /etc/letsencrypt/live/your-domain.com/fullchain.pem
     key: /etc/letsencrypt/live/your-domain.com/privkey.pem
 
-    # ALPN / server_name are not accepted by the current inbound validator.
-    # Keep this template minimal and add optional TLS tuning only after
-    # verifying support in the active schema checker.
-
 outbounds:
   - type: direct
-    tag: direct
+    name: direct
   - type: block
-    tag: block
+    name: block
 
 route:
   default: direct

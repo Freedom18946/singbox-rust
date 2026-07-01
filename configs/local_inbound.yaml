@@ -3,12 +3,11 @@ log:
   level: info
 inbounds:
   - type: mixed
-    tag: mixed-in
-    listen: 127.0.0.1
-    listen_port: 7890
+    name: mixed-in
+    listen: "127.0.0.1:7890"
 outbounds:
   - type: direct
-    tag: direct
+    name: direct
 route:
   rules: []
   default: direct
