@@ -1,3 +1,4 @@
+use anyhow::{Context, Result};
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use sb_benches::{generate_random_data, setup_tracing};
 use std::sync::Arc;
@@ -6,7 +7,7 @@ use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpListener;
 
 /// Relay pump: single-direction copy with a fixed buffer (mirrors metered.rs pump)
-async fn pump<R, W>(mut r: R, mut w: W, buf_size: usize) -> u64
+async fn pump<R, W>(mut r: R, mut w: W, buf_size: usize) -> Result<u64>
 where
     R: AsyncRead + Unpin,
     W: AsyncWrite + Unpin,
@@ -14,64 +15,91 @@ where
     let mut buf = vec![0u8; buf_size];
     let mut total = 0u64;
     loop {
-        let n = r.read(&mut buf).await.unwrap();
+        let n = r.read(&mut buf).await.context("relay pump read")?;
         if n == 0 {
             let _ = w.flush().await;
             let _ = tokio::io::AsyncWriteExt::shutdown(&mut w).await;
             break;
         }
-        w.write_all(&buf[..n]).await.unwrap();
+        w.write_all(&buf[..n]).await.context("relay pump write")?;
         total += n as u64;
     }
-    total
+    Ok(total)
 }
 
 /// Benchmark: client → relay → echo server → relay → client
-async fn bench_relay_throughput(payload: &[u8], relay_buf_size: usize) {
+async fn bench_relay_throughput(payload: &[u8], relay_buf_size: usize) -> Result<()> {
     // Echo server
-    let echo = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let echo_addr = echo.local_addr().unwrap();
+    let echo = TcpListener::bind("127.0.0.1:0")
+        .await
+        .context("bind echo listener")?;
+    let echo_addr = echo.local_addr().context("read echo listener addr")?;
 
     // Relay listener (client connects here)
-    let relay_in = TcpListener::bind("127.0.0.1:0").await.unwrap();
-    let relay_addr = relay_in.local_addr().unwrap();
+    let relay_in = TcpListener::bind("127.0.0.1:0")
+        .await
+        .context("bind relay listener")?;
+    let relay_addr = relay_in.local_addr().context("read relay listener addr")?;
 
     let payload_len = payload.len();
 
     // Spawn echo server
-    tokio::spawn(async move {
-        let (mut sock, _) = echo.accept().await.unwrap();
+    let echo_task = tokio::spawn(async move {
+        let (mut sock, _) = echo.accept().await.context("echo accept")?;
         let mut buf = vec![0u8; 65536];
         let mut remaining = payload_len;
         while remaining > 0 {
-            let n = sock.read(&mut buf).await.unwrap();
+            let n = sock.read(&mut buf).await.context("echo read")?;
             if n == 0 {
                 break;
             }
-            sock.write_all(&buf[..n]).await.unwrap();
-            remaining -= n;
+            sock.write_all(&buf[..n]).await.context("echo write")?;
+            remaining = remaining.saturating_sub(n);
         }
+        Ok::<(), anyhow::Error>(())
     });
 
     // Spawn relay: accept from client, connect to echo, bidirectional copy
-    tokio::spawn(async move {
-        let (client_stream, _) = relay_in.accept().await.unwrap();
-        let echo_stream = tokio::net::TcpStream::connect(echo_addr).await.unwrap();
+    let relay_task = tokio::spawn(async move {
+        let (client_stream, _) = relay_in.accept().await.context("relay accept")?;
+        let echo_stream = tokio::net::TcpStream::connect(echo_addr)
+            .await
+            .context("connect relay to echo")?;
 
         let (cr, cw) = tokio::io::split(client_stream);
         let (er, ew) = tokio::io::split(echo_stream);
 
         // Bidirectional pump (mirrors real relay)
-        tokio::join!(pump(cr, ew, relay_buf_size), pump(er, cw, relay_buf_size),);
+        let (client_to_echo, echo_to_client) =
+            tokio::join!(pump(cr, ew, relay_buf_size), pump(er, cw, relay_buf_size),);
+        client_to_echo?;
+        echo_to_client?;
+        Ok::<(), anyhow::Error>(())
     });
 
     // Client: send payload, receive echo
-    let mut client = tokio::net::TcpStream::connect(relay_addr).await.unwrap();
-    client.write_all(payload).await.unwrap();
-    client.shutdown().await.unwrap();
+    let mut client = tokio::net::TcpStream::connect(relay_addr)
+        .await
+        .context("connect client to relay")?;
+    client.write_all(payload).await.context("client write")?;
+    client.shutdown().await.context("client shutdown")?;
 
     let mut received = vec![0u8; payload_len];
-    client.read_exact(&mut received).await.unwrap();
+    client
+        .read_exact(&mut received)
+        .await
+        .context("client read echo")?;
+
+    tokio::time::timeout(Duration::from_secs(5), relay_task)
+        .await
+        .context("relay task timeout")?
+        .context("relay task join")??;
+    tokio::time::timeout(Duration::from_secs(5), echo_task)
+        .await
+        .context("echo task timeout")?
+        .context("echo task join")??;
+
+    Ok(())
 }
 
 fn tcp_relay_throughput(c: &mut Criterion) {
@@ -93,7 +121,9 @@ fn tcp_relay_throughput(c: &mut Criterion) {
             b.to_async(&rt).iter(|| {
                 let d = data.clone();
                 async move {
-                    bench_relay_throughput(&d, relay_buf).await;
+                    bench_relay_throughput(&d, relay_buf)
+                        .await
+                        .expect("tcp relay benchmark iteration failed");
                     black_box(())
                 }
             });
@@ -109,7 +139,9 @@ fn tcp_relay_throughput(c: &mut Criterion) {
             b.to_async(&rt).iter(|| {
                 let d = data.clone();
                 async move {
-                    bench_relay_throughput(&d, 64 * 1024).await;
+                    bench_relay_throughput(&d, 64 * 1024)
+                        .await
+                        .expect("tcp relay benchmark iteration failed");
                     black_box(())
                 }
             });

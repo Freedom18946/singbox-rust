@@ -21,7 +21,7 @@ pub fn setup_tracing() {
 
     match tracing_subscriber::fmt()
         .with_env_filter(
-            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("warn")),
+            EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("error")),
         )
         .try_init()
     {
@@ -32,6 +32,13 @@ pub fn setup_tracing() {
             }
         }
     }
+}
+
+/// Install deterministic direct routing for local E2E benchmarks.
+pub fn install_direct_rules_engine() {
+    let rules = sb_core::router::rules::parse_rules("default=direct");
+    let engine = sb_core::router::rules::Engine::build(rules);
+    sb_core::router::rules::install_global(engine);
 }
 
 #[cfg(test)]

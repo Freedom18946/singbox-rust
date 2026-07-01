@@ -2,6 +2,10 @@ use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criteri
 use sb_benches::{generate_random_bytes, setup_tracing};
 use std::time::Duration;
 
+// Benchmark-only deterministic crypto material. Not production secret input.
+const BENCH_KEY_256: [u8; 32] = [42u8; 32];
+const BENCH_NONCE_96: [u8; 12] = [0u8; 12];
+
 /// Real Shadowsocks AEAD encryption benchmark using actual cipher
 fn bench_shadowsocks_aes256gcm(data_size: usize) -> Duration {
     use aes_gcm::{
@@ -10,9 +14,9 @@ fn bench_shadowsocks_aes256gcm(data_size: usize) -> Duration {
     };
 
     let data = generate_random_bytes(data_size);
-    let key = [42u8; 32]; // 256-bit key
+    let key = BENCH_KEY_256;
     let cipher = Aes256Gcm::new(&key.into());
-    let nonce = Nonce::from_slice(&[0u8; 12]);
+    let nonce = Nonce::from_slice(&BENCH_NONCE_96);
 
     let start = std::time::Instant::now();
     let ciphertext = cipher
@@ -29,9 +33,9 @@ fn bench_shadowsocks_chacha20poly1305(data_size: usize) -> Duration {
     };
 
     let data = generate_random_bytes(data_size);
-    let key = [42u8; 32]; // 256-bit key
+    let key = BENCH_KEY_256;
     let cipher = ChaCha20Poly1305::new(&key.into());
-    let nonce = Nonce::from_slice(&[0u8; 12]);
+    let nonce = Nonce::from_slice(&BENCH_NONCE_96);
 
     let start = std::time::Instant::now();
     let ciphertext = cipher
@@ -49,9 +53,9 @@ fn bench_shadowsocks_aes256gcm_decrypt(data_size: usize) -> Duration {
     };
 
     let data = generate_random_bytes(data_size);
-    let key = [42u8; 32];
+    let key = BENCH_KEY_256;
     let cipher = Aes256Gcm::new(&key.into());
-    let nonce = Nonce::from_slice(&[0u8; 12]);
+    let nonce = Nonce::from_slice(&BENCH_NONCE_96);
 
     // Pre-encrypt
     let ciphertext = cipher
@@ -74,9 +78,9 @@ fn bench_shadowsocks_chacha20poly1305_decrypt(data_size: usize) -> Duration {
     };
 
     let data = generate_random_bytes(data_size);
-    let key = [42u8; 32];
+    let key = BENCH_KEY_256;
     let cipher = ChaCha20Poly1305::new(&key.into());
-    let nonce = Nonce::from_slice(&[0u8; 12]);
+    let nonce = Nonce::from_slice(&BENCH_NONCE_96);
 
     // Pre-encrypt
     let ciphertext = cipher
