@@ -692,18 +692,8 @@ fn test_urltest_default_values() {
     let bridge =
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default());
 
-    let outbound = bridge
-        .find_outbound("default-urltest")
-        .expect("Should build");
-    let debug_str = format!("{:?}", outbound);
-
-    // Verify defaults in debug output (assuming Debug impl shows fields)
-    // Interval default: usually 3m or similar?
-    // Timeout default: ?
-    // Tolerance default: ?
-    // Let's check if we can see them.
-    println!("URLTest Debug: {}", debug_str);
-
-    // We can't easily assert exact values without access to fields,
-    // but we can ensure it built successfully.
+    assert!(
+        bridge.find_outbound("default-urltest").is_some(),
+        "urltest with default health-check settings should build"
+    );
 }

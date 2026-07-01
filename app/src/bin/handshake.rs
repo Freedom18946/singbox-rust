@@ -1,15 +1,6 @@
 #![cfg_attr(feature = "strict_warnings", deny(warnings))]
 //! sb-handshake - offline handshake tester (alpha, feature-gated)
 
-// Provide a friendly stub when feature is disabled so `cargo check` succeeds by default.
-#[cfg(not(feature = "handshake_alpha"))]
-fn main() {
-    eprintln!("sb-handshake: built without `--features handshake_alpha` — stub running.");
-    eprintln!(
-        "Hint: enable `handshake_alpha` (and the required runtime features) to use this tool."
-    );
-}
-
 #[cfg(feature = "handshake_alpha")]
 mod real {
     #![cfg_attr(feature = "strict_warnings", deny(warnings))]
@@ -928,8 +919,6 @@ mod real {
     }
 }
 
-#[cfg(feature = "handshake_alpha")]
-// Provide a real entrypoint when feature is enabled
 fn main() {
     if let Err(e) = real::main() {
         eprintln!("handshake failed: {e}");

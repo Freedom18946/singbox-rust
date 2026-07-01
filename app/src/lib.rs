@@ -13,15 +13,6 @@
         clippy::panic
     )
 )]
-#![cfg_attr(
-    not(any(
-        feature = "metrics",
-        feature = "explain",
-        feature = "bench",
-        feature = "rule_coverage"
-    )),
-    allow(dead_code, unused_imports, unused_variables)
-)]
 // Allow specific pedantic/nursery lints that are too strict for this project's style
 #![allow(clippy::unnecessary_debug_formatting, clippy::useless_let_if_seq)]
 

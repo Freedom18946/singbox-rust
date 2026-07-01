@@ -4,7 +4,9 @@
 //! delegating runtime orchestration owners to `run_engine_runtime/*`.
 
 use anyhow::Result;
-use std::path::{Path, PathBuf};
+use std::path::Path;
+#[cfg(feature = "router")]
+use std::path::PathBuf;
 #[cfg(feature = "router")]
 use std::sync::Arc;
 

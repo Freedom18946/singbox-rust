@@ -11,9 +11,8 @@
     )
 )]
 use anyhow::{Context, Result};
-use clap::{Args as ClapArgs, Subcommand, ValueEnum};
-// (unused) removed
 use base64::Engine;
+use clap::{Args as ClapArgs, Subcommand, ValueEnum};
 use hmac::{Hmac, Mac};
 use sha2::{Digest, Sha256, Sha512};
 use std::collections::BTreeMap;
@@ -47,7 +46,7 @@ pub enum AuthCmd {
         /// 参与 canonical 的附加请求头（可多次）K:V
         #[arg(long = "header")]
         header: Vec<String>,
-        /// 从 .env `文件读取键值（KEY_ID` / `KEY_SECRET`）
+        /// 从 .env 文件读取键值（`KEY_ID` / `KEY_SECRET`）
         #[arg(long = "env")]
         env_file: Option<std::path::PathBuf>,
         /// 签名算法

@@ -133,18 +133,6 @@ pub fn entries_have_stdin(entries: &[ConfigEntry]) -> bool {
         .any(|e| matches!(e.source, ConfigSource::Stdin))
 }
 
-#[cfg(feature = "dev-cli")]
-#[allow(dead_code)]
-pub fn check_only(
-    config_paths: &[PathBuf],
-    config_dirs: &[PathBuf],
-) -> Result<(usize, usize, usize)> {
-    let entries = collect_config_entries(config_paths, config_dirs)?;
-    let cfg = load_config(&entries)?;
-    cfg.build_registry_and_router()?; // Stub validation
-    Ok(cfg.stats())
-}
-
 fn read_config_bytes(entry: &ConfigEntry, stdin_cache: &mut Option<Vec<u8>>) -> Result<Vec<u8>> {
     match &entry.source {
         ConfigSource::File(path) => {

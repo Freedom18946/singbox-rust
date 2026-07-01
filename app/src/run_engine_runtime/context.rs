@@ -3,6 +3,10 @@ use serde_json::Value;
 use std::sync::Arc;
 
 pub struct RuntimeContext {
+    #[cfg_attr(
+        not(any(feature = "admin_debug", feature = "observe")),
+        allow(dead_code)
+    )]
     runtime_deps: crate::runtime_deps::AppRuntimeDeps,
     reload_state: Arc<
         crate::run_engine_runtime::config_load::TokioMutex<

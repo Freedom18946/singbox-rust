@@ -1,301 +1,104 @@
-//! Protocol Integration Matrix Tests  
-//!
-//! Comprehensive integration tests for all inbound and outbound protocol adapters.
-//! This test suite validates that all 36 protocols (17 inbound + 19 outbound) can be registered
+//! Registry coverage tests for adapter builders compiled into the app test profile.
 
-/// Register all adapters before running tests
+use sb_core::adapter::registry;
+
+const ALWAYS_OUTBOUNDS: &[&str] = &[
+    "direct",
+    "block",
+    "dns",
+    "tor",
+    "anytls",
+    "wireguard",
+    "tailscale",
+    "hysteria",
+    "tuic",
+    "hysteria2",
+    "ssh",
+    "shadowtls",
+    "selector",
+    "urltest",
+];
+
+const FEATURED_OUTBOUNDS: &[&str] = &[
+    "http",
+    "socks",
+    "socks4",
+    "shadowsocks",
+    "shadowsocksr",
+    "trojan",
+    "vmess",
+    "vless",
+];
+
+const ALWAYS_INBOUNDS: &[&str] = &[
+    "naive",
+    "shadowtls",
+    "hysteria",
+    "hysteria2",
+    "tuic",
+    "anytls",
+    "direct",
+];
+
+const FEATURED_INBOUNDS: &[&str] = &["http", "socks", "shadowsocks", "vmess", "vless", "trojan"];
+
+#[cfg(target_os = "linux")]
+const PLATFORM_INBOUNDS: &[&str] = &["redirect", "tproxy"];
+
+#[cfg(not(target_os = "linux"))]
+const PLATFORM_INBOUNDS: &[&str] = &[];
+
 fn setup() {
     sb_adapters::register_all();
 }
 
-// ============================================================================
-// INBOUND PROTOCOL TESTS
-// ============================================================================
+fn expected_inbounds() -> Vec<&'static str> {
+    let mut kinds = Vec::new();
+    kinds.extend(ALWAYS_INBOUNDS);
+    kinds.extend(FEATURED_INBOUNDS);
+    kinds.extend(PLATFORM_INBOUNDS);
 
-#[test]
-fn test_all_inbound_types_have_registration() {
-    setup();
+    if cfg!(feature = "adapters") {
+        kinds.extend(["mixed", "dns"]);
+    }
+    if cfg!(any(
+        feature = "adapters",
+        feature = "adapter-ssh",
+        feature = "ssh"
+    )) {
+        kinds.push("ssh");
+    }
+    if cfg!(any(
+        feature = "adapters",
+        feature = "adapter-tun",
+        feature = "tun"
+    )) {
+        kinds.push("tun");
+    }
 
-    // Ensure we test all 17 inbound types by checking the enum count
-    // This test documents the current protocol count
-    println!("Testing inbound protocol registration for 17 types");
+    kinds
 }
 
 #[test]
-fn test_socks_inbound_can_be_created() {
+fn compiled_outbound_builders_are_registered() {
     setup();
 
-    // Just verify the adapter registration works - actual protocol
-    // testing should be done in protocol-specific test files
-    println!("SOCKS inbound adapter should be registered");
+    for kind in ALWAYS_OUTBOUNDS.iter().chain(FEATURED_OUTBOUNDS) {
+        assert!(
+            registry::get_outbound(kind).is_some(),
+            "missing outbound builder: {kind}"
+        );
+    }
 }
 
 #[test]
-fn test_http_inbound_can_be_created() {
+fn compiled_inbound_builders_are_registered() {
     setup();
 
-    println!("HTTP inbound adapter should be registered");
-}
-
-#[test]
-fn test_mixed_inbound_can_be_created() {
-    setup();
-
-    println!("Mixed inbound adapter should be registered");
-}
-
-#[test]
-fn test_shadowsocks_inbound_can_be_created() {
-    setup();
-
-    println!("Shadowsocks inbound adapter should be registered");
-}
-
-#[test]
-fn test_vmess_inbound_can_be_created() {
-    setup();
-
-    println!("VMess inbound adapter should be registered");
-}
-
-#[test]
-fn test_vless_inbound_can_be_created() {
-    setup();
-
-    println!("VLESS inbound adapter should be registered");
-}
-
-#[test]
-fn test_trojan_inbound_can_be_created() {
-    setup();
-
-    println!("Trojan inbound adapter should be registered");
-}
-
-#[test]
-fn test_naive_inbound_can_be_created() {
-    setup();
-
-    println!("Naive inbound adapter should be registered");
-}
-
-#[test]
-fn test_direct_inbound_can_be_created() {
-    setup();
-
-    println!("Direct inbound adapter should be registered");
-}
-
-#[test]
-#[cfg(target_os = "linux")]
-fn test_tun_inbound_can_be_created() {
-    setup();
-
-    println!("TUN inbound adapter should be registered (Linux only)");
-}
-
-#[test]
-fn test_shadowtls_inbound_can_be_created() {
-    setup();
-
-    println!("ShadowTLS inbound adapter should be registered");
-}
-
-#[test]
-fn test_anytls_inbound_can_be_created() {
-    setup();
-
-    println!("AnyTLS inbound adapter should be registered");
-}
-
-#[test]
-fn test_hysteria_inbound_can_be_created() {
-    setup();
-
-    println!("Hysteria v1 inbound adapter should be registered");
-}
-
-#[test]
-fn test_hysteria2_inbound_can_be_created() {
-    setup();
-
-    println!("Hysteria2 inbound adapter should be registered");
-}
-
-#[test]
-fn test_tuic_inbound_can_be_created() {
-    setup();
-
-    println!("TUIC inbound adapter should be registered");
-}
-
-// ============================================================================
-// OUTBOUND PROTOCOL TESTS
-// ============================================================================
-
-#[test]
-fn test_all_outbound_types_have_coverage() {
-    setup();
-
-    // Ensure we test all 19 outbound types
-    println!("Testing outbound protocol registration for 19 types");
-}
-
-#[test]
-fn test_direct_outbound_is_available() {
-    setup();
-
-    println!("Direct outbound adapter should be registered");
-}
-
-#[test]
-fn test_block_outbound_is_available() {
-    setup();
-
-    println!("Block outbound adapter should be registered");
-}
-
-#[test]
-fn test_http_outbound_is_available() {
-    setup();
-
-    println!("HTTP outbound adapter should be registered");
-}
-
-#[test]
-fn test_socks_outbound_is_available() {
-    setup();
-
-    println!("SOCKS outbound adapter should be registered");
-}
-
-#[test]
-fn test_shadowsocks_outbound_is_available() {
-    setup();
-
-    println!("Shadowsocks outbound adapter should be registered");
-}
-
-#[test]
-fn test_vmess_outbound_is_available() {
-    setup();
-
-    println!("VMess outbound adapter should be registered");
-}
-
-#[test]
-fn test_vless_outbound_is_available() {
-    setup();
-
-    println!("VLESS outbound adapter should be registered");
-}
-
-#[test]
-fn test_trojan_outbound_is_available() {
-    setup();
-
-    println!("Trojan outbound adapter should be registered");
-}
-
-#[test]
-fn test_tuic_outbound_is_available() {
-    setup();
-
-    println!("TUIC outbound adapter should be registered");
-}
-
-#[test]
-fn test_hysteria_outbound_is_available() {
-    setup();
-
-    println!("Hysteria v1 outbound adapter should be registered");
-}
-
-#[test]
-fn test_hysteria2_outbound_is_available() {
-    setup();
-
-    println!("Hysteria2 outbound adapter should be registered");
-}
-
-#[test]
-fn test_ssh_outbound_is_available() {
-    setup();
-
-    println!("SSH outbound adapter should be registered");
-}
-
-#[test]
-fn test_shadowtls_outbound_is_available() {
-    setup();
-
-    println!("ShadowTLS outbound adapter should be registered");
-}
-
-#[test]
-fn test_tor_outbound_is_available() {
-    setup();
-
-    println!("Tor outbound adapter should be registered");
-}
-
-#[test]
-fn test_anytls_outbound_is_available() {
-    setup();
-
-    println!("AnyTLS outbound adapter should be registered");
-}
-
-#[test]
-fn test_wireguard_outbound_is_available() {
-    setup();
-
-    println!("WireGuard outbound adapter should be registered");
-}
-
-#[test]
-fn test_dns_outbound_is_available() {
-    setup();
-
-    println!("DNS outbound adapter should be registered");
-}
-
-#[test]
-fn test_selector_outbound_is_available() {
-    setup();
-
-    println!("Selector outbound should be available");
-}
-
-#[test]
-fn test_urltest_outbound_is_available() {
-    setup();
-
-    println!("URLTest outbound should be available");
-}
-
-// ============================================================================
-// PROTOCOL COVERAGE SUMMARY
-// ============================================================================
-
-#[test]
-fn test_protocol_coverage_summary() {
-    setup();
-
-    // This test serves as documentation of current protocol support
-    println!("\n=== Protocol Coverage Summary ===");
-    println!("Inbound Protocols: 18/18 (100% of Go protocols)");
-    println!("  - SOCKS, HTTP, Mixed, DNS");
-    println!("  - Shadowsocks, VMess, VLESS, Trojan");
-    println!("  - Naive, ShadowTLS, AnyTLS");
-    println!("  - Hysteria (v1), Hysteria2, TUIC");
-    println!("  - TUN, Redirect, TProxy, Direct");
-    println!();
-    println!("Outbound Protocols: 19/19 (100%)");
-    println!("  - Direct, Block");
-    println!("  - HTTP, SOCKS, Shadowsocks, VMess, VLESS, Trojan");
-    println!("  - DNS, TUIC, Hysteria (v1), Hysteria2");
-    println!("  - SSH, ShadowTLS, Tor, AnyTLS, WireGuard");
-    println!("  - Selector, URLTest");
-    println!("=================================\n");
+    for kind in expected_inbounds() {
+        assert!(
+            registry::get_inbound(kind).is_some(),
+            "missing inbound builder: {kind}"
+        );
+    }
 }

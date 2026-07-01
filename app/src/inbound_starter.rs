@@ -50,7 +50,6 @@ pub enum InboundStop {
 }
 
 pub struct InboundHandle {
-    #[allow(dead_code)]
     name: String,
     stop: InboundStop,
     join: JoinHandle<()>,
@@ -203,6 +202,12 @@ pub fn start_inbounds_from_ir(
     outbounds: &Arc<OutboundRegistryHandle>,
     #[cfg(feature = "adapters")] conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
 ) -> Vec<InboundHandle> {
+    #[cfg(not(feature = "adapters"))]
+    {
+        let _ = router;
+        let _ = outbounds;
+    }
+
     info!("start_inbounds_from_ir: count={}", inbounds.len());
     let mut handles = Vec::new();
 

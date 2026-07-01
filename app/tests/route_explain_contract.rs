@@ -112,10 +112,6 @@ fn route_explain_with_trace_contract() {
         .clone();
 
     let actual: Value = serde_json::from_slice(&out).unwrap();
-    println!(
-        "DEBUG: trace output: {}",
-        serde_json::to_string_pretty(&actual).unwrap()
-    );
 
     // Verify trace field exists and is an object
     let trace = actual.get("trace").expect("trace field missing");
@@ -153,10 +149,6 @@ fn route_explain_complex_chain_contract() {
         .clone();
 
     let actual: Value = serde_json::from_slice(&out).unwrap();
-    println!(
-        "DEBUG: complex chain output 1: {}",
-        serde_json::to_string_pretty(&actual).unwrap()
-    );
     assert_eq!(
         actual.get("outbound").unwrap().as_str().unwrap(),
         "my_direct"

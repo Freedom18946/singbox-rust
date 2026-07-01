@@ -1,8 +1,12 @@
 use anyhow::{anyhow, Result};
 use std::sync::Arc;
+#[cfg(feature = "clash_api")]
 use tokio::sync::oneshot;
+#[cfg(feature = "clash_api")]
 use tokio::task::JoinHandle;
-use tracing::{error, info};
+use tracing::error;
+#[cfg(any(feature = "admin_debug", feature = "clash_api"))]
+use tracing::info;
 
 #[cfg(all(feature = "router", feature = "clash_api"))]
 use crate::sidecar_runtime::{
@@ -58,6 +62,7 @@ impl AdminServices {
 pub struct AdminStartContext<'a> {
     opts: &'a crate::run_engine::RunOptions,
     supervisor: &'a Arc<sb_core::runtime::supervisor::Supervisor>,
+    #[cfg_attr(not(feature = "admin_debug"), allow(dead_code))]
     runtime: &'a crate::run_engine_runtime::context::RuntimeContext,
 }
 

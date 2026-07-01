@@ -173,9 +173,7 @@ pub(crate) fn parse_buckets(s: &str) -> Result<Vec<f64>> {
     Ok(v)
 }
 
-/// testhooks: 根据采样延迟与边界，计算直方图（counts/cdf）
 #[must_use]
-#[allow(dead_code)]
 pub(crate) fn compute_hist(lat_ms: &[u64], buckets: &[f64]) -> Hist {
     let mut counts = vec![0u64; buckets.len()];
     for &lat in lat_ms {
@@ -273,8 +271,6 @@ async fn bench_io(
     if insecure {
         cb = cb.danger_accept_invalid_certs(true);
     }
-    // Note: http2_prior_knowledge() not available in reqwest 0.12 with current features
-    // if h2 { cb = cb.http2_prior_knowledge(); }
     if !keepalive {
         cb = cb.pool_idle_timeout(Duration::from_millis(0));
     }
@@ -367,31 +363,7 @@ async fn bench_io(
     // 可选直方图
     out.hist = if let Some(spec) = hist_buckets {
         let buckets = parse_buckets(&spec)?;
-        let mut counts = vec![0u64; buckets.len()];
-        for &lat_ms in &v {
-            let mut idx = buckets.len().saturating_sub(1);
-            for (i, &b) in buckets.iter().enumerate() {
-                if (lat_ms as f64) <= b {
-                    idx = i;
-                    break;
-                }
-            }
-            if idx < counts.len() {
-                counts[idx] += 1;
-            }
-        }
-        let total = v.len() as f64;
-        let mut acc = 0u64;
-        let mut cdf = Vec::with_capacity(counts.len());
-        for &c in &counts {
-            acc += c;
-            cdf.push((acc as f64 / total).min(1.0));
-        }
-        Some(Hist {
-            buckets,
-            counts,
-            cdf,
-        })
+        Some(compute_hist(&v, &buckets))
     } else {
         None
     };
@@ -427,26 +399,6 @@ async fn bench_io(
             .with_context(|| format!("write histogram json atomically to {path:?}"))?;
     }
     Ok(())
-}
-
-#[cfg(not(feature = "reqwest"))]
-async fn bench_io(
-    _url: String,
-    _requests: u32,
-    _concurrency: usize,
-    _json: bool,
-    _method: String,
-    _body: Option<String>,
-    _hdrs: Vec<String>,
-    _h2: bool,
-    _insecure: bool,
-    _keepalive: bool,
-    _timeout_ms: u64,
-    _hist_buckets: Option<String>,
-    _save_path: Option<std::path::PathBuf>,
-) -> Result<()> {
-    // Should be handled in main() guard; keep as a fallback.
-    anyhow::bail!("feature 'reqwest' is required for `bench io`")
 }
 
 // -----------------------------
