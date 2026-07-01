@@ -10,6 +10,7 @@ This directory contains helper inputs and intentionally invalid fixtures.
 ## Valid Helper Inputs
 
 - `subs.nodes.sample.json`
+  Valid subscription node-list sample for `examples/schemas/subs.schema.json`.
 - `v1_dns.yml`
 - `v1_minimal.yml`
 - `v1_proxy.yml`
@@ -18,8 +19,9 @@ This directory contains helper inputs and intentionally invalid fixtures.
 ## Non-config Helper Data
 
 - `dns_pool_example.env`
-- `subs.bad.json`
 - `targets.auto.txt`
 - `targets.sample.txt`
 
 Do not treat every file in this directory as a runnable `app run` config.
+
+`subs.bad.json` is intentionally invalid against `examples/schemas/subs.schema.json`.

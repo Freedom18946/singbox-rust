@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-01) - examples release hygiene
+
+- **`examples/` release hygiene DONE locally**: runnable samples stay on current
+  `schema_version: 2`/`when`/`to` shapes, code examples build from their own manifest,
+  subscription node-list schema now matches the array fixtures, and legacy `misc/`
+  migration helpers have valid route actions.
+- **Verification PASS**: JSON/YAML parse, strict `app check` for `quick-start/` and
+  `configs/`, legacy `misc/` migration/current checks, negative config fixture failure,
+  route explain smoke, code-example build, subscription schema fixture test, fmt, and
+  `git diff --check`.
+- **Scope note**: examples/schema-fixture hygiene only. No product behavior, release
+  packaging completion, REALITY closure, dual-kernel BHV/parity movement, or workflow
+  automation is claimed.
+
 ## Resume (2026-07-01) - docs release hygiene
 
 - **`docs/` release hygiene DONE locally**: live docs were aligned with current

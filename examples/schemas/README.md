@@ -47,14 +47,14 @@ authoritative validation gate is `cargo run -p app -- check -c <path>`.
 
 ### subs.schema.json
 
-**Purpose**: Subscription format schema.
+**Purpose**: Subscription node-list schema.
 
 **Validates**:
 
-- Subscription source configuration
-- Node list format
-- Auto-update settings
-- Probe configuration
+- Exported node-list arrays
+- Required server and port fields for network proxy nodes
+- Protocol-specific credential fields for Trojan, VMess, VLESS, and Shadowsocks
+- Optional TLS metadata
 
 **Usage**:
 
@@ -204,14 +204,14 @@ if (!validate(config)) {
   "title": "singbox-rust Configuration",
   "type": "object",
   "properties": {
-    "schema_version": { "type": "number" },
+    "schema_version": { "type": "integer", "enum": [2] },
     "log": { "$ref": "#/definitions/LogConfig" },
     "inbounds": { "type": "array" },
     "outbounds": { "type": "array" },
     "route": { "$ref": "#/definitions/RouteConfig" },
     "dns": { "$ref": "#/definitions/DnsConfig" }
   },
-  "required": ["inbounds", "outbounds"]
+  "required": ["schema_version", "inbounds", "outbounds"]
 }
 ```
 
@@ -285,6 +285,7 @@ To add custom properties:
    ```json
    {
      "$schema": "../examples/schemas/config.schema.json",
+     "schema_version": 2,
      "inbounds": [...]
    }
    ```

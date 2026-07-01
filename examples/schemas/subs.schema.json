@@ -1,62 +1,199 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "Subscription Node Schema",
-  "description": "JSON Schema for validating subscription node exports",
-  "type": "object",
-  "required": ["type", "server"],
-  "properties": {
-    "tag": {
-      "type": "string",
-      "description": "Node identifier tag"
-    },
-    "type": {
-      "type": "string",
-      "enum": ["trojan", "vmess", "vless", "shadowsocks", "socks", "http", "direct"],
-      "description": "Proxy protocol type"
-    },
-    "server": {
-      "type": "string",
-      "format": "hostname",
-      "description": "Server hostname or IP address"
-    },
-    "server_port": {
-      "type": "integer",
-      "minimum": 1,
-      "maximum": 65535,
-      "description": "Server port number"
-    },
+  "title": "Subscription Node List Schema",
+  "description": "JSON Schema for validating exported subscription node lists.",
+  "type": "array",
+  "minItems": 1,
+  "items": {
+    "$ref": "#/definitions/node"
+  },
+  "definitions": {
     "port": {
       "type": "integer",
       "minimum": 1,
-      "maximum": 65535,
-      "description": "Alternative port field (for compatibility)"
+      "maximum": 65535
     },
-    "password": {
-      "type": "string",
-      "description": "Authentication password"
-    },
-    "tls": {
+    "node": {
       "type": "object",
+      "required": ["type"],
+      "additionalProperties": false,
       "properties": {
-        "enabled": {
-          "type": "boolean",
-          "description": "Whether TLS is enabled"
-        },
-        "server_name": {
+        "tag": {
           "type": "string",
-          "description": "TLS Server Name Indication"
+          "description": "Node identifier tag"
         },
-        "insecure": {
-          "type": "boolean",
-          "description": "Skip certificate verification"
+        "name": {
+          "type": "string",
+          "description": "Alternative node identifier"
+        },
+        "type": {
+          "type": "string",
+          "enum": [
+            "trojan",
+            "vmess",
+            "vless",
+            "shadowsocks",
+            "ss",
+            "socks",
+            "socks5",
+            "http",
+            "direct"
+          ],
+          "description": "Proxy protocol type"
+        },
+        "server": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Server hostname or IP address"
+        },
+        "server_port": {
+          "$ref": "#/definitions/port",
+          "description": "Server port number"
+        },
+        "port": {
+          "$ref": "#/definitions/port",
+          "description": "Alternative port field"
+        },
+        "password": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Authentication password"
+        },
+        "uuid": {
+          "type": "string",
+          "minLength": 1,
+          "description": "VMess or VLESS user UUID"
+        },
+        "method": {
+          "type": "string",
+          "minLength": 1,
+          "description": "Shadowsocks encryption method"
+        },
+        "username": {
+          "type": "string",
+          "description": "Optional HTTP/SOCKS username"
+        },
+        "network": {
+          "type": "string"
+        },
+        "sni": {
+          "type": "string"
+        },
+        "servername": {
+          "type": "string"
+        },
+        "flow": {
+          "type": "string"
+        },
+        "security": {
+          "type": "string"
+        },
+        "alterId": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "udp": {
+          "type": "boolean"
+        },
+        "tls": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean",
+              "description": "Whether TLS is enabled"
+            },
+            "server_name": {
+              "type": "string",
+              "description": "TLS Server Name Indication"
+            },
+            "insecure": {
+              "type": "boolean",
+              "description": "Skip certificate verification"
+            }
+          }
         }
       },
-      "additionalProperties": false
+      "allOf": [
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "direct" }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "not": {
+              "anyOf": [
+                { "required": ["server"] },
+                { "required": ["server_port"] },
+                { "required": ["port"] }
+              ]
+            }
+          },
+          "else": {
+            "required": ["server"],
+            "anyOf": [
+              { "required": ["server_port"] },
+              { "required": ["port"] }
+            ]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "const": "trojan" }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["password"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["shadowsocks", "ss"] }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["method", "password"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["vmess", "vless"] }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "required": ["uuid"]
+          }
+        },
+        {
+          "if": {
+            "properties": {
+              "type": { "enum": ["http", "socks", "socks5"] }
+            },
+            "required": ["type"]
+          },
+          "then": {
+            "anyOf": [
+              {
+                "not": {
+                  "anyOf": [
+                    { "required": ["username"] },
+                    { "required": ["password"] }
+                  ]
+                }
+              },
+              { "required": ["username", "password"] }
+            ]
+          }
+        }
+      ]
     }
-  },
-  "additionalProperties": false,
-  "anyOf": [
-    { "required": ["server_port"] },
-    { "required": ["port"] }
-  ]
+  }
 }
