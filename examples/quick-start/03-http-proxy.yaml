@@ -5,6 +5,7 @@
 #
 # Test: curl -x http://127.0.0.1:8080 https://example.com
 
+schema_version: 2
 inbounds:
   - name: http-in
     type: http
@@ -23,4 +24,3 @@ route:
 
 log:
   level: info
-

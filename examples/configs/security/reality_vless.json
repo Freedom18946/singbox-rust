@@ -37,7 +37,7 @@
     "rules": [
       {
         "domain": ["example.com", "example.org"],
-        "outbound": "reality-proxy"
+        "to": "reality-proxy"
       }
     ],
     "default": "direct"

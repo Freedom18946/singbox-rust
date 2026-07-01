@@ -1,150 +1,619 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "title": "sing-box Configuration Schema",
-  "description": "JSON Schema for validating sing-box configuration files",
+  "title": "singbox-rust Configuration Schema v2",
+  "description": "JSON Schema for schema_version: 2 examples. The app check command remains authoritative.",
   "type": "object",
-  "required": ["inbounds", "outbounds"],
+  "additionalProperties": false,
+  "required": ["schema_version", "inbounds", "outbounds"],
   "properties": {
+    "$schema": {
+      "type": "string"
+    },
+    "schema_version": {
+      "type": "integer",
+      "enum": [2]
+    },
+    "log": {
+      "$ref": "#/definitions/log"
+    },
+    "inbounds": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/inbound"
+      }
+    },
+    "outbounds": {
+      "type": "array",
+      "items": {
+        "$ref": "#/definitions/outbound"
+      }
+    },
+    "route": {
+      "$ref": "#/definitions/route"
+    },
+    "dns": {
+      "$ref": "#/definitions/dns"
+    },
+    "services": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "endpoints": {
+      "type": "array",
+      "items": {
+        "type": "object"
+      }
+    },
+    "experimental": {
+      "type": "object"
+    },
+    "ntp": {
+      "type": "object"
+    },
+    "certificate": {
+      "type": "object"
+    }
+  },
+  "definitions": {
+    "stringList": {
+      "oneOf": [
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      ]
+    },
+    "portMatch": {
+      "oneOf": [
+        {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        {
+          "type": "string"
+        },
+        {
+          "type": "array",
+          "items": {
+            "oneOf": [
+              {
+                "type": "integer",
+                "minimum": 1,
+                "maximum": 65535
+              },
+              {
+                "type": "string"
+              }
+            ]
+          }
+        }
+      ]
+    },
     "log": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "level": {
           "type": "string",
           "enum": ["trace", "debug", "info", "warn", "error", "fatal", "panic"]
         },
-        "output": {
-          "type": "string"
-        },
         "timestamp": {
           "type": "boolean"
-        }
-      },
-      "additionalProperties": true
-    },
-    "dns": {
-      "type": "object",
-      "properties": {
-        "servers": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "required": ["address"],
-            "properties": {
-              "tag": {
-                "type": "string"
-              },
-              "address": {
-                "type": "string"
-              },
-              "address_resolver": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
-          }
         },
-        "rules": {
-          "type": "array",
-          "items": {
-            "type": "object",
-            "additionalProperties": true
-          }
-        }
-      },
-      "additionalProperties": true
-    },
-    "inbounds": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "required": ["type"],
-        "properties": {
-          "tag": {
-            "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["direct", "socks", "http", "mixed", "tun", "redirect", "tproxy"]
-          },
-          "listen": {
-            "type": "string"
-          },
-          "listen_port": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 65535
-          },
-          "port": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 65535
-          }
+        "format": {
+          "type": "string"
         },
-        "additionalProperties": true
+        "disabled": {
+          "type": "boolean"
+        },
+        "output": {
+          "type": "string"
+        }
       }
     },
-    "outbounds": {
-      "type": "array",
-      "minItems": 1,
-      "items": {
-        "type": "object",
-        "required": ["type"],
-        "properties": {
-          "tag": {
+    "inbound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string",
+          "deprecated": true
+        },
+        "type": {
+          "type": "string"
+        },
+        "listen": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "listen_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "deprecated": true
+        },
+        "udp": {
+          "type": "boolean"
+        },
+        "network": {
+          "type": "string"
+        },
+        "sniff": {
+          "type": "boolean"
+        },
+        "auth": {
+          "type": "object"
+        },
+        "users": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "cert": {
+          "type": "string"
+        },
+        "key": {
+          "type": "string"
+        },
+        "congestion_control": {
+          "type": "string"
+        },
+        "salamander": {
+          "type": "string"
+        },
+        "obfs": {
+          "type": "string"
+        },
+        "up_mbps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "down_mbps": {
+          "type": "integer",
+          "minimum": 1
+        }
+      }
+    },
+    "outbound": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["type"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string",
+          "deprecated": true
+        },
+        "type": {
+          "type": "string"
+        },
+        "server": {
+          "type": "string"
+        },
+        "port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535
+        },
+        "server_port": {
+          "type": "integer",
+          "minimum": 1,
+          "maximum": 65535,
+          "deprecated": true
+        },
+        "method": {
+          "type": "string"
+        },
+        "password": {
+          "type": "string"
+        },
+        "username": {
+          "type": "string"
+        },
+        "user": {
+          "type": "string"
+        },
+        "uuid": {
+          "type": "string"
+        },
+        "flow": {
+          "type": "string"
+        },
+        "token": {
+          "type": "string"
+        },
+        "udp": {
+          "oneOf": [
+            {
+              "type": "boolean"
+            },
+            {
+              "type": "string"
+            }
+          ]
+        },
+        "transport": {
+          "$ref": "#/definitions/stringList"
+        },
+        "ws_path": {
+          "type": "string"
+        },
+        "ws_host": {
+          "type": "string"
+        },
+        "tls_sni": {
+          "type": "string"
+        },
+        "tls_alpn": {
+          "type": "string"
+        },
+        "alpn": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "skip_cert_verify": {
+          "type": "boolean"
+        },
+        "congestion_control": {
+          "type": "string"
+        },
+        "salamander": {
+          "type": "string"
+        },
+        "up_mbps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "down_mbps": {
+          "type": "integer",
+          "minimum": 1
+        },
+        "outbounds": {
+          "type": "array",
+          "items": {
             "type": "string"
-          },
-          "type": {
-            "type": "string",
-            "enum": ["direct", "block", "socks", "http", "shadowsocks", "vmess", "trojan", "wireguard", "hysteria", "shadowtls", "vless", "tuic", "hysteria2", "selector", "urltest"]
-          },
-          "server": {
+          }
+        },
+        "members": {
+          "type": "array",
+          "items": {
             "type": "string"
-          },
-          "server_port": {
-            "type": "integer",
-            "minimum": 1,
-            "maximum": 65535
-          },
-          "outbounds": {
-            "type": "array",
-            "items": {
+          }
+        },
+        "default": {
+          "type": "string"
+        },
+        "default_member": {
+          "type": "string"
+        },
+        "url": {
+          "type": "string"
+        },
+        "test_url": {
+          "type": "string"
+        },
+        "interval": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "interval_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "test_interval_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "timeout": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "timeout_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "test_timeout_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tolerance": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "integer",
+              "minimum": 0
+            }
+          ]
+        },
+        "tolerance_ms": {
+          "type": "integer",
+          "minimum": 0
+        },
+        "tls": {
+          "$ref": "#/definitions/tls"
+        }
+      }
+    },
+    "tls": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "enabled": {
+          "type": "boolean"
+        },
+        "sni": {
+          "type": "string"
+        },
+        "alpn": {
+          "oneOf": [
+            {
+              "type": "string"
+            },
+            {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          ]
+        },
+        "reality": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "public_key": {
+              "type": "string"
+            },
+            "short_id": {
+              "type": "string"
+            },
+            "server_name": {
               "type": "string"
             }
           }
         },
-        "additionalProperties": true
+        "ech": {
+          "type": "object",
+          "additionalProperties": false,
+          "properties": {
+            "enabled": {
+              "type": "boolean"
+            },
+            "config": {
+              "type": "string"
+            },
+            "pq_signature_schemes_enabled": {
+              "type": "boolean"
+            },
+            "dynamic_record_sizing_disabled": {
+              "type": "boolean"
+            }
+          }
+        }
       }
     },
     "route": {
       "type": "object",
+      "additionalProperties": false,
       "properties": {
         "rules": {
           "type": "array",
           "items": {
-            "type": "object",
-            "required": ["outbound"],
-            "properties": {
-              "outbound": {
-                "type": "string"
-              }
-            },
-            "additionalProperties": true
+            "$ref": "#/definitions/rule"
           }
+        },
+        "default": {
+          "type": "string"
         },
         "final": {
           "type": "string"
-        },
-        "auto_detect_interface": {
-          "type": "boolean"
         }
-      },
-      "additionalProperties": true
+      }
     },
-    "experimental": {
+    "rule": {
       "type": "object",
-      "additionalProperties": true
+      "additionalProperties": false,
+      "anyOf": [
+        {
+          "required": ["to"]
+        },
+        {
+          "required": ["outbound"]
+        }
+      ],
+      "properties": {
+        "when": {
+          "$ref": "#/definitions/ruleWhen"
+        },
+        "to": {
+          "type": "string"
+        },
+        "outbound": {
+          "type": "string",
+          "deprecated": true
+        },
+        "domain": {
+          "$ref": "#/definitions/stringList"
+        },
+        "domain_suffix": {
+          "$ref": "#/definitions/stringList"
+        },
+        "suffix": {
+          "$ref": "#/definitions/stringList"
+        },
+        "keyword": {
+          "$ref": "#/definitions/stringList"
+        },
+        "regex": {
+          "$ref": "#/definitions/stringList"
+        },
+        "geosite": {
+          "$ref": "#/definitions/stringList"
+        },
+        "geoip": {
+          "$ref": "#/definitions/stringList"
+        },
+        "ipcidr": {
+          "$ref": "#/definitions/stringList"
+        },
+        "ip_cidr": {
+          "$ref": "#/definitions/stringList"
+        },
+        "port": {
+          "$ref": "#/definitions/portMatch"
+        },
+        "network": {
+          "$ref": "#/definitions/stringList"
+        },
+        "transport": {
+          "$ref": "#/definitions/stringList"
+        },
+        "protocol": {
+          "$ref": "#/definitions/stringList"
+        },
+        "process": {
+          "$ref": "#/definitions/stringList"
+        }
+      }
+    },
+    "ruleWhen": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "domain": {
+          "$ref": "#/definitions/stringList"
+        },
+        "suffix": {
+          "$ref": "#/definitions/stringList"
+        },
+        "domain_suffix": {
+          "$ref": "#/definitions/stringList"
+        },
+        "keyword": {
+          "$ref": "#/definitions/stringList"
+        },
+        "regex": {
+          "$ref": "#/definitions/stringList"
+        },
+        "geosite": {
+          "$ref": "#/definitions/stringList"
+        },
+        "geoip": {
+          "$ref": "#/definitions/stringList"
+        },
+        "ipcidr": {
+          "$ref": "#/definitions/stringList"
+        },
+        "ip_cidr": {
+          "$ref": "#/definitions/stringList"
+        },
+        "port": {
+          "$ref": "#/definitions/portMatch"
+        },
+        "network": {
+          "type": "string"
+        },
+        "transport": {
+          "type": "string"
+        },
+        "protocol": {
+          "type": "string"
+        },
+        "process": {
+          "type": "string"
+        }
+      }
+    },
+    "dns": {
+      "type": "object",
+      "additionalProperties": false,
+      "properties": {
+        "servers": {
+          "type": "array",
+          "items": {
+            "$ref": "#/definitions/dnsServer"
+          }
+        },
+        "rules": {
+          "type": "array",
+          "items": {
+            "type": "object"
+          }
+        },
+        "default": {
+          "type": "string"
+        },
+        "final": {
+          "type": "string"
+        }
+      }
+    },
+    "dnsServer": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["address"],
+      "properties": {
+        "name": {
+          "type": "string"
+        },
+        "tag": {
+          "type": "string",
+          "deprecated": true
+        },
+        "address": {
+          "type": "string"
+        },
+        "address_resolver": {
+          "type": "string"
+        }
+      }
     }
-  },
-  "additionalProperties": true
+  }
 }

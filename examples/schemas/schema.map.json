@@ -1,12 +1,14 @@
 {
-  "rename": [
-    {"from": "tag", "to": "name"}
-  ],
-  "coalesce": [
-    {"to": "server_port", "from": ["server_port", "port"]}
-  ],
-  "set": [
-    {"path": "tls.enabled", "value": true}
-  ],
-  "delete": ["udp", "skip-cert-verify"]
+  "default_config_schema": "v2",
+  "schemas": {
+    "v2": {
+      "schema_version": 2,
+      "path": "config.schema.json",
+      "description": "Current singbox-rust configuration schema for schema_version: 2"
+    },
+    "subscription": {
+      "path": "subs.schema.json",
+      "description": "Subscription node-list schema"
+    }
+  }
 }

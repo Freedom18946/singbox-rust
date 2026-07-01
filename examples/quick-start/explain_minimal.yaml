@@ -1,3 +1,4 @@
+schema_version: 2
 inbounds:
   - name: http
     type: http

@@ -1,8 +1,9 @@
 # JSON Schemas / JSON 模式定义
 
-JSON Schema files for configuration validation and IDE autocompletion.
+JSON Schema files for IDE autocompletion and external validation. The
+authoritative validation gate is `cargo run -p app -- check -c <path>`.
 
-用于配置验证和 IDE 自动补全的 JSON Schema 文件。
+用于 IDE 自动补全和外部校验的 JSON Schema 文件；权威校验以 `app check` 为准。
 
 ---
 
@@ -10,7 +11,7 @@ JSON Schema files for configuration validation and IDE autocompletion.
 
 ### config.schema.json
 
-**Purpose**: Main configuration file schema for singbox-rust.
+**Purpose**: Main configuration file schema for singbox-rust `schema_version: 2`.
 
 **Validates**:
 
@@ -72,13 +73,12 @@ JSON Schema files for configuration validation and IDE autocompletion.
 
 ### schema.map.json
 
-**Purpose**: Schema mapping file for version-specific schemas.
+**Purpose**: Project-local schema index for editor/tool discovery.
 
 **Contents**:
 
-- Schema version mappings
-- Compatibility information
-- Migration guides
+- Current config schema mapping
+- Subscription schema mapping
 
 ---
 
@@ -86,13 +86,15 @@ JSON Schema files for configuration validation and IDE autocompletion.
 
 ### Command-Line Validation
 
-Validate configuration against schema:
+Validate configuration with the app:
 
 ```bash
-# Using app's built-in validator
 cargo run -p app -- check -c config.json
+```
 
-# Using external tools (e.g., ajv-cli)
+Validate JSON with an external schema tool:
+
+```bash
 npm install -g ajv-cli
 ajv validate -s examples/schemas/config.schema.json -d config.json
 ```
@@ -240,19 +242,15 @@ Schemas use `$ref` to reference reusable definitions:
 
 ## 🔄 Schema Versioning
 
-Schemas follow singbox-rust version numbers:
-
-- **v0.1.x**: Initial schema (legacy)
-- **v0.2.x**: Current schema (stable)
-- **v0.3.x**: Next schema (development)
+Runnable configuration examples use `schema_version: 2`. Legacy v1 fixtures
+under `examples/misc/` are migration inputs, not current runnable configs.
 
 ### Version Migration
 
-When upgrading, use the format command:
+When upgrading, use the check migrator:
 
 ```bash
-# Migrate and format to latest schema
-cargo run -p app -- format -c old-config.json -o new-config.json
+cargo run -p app -- check -c old-config.json --migrate --write-normalized --out new-config.json
 ```
 
 ---
@@ -297,7 +295,8 @@ To add custom properties:
    cargo run -p app -- check -c config.json
    ```
 
-3. **Check examples**: All example configs in `examples/` conform to schemas
+3. **Check examples**: runnable configs under `quick-start/` and `configs/`
+   must pass `app check`; `misc/` contains helper and negative fixtures
 
 4. **Report issues**: If schema validation conflicts with actual behavior, report a bug
 
@@ -328,10 +327,10 @@ To add custom properties:
 
 ```bash
 # Validate all example configs
-find examples/configs -name "*.json" -exec \
-  cargo run -p app -- check -c {} \;
+find examples/quick-start examples/configs \( -name "*.json" -o -name "*.yaml" -o -name "*.yml" \) -print |
+  while read -r file; do cargo run -p app -- check -c "$file"; done
 ```
 
 ---
 
-**Note**: Schemas are actively maintained and updated with new features. Always use the latest schema version from the repository.
+**Note**: prefer the schema files from the same repository revision as the app binary.

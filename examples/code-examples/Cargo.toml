@@ -1,0 +1,39 @@
+[package]
+name = "singbox-rust-code-examples"
+version = "0.0.0"
+edition = "2021"
+publish = false
+
+[workspace]
+
+[[bin]]
+name = "dns_lookup"
+path = "dns/dns_lookup.rs"
+
+[[bin]]
+name = "tcp_connect"
+path = "network/tcp_connect.rs"
+
+[[bin]]
+name = "udp_blast"
+path = "network/udp_blast.rs"
+
+[[bin]]
+name = "udp_echo"
+path = "network/udp_echo.rs"
+
+[[bin]]
+name = "http_inbound_demo"
+path = "proxy/http_inbound_demo.rs"
+
+[[bin]]
+name = "socks5_udp_probe"
+path = "proxy/socks5_udp_probe.rs"
+
+[dependencies]
+anyhow = "1"
+tokio = { version = "1", features = ["full"] }
+sb-adapters = { path = "../../crates/sb-adapters", features = ["adapter-http", "http", "router", "sb-transport"] }
+sb-common = { path = "../../crates/sb-common" }
+sb-core = { path = "../../crates/sb-core", features = ["router"] }
+sb-transport = { path = "../../crates/sb-transport", features = ["transport_tls"] }

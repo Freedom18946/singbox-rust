@@ -198,7 +198,7 @@ default:proxy
 
 1. **Order Matters**: Rules are evaluated top-to-bottom
 2. **Specificity**: More specific rules should come before general ones
-3. **Testing**: Use `cargo run -p app -- route --explain` to debug
+3. **Testing**: Use `cargo run -p app -- -c examples/quick-start/explain_minimal.yaml route --dest example.com:443 --explain` to debug
 4. **Comments**: Use `#` for comments in DSL files
 
 ---
@@ -217,8 +217,6 @@ See `snippets/` directory for reusable rule fragments:
 
 - `block_ads.dsl` - Common ad/tracker blocking rules
 
-More snippets coming soon!
-
 ---
 
-**Note**: DSL syntax is continuously evolving. Check version-specific files for compatibility.
+**Note**: check version-specific files before mixing v1, v2, and DSL+ syntax.

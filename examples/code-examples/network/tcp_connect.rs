@@ -1,5 +1,5 @@
-use std::env;
 use sb_transport::{Dialer as _, TcpDialer};
+use std::env;
 use tokio::time::Duration;
 
 #[tokio::main]

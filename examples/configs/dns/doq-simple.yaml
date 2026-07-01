@@ -3,6 +3,7 @@
 # This example shows basic DoQ setup (requires feature flag).
 # Usage: cargo run -p app --features 'sb-core/dns_doq' -- run -c examples/configs/dns/doq-simple.yaml
 
+schema_version: 2
 inbounds:
   - name: mixed-in
     type: mixed
@@ -27,4 +28,3 @@ route:
 
 log:
   level: info
-

@@ -51,11 +51,11 @@
     "rules": [
       {
         "domain": ["example.com"],
-        "outbound": "ech-vless"
+        "to": "ech-vless"
       },
       {
         "domain": ["ss.example.com"],
-        "outbound": "ech-shadowsocks"
+        "to": "ech-shadowsocks"
       }
     ],
     "default": "direct"

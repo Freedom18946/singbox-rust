@@ -8,6 +8,7 @@
 # Test SOCKS5: curl -x socks5://127.0.0.1:1080 https://example.com
 # Test HTTP:   curl -x http://127.0.0.1:1080 https://example.com
 
+schema_version: 2
 inbounds:
   - name: mixed-in
     type: mixed
@@ -28,11 +29,10 @@ route:
     
     # Direct connection for local networks
     - when:
-        cidr: ["10.0.0.0/8", "192.168.0.0/16"]
+        ip_cidr: ["10.0.0.0/8", "192.168.0.0/16"]
       to: direct
   
   default: direct
 
 log:
   level: info
-

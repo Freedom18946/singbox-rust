@@ -5,6 +5,7 @@
 #
 # Usage: cargo run -p app -- run -c examples/quick-start/05-basic-routing.yaml
 
+schema_version: 2
 inbounds:
   - name: mixed-in
     type: mixed
@@ -29,7 +30,7 @@ route:
     
     # Block private IP ranges from being proxied
     - when:
-        cidr:
+        ip_cidr:
           - "127.0.0.0/8"
           - "10.0.0.0/8"
           - "172.16.0.0/12"
@@ -55,4 +56,3 @@ route:
 log:
   level: info
   timestamp: true
-
