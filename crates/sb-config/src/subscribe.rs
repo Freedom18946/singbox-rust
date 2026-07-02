@@ -29,8 +29,10 @@ pub fn from_subscription(text: &str) -> Result<Config> {
         return Ok(cfg);
     }
     // Try Clash YAML
-    if let Ok(cfg) = parse_clash_yaml(text) {
-        return Ok(cfg);
+    match parse_clash_yaml(text) {
+        Ok(cfg) => return Ok(cfg),
+        Err(err) if looks_like_clash_yaml(text) => return Err(err),
+        Err(_) => {}
     }
     // Finally try Sing-Box YAML (convert YAML to JSON and reuse parser)
     if let Ok(val_yaml) = serde_yaml::from_str::<serde_yaml::Value>(text) {
@@ -49,14 +51,14 @@ struct ClashSub {
     #[serde(default)]
     proxies: Vec<ClashProxy>,
     #[serde(default)]
-    #[allow(dead_code)]
+    #[serde(rename = "proxy-groups")]
     proxy_groups: Vec<ClashGroup>,
     #[serde(default)]
     rules: Vec<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)] // Fields parsed for future use
+#[allow(dead_code)] // Retained Clash fields keep deserialization compatible.
 struct ClashProxy {
     name: String,
     #[serde(rename = "type")]
@@ -103,14 +105,12 @@ struct WsOpts {
 }
 
 #[derive(Debug, Deserialize, Default)]
-#[allow(dead_code)] // Fields parsed for future gRPC transport support
 struct GrpcOpts {
     #[serde(default, rename = "grpc-service-name")]
     grpc_service_name: Option<String>,
 }
 
 #[derive(Debug, Deserialize)]
-#[allow(dead_code)]
 struct ClashGroup {
     name: String,
     #[serde(rename = "type")]
@@ -119,8 +119,47 @@ struct ClashGroup {
     proxies: Vec<String>,
 }
 
+fn looks_like_clash_yaml(text: &str) -> bool {
+    let Ok(serde_yaml::Value::Mapping(map)) = serde_yaml::from_str::<serde_yaml::Value>(text)
+    else {
+        return false;
+    };
+    ["proxies", "proxy-groups", "rules"]
+        .iter()
+        .any(|key| map.contains_key(serde_yaml::Value::String((*key).to_string())))
+}
+
+fn clash_rule_target(rule: &str) -> Option<&str> {
+    let parts: Vec<&str> = rule.split(',').map(str::trim).collect();
+    match parts.first().copied()? {
+        "MATCH" | "FINAL" if parts.len() >= 2 => Some(parts[1]),
+        "DOMAIN" | "DOMAIN-SUFFIX" | "DOMAIN-KEYWORD" | "IP-CIDR" | "IP-CIDR6" | "GEOIP"
+            if parts.len() >= 3 =>
+        {
+            Some(parts[2])
+        }
+        _ => None,
+    }
+}
+
 fn parse_clash_yaml(text: &str) -> Result<Config> {
     let sub: ClashSub = serde_yaml::from_str(text).context("parse clash yaml")?;
+
+    let referenced_outbounds: HashSet<String> = sub
+        .rules
+        .iter()
+        .filter_map(|rule| clash_rule_target(rule).map(str::to_string))
+        .collect();
+    for group in &sub.proxy_groups {
+        if referenced_outbounds.contains(&group.name) {
+            return Err(anyhow!(
+                "unsupported clash proxy group referenced by rules: {} (type {}, members {})",
+                group.name,
+                group.kind,
+                group.proxies.len()
+            ));
+        }
+    }
 
     // 1) 映射节点为 outbounds
     let mut outbounds = Vec::<Outbound>::new();
@@ -191,6 +230,13 @@ fn parse_clash_yaml(text: &str) -> Result<Config> {
                 } else {
                     (None, None)
                 };
+                if let (Some(grpc), true) = (&p.grpc_opts, referenced_outbounds.contains(&p.name)) {
+                    return Err(anyhow!(
+                        "unsupported clash grpc transport referenced by proxy: {} (service {})",
+                        p.name,
+                        grpc.grpc_service_name.as_deref().unwrap_or("<unset>")
+                    ));
+                }
                 if let Some(ref uuid) = p.uuid {
                     outbounds.push(Outbound::Vmess {
                         name: p.name.clone(),
@@ -208,6 +254,11 @@ fn parse_clash_yaml(text: &str) -> Result<Config> {
                         tls_sni: p.sni.clone().or_else(|| p.servername.clone()),
                         tls_alpn: None,
                     });
+                } else if referenced_outbounds.contains(&p.name) {
+                    return Err(anyhow!(
+                        "clash vmess proxy referenced by rules is missing uuid: {}",
+                        p.name
+                    ));
                 }
             }
             "vless" => {
@@ -219,6 +270,13 @@ fn parse_clash_yaml(text: &str) -> Result<Config> {
                 } else {
                     (None, None)
                 };
+                if let (Some(grpc), true) = (&p.grpc_opts, referenced_outbounds.contains(&p.name)) {
+                    return Err(anyhow!(
+                        "unsupported clash grpc transport referenced by proxy: {} (service {})",
+                        p.name,
+                        grpc.grpc_service_name.as_deref().unwrap_or("<unset>")
+                    ));
+                }
                 if let Some(ref uuid) = p.uuid {
                     outbounds.push(Outbound::Vless {
                         name: p.name.clone(),
@@ -237,13 +295,30 @@ fn parse_clash_yaml(text: &str) -> Result<Config> {
                         tls_sni: p.sni.clone().or_else(|| p.servername.clone()),
                         tls_alpn: None,
                     });
+                } else if referenced_outbounds.contains(&p.name) {
+                    return Err(anyhow!(
+                        "clash vless proxy referenced by rules is missing uuid: {}",
+                        p.name
+                    ));
                 }
             }
             "ss" | "shadowsocks" => {
-                // Shadowsocks: requires method/cipher in Outbound enum - skipped for now
+                if referenced_outbounds.contains(&p.name) {
+                    return Err(anyhow!(
+                        "unsupported clash proxy referenced by rules: {} (type {})",
+                        p.name,
+                        p.kind
+                    ));
+                }
             }
             _ => {
-                // Other types ignored (hysteria, etc.)
+                if referenced_outbounds.contains(&p.name) {
+                    return Err(anyhow!(
+                        "unsupported clash proxy referenced by rules: {} (type {})",
+                        p.name,
+                        p.kind
+                    ));
+                }
             }
         }
     }
@@ -457,6 +532,40 @@ rules:
         assert_eq!(cfg.rules.len(), 1);
         assert_eq!(cfg.default_outbound.as_deref(), Some("c"));
         Ok(())
+    }
+
+    #[test]
+    fn clash_referenced_unsupported_proxy_errors() {
+        let y = r#"
+proxies:
+  - {name: ss-node, type: ss, server: 10.0.0.4, port: 8388, cipher: aes-128-gcm, password: p}
+rules:
+  - MATCH,ss-node
+"#;
+        let err = from_subscription(y).expect_err("referenced unsupported proxy must fail");
+        assert!(
+            err.to_string()
+                .contains("unsupported clash proxy referenced by rules: ss-node"),
+            "{err}"
+        );
+    }
+
+    #[test]
+    fn clash_referenced_proxy_group_errors() {
+        let y = r#"
+proxies:
+  - {name: corp-socks, type: socks5, server: 10.0.0.3, port: 1080}
+proxy-groups:
+  - {name: Auto, type: select, proxies: [corp-socks]}
+rules:
+  - MATCH,Auto
+"#;
+        let err = from_subscription(y).expect_err("referenced proxy group must fail");
+        assert!(
+            err.to_string()
+                .contains("unsupported clash proxy group referenced by rules: Auto"),
+            "{err}"
+        );
     }
 
     #[test]

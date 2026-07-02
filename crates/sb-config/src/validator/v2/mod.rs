@@ -24,10 +24,9 @@ pub(super) use helpers::{
     parse_u16_field, parse_u32_field,
 };
 
-/// Lightweight schema validation (placeholder implementation): parses built-in schema, checks against field set for UnknownField/TypeMismatch/MissingRequired.
-/// Note: To avoid heavy dependencies, minimal necessary logic is implemented here; can be switched to jsonschema crate later while keeping output structure unchanged.
-/// 轻量 schema 校验（占位实现）：解析内置 schema，对照字段集做 UnknownField/TypeMismatch/MissingRequired
-/// 说明：为了不引入庞大依赖，这里实现最小必要逻辑；后续可切换 jsonschema crate，保持输出结构不变。
+/// Lightweight schema validation: coordinates the v2 root, nested block,
+/// deprecation, security, and TLS capability validators.
+/// 轻量 schema 校验：编排 v2 根节点、嵌套块、弃用项、安全项与 TLS 能力检查。
 ///
 /// # Arguments
 /// * `doc` - The JSON document to validate / 待验证的 JSON 文档
@@ -42,8 +41,8 @@ pub fn pack_output(issues: Vec<Value>) -> Value {
     facade::pack_output(issues)
 }
 
-/// Convert V1/V2 raw JSON to IR (excerpt; V1 unknown fields ignored but warning optional).
-/// 将 v1/v2 原始 JSON 转 IR（节选；v1 未知字段忽略但告警可选）。
+/// Convert V1/V2 raw JSON to IR using the module-owned lowering pipeline.
+/// 通过各模块负责的 lowering 流程将 v1/v2 原始 JSON 转 IR。
 pub fn to_ir_v1(doc: &serde_json::Value) -> crate::ir::ConfigIR {
     facade::to_ir_v1(doc)
 }

@@ -3708,11 +3708,11 @@ mod tests {
         assert!(result.is_ok(), "experimental should accept known sub-keys");
     }
 
-    /// Boundary documentation: inbound/outbound/service nested trees still
-    /// do NOT have nested Raw types. DNS, route, and endpoint are now strict;
-    /// these remaining domains are future work, not regressions from WP-30f.
+    /// Boundary documentation: all major nested trees now deserialize through
+    /// Raw bridge types that reject unknown fields, except experimental which
+    /// intentionally remains forward-compatible.
     #[test]
-    fn nested_non_leaf_unknown_fields_not_yet_strict_boundary_doc() {
+    fn nested_non_leaf_unknown_fields_are_strict_boundary_doc() {
         // Route is now strict (WP-30e): unknown route fields are rejected.
         let data = json!({
             "route": {
@@ -3752,7 +3752,7 @@ mod tests {
             "service nested unknown fields should be rejected after WP-30g"
         );
 
-        // Inbound/outbound remain non-strict (future work).
+        // Inbound/outbound strictness is covered by dedicated Raw bridge tests below.
     }
 
     // ─────────────────── Service Raw boundary tests (WP-30g) ───────────────────

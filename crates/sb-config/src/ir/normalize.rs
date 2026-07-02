@@ -18,7 +18,6 @@
 //! rule.outbound, selector members, DNS refs, service refs).
 
 use super::{ConfigIR, RuleIR};
-use std::net::Ipv4Addr;
 
 /// Normalize domain: lowercase, trim dots, handle wildcards.
 fn norm_domain(s: &str) -> String {
@@ -72,18 +71,6 @@ fn norm_port_vec(v: &mut Vec<String>) {
         i = j;
     }
     *v = out;
-}
-
-#[allow(dead_code)]
-fn looks_like_cidr(s: &str) -> bool {
-    let parts: Vec<_> = s.split('/').collect();
-    if parts.len() != 2 {
-        return false;
-    }
-    if parts[1].parse::<u8>().ok().filter(|m| *m <= 32).is_none() {
-        return false;
-    }
-    parts[0].parse::<Ipv4Addr>().is_ok()
 }
 
 pub(crate) fn normalize_rule(r: &mut RuleIR) {

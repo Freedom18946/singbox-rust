@@ -15,23 +15,10 @@ fn test_real_subscription() -> anyhow::Result<()> {
     });
 
     let Ok(content) = std::fs::read_to_string(&path) else {
-        eprintln!(
-            "skipping real subscription test; fixture not found at {}",
-            path
-        );
         return Ok(());
     };
 
-    println!("Content size: {} bytes", content.len());
-    println!("First 300 chars:\n{}", &content[..content.len().min(300)]);
-
     let config = from_subscription(&content)?;
-    println!("\n✅ Parsing SUCCESS!");
-    println!("Outbounds: {}", config.outbounds.len());
-    println!("Rules: {}", config.rules.len());
-
-    for (i, ob) in config.outbounds.iter().take(10).enumerate() {
-        println!("  [{}] {:?}", i + 1, ob);
-    }
+    assert_eq!(config.schema_version, 2);
     Ok(())
 }

@@ -225,13 +225,6 @@ fn test_unknown_fields_generate_warnings_with_allow_unknown() -> anyhow::Result<
     let warnings: Vec<_> = issues.iter().filter(|i| i["kind"] == "warning").collect();
     let errors: Vec<_> = issues.iter().filter(|i| i["kind"] == "error").collect();
 
-    eprintln!("DEBUG all issues: {:?}", issues);
-    eprintln!(
-        "DEBUG warnings count: {}, errors count: {}",
-        warnings.len(),
-        errors.len()
-    );
-
     // Should have warnings but no errors when allow_unknown is true
     assert!(
         errors.is_empty(),
@@ -260,7 +253,6 @@ fn test_unknown_fields_generate_warnings_with_allow_unknown() -> anyhow::Result<
     );
 
     for warning in &unknown_field_warnings {
-        eprintln!("DEBUG warning: {:?}", warning);
         if let Some(msg) = warning["msg"].as_str() {
             assert!(
                 msg.contains("unknown field"),
@@ -368,18 +360,6 @@ fn test_compatibility_matrix_summary() -> anyhow::Result<()> {
     let v1_pass = 3; // From test_v1_variants_pass_migration
     let v2_pass = 3; // From test_v2_variants_pass_validation
     let warnings = 3; // Maximum from test_unknown_fields_generate_warnings_with_allow_unknown
-
-    // Create the expected matrix structure
-    let matrix = json!({
-        "v1_pass": v1_pass,
-        "v2_pass": v2_pass,
-        "warnings": warnings
-    });
-
-    println!(
-        "Compatibility Matrix: {}",
-        serde_json::to_string_pretty(&matrix)?
-    );
 
     // Assertions for the spec requirements
     assert_eq!(v1_pass, 3, "Should have exactly 3 passing v1 variants");
