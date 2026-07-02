@@ -413,8 +413,6 @@ fn test_documented_endpoints_summary() {
         endpoints_implemented.len()
     );
 
-    println!("✅ Clash API Endpoints Documented: 37/44 (84.1%)");
-    println!("✅ Server Configuration Tests: Passing");
-    println!("✅ Data Structure Tests: Passing");
-    println!("📝 HTTP Endpoint Tests: Deferred to Sprint 15+ (requires running server)");
+    assert!(endpoints_implemented.contains(&("GET", "/capabilities")));
+    assert!(endpoints_implemented.contains(&("GET", "/version")));
 }

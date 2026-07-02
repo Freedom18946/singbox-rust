@@ -189,26 +189,18 @@ async fn test_v2ray_api_stats_subscription() -> anyhow::Result<()> {
 
     let received = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
 
-    assert!(received.is_ok(), "Should receive stats update");
-    if let Ok(Ok(stat)) = received {
-        assert_eq!(stat.name, "test_counter_broadcast");
-        assert_eq!(stat.value, 512);
-    } else {
-        panic!("Should receive stats update");
-    }
+    let stat = received??;
+    assert_eq!(stat.name, "test_counter_broadcast");
+    assert_eq!(stat.value, 512);
 
     // Test multiple updates
     server.update_traffic("test_counter_broadcast", 256).await;
 
     let received = tokio::time::timeout(std::time::Duration::from_millis(100), rx.recv()).await;
 
-    assert!(received.is_ok(), "Should receive second stats update");
-    if let Ok(Ok(stat)) = received {
-        assert_eq!(stat.name, "test_counter_broadcast");
-        assert_eq!(stat.value, 768); // 512 + 256
-    } else {
-        panic!("Should receive second stats update");
-    }
+    let stat = received??;
+    assert_eq!(stat.name, "test_counter_broadcast");
+    assert_eq!(stat.value, 768); // 512 + 256
     Ok(())
 }
 
@@ -234,21 +226,16 @@ async fn test_v2ray_api_server_startup() -> anyhow::Result<()> {
     assert!(result.is_ok(), "Server should start successfully");
     assert!(result.unwrap().is_ok(), "Server start should return Ok");
 
-    // Wait a bit for the background task to update stats
+    // Wait a bit to verify startup does not generate synthetic traffic.
     tokio::time::sleep(std::time::Duration::from_millis(200)).await;
 
-    // Verify that the background task is updating stats
     let stats = server.get_all_stats().await;
     let downlink_value = stats
         .get("inbound>>>api>>>traffic>>>downlink")
         .copied()
         .unwrap_or(0);
 
-    // The background task should have updated this value
-    assert!(
-        downlink_value > 0,
-        "Background task should have updated stats"
-    );
+    assert_eq!(downlink_value, 0, "startup must not synthesize stats");
     Ok(())
 }
 

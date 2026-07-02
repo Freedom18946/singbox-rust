@@ -16,7 +16,7 @@ use crate::{
 };
 use std::{
     sync::{
-        atomic::{AtomicBool, AtomicU64, Ordering},
+        atomic::{AtomicBool, Ordering},
         Arc,
     },
     time::{Duration, SystemTime, UNIX_EPOCH},
@@ -36,7 +36,6 @@ pub struct TrafficCollector {
     is_running: Arc<AtomicBool>,
     traffic_tx: broadcast::Sender<TrafficStats>,
     update_interval: Duration,
-    total_connections: AtomicU64,
     bytes_transferred: Arc<Mutex<(u64, u64)>>, // (up, down)
 }
 
@@ -45,19 +44,13 @@ impl TrafficCollector {
     pub fn new(bridge: Arc<MetricsBridge>) -> Self {
         let (traffic_tx, _) = broadcast::channel(1000);
 
-        let collector = Self {
+        Self {
             bridge,
             is_running: Arc::new(AtomicBool::new(false)),
             traffic_tx,
             update_interval: Duration::from_millis(1000),
-            total_connections: AtomicU64::new(0),
             bytes_transferred: Arc::new(Mutex::new((0, 0))),
-        };
-
-        // Touch unread field for clippy
-        let _ = &collector.total_connections;
-
-        collector
+        }
     }
 
     /// Start the traffic collector
@@ -71,16 +64,12 @@ impl TrafficCollector {
         let traffic_tx = self.traffic_tx.clone();
         let is_running = self.is_running.clone();
         let update_interval = self.update_interval;
-        let bytes_transferred = self.bytes_transferred.clone();
 
         let _bg = tokio::spawn(async move {
             let mut interval_timer = interval(update_interval);
             let mut last_up = 0u64;
             let mut last_down = 0u64;
             let mut last_time = Instant::now();
-
-            // Touch bytes_transferred to avoid unused variable warning
-            let _ = &bytes_transferred;
 
             while is_running.load(Ordering::Relaxed) {
                 interval_timer.tick().await;

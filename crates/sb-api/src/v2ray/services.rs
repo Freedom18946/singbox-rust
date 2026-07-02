@@ -163,28 +163,12 @@ impl StatsService for StatsServiceImpl {
         &self,
         _request: Request<SysStatsRequest>,
     ) -> Result<Response<SysStatsResponse>, Status> {
-        // Mock system statistics - in production this would gather real system metrics
-        let response = SysStatsResponse {
-            num_goroutine: 100, // Mock number of goroutines (would be threads in Rust)
-            num_gc: 50,         // Mock GC count
-            alloc: 1024 * 1024, // Mock allocated memory (1MB)
-            total_alloc: 10 * 1024 * 1024, // Mock total allocated (10MB)
-            sys: 2 * 1024 * 1024, // Mock system memory (2MB)
-            mallocs: 1000,      // Mock malloc count
-            frees: 900,         // Mock free count
-            live_objects: 100,  // Mock live objects
-            pause_total_ns: 1000000, // Mock GC pause time (1ms)
-            uptime: SystemTime::now()
-                .duration_since(UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_secs() as u32,
-        };
-
-        Ok(Response::new(response))
+        Err(Status::unimplemented(
+            "V2Ray system statistics are not wired to runtime metrics",
+        ))
     }
 }
 
-/// Handler service implementation for managing inbound/outbound proxies
 /// Handler service implementation for managing inbound/outbound proxies
 /// 用于管理入站/出站代理的处理程序服务实现
 ///
@@ -193,45 +177,6 @@ impl StatsService for StatsServiceImpl {
 pub struct HandlerServiceImpl {
     inbound_manager: InboundManager,
     outbound_manager: OutboundManager,
-}
-
-/// Stub inbound adapter for V2Ray API placeholder handlers.
-/// V2Ray API 占位处理程序的存根入站适配器。
-struct StubInboundAdapter {
-    tag: String,
-    inbound_type: String,
-}
-
-impl StubInboundAdapter {
-    fn new(tag: String) -> Self {
-        Self {
-            tag,
-            inbound_type: "stub".to_string(),
-        }
-    }
-}
-
-impl sb_core::service::Lifecycle for StubInboundAdapter {
-    fn start(
-        &self,
-        _stage: sb_core::service::StartStage,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Ok(())
-    }
-
-    fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        Ok(())
-    }
-}
-
-impl sb_core::inbound::manager::InboundAdapter for StubInboundAdapter {
-    fn tag(&self) -> &str {
-        &self.tag
-    }
-
-    fn inbound_type(&self) -> &str {
-        &self.inbound_type
-    }
 }
 
 impl Default for HandlerServiceImpl {
@@ -268,25 +213,18 @@ impl HandlerService for HandlerServiceImpl {
     ) -> Result<Response<AddInboundResponse>, Status> {
         let req = request.into_inner();
 
-        // Extract inbound config or return error if not present
         let inbound_config = req
             .inbound
             .ok_or_else(|| Status::invalid_argument("inbound field is required"))?;
 
-        // Log the operation
         log::info!(
             "V2Ray API: Add inbound request for tag '{}'",
             inbound_config.tag
         );
 
-        // Create a placeholder handler (in production, this would parse inbound_config and create actual handler)
-        let handler: sb_core::inbound::manager::InboundHandler =
-            Arc::new(StubInboundAdapter::new(inbound_config.tag.clone()));
-        self.inbound_manager
-            .add_handler(inbound_config.tag, handler)
-            .await;
-
-        Ok(Response::new(AddInboundResponse {}))
+        Err(Status::unimplemented(
+            "V2Ray add_inbound requires runtime config parsing and is not implemented",
+        ))
     }
 
     async fn remove_inbound(
@@ -323,10 +261,9 @@ impl HandlerService for HandlerServiceImpl {
             )));
         }
 
-        // In production, this would update the handler configuration
-        log::info!("V2Ray API: Successfully altered inbound '{}'", req.tag);
-
-        Ok(Response::new(AlterInboundResponse {}))
+        Err(Status::unimplemented(
+            "V2Ray alter_inbound requires runtime config parsing and is not implemented",
+        ))
     }
 
     async fn add_outbound(
@@ -335,7 +272,6 @@ impl HandlerService for HandlerServiceImpl {
     ) -> Result<Response<AddOutboundResponse>, Status> {
         let req = request.into_inner();
 
-        // Extract outbound config or return error if not present
         let outbound_config = req
             .outbound
             .ok_or_else(|| Status::invalid_argument("outbound field is required"))?;
@@ -345,17 +281,9 @@ impl HandlerService for HandlerServiceImpl {
             outbound_config.tag
         );
 
-        // Reuse existing direct connector to avoid coupling sb-api to core concrete impl.
-        let connector = self
-            .outbound_manager
-            .get("direct")
-            .await
-            .ok_or_else(|| Status::failed_precondition("direct outbound is not available"))?;
-        self.outbound_manager
-            .add_connector(outbound_config.tag, connector)
-            .await;
-
-        Ok(Response::new(AddOutboundResponse {}))
+        Err(Status::unimplemented(
+            "V2Ray add_outbound requires runtime config parsing and is not implemented",
+        ))
     }
 
     async fn remove_outbound(
@@ -392,10 +320,9 @@ impl HandlerService for HandlerServiceImpl {
             )));
         }
 
-        // In production, this would update the connector configuration
-        log::info!("V2Ray API: Successfully altered outbound '{}'", req.tag);
-
-        Ok(Response::new(AlterOutboundResponse {}))
+        Err(Status::unimplemented(
+            "V2Ray alter_outbound requires runtime config parsing and is not implemented",
+        ))
     }
 }
 
@@ -502,25 +429,9 @@ impl LoggerService for LoggerServiceImpl {
     ) -> Result<Response<RestartLoggerResponse>, Status> {
         log::info!("V2Ray API: Logger restart requested");
 
-        // Production implementation: Trigger log system reconfiguration
-        // This could involve:
-        // 1. Flushing current log buffers
-        // 2. Reopening log files (useful for log rotation)
-        // 3. Reloading log level configuration
-        // For now, we acknowledge the request and broadcast a notification
-        let restart_log = LogEntry {
-            timestamp: std::time::SystemTime::now()
-                .duration_since(std::time::UNIX_EPOCH)
-                .unwrap_or_default()
-                .as_millis()
-                .to_string(),
-            level: "info".to_string(),
-            message: "Logger system restart completed".to_string(),
-            source: "V2RayAPI".to_string(),
-        };
-        let _ = self.log_broadcast.send(restart_log);
-
-        Ok(Response::new(RestartLoggerResponse {}))
+        Err(Status::unimplemented(
+            "V2Ray logger restart is not wired to the runtime logging backend",
+        ))
     }
 
     type FollowLogStream = StatusMappedStream<LogEntry>;
@@ -656,5 +567,65 @@ impl LoggerService for Arc<LoggerServiceImpl> {
         request: Request<FollowLogRequest>,
     ) -> Result<Response<Self::FollowLogStream>, Status> {
         self.as_ref().follow_log(request).await
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use tonic::Code;
+
+    #[tokio::test]
+    async fn get_sys_stats_is_explicitly_unimplemented() {
+        let service = StatsServiceImpl::new();
+        let err = service
+            .get_sys_stats(Request::new(SysStatsRequest {}))
+            .await
+            .expect_err("mock system stats must not be returned");
+
+        assert_eq!(err.code(), Code::Unimplemented);
+    }
+
+    #[tokio::test]
+    async fn handler_add_paths_are_explicitly_unimplemented() {
+        let service = HandlerServiceImpl::new();
+        let inbound = crate::v2ray::generated::v2ray::core::InboundHandlerConfig {
+            tag: "inbound-a".to_string(),
+            receiver_settings: None,
+            proxy_settings: None,
+        };
+        let outbound = crate::v2ray::generated::v2ray::core::OutboundHandlerConfig {
+            tag: "outbound-a".to_string(),
+            sender_settings: None,
+            proxy_settings: None,
+            proxy_tag: String::new(),
+        };
+
+        let inbound_err = service
+            .add_inbound(Request::new(AddInboundRequest {
+                inbound: Some(inbound),
+            }))
+            .await
+            .expect_err("stub inbound must not be registered");
+        let outbound_err = service
+            .add_outbound(Request::new(AddOutboundRequest {
+                outbound: Some(outbound),
+            }))
+            .await
+            .expect_err("direct outbound clone must not be registered");
+
+        assert_eq!(inbound_err.code(), Code::Unimplemented);
+        assert_eq!(outbound_err.code(), Code::Unimplemented);
+    }
+
+    #[tokio::test]
+    async fn restart_logger_is_explicitly_unimplemented() {
+        let service = LoggerServiceImpl::new();
+        let err = service
+            .restart_logger(Request::new(RestartLoggerRequest {}))
+            .await
+            .expect_err("logger restart must not report fake success");
+
+        assert_eq!(err.code(), Code::Unimplemented);
     }
 }

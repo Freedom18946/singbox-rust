@@ -268,8 +268,7 @@ async fn test_clash_api_integration(
     // Wait a moment for the update to propagate
     tokio::time::sleep(Duration::from_millis(100)).await;
 
-    // Note: In a full implementation, the monitoring system would automatically
-    // forward updates to the Clash API broadcasts. For now, we verify the integration exists.
+    // This test covers bridge availability; broadcast fan-out is validated by dedicated API tests.
     Ok(())
 }
 

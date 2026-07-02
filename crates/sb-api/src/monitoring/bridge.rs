@@ -1,6 +1,6 @@
 //! Metrics bridge for integrating with sb-core metrics system
 
-use crate::types::{Connection, ConnectionMetadata, TrafficStats};
+use crate::types::{Connection, TrafficStats};
 use serde_json::json;
 use std::{
     collections::HashMap,
@@ -266,14 +266,12 @@ impl MetricsBridge {
         // Collect outbound metrics from registry if available
         #[cfg(feature = "metrics")]
         {
-            use prometheus::Registry;
-            let registry = Registry::new();
-
-            // Gather metrics from prometheus registry
+            // Gather metrics from the process-wide Prometheus registry. Creating
+            // a new Registry here would always return an empty snapshot.
             let mut total_up = 0_u64;
             let mut total_down = 0_u64;
 
-            for mf in registry.gather() {
+            for mf in prometheus::gather() {
                 let metric_name = mf.name();
                 for m in mf.get_metric() {
                     // Extract upload/download counters
@@ -289,9 +287,7 @@ impl MetricsBridge {
                 }
             }
 
-            // Update traffic counters
-            self.total_up.fetch_add(total_up, Ordering::Relaxed);
-            self.total_down.fetch_add(total_down, Ordering::Relaxed);
+            self.update_traffic(total_up, total_down).await;
 
             log::debug!(
                 "Collected metrics from sb-core: up={} down={}",
@@ -300,114 +296,7 @@ impl MetricsBridge {
             );
         }
 
-        // Fallback to simulated metrics for demonstration when metrics feature is disabled
-        #[cfg(not(feature = "metrics"))]
-        {
-            self.simulate_metrics_collection().await;
-        }
-
         Ok(())
-    }
-
-    /// Simulate metrics collection (for demonstration)
-    #[allow(dead_code)]
-    async fn simulate_metrics_collection(&self) {
-        // Simulate outbound metrics
-        let direct_metrics = OutboundMetrics {
-            connect_attempts: 150,
-            connect_successes: 145,
-            connect_failures: 5,
-            total_bytes_up: self.total_up.load(Ordering::Relaxed) / 3,
-            total_bytes_down: self.total_down.load(Ordering::Relaxed) / 3,
-            avg_connection_duration: 45.2,
-            last_error: None,
-        };
-        self.update_outbound_metrics("DIRECT", direct_metrics).await;
-
-        // Simulate DNS metrics
-        let dns_metrics = DnsMetrics {
-            total_queries: 1250,
-            cache_hits: 980,
-            cache_misses: 270,
-            avg_response_time: 15.4,
-            errors: 12,
-            cache_size: 850,
-        };
-        self.update_dns_metrics(dns_metrics).await;
-
-        // Add some simulated connections
-        self.add_simulated_connections().await;
-    }
-
-    /// Add simulated connections for demonstration
-    #[allow(dead_code)]
-    async fn add_simulated_connections(&self) {
-        let simulated_connections = vec![
-            Connection {
-                id: uuid::Uuid::new_v4().to_string(),
-                metadata: ConnectionMetadata {
-                    network: "tcp".to_string(),
-                    r#type: "HTTP".to_string(),
-                    source_ip: "192.168.1.100".to_string(),
-                    source_port: "12345".to_string(),
-                    destination_ip: "8.8.8.8".to_string(),
-                    destination_port: "80".to_string(),
-                    inbound_ip: "127.0.0.1".to_string(),
-                    inbound_port: "7890".to_string(),
-                    inbound_name: "http".to_string(),
-                    inbound_user: "".to_string(),
-                    host: "www.google.com".to_string(),
-                    dns_mode: "normal".to_string(),
-                    uid: 1000,
-                    process: "firefox".to_string(),
-                    process_path: "/usr/bin/firefox".to_string(),
-                    special_proxy: "".to_string(),
-                    special_rules: "".to_string(),
-                    remote_destination: "8.8.8.8:80".to_string(),
-                    sniff_host: "".to_string(),
-                },
-                upload: 2048,
-                download: 8192,
-                start: "1640995200000".to_string(),
-                chains: vec!["DIRECT".to_string()],
-                rule: "DOMAIN".to_string(),
-                rule_payload: "www.google.com".to_string(),
-            },
-            Connection {
-                id: uuid::Uuid::new_v4().to_string(),
-                metadata: ConnectionMetadata {
-                    network: "tcp".to_string(),
-                    r#type: "HTTPS".to_string(),
-                    source_ip: "192.168.1.100".to_string(),
-                    source_port: "54321".to_string(),
-                    destination_ip: "1.1.1.1".to_string(),
-                    destination_port: "443".to_string(),
-                    inbound_ip: "127.0.0.1".to_string(),
-                    inbound_port: "7890".to_string(),
-                    inbound_name: "http".to_string(),
-                    inbound_user: "".to_string(),
-                    host: "api.github.com".to_string(),
-                    dns_mode: "normal".to_string(),
-                    uid: 1000,
-                    process: "curl".to_string(),
-                    process_path: "/usr/bin/curl".to_string(),
-                    special_proxy: "".to_string(),
-                    special_rules: "".to_string(),
-                    remote_destination: "1.1.1.1:443".to_string(),
-                    sniff_host: "api.github.com".to_string(),
-                },
-                upload: 1024,
-                download: 4096,
-                start: "1640995260000".to_string(),
-                chains: vec!["PROXY".to_string()],
-                rule: "DOMAIN-SUFFIX".to_string(),
-                rule_payload: ".github.com".to_string(),
-            },
-        ];
-
-        for connection in simulated_connections {
-            self.add_connection(connection).await;
-        }
     }
 }
 
@@ -451,5 +340,36 @@ impl<'a> MetricsBridgeHandle<'a> {
     /// Remove a connection
     pub async fn remove_connection(&self, connection_id: &str) {
         self.bridge.remove_connection(connection_id).await;
+    }
+}
+
+#[cfg(all(test, not(feature = "metrics")))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn collect_from_core_without_metrics_feature_does_not_inject_fake_data() {
+        let bridge = MetricsBridge::new();
+
+        bridge.collect_from_core().await.unwrap();
+
+        let stats = bridge.get_traffic_stats().await;
+        assert_eq!(stats.up, 0);
+        assert_eq!(stats.down, 0);
+        assert!(bridge.get_connections().await.is_empty());
+
+        let performance = bridge.get_performance_metrics().await;
+        assert_eq!(performance["outbounds"], serde_json::json!({}));
+        assert_eq!(
+            performance["dns"],
+            serde_json::json!({
+                "total_queries": 0,
+                "cache_hits": 0,
+                "cache_misses": 0,
+                "avg_response_time": 0.0,
+                "errors": 0,
+                "cache_size": 0
+            })
+        );
     }
 }

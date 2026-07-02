@@ -77,10 +77,7 @@ impl TestServer {
         let listener =
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(listener) => listener,
-                Err(err) if err.kind() == ErrorKind::PermissionDenied => {
-                    eprintln!("skipping websocket e2e: PermissionDenied binding listener");
-                    return Ok(None);
-                }
+                Err(err) if err.kind() == ErrorKind::PermissionDenied => return Ok(None),
                 Err(err) => return Err(err.into()),
             };
         let addr = listener.local_addr()?;
@@ -125,10 +122,7 @@ impl ShutdownTestServer {
         let listener =
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(listener) => listener,
-                Err(err) if err.kind() == ErrorKind::PermissionDenied => {
-                    eprintln!("skipping websocket shutdown e2e: PermissionDenied binding listener");
-                    return Ok(None);
-                }
+                Err(err) if err.kind() == ErrorKind::PermissionDenied => return Ok(None),
                 Err(err) => return Err(err.into()),
             };
         let port = listener.local_addr()?.port();

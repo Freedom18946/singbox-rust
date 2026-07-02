@@ -33,10 +33,7 @@ impl TestServer {
         let listener =
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(listener) => listener,
-                Err(err) if err.kind() == ErrorKind::PermissionDenied => {
-                    eprintln!("skipping capabilities contract: PermissionDenied binding listener");
-                    return Ok(None);
-                }
+                Err(err) if err.kind() == ErrorKind::PermissionDenied => return Ok(None),
                 Err(err) => return Err(err.into()),
             };
         let addr = listener.local_addr()?;

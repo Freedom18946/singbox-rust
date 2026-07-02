@@ -247,8 +247,7 @@ impl RealtimeReporter {
             while is_running.load(Ordering::Relaxed) {
                 match performance_rx.recv().await {
                     Ok(metrics) => {
-                        // For now, just log performance metrics
-                        // In a full implementation, these could be exposed via additional API endpoints
+                        // Emit performance metrics through logging when detailed reporting is enabled.
                         if config.enable_detailed_logging {
                             log::debug!(
                                 "Performance metrics updated: {}",

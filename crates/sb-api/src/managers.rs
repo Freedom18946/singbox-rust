@@ -13,9 +13,9 @@ use std::{
     pin::Pin,
     sync::{
         atomic::{AtomicU64, Ordering},
-        Arc,
+        Arc, Mutex,
     },
-    time::{Duration, Instant},
+    time::{Duration, Instant, SystemTime, UNIX_EPOCH},
 };
 use tokio::sync::{watch, RwLock};
 use uuid::Uuid;
@@ -127,7 +127,7 @@ pub struct ConnectionManager {
     /// Active connections by ID
     connections: Arc<RwLock<HashMap<String, Connection>>>,
     /// Global traffic statistics
-    global_stats: Arc<TrafficStats>,
+    global_stats: Arc<Mutex<TrafficStats>>,
 }
 
 impl ConnectionManager {
@@ -135,7 +135,7 @@ impl ConnectionManager {
     pub fn new() -> Self {
         Self {
             connections: Arc::new(RwLock::new(HashMap::new())),
-            global_stats: Arc::new(TrafficStats::default()),
+            global_stats: Arc::new(Mutex::new(TrafficStats::default())),
         }
     }
 
@@ -180,12 +180,30 @@ impl ConnectionManager {
 
     /// Update global traffic statistics.
     pub fn update_global_traffic(&self, upload: u64, download: u64) {
-        self.global_stats.add_traffic(upload, download);
+        match self.global_stats.lock() {
+            Ok(mut stats) => {
+                stats.up = stats.up.saturating_add(upload);
+                stats.down = stats.down.saturating_add(download);
+                stats.timestamp = SystemTime::now()
+                    .duration_since(UNIX_EPOCH)
+                    .unwrap_or_default()
+                    .as_millis() as u64;
+            }
+            Err(err) => {
+                log::warn!("Failed to update global traffic stats: {}", err);
+            }
+        }
     }
 
     /// Get global traffic statistics.
     pub fn get_global_stats(&self) -> Arc<TrafficStats> {
-        Arc::clone(&self.global_stats)
+        match self.global_stats.lock() {
+            Ok(stats) => Arc::new(stats.clone()),
+            Err(err) => {
+                log::warn!("Failed to read global traffic stats: {}", err);
+                Arc::new(TrafficStats::default())
+            }
+        }
     }
 }
 
@@ -220,9 +238,6 @@ pub struct DnsResolver {
     cache: Arc<RwLock<HashMap<String, DnsCacheEntry>>>,
     /// Fake IP mappings (for Clash compatibility)
     fake_ip_mappings: Arc<RwLock<HashMap<String, String>>>,
-    /// DNS server configuration
-    #[allow(dead_code)]
-    dns_servers: Vec<SocketAddr>,
 }
 
 impl DnsResolver {
@@ -232,10 +247,6 @@ impl DnsResolver {
         Self {
             cache: Arc::new(RwLock::new(HashMap::new())),
             fake_ip_mappings: Arc::new(RwLock::new(HashMap::new())),
-            dns_servers: vec![
-                SocketAddr::from(([8, 8, 8, 8], 53)),
-                SocketAddr::from(([1, 1, 1, 1], 53)),
-            ],
         }
     }
 
@@ -910,6 +921,19 @@ mod tests {
     }
 
     // T4 tests
+
+    #[test]
+    fn connection_manager_updates_global_traffic_snapshot() {
+        let mgr = ConnectionManager::new();
+
+        mgr.update_global_traffic(100, 250);
+        mgr.update_global_traffic(50, 75);
+
+        let stats = mgr.get_global_stats();
+        assert_eq!(stats.up, 150);
+        assert_eq!(stats.down, 325);
+        assert!(stats.timestamp > 0);
+    }
 
     #[tokio::test]
     async fn test_on_demand_update_fetches_url() {

@@ -30,10 +30,7 @@ impl MockProviderServer {
         let listener =
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(listener) => listener,
-                Err(err) if err.kind() == ErrorKind::PermissionDenied => {
-                    eprintln!("skipping provider reload e2e: PermissionDenied binding mock server");
-                    return Ok(None);
-                }
+                Err(err) if err.kind() == ErrorKind::PermissionDenied => return Ok(None),
                 Err(err) => return Err(err.into()),
             };
         let addr = listener.local_addr()?;
@@ -91,10 +88,7 @@ impl ApiTestServer {
         let listener =
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(listener) => listener,
-                Err(err) if err.kind() == ErrorKind::PermissionDenied => {
-                    eprintln!("skipping provider reload e2e: PermissionDenied binding api server");
-                    return Ok(None);
-                }
+                Err(err) if err.kind() == ErrorKind::PermissionDenied => return Ok(None),
                 Err(err) => return Err(err.into()),
             };
         let addr = listener.local_addr()?;

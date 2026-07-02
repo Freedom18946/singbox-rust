@@ -96,10 +96,7 @@ impl TestServer {
         let listener =
             match tokio::net::TcpListener::bind(SocketAddr::from(([127, 0, 0, 1], 0))).await {
                 Ok(listener) => listener,
-                Err(err) if err.kind() == ErrorKind::PermissionDenied => {
-                    eprintln!("skipping clash http e2e: PermissionDenied binding listener");
-                    return Ok(None);
-                }
+                Err(err) if err.kind() == ErrorKind::PermissionDenied => return Ok(None),
                 Err(err) => return Err(err.into()),
             };
         let addr = listener.local_addr()?;
@@ -1185,7 +1182,7 @@ async fn test_trigger_gc() -> anyhow::Result<()> {
     };
     let response = server.put("/meta/gc", serde_json::json!({})).await?;
 
-    assert_eq!(response.status(), StatusCode::NO_CONTENT); // Returns 204
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
     Ok(())
 }
 
@@ -1206,6 +1203,11 @@ async fn test_get_ui() -> anyhow::Result<()> {
 
     // Should contain UI recommendations
     assert!(json.is_object());
+    assert_eq!(
+        json.get("api_endpoint").and_then(serde_json::Value::as_str),
+        Some("http://127.0.0.1:0")
+    );
+    assert!(json.get("dashboards").is_none());
     Ok(())
 }
 
@@ -1220,7 +1222,7 @@ async fn test_update_script_valid() -> anyhow::Result<()> {
     });
 
     let response = server.patch("/script", body).await?;
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
     Ok(())
 }
 
@@ -1251,10 +1253,13 @@ async fn test_test_script_valid() -> anyhow::Result<()> {
     });
 
     let response = server.post("/script", body).await?;
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
 
     let json: serde_json::Value = response.json().await?;
-    assert!(json.get("status").is_some());
+    assert_eq!(
+        json.get("message").and_then(serde_json::Value::as_str),
+        Some("Script execution is not implemented")
+    );
     Ok(())
 }
 
@@ -1286,10 +1291,13 @@ async fn test_get_profile_tracing() -> anyhow::Result<()> {
     };
     let response = server.get("/profile/tracing").await?;
 
-    assert_eq!(response.status(), StatusCode::OK);
+    assert_eq!(response.status(), StatusCode::NOT_IMPLEMENTED);
     let json: serde_json::Value = response.json().await?;
 
-    assert!(json.get("status").is_some());
+    assert_eq!(
+        json.get("message").and_then(serde_json::Value::as_str),
+        Some("Tracing profile collection is not implemented")
+    );
     Ok(())
 }
 
@@ -1390,13 +1398,6 @@ fn test_http_e2e_coverage_summary() {
     ];
 
     let total_tests: usize = test_categories.iter().map(|(_, count)| count).sum();
-
-    println!("[PASS] HTTP E2E Test Coverage:");
-    for (category, count) in &test_categories {
-        println!("   - {}: {} tests", category, count);
-    }
-    println!("   Total HTTP E2E Tests: {}", total_tests);
-    println!("   Endpoints Covered: 38/38 (100%)");
 
     assert_eq!(
         total_tests, 46,

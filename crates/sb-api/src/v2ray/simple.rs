@@ -103,58 +103,18 @@ impl SimpleV2RayApiServer {
 
     /// Start the simple V2Ray API server
     pub async fn start(&self) -> ApiResult<()> {
-        // Touch unread field for clippy
         let _ = &self.monitoring;
 
         log::info!(
             "Starting simplified V2Ray API server on {}",
             self.config.listen_addr
         );
-
-        // For now, just simulate the server starting
-        // In a full implementation, this would start an HTTP or gRPC server
-
-        // Simulate some stats updates
-        let stats_clone = Arc::clone(&self.stats);
-        let broadcast_clone = self.stats_broadcast.clone();
-
-        let _bg = tokio::spawn(async move {
-            let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-            let mut counter = 0;
-
-            loop {
-                interval.tick().await;
-                counter += 1000;
-
-                // Update mock stats
-                {
-                    let mut stats = stats_clone.lock().await;
-                    *stats
-                        .entry("inbound>>>api>>>traffic>>>downlink".to_string())
-                        .or_insert(0) += counter;
-                    *stats
-                        .entry("outbound>>>direct>>>traffic>>>uplink".to_string())
-                        .or_insert(0) += counter / 2;
-                }
-
-                // Broadcast stats update
-                let stat_update = SimpleStat {
-                    name: "inbound>>>api>>>traffic>>>downlink".to_string(),
-                    value: counter,
-                };
-
-                let _ = broadcast_clone.send(stat_update);
-
-                log::debug!("V2Ray API: Updated traffic stats");
-            }
-        });
-
-        log::info!("V2Ray API server started successfully");
+        log::info!("Simplified V2Ray API helper started");
         Ok(())
     }
 
     /// Start the simple V2Ray API server with a shutdown signal.
-    pub async fn start_with_shutdown(&self, mut shutdown: oneshot::Receiver<()>) -> ApiResult<()> {
+    pub async fn start_with_shutdown(&self, shutdown: oneshot::Receiver<()>) -> ApiResult<()> {
         let _ = &self.monitoring;
 
         log::info!(
@@ -162,36 +122,7 @@ impl SimpleV2RayApiServer {
             self.config.listen_addr
         );
 
-        let stats_clone = Arc::clone(&self.stats);
-        let broadcast_clone = self.stats_broadcast.clone();
-        let mut interval = tokio::time::interval(std::time::Duration::from_secs(5));
-        let mut counter = 0;
-
-        loop {
-            tokio::select! {
-                _ = &mut shutdown => break,
-                _ = interval.tick() => {
-                    counter += 1000;
-                    {
-                        let mut stats = stats_clone.lock().await;
-                        *stats
-                            .entry("inbound>>>api>>>traffic>>>downlink".to_string())
-                            .or_insert(0) += counter;
-                        *stats
-                            .entry("outbound>>>direct>>>traffic>>>uplink".to_string())
-                            .or_insert(0) += counter / 2;
-                    }
-
-                    let stat_update = SimpleStat {
-                        name: "inbound>>>api>>>traffic>>>downlink".to_string(),
-                        value: counter,
-                    };
-
-                    let _ = broadcast_clone.send(stat_update);
-                    log::debug!("V2Ray API: Updated traffic stats");
-                }
-            }
-        }
+        let _ = shutdown.await;
 
         log::info!("V2Ray API server stopped");
         Ok(())
@@ -410,7 +341,7 @@ mod tests {
         };
         match server.get_stats(bad).await.expect_err("must error") {
             crate::error::ApiError::InvalidField { field, .. } => assert_eq!(field, "name"),
-            e => panic!("unexpected error: {e}"),
+            other => assert_eq!(other.kind(), "InvalidField"),
         }
 
         // Pattern containing control char should yield Parse
@@ -420,13 +351,13 @@ mod tests {
         };
         match server.query_stats(badq).await.expect_err("must error") {
             crate::error::ApiError::Parse { .. } => {}
-            e => panic!("unexpected error: {e}"),
+            other => assert_eq!(other.kind(), "Parse"),
         }
 
         // Unsupported version
         match server.negotiate_version("v42").expect_err("must error") {
             crate::error::ApiError::UnsupportedVersion { version } => assert_eq!(version, "v42"),
-            e => panic!("unexpected error: {e}"),
+            other => assert_eq!(other.kind(), "UnsupportedVersion"),
         }
     }
 

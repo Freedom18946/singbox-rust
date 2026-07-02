@@ -54,6 +54,16 @@ const CAPABILITIES_REQUIRED_GUI_FIELDS: [&str; 10] = [
     "capability_matrix",
 ];
 
+fn not_implemented_response(message: &'static str) -> Response {
+    (
+        StatusCode::NOT_IMPLEMENTED,
+        Json(json!({
+            "message": message
+        })),
+    )
+        .into_response()
+}
+
 #[derive(Debug, Deserialize)]
 struct CapabilitiesReport {
     schema_version: String,
@@ -1978,14 +1988,7 @@ pub async fn get_meta_memory(
 pub async fn trigger_gc(State(_state): State<ApiState>) -> impl IntoResponse {
     log::info!("Manual garbage collection requested");
 
-    // In Rust, explicit GC is not directly available like in Go
-    // But we can provide an endpoint that would:
-    // 1. Clear internal caches
-    // 2. Drop unused connections
-    // 3. Release resources
-
-    log::info!("GC trigger acknowledged (Rust uses automatic memory management)");
-    StatusCode::NO_CONTENT
+    not_implemented_response("Manual garbage collection is not implemented")
 }
 
 /// Replace entire configuration (PUT /configs) - matches Go behavior
@@ -2001,30 +2004,17 @@ pub async fn replace_configs(
 
 /// Redirect to Clash UI
 ///
-/// This endpoint redirects to the external Clash dashboard UI.
-pub async fn get_ui(State(_state): State<ApiState>) -> impl IntoResponse {
+/// This endpoint reports the active Clash API endpoint for dashboard clients.
+pub async fn get_ui(State(state): State<ApiState>) -> impl IntoResponse {
     log::info!("UI redirect requested");
 
-    // In a full implementation, this would:
-    // 1. Check if external UI is configured
-    // 2. Serve static files from the UI directory
-    // 3. Or redirect to the configured external UI URL
+    let api_endpoint = format!("http://{}", state.config.listen_addr);
 
     (
         StatusCode::OK,
         Json(json!({
             "message": "Clash API is running",
-            "api_endpoint": "http://127.0.0.1:9090",
-            "dashboards": [
-                {
-                    "name": "Yacd",
-                    "url": "https://yacd.haishan.me"
-                },
-                {
-                    "name": "Clash Dashboard",
-                    "url": "https://clash.razord.top"
-                }
-            ],
+            "api_endpoint": api_endpoint,
             "note": "Connect your Clash dashboard to this API endpoint"
         })),
     )
@@ -2037,16 +2027,7 @@ pub async fn get_ui(State(_state): State<ApiState>) -> impl IntoResponse {
 pub async fn get_profile_tracing(State(_state): State<ApiState>) -> impl IntoResponse {
     log::info!("Profile tracing requested");
 
-    (
-        StatusCode::OK,
-        Json(json!({
-            "status": "available",
-            "message": "Tracing data collection endpoint",
-            "note": "Full tracing integration requires runtime instrumentation",
-            "traces": []
-        })),
-    )
-        .into_response()
+    not_implemented_response("Tracing profile collection is not implemented")
 }
 
 /// Update script configuration (PATCH /script)
@@ -2102,14 +2083,7 @@ pub async fn update_script(
 
     log::info!("Script configuration validated successfully");
 
-    (
-        StatusCode::OK,
-        Json(json!({
-            "status": "accepted",
-            "message": "Script configuration updated successfully"
-        })),
-    )
-        .into_response()
+    not_implemented_response("Script configuration updates are not implemented")
 }
 
 /// Test script execution (POST /script)
@@ -2165,20 +2139,7 @@ pub async fn test_script(
 
     log::info!("Testing script with {} bytes of code", script_code.len());
 
-    // For now, return a mock successful execution
-    (
-        StatusCode::OK,
-        Json(json!({
-            "status": "success",
-            "result": {
-                "executed": true,
-                "output": "Script execution simulated successfully",
-                "execution_time_ms": 5
-            },
-            "message": "Script test completed"
-        })),
-    )
-        .into_response()
+    not_implemented_response("Script execution is not implemented")
 }
 
 /// Get services health status (GET /services/health)
