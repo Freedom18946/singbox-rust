@@ -1,11 +1,12 @@
 //! Minimal Trojan outbound connector with injectable dialer.
 //!
 //! This module provides a [`TrojanConnector`] that establishes connections and writes
-//! the Trojan hello packet. It's primarily designed for testing with injectable dialers.
+//! the Trojan CONNECT request packet. It's primarily designed for testing with
+//! injectable dialers.
 //!
 //! # Behavior
 //! - Dials the target using the injected `Dialer`
-//! - Writes the [`TrojanHello`] first packet
+//! - Writes the [`TrojanHello`] CONNECT request packet
 //! - Does not implement full proxy logic (minimal implementation)
 
 use crate::connector::{IoStream, OutboundConnector, ProtoError, Target};
@@ -13,9 +14,9 @@ use crate::trojan::TrojanHello;
 use async_trait::async_trait;
 use sb_transport::dialer::Dialer;
 
-/// Trojan connector with injectable dialer for testing.
+/// Trojan connector with injectable dialer for tests and dry-runs.
 ///
-/// This connector writes the Trojan handshake packet but doesn't implement
+/// This connector writes the Trojan CONNECT request packet but doesn't implement
 /// full bidirectional proxying.
 #[derive(Debug, Clone)]
 pub struct TrojanConnector<D: Dialer + Send + Sync + 'static> {
@@ -50,9 +51,10 @@ impl<D: Dialer + Send + Sync + 'static> OutboundConnector for TrojanConnector<D>
             host: target.host().to_string(),
             port: target.port(),
         };
-        let buf = hello.to_bytes();
+        let buf = hello
+            .to_bytes()
+            .map_err(|e| ProtoError::InvalidConfig(e.to_string()))?;
 
-        // Write hello packet
         tokio::io::AsyncWriteExt::write_all(&mut stream, &buf).await?;
         tokio::io::AsyncWriteExt::flush(&mut stream).await?;
 

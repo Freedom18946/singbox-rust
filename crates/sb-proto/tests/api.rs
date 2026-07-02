@@ -22,7 +22,7 @@ fn target_api() {
 
 #[test]
 fn trojan_hello_api() {
-    use sb_proto::trojan::TrojanHello;
+    use sb_proto::trojan::{TrojanHello, TrojanHelloError};
 
     let hello = TrojanHello {
         password: "secret".to_string(),
@@ -30,31 +30,48 @@ fn trojan_hello_api() {
         port: 443,
     };
 
-    let bytes = hello.to_bytes();
+    let bytes = hello.to_bytes().unwrap();
     assert!(!bytes.is_empty());
+    let mut expected = Vec::new();
+    expected.extend_from_slice(b"95c7fbca92ac5083afda62a564a3d014fc3b72c9140e3cb99ea6bf12\r\n");
+    expected.extend_from_slice(&[0x01, 0x03, 11]);
+    expected.extend_from_slice(b"example.com");
+    expected.extend_from_slice(&443u16.to_be_bytes());
+    expected.extend_from_slice(b"\r\n");
+    assert_eq!(bytes, expected);
 
-    // Verify format: password\r\nCONNECT host:port\r\n\r\n
-    let s = String::from_utf8_lossy(&bytes);
-    assert!(s.contains("secret"));
-    assert!(s.contains("CONNECT"));
-    assert!(s.contains("example.com:443"));
+    let ipv4 = TrojanHello {
+        password: "secret".to_string(),
+        host: "192.0.2.1".to_string(),
+        port: 80,
+    }
+    .to_bytes()
+    .unwrap();
+    assert_eq!(&ipv4[58..64], &[0x01, 0x01, 192, 0, 2, 1]);
+    assert_eq!(&ipv4[64..66], &80u16.to_be_bytes());
+
+    let empty_host = TrojanHello {
+        password: "secret".to_string(),
+        host: String::new(),
+        port: 443,
+    };
+    assert_eq!(empty_host.to_bytes(), Err(TrojanHelloError::EmptyHost));
 }
 
 #[test]
 fn ss2022_hello_api() {
-    use sb_proto::ss2022::Ss2022Hello;
+    use sb_proto::ss2022::Ss2022DryRunMarker;
 
-    let hello = Ss2022Hello {
+    let marker = Ss2022DryRunMarker {
         method: "2022-blake3-aes-256-gcm".to_string(),
         password: "testpass".to_string(),
         host: "example.com".to_string(),
         port: 443,
     };
 
-    let bytes = hello.to_bytes();
+    let bytes = marker.to_bytes();
     assert!(!bytes.is_empty());
 
-    // Verify format starts with SS2022 marker
     assert!(bytes.starts_with(b"SS2022\0"));
 }
 
@@ -120,7 +137,9 @@ fn registry_api() {
 #[cfg(feature = "outbound_registry")]
 #[test]
 fn ss2022_hello_bytes_api() {
-    use sb_proto::{ss2022_hello_bytes, OutboundKind, OutboundSpec, Registry};
+    use sb_proto::{
+        ss2022_dry_run_marker_bytes, ss2022_hello_bytes, OutboundKind, OutboundSpec, Registry,
+    };
 
     let mut registry = Registry::new();
     let spec = OutboundSpec {
@@ -131,7 +150,10 @@ fn ss2022_hello_bytes_api() {
     };
     registry.insert(spec);
 
-    let bytes = ss2022_hello_bytes("test", &registry, "example.com", 443).unwrap();
+    let bytes = ss2022_dry_run_marker_bytes("test", &registry, "example.com", 443).unwrap();
     assert!(!bytes.is_empty());
     assert!(bytes.starts_with(b"SS2022\0"));
+
+    let compat_bytes = ss2022_hello_bytes("test", &registry, "example.com", 443).unwrap();
+    assert_eq!(compat_bytes, bytes);
 }

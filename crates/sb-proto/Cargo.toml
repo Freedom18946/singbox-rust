@@ -15,10 +15,9 @@ thiserror = { workspace = true }
 async-trait = { workspace = true }
 tokio = { workspace = true, features = ["io-util"] }
 bytes = "1"
-blake3 = "1.5"
-serde = { workspace = true, features = ["derive"] }
+hex = { workspace = true }
+sha2 = "0.10"
 sb-transport = { path = "../sb-transport" }
 
 [dev-dependencies]
 tokio = { version = "1", features = ["rt","macros","io-util","time"] }
-hex = "0.4"

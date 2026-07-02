@@ -1,19 +1,22 @@
-//! Shadowsocks 2022 handshake packet builder.
-//! Shadowsocks 2022 握手数据包构建器。
+//! Shadowsocks 2022 dry-run marker builder.
+//! Shadowsocks 2022 空跑标记构建器。
 //!
-//! Provides [`Ss2022Hello`] for constructing SS2022 protocol handshake packets.
+//! Provides [`Ss2022DryRunMarker`] for constructing deterministic marker bytes
+//! used by admin dry-runs and API shape tests. These bytes are not a
+//! Shadowsocks 2022 encrypted handshake or production protocol packet.
 //!
-//! # Security Warning / 安全警告
-//! This is a minimal implementation for admin dry-runs and testing. Real production
-//! implementation should be extended with proper cryptographic primitives.
-//! 这是一个用于管理空跑和测试的最小化实现。真正的生产实现应扩展适当的加密原语。
+//! # Scope / 范围
+//! This module intentionally does not implement Shadowsocks 2022 cryptography.
+//! Production outbound support lives in `sb-adapters`.
 
 use bytes::{BufMut, BytesMut};
 
-/// Shadowsocks 2022 protocol hello packet.
-/// Shadowsocks 2022 协议 hello 数据包。
+/// Deterministic Shadowsocks 2022 dry-run marker.
+///
+/// This is a structured marker for local tests and admin diagnostics, not an
+/// SS2022 protocol handshake packet.
 #[derive(Debug, Clone, PartialEq, Eq)]
-pub struct Ss2022Hello {
+pub struct Ss2022DryRunMarker {
     /// Cipher method (e.g., "2022-blake3-aes-256-gcm").
     /// 加密方法（例如 "2022-blake3-aes-256-gcm"）。
     pub method: String,
@@ -28,15 +31,20 @@ pub struct Ss2022Hello {
     pub port: u16,
 }
 
-impl Ss2022Hello {
-    /// Serializes the hello packet to bytes.
-    /// 将 hello 数据包序列化为字节。
+/// Compatibility alias for older callers.
+///
+/// The aliased type emits dry-run marker bytes, not an SS2022 protocol
+/// handshake.
+pub type Ss2022Hello = Ss2022DryRunMarker;
+
+impl Ss2022DryRunMarker {
+    /// Serializes the marker to bytes.
+    /// 将标记序列化为字节。
     ///
     /// # Format / 格式
     /// `SS2022\0{method}\0{password}\0{host}:{port}`
     #[must_use]
     pub fn to_bytes(&self) -> Vec<u8> {
-        // Simple marker format implementation
         let capacity = 64 + self.host.len() + self.password.len() + self.method.len();
         let mut buffer = BytesMut::with_capacity(capacity);
 

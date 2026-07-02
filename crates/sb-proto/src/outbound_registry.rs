@@ -10,19 +10,15 @@
 //!
 //! - Protocol registration (Trojan, SS2022)
 //!   - 协议注册 (Trojan, SS2022)
-//! - Dry-run connection testing with first-packet write
-//!   - 带首包写入的空跑连接测试
-//! - TCP and TLS transport support (via feature gates)
-//!   - TCP 和 TLS 传输支持（通过特性开关）
+//! - SS2022 dry-run marker byte construction
+//!   - SS2022 空跑标记字节构建
 //!
 //! # Strategic Value / 战略价值
 //!
-//! This registry enables dynamic configuration and dispatch of protocols at runtime,
-//! which is essential for systems that need to manage multiple proxy targets dynamically.
-//! 此注册表支持运行时协议的动态配置和分发，
-//! 这对于需要动态管理多个代理目标的系统至关重要。
+//! This registry stores small protocol specifications used by tests and admin
+//! diagnostics. It does not dial network transports.
 
-use crate::ss2022::Ss2022Hello;
+use crate::ss2022::Ss2022DryRunMarker;
 use std::collections::BTreeMap;
 use thiserror::Error;
 
@@ -44,16 +40,6 @@ pub enum RegistryError {
     /// 缺少必填字段（例如密码）。
     #[error("missing required field: {0}")]
     MissingField(&'static str),
-
-    /// Transport error during connection.
-    /// 连接期间的传输错误。
-    #[error("transport error: {0}")]
-    Transport(String),
-
-    /// Feature not enabled at compile time.
-    /// 编译时未启用特性。
-    #[error("feature not enabled: {0}")]
-    FeatureDisabled(&'static str),
 }
 
 /// Type of outbound protocol.
@@ -125,11 +111,12 @@ impl Registry {
     }
 }
 
-/// Generates Shadowsocks 2022 hello packet bytes.
+/// Generates Shadowsocks 2022 dry-run marker bytes.
 ///
 /// # Errors
-/// Returns `RegistryError` if the outbound is not found, not SS2022, or feature disabled.
-pub fn ss2022_hello_bytes(
+/// Returns `RegistryError` if the outbound is not found, not SS2022, or is
+/// missing a password.
+pub fn ss2022_dry_run_marker_bytes(
     name: &str,
     reg: &Registry,
     host: &str,
@@ -150,7 +137,7 @@ pub fn ss2022_hello_bytes(
                 .clone()
                 .ok_or(RegistryError::MissingField("password"))?;
 
-            Ok(Ss2022Hello {
+            Ok(Ss2022DryRunMarker {
                 method,
                 password,
                 host: host.to_string(),
@@ -160,4 +147,21 @@ pub fn ss2022_hello_bytes(
         }
         kind => Err(RegistryError::UnsupportedKind(kind)),
     }
+}
+
+/// Compatibility wrapper for older callers.
+///
+/// The returned bytes are the SS2022 dry-run marker, not an encrypted SS2022
+/// protocol handshake.
+///
+/// # Errors
+/// Returns `RegistryError` if the outbound is not found, not SS2022, or is
+/// missing a password.
+pub fn ss2022_hello_bytes(
+    name: &str,
+    reg: &Registry,
+    host: &str,
+    port: u16,
+) -> Result<Vec<u8>, RegistryError> {
+    ss2022_dry_run_marker_bytes(name, reg, host, port)
 }
