@@ -19,6 +19,10 @@
 //! - **Label Control**: Core metrics use label-free Counter/Gauge; limited use of `*_vec` to avoid high cardinality explosion.
 //!   - **标签控制**：核心使用无标签 Counter/Gauge；少量场景用 `*_vec`，避免高基数炸表。
 //!
+//! This is a staged, explicit-call metrics surface. It does not automatically
+//! instrument every HTTP stack in the workspace; callers must wire the helpers
+//! on their request/connection paths.
+//!
 //! ## 使用示例
 //! ```rust
 //! use sb_metrics::http::{HTTP_CONN_TOTAL, HTTP_INFLIGHT, inc_method, inc_status, start_req_timer};
@@ -169,9 +173,9 @@ pub static HTTP_STATUS_CLASS_TOTAL: LazyLock<IntCounterVec> = LazyLock::new(|| {
 /// 请求耗时直方图（毫秒）
 pub static HTTP_REQ_DURATION_MS: LazyLock<Histogram> = LazyLock::new(|| {
     // 指数桶：2ms ~ 4096ms
-    let buckets = prometheus::exponential_buckets(0.002, 2.0, 13).unwrap_or_else(|_| {
-        // Fallback to linear buckets if exponential buckets fail
-        vec![0.001, 0.01, 0.1, 1.0, 10.0, 100.0, 1000.0]
+    let buckets = prometheus::exponential_buckets(2.0, 2.0, 12).unwrap_or_else(|_| {
+        // Fallback buckets remain in milliseconds.
+        vec![1.0, 5.0, 10.0, 50.0, 100.0, 500.0, 1000.0, 5000.0]
     });
     registered_collector(
         "http_req_duration_ms",
@@ -279,4 +283,30 @@ pub fn record_net_error() {
 
 pub fn record_other_export_error() {
     record_export_failure(EXPORT_FAIL_OTHER);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use prometheus::core::Collector;
+
+    #[test]
+    fn request_duration_buckets_are_milliseconds() -> Result<(), Box<dyn std::error::Error>> {
+        let families = HTTP_REQ_DURATION_MS.collect();
+        let histogram = families
+            .first()
+            .and_then(|family| family.get_metric().first())
+            .map(prometheus::proto::Metric::get_histogram)
+            .ok_or_else(|| std::io::Error::other("histogram should be collectable"))?;
+        let bounds = histogram
+            .get_bucket()
+            .iter()
+            .map(prometheus::proto::Bucket::upper_bound)
+            .collect::<Vec<_>>();
+
+        assert!(bounds.contains(&2.0));
+        assert!(bounds.contains(&4096.0));
+        assert!(!bounds.contains(&0.002));
+        Ok(())
+    }
 }

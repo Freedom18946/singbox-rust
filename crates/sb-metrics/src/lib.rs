@@ -52,9 +52,8 @@
 pub mod cardinality; // Cardinality monitoring for label explosion prevention
 pub mod http; // HTTP 侧指标（入站/上游代理共用）
 pub mod inbound;
-// pub mod server; // Removed unused server metrics
 pub mod socks; // SOCKS 侧指标
-pub mod transfer; // 通用传输指标（带宽/字节数） // 入站统一错误指标
+pub mod transfer; // 通用传输指标（带宽/字节数）
 use std::{
     collections::HashSet,
     convert::Infallible,
@@ -1119,13 +1118,10 @@ pub fn maybe_spawn_http_exporter_from_env() -> Option<JoinHandle<()>> {
     maybe_spawn_http_exporter_from_env_with(shared_registry())
 }
 
-// NOTE:
-// 这里不要重复 re-export prometheus 的项；顶部已有一次公开导出，重复会触发 E0252。
-
 /// Export all registered metrics in Prometheus text format.
 ///
 /// This function is primarily used for testing purposes. For production metric
-/// collection, use the HTTP exporter via `spawn_metrics_server()` or set
+/// collection, use the HTTP exporter via [`spawn_http_exporter`] or set
 /// `SB_METRICS_ADDR` environment variable.
 ///
 /// # Panics
@@ -1233,6 +1229,18 @@ mod tests {
                 "export should contain {needle}, got:\n{text}"
             );
         }
+    }
+
+    #[test]
+    #[serial_test::serial]
+    fn selector_failover_metric_registers_with_allowed_labels() {
+        inc_failover("selector-a", "old-proxy", "new-proxy");
+
+        let text = export_prometheus();
+        assert!(text.contains("selector_failover_total"));
+        assert!(text.contains("selector=\"selector-a\""));
+        assert!(text.contains("from=\"old-proxy\""));
+        assert!(text.contains("to=\"new-proxy\""));
     }
 
     #[test]

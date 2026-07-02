@@ -1,17 +1,18 @@
 //! Cardinality monitoring for Prometheus metrics / Prometheus 指标基数监控
 //!
-//! This module prevents label explosion by tracking unique label combinations
-//! and warning when cardinality exceeds thresholds.
-//! 本模块通过跟踪唯一的标签组合并在基数超过阈值时发出警告，从而防止标签爆炸。
+//! This module provides an explicit cardinality monitor for label combinations
+//! and warns when cardinality exceeds thresholds.
+//! 本模块提供显式调用的标签组合基数监控，并在基数超过阈值时发出警告。
 //!
 //! ## Strategic Logic / 战略逻辑
 //! In dynamic proxy environments, labels like "`target_domain`" or "`client_ip`" can have unbounded cardinality.
 //! Without this safeguard, Prometheus memory usage could grow indefinitely, crashing the service.
-//! This module acts as a **safety valve**, detecting anomalies before they cause critical failures.
+//! This module acts as a **safety valve** when callers explicitly record label
+//! usage, detecting anomalies before they cause critical failures.
 //!
 //! 在动态代理环境中，像 "`target_domain`" 或 "`client_ip`" 这样的标签可能具有无限的基数。
 //! 如果没有此保护措施，Prometheus 的内存使用量可能会无限增长，导致服务崩溃。
-//! 本模块充当**安全阀**，在异常导致严重故障之前检测到它们。
+//! 当调用方显式记录标签用量时，本模块充当**安全阀**，在异常导致严重故障之前检测到它们。
 //!
 //! ## Problem / 问题
 //! High cardinality metrics (many unique label combinations) can cause:
@@ -25,6 +26,10 @@
 //! 跟踪每个指标的唯一标签组合，并在超过阈值时发出警告。
 //!
 //! ## Usage
+//! This module does not automatically intercept every Prometheus update in the
+//! workspace. Wire `record_label_usage` at the call site that owns dynamic label
+//! values.
+//!
 //! ```
 //! use sb_metrics::cardinality::CardinalityMonitor;
 //!
@@ -36,7 +41,7 @@
 //!
 //! // Check cardinality
 //! let cardinality = monitor.get_cardinality("http_requests_total");
-//! println!("http_requests_total has {} unique time series", cardinality);
+//! assert_eq!(cardinality, 2);
 //! ```
 
 use sha2::{Digest, Sha256};

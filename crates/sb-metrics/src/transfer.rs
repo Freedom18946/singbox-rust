@@ -5,6 +5,10 @@
 //! It is designed for `inbound`/`outbound`/`pipeline` to report on the critical path.
 //! 该模块不直接挂接具体协议，供 inbound/outbound/pipeline 在关键路径上自行上报。
 //!
+//! Current production byte counters may also be emitted by protocol-specific
+//! or core metered paths. Treat this module as an explicit-call metrics surface,
+//! not as automatic workspace-wide transfer instrumentation.
+//!
 //! ## Strategic Logic / 战略逻辑
 //! Bandwidth usage (`bytes_up`/`bytes_down`) is the most fundamental metric for billing and capacity planning.
 //! Throughput observation (`throughput_bps`) helps in detecting network bottlenecks or throttling.

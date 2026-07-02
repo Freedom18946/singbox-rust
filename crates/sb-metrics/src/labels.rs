@@ -40,6 +40,10 @@ static ALLOWED_LABEL_KEYS: LazyLock<HashSet<&'static str>> = LazyLock::new(|| {
         "chan",
         "proxy",
         "tag",
+        // Selector failover state
+        "selector",
+        "from",
+        "to",
         // Protocol/algorithm staging (QUIC CC, session open state)
         "algorithm",
         "proto",

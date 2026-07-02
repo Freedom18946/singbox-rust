@@ -18,6 +18,8 @@
 //! Use `sb_metrics::inc_socks_tcp_conn()` from the parent module instead.
 //! TCP 连接指标已合并到 `lib.rs::socks_in` 模块中。
 //! 请改用父模块中的 `sb_metrics::inc_socks_tcp_conn()`。
+//! The UDP helpers in this module remain a compatibility/staged surface; the
+//! currently wired SOCKS inbound path uses parent-module helpers where noted.
 //!
 //! ## Usage Example / 使用示例
 //! ```rust

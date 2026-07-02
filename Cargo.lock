@@ -7332,12 +7332,9 @@ dependencies = [
 name = "sb-metrics"
 version = "0.1.0"
 dependencies = [
- "hex",
  "hyper 0.14.32",
- "once_cell",
  "parking_lot 0.12.5",
  "prometheus",
- "serde",
  "serial_test 3.4.0",
  "sha2 0.10.9",
  "tokio",

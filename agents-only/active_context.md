@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-02) - sb-metrics audit cleanup
+
+- **`crates/sb-metrics` audit cleanup DONE locally**: unused direct deps were removed,
+  stale/debug-style comments and the short-lived metrics example were cleaned, HTTP request
+  duration buckets now use real millisecond bounds, and selector failover labels are admitted
+  before metric registration.
+- **Staged-surface docs calibrated**: cardinality, transfer, SOCKS, and HTTP helper modules now
+  state explicit-call / compatibility scope instead of implying automatic workspace-wide wiring.
+- **Verification PASS**: `cargo fmt -p sb-metrics --check`, `cargo check -p sb-metrics
+  --all-targets --offline`, `cargo test -p sb-metrics --all-targets --offline`,
+  `cargo clippy -p sb-metrics --all-targets --all-features --offline -- -D warnings`,
+  `cargo check -p sb-metrics --all-targets --locked`, sb-metrics doctests, residual audit scan,
+  and `git diff --check`.
+- **Scope note**: sb-metrics audit/test hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - sb-core audit cleanup
 
 - **`crates/sb-core` audit cleanup DONE locally**: router hot-cache registration now
@@ -203,14 +219,6 @@
 - **Scope note**: Cargo-configuration hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, workflow automation, or release packaging completion is claimed.
 
-## Previous Resume (2026-06-30) - A0 REALITY scratch spike cleanup
-
-- **A0 scratch spike deleted locally**: `agents-only/a0_reality_spike/` was a pre-existing
-  untracked feasibility spike from 2026-06-03 and has been removed per user request. Its
-  conclusions are superseded by the committed A1 fixture at `labs/interop-lab/reality_local_fixture/`.
-- **Scope note**: hygiene cleanup only. No REALITY closure, dual-kernel BHV/parity movement,
-  workflow automation, code behavior change, or fixture gate change is claimed.
-
 ## Previous Resume (2026-06-29) - PX-ACCEPT-01 local drop-in release rehearsal
 
 - **PX-ACCEPT-01 DONE locally**: `gui_runtime` built the real `target/debug/app` binary and
@@ -225,14 +233,6 @@
   desktop click automation, root TUN, Linux resolved, official REALITY JA4/ext-order/camouflage,
   public fresh-cohort gate, workflow automation, or `agents-only/a0_reality_spike/` touch is
   claimed.
-
-## Previous Resume (2026-06-29) - GO parity matrix refresh
-
-- **GO_PARITY refreshed**: `agents-only/reference/GO_PARITY_MATRIX.md` now leads with the
-  current post-FABLE/post1313 PX calibration and keeps old closure accounting only as a
-  historical appendix.
-- **Scope note**: no new dual-kernel BHV movement, GUI-ready/drop-in-ready claim, code change,
-  workflow automation, or `agents-only/a0_reality_spike/` touch is implied by this docs pass.
 
 ## Strategic State
 
