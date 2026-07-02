@@ -5,6 +5,7 @@
 //! [Chinese] R97: 视图功能 behind features（由 lib.rs 控制导出）。
 use crate::model::Profile;
 use sb_common::minijson::{arr_str, obj, Val};
+use serde_json::{Map, Value};
 
 #[cfg(feature = "subs_hash")]
 fn b3_hex(s: &str) -> String {
@@ -19,26 +20,11 @@ fn b3_hex(_s: &str) -> String {
 
 /// Build JSON object from key-value pairs: {"key1":val1,"key2":val2}
 fn build_count_json(pairs: &[(impl AsRef<str>, u64)]) -> String {
-    if pairs.is_empty() {
-        return "{}".to_string();
+    let mut map = Map::with_capacity(pairs.len());
+    for (key, count) in pairs {
+        map.insert(key.as_ref().to_string(), Value::from(*count));
     }
-
-    let capacity = pairs.len() * 20; // Estimate: "key":123,
-    let mut result = String::with_capacity(capacity);
-    result.push('{');
-
-    for (i, (key, count)) in pairs.iter().enumerate() {
-        if i > 0 {
-            result.push(',');
-        }
-        result.push('"');
-        result.push_str(key.as_ref());
-        result.push_str("\":");
-        result.push_str(&count.to_string());
-    }
-
-    result.push('}');
-    result
+    Value::Object(map).to_string()
 }
 
 /// Generates a lightweight JSON view of the profile for UI display.

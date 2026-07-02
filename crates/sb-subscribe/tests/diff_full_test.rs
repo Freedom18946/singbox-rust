@@ -23,3 +23,25 @@ proxies:
     // 补丁至少包含一次 '-' 或 '+'
     assert!(j.json.contains('-') || j.json.contains('+'));
 }
+
+#[cfg(all(feature = "subs_diff", feature = "subs_clash"))]
+#[test]
+fn diff_full_escapes_histogram_keys() {
+    let lhs = r#"
+rules:
+  - DOMAIN,example.com,DIRECT
+proxies:
+  - { name: "a", type: "odd\"kind" }
+"#;
+    let rhs = r#"
+rules:
+  - DOMAIN,example.com,DIRECT
+proxies:
+  - { name: "a", type: "odd\"kind" }
+  - { name: "b", type: "ss" }
+"#;
+    let out = sb_subscribe::diff_full::diff_full_minijson(lhs, rhs, "clash", false, false).unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&out.json).unwrap();
+    assert_eq!(parsed["outbound_kinds_lhs"]["odd\"kind"].as_u64(), Some(1));
+    assert_eq!(parsed["outbound_kinds_rhs"]["odd\"kind"].as_u64(), Some(1));
+}

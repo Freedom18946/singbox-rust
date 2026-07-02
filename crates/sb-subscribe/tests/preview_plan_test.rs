@@ -37,3 +37,23 @@ fn test_unknown_kinds() {
     assert!(json.contains("unknown_kinds"));
     assert!(json.contains("unknown_kind"));
 }
+
+#[cfg(all(feature = "subs_preview_plan", feature = "subs_clash"))]
+#[test]
+fn unknown_kinds_are_json_escaped() {
+    let input = "rules:\n  - DOMAIN,example.com,DIRECT\n";
+    let result = sb_subscribe::preview_plan::preview_plan_minijson(
+        input,
+        "clash",
+        false,
+        false,
+        Some("bad\"kind,portrange_merge"),
+        false,
+    )
+    .unwrap();
+    let parsed: serde_json::Value = serde_json::from_str(&result.json).unwrap();
+    assert_eq!(
+        parsed["meta"]["unknown_kinds"][0].as_str(),
+        Some("bad\"kind")
+    );
+}

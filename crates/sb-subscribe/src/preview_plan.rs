@@ -3,7 +3,7 @@
 //!
 //! { ok, meta{format,mode,normalized,ordered,kinds,apply}, dsl_in, dsl_in_hash, lint, plan_summary, patch, dsl_out? }
 use crate::model::Profile;
-use sb_common::minijson::{obj, Val};
+use sb_common::minijson::{arr_str, obj, Val};
 use serde::{Deserialize, Serialize};
 use std::fmt;
 
@@ -95,8 +95,8 @@ impl PlanOutput {
     }
 }
 
-/// Provide Display for PlanOutput, supporting `.to_string()` and `println!("{}", out)`.
-/// [Chinese] 为 PlanOutput 提供 Display，从而支持 `.to_string()` 与 `println!("{}", out)`。
+/// Provide Display for PlanOutput, supporting `.to_string()` and formatted output.
+/// [Chinese] 为 PlanOutput 提供 Display，从而支持 `.to_string()` 与格式化输出。
 impl fmt::Display for PlanOutput {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         // Consistent with CLI default: compact JSON
@@ -205,17 +205,7 @@ pub fn preview_plan_minijson(
         ("kinds", Val::Str(kinds)),
         ("apply", Val::Bool(apply)),
         ("hashes", Val::Bool(true)),
-        (
-            "unknown_kinds",
-            Val::Raw(&format!(
-                "[{}]",
-                unknown_kinds
-                    .iter()
-                    .map(|s| format!("\"{}\"", s))
-                    .collect::<Vec<_>>()
-                    .join(",")
-            )),
-        ),
+        ("unknown_kinds", Val::Raw(&arr_str(&unknown_kinds))),
     ]);
     let lint_raw = lint; // own
     let plan_summary_raw = summary_json; // own

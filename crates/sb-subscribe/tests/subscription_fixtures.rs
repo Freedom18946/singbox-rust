@@ -61,9 +61,18 @@ fn singbox_json_preserves_outbound_kinds_and_route_rules() {
     );
     assert!(kinds.contains(&"select:selector".to_string()), "{kinds:?}");
     assert_eq!(profile.outbounds.len(), 5);
+    let rules = profile
+        .rules
+        .iter()
+        .map(|r| r.line.as_str())
+        .collect::<Vec<_>>();
     assert!(
-        profile.rules_len() >= 1,
-        "route.rules should expand to DSL lines"
+        rules.contains(&"default=select"),
+        "route.final must survive: {rules:?}"
+    );
+    assert!(
+        profile.rules_len() >= 3,
+        "route.rules plus route.final should expand to DSL lines"
     );
 }
 

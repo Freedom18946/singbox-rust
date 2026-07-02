@@ -24,12 +24,17 @@ fn map_rule(line: &str, use_keyword: bool) -> Option<String> {
     }
     let kind = parts[0].to_ascii_uppercase();
     let pat = parts.get(1).copied().unwrap_or("");
-    let act = parts
-        .get(2)
+    let decision_part = if kind == "MATCH" {
+        parts.get(1)
+    } else {
+        parts.get(2)
+    };
+    let act = decision_part
         .map(|s| s.to_ascii_lowercase())
         .unwrap_or_else(|| "proxy".into());
     let decision = act.as_str();
     match kind.as_str() {
+        "MATCH" => Some(format!("default={}", decision)),
         "DOMAIN" => Some(format!("exact:{}={}", pat, decision)),
         "DOMAIN-SUFFIX" => Some(format!("suffix:{}={}", pat, decision)),
         "DOMAIN-KEYWORD" => {

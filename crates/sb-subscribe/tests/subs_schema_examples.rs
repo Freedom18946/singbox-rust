@@ -14,35 +14,34 @@ fn repo_path(parts: &[&str]) -> PathBuf {
     path
 }
 
-fn read_json(parts: &[&str]) -> Value {
+fn read_json(parts: &[&str]) -> Result<Value, String> {
     let path = repo_path(parts);
-    let raw = fs::read_to_string(&path).unwrap_or_else(|err| {
-        panic!("failed to read {}: {err}", path.display());
-    });
-    serde_json::from_str(&raw).unwrap_or_else(|err| {
-        panic!("failed to parse {}: {err}", path.display());
-    })
+    let raw = fs::read_to_string(&path)
+        .map_err(|err| format!("failed to read {}: {err}", path.display()))?;
+    serde_json::from_str(&raw).map_err(|err| format!("failed to parse {}: {err}", path.display()))
 }
 
-fn assert_valid(compiled: &JSONSchema, value: &Value, label: &str) {
+fn assert_valid(compiled: &JSONSchema, value: &Value, label: &str) -> Result<(), String> {
     if let Err(errors) = compiled.validate(value) {
         let messages = errors.map(|err| err.to_string()).collect::<Vec<_>>();
-        panic!("{label} should validate: {}", messages.join("; "));
+        return Err(format!("{label} should validate: {}", messages.join("; ")));
     }
+    Ok(())
 }
 
 #[test]
-fn exported_subscription_schema_accepts_sample_and_rejects_bad_fixture() {
-    let schema = read_json(&["examples", "schemas", "subs.schema.json"]);
-    let compiled = JSONSchema::compile(&schema).expect("subscription schema compiles");
+fn exported_subscription_schema_accepts_sample_and_rejects_bad_fixture() -> Result<(), String> {
+    let schema = read_json(&["examples", "schemas", "subs.schema.json"])?;
+    let compiled = JSONSchema::compile(&schema)
+        .map_err(|err| format!("subscription schema compiles: {err}"))?;
 
-    let sample = read_json(&["examples", "misc", "subs.nodes.sample.json"]);
-    assert_valid(&compiled, &sample, "subs.nodes.sample.json");
+    let sample = read_json(&["examples", "misc", "subs.nodes.sample.json"])?;
+    assert_valid(&compiled, &sample, "subs.nodes.sample.json")?;
 
-    let bad = read_json(&["examples", "misc", "subs.bad.json"]);
+    let bad = read_json(&["examples", "misc", "subs.bad.json"])?;
     let nodes = bad
         .as_array()
-        .expect("subs.bad.json remains a node-list array");
+        .ok_or_else(|| "subs.bad.json remains a node-list array".to_string())?;
     for node in nodes {
         let tag = node
             .get("tag")
@@ -54,4 +53,5 @@ fn exported_subscription_schema_accepts_sample_and_rejects_bad_fixture() {
             "{tag} should remain invalid against subs.schema.json"
         );
     }
+    Ok(())
 }

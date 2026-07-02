@@ -8,6 +8,7 @@
 use crate::model::Profile;
 use sb_common::minijson::{obj, Val};
 use serde::{Deserialize, Serialize};
+use serde_json::{Map, Value};
 use std::fmt;
 
 fn parse_profile(text: &str, format: &str, use_keyword: bool) -> Result<Profile, String> {
@@ -97,12 +98,11 @@ fn line_patch(lhs: &str, rhs: &str) -> String {
 }
 
 fn map_hist_to_minijson_obj(m: &std::collections::BTreeMap<String, u64>) -> String {
-    // {"kind1":N1,"kind2":N2,...}
-    let mut kv = Vec::with_capacity(m.len());
+    let mut map = Map::with_capacity(m.len());
     for (k, v) in m {
-        kv.push(format!("\"{}\":{}", k, v));
+        map.insert(k.clone(), Value::from(*v));
     }
-    format!("{{{}}}", kv.join(","))
+    Value::Object(map).to_string()
 }
 
 #[derive(Debug, Serialize, Deserialize)]

@@ -13,6 +13,8 @@ struct SBoxDoc {
 struct Route {
     #[serde(default)]
     rules: Vec<serde_json::Value>,
+    #[serde(default, rename = "final")]
+    final_outbound: Option<String>,
 }
 
 /// Maps a Sing-box JSON rule object to internal DSL lines.
@@ -85,6 +87,11 @@ pub fn parse_with_mode(json: &str, use_keyword: bool) -> Result<Profile, SubsErr
         let mut lines = Vec::new();
         for r in route.rules {
             map_rule(&r, use_keyword, &mut lines);
+        }
+        if let Some(final_outbound) = route.final_outbound {
+            if !final_outbound.trim().is_empty() {
+                lines.push(format!("default={}", final_outbound.trim().to_lowercase()));
+            }
         }
         p.rules
             .extend(lines.into_iter().map(|line| RuleEntry { line }));

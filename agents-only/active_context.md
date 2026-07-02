@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-02) - sb-subscribe audit cleanup
+
+- **`crates/sb-subscribe` audit cleanup DONE locally**: Clash `MATCH` and sing-box
+  `route.final` now survive subscription parsing as `default=...` DSL lines instead of
+  being dropped from the generated profile.
+- **Output/provider hygiene tightened**: view/diff/preview JSON now escapes dynamic object
+  keys and unknown plan kinds via structured JSON builders; ruleset provider cache now
+  expands cached text/base64 bodies instead of returning a placeholder expansion.
+- **Test hygiene DONE locally**: empty compile-only shape test was replaced with assertions,
+  schema fixture failures return structured test errors, and new regression tests cover
+  default-route preservation, JSON escaping, and provider cache hit/miss behavior.
+- **Verification PASS**: sb-subscribe fmt, no-default/all-features checks, all-target tests,
+  doctests, strict clippy, residual audit scan, and `git diff --check`.
+- **Scope note**: sb-subscribe audit/test hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - sb-security audit cleanup
 
 - **`crates/sb-security` audit cleanup DONE locally**: token/credential redaction now
@@ -208,22 +224,6 @@
 - **Scope note**: root/config/dependency hygiene only. No product behavior claim,
   REALITY closure, dual-kernel BHV/parity movement, workflow automation, or release
   packaging completion is claimed.
-
-## Previous Resume (2026-06-30) - .github and agents-only acceptance
-
-- **`.github` DONE locally**: `.github/` contains only the workflow-disablement README;
-  no tracked or untracked `.github/workflows/*` path exists.
-- **`agents-only` DONE locally**: entry/navigation docs and governance script index
-  received a release-level hygiene pass. Stale `planning/` directory text was removed
-  from the top index, the update stamp was refreshed, and `06-scripts` now lists
-  `verify-consistency.sh` / `restore-context.sh` as local governance helpers.
-- **Verification PASS**: historical record compressed in `agents-only/archive/release_cleanup_2026_06_summary.md`.
-  Entry links, all `agents-only` shell syntax, Python helper compile, YAML parse,
-  JSON parse with the documented zero-byte historical endpoint-capture exception,
-  consistency, boundaries, and `git diff --check` passed.
-- **Scope note**: repository-governance hygiene only. No product behavior, REALITY
-  closure, dual-kernel BHV/parity movement, workflow automation, or release packaging
-  completion is claimed.
 
 ## Previous Resume (2026-06-30) - Claude memory cleanup policy refresh
 

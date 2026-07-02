@@ -35,3 +35,18 @@ proxies:
     assert!(j.contains("example.com"));
     assert!(j.contains("test.com"));
 }
+
+#[cfg(feature = "subs_clash")]
+#[test]
+fn view_escapes_kinds_count_keys() {
+    let y = r#"
+rules:
+  - DOMAIN,example.com,DIRECT
+proxies:
+  - { name: "a", type: "odd\"kind" }
+"#;
+    let p = sb_subscribe::parse_clash::parse(y).unwrap();
+    let j = sb_subscribe::convert_view::view_minijson(&p);
+    let parsed: serde_json::Value = serde_json::from_str(&j).unwrap();
+    assert_eq!(parsed["kinds_count"]["odd\"kind"].as_u64(), Some(1));
+}
