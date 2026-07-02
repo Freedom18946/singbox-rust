@@ -23,6 +23,7 @@ pub trait DecisionCacheSource: Send + Sync + 'static {
 }
 
 static SRC: OnceLock<&'static dyn DecisionCacheSource> = OnceLock::new();
+static HOT_SRC: OnceLock<&'static dyn DecisionCacheSource> = OnceLock::new();
 
 pub fn register_router_decision_cache_adapter(src: &'static dyn DecisionCacheSource) {
     let _ = SRC.set(src);
@@ -43,12 +44,13 @@ fn cache_stats_provider() -> cache_stats::CacheStats {
     }
 }
 
-pub fn register_router_hot_adapter(_src: &'static dyn DecisionCacheSource) {
+pub fn register_router_hot_adapter(src: &'static dyn DecisionCacheSource) {
+    let _ = HOT_SRC.set(src);
     cache_hot::register_hot_provider(cache_hot_provider);
 }
 
 fn cache_hot_provider(limit: usize) -> Vec<cache_hot::HotItem> {
-    if let Some(src) = SRC.get() {
+    if let Some(src) = HOT_SRC.get().copied().or_else(|| SRC.get().copied()) {
         src.topn(limit)
             .into_iter()
             .map(|(hp, h)| cache_hot::HotItem {

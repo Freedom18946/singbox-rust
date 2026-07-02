@@ -126,10 +126,7 @@ impl Decision {
     fn from_rule_ir(ir: &sb_config::ir::RuleIR) -> Result<Self, String> {
         use sb_config::ir::RuleAction;
         if ir.action == RuleAction::Reject {
-            let method = match ir.method.as_deref() {
-                Some(method) => method,
-                None => "default",
-            };
+            let method = ir.method.as_deref().unwrap_or("default");
             return match method {
                 "" | "default" | "reply" => Ok(Decision::Reject),
                 "drop" => {

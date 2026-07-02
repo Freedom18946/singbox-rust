@@ -10,6 +10,23 @@
 
 ---
 
+## Resume (2026-07-02) - sb-core audit cleanup
+
+- **`crates/sb-core` audit cleanup DONE locally**: router hot-cache registration now
+  stores the hot source independently, so `register_router_hot_adapter` alone exports
+  non-empty hot items; strict clippy issues in router reject handling, WireGuard listen
+  ports, test helper types, and async test locking were cleaned.
+- **Test hygiene DONE locally**: the GeoIP provider placeholder test was replaced by a
+  weak-owner registry integration test, hot-cache JSON assertions now catch empty-item
+  regressions, and noisy success-path test `println!` output was removed or converted to
+  assertions.
+- **Verification PASS**: focused changed-test set, `cargo check -p sb-core --all-targets
+  --all-features`, `cargo clippy -p sb-core --all-targets --all-features -- -D warnings`,
+  `cargo test -p sb-core --all-targets --all-features`, `cargo fmt --check`,
+  `git diff --check`, and `verify-consistency.sh`.
+- **Scope note**: sb-core audit/test hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - grafana release hygiene
 
 - **`grafana/` release hygiene DONE locally**: Grafana README/provisioning/docs now
@@ -216,22 +233,6 @@
   historical appendix.
 - **Scope note**: no new dual-kernel BHV movement, GUI-ready/drop-in-ready claim, code change,
   workflow automation, or `agents-only/a0_reality_spike/` touch is implied by this docs pass.
-
-## Previous Resume (2026-06-29) - fable5 report triage and cleanup
-
-- **Fable5 report triage complete**: the 8 top-level
-  `agents-only/fable5审计报告/*.md` audit reports were reviewed and kept in place as
-  B-tier historical calibration input, with a stage-summary extract in the fable5
-  audit directory.
-- **Use with caution**: fable5 is a 2026-06-10 pre-closeout snapshot at HEAD `02d8d16e`.
-  It seeded the post-FABLE packages (GUI P0s, reload/liveness P1 cluster, docs/lint/test
-  hygiene), but raw fable5 P0/P1 findings must not be quoted as current blockers without
-  checking the post-FABLE package map, `agents-only/post1313/`, and this file.
-
-- **Cleanup complete**: ignored local run artifacts were removed; MT-GUI and MT-AUDIT
-  historical records are now compressed in `agents-only/archive/mt_summary.md`.
-- **Scope note**: `agents-only/a0_reality_spike/` remains untouched; no `.github/workflows/*`
-  automation was added or restored.
 
 ## Strategic State
 

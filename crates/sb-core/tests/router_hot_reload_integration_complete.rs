@@ -122,12 +122,6 @@ async fn test_hot_reload_complete_functionality() {
         !validation_events.is_empty(),
         "Should have validation events"
     );
-
-    println!("Hot reload integration test completed successfully");
-    println!("Events generated: {}", events.len());
-    for event in &events {
-        println!("  Event: {:?}", event);
-    }
 }
 
 #[tokio::test]
@@ -200,11 +194,9 @@ async fn test_hot_reload_service_continuity() {
     // The test verifies the manager can complete its operations without errors
 
     manager.stop().await;
-
-    println!("Service continuity test completed");
-    println!(
-        "Initial generation: {}, Final generation: {}",
-        initial_gen, new_gen
+    assert!(
+        new_gen >= initial_gen,
+        "hot reload generation regressed from {initial_gen} to {new_gen}"
     );
 }
 
@@ -234,6 +226,7 @@ async fn test_hot_reload_rollback_mechanism() {
 
     manager.start().await.unwrap();
     sleep(Duration::from_millis(100)).await;
+    let generation_before_invalid = router_handle.current_generation().await;
 
     // Write invalid rules to trigger rollback scenario
     let invalid_rules = "completely_invalid_syntax_here\nthis_should_fail_validation";
@@ -246,7 +239,11 @@ async fn test_hot_reload_rollback_mechanism() {
 
     // In this test, we verify that invalid rules don't break the system
     // The manager should handle validation failures gracefully
-    println!("Rollback mechanism test completed");
+    let final_gen = router_handle.current_generation().await;
+    assert_eq!(
+        final_gen, generation_before_invalid,
+        "invalid rules should not advance generation in rollback test"
+    );
 }
 
 #[test]

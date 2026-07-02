@@ -161,7 +161,6 @@ async fn test_dns_rule_routing_integration() {
         .unwrap();
     assert_eq!(result.ips.len(), 1);
     assert_eq!(result.ips[0], IpAddr::from([8, 8, 8, 8]));
-    println!("✅ Test 1: www.google.com → 8.8.8.8 (Google DNS)");
 
     // Test Case 2: Google API should also route to Google DNS
     let result = engine
@@ -169,7 +168,6 @@ async fn test_dns_rule_routing_integration() {
         .await
         .unwrap();
     assert_eq!(result.ips[0], IpAddr::from([8, 8, 8, 8]));
-    println!("✅ Test 2: maps.googleapis.com → 8.8.8.8 (Google DNS)");
 
     // Test Case 3: CN domain should route to CN DNS (114.114.114.114)
     let result = engine
@@ -177,7 +175,6 @@ async fn test_dns_rule_routing_integration() {
         .await
         .unwrap();
     assert_eq!(result.ips[0], IpAddr::from([114, 114, 114, 114]));
-    println!("✅ Test 3: www.baidu.com → 114.114.114.114 (CN DNS)");
 
     // Test Case 4: Unknown domain should route to default DNS (1.1.1.1)
     let result = engine
@@ -185,16 +182,11 @@ async fn test_dns_rule_routing_integration() {
         .await
         .unwrap();
     assert_eq!(result.ips[0], IpAddr::from([1, 1, 1, 1]));
-    println!("✅ Test 4: www.example.com → 1.1.1.1 (Default DNS)");
 
     // Test Case 5: Verify cache is working
     let (cache_len, cache_cap) = engine.cache_stats();
     assert_eq!(cache_len, 4); // 4 domains cached
     assert!(cache_cap >= 4);
-    println!(
-        "✅ Test 5: DNS routing cache working (cached: {}/{})",
-        cache_len, cache_cap
-    );
 
     // Test Case 6: Second query should hit cache
     let result = engine
@@ -204,10 +196,4 @@ async fn test_dns_rule_routing_integration() {
     assert_eq!(result.ips[0], IpAddr::from([8, 8, 8, 8]));
     let (cache_len_after, _) = engine.cache_stats();
     assert_eq!(cache_len_after, 4); // Still 4 (cache hit)
-    println!("✅ Test 6: Cache hit for repeated query");
-
-    println!("\n🎉 DNS Rule-Set Routing Integration Test Complete!");
-    println!("✅ All routing rules working correctly");
-    println!("✅ Priority sorting working");
-    println!("✅ Cache optimization working");
 }

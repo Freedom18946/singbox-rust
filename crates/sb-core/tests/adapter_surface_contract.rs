@@ -13,20 +13,20 @@ use sb_types::InboundTag;
 use std::sync::Arc;
 use std::time::SystemTime;
 
-fn consume_contracts(
-    ports: &AdapterServicePorts,
-) -> (
-    Arc<dyn CacheFilePort>,
-    Arc<dyn UrlTestHistoryPort>,
-    Arc<dyn ClashServerPort>,
-    Arc<dyn V2RayServerPort>,
-) {
-    (
-        ports.cache_file.clone().expect("cache contract"),
-        ports.urltest_history.clone().expect("urltest contract"),
-        ports.clash_server.clone().expect("clash contract"),
-        ports.v2ray_server.clone().expect("v2ray contract"),
-    )
+struct AdapterContracts {
+    cache: Arc<dyn CacheFilePort>,
+    history: Arc<dyn UrlTestHistoryPort>,
+    clash: Arc<dyn ClashServerPort>,
+    v2ray: Arc<dyn V2RayServerPort>,
+}
+
+fn consume_contracts(ports: &AdapterServicePorts) -> AdapterContracts {
+    AdapterContracts {
+        cache: ports.cache_file.clone().expect("cache contract"),
+        history: ports.urltest_history.clone().expect("urltest contract"),
+        clash: ports.clash_server.clone().expect("clash contract"),
+        v2ray: ports.v2ray_server.clone().expect("v2ray contract"),
+    }
 }
 
 #[test]
@@ -63,7 +63,12 @@ fn adapter_services_expose_trait_object_contracts_without_downcast() {
         &registry,
         Some(Arc::new(NullDnsRouter)),
     );
-    let (cache, history, clash, v2ray) = consume_contracts(services.ports());
+    let AdapterContracts {
+        cache,
+        history,
+        clash,
+        v2ray,
+    } = consume_contracts(services.ports());
 
     cache.store_mode("rule").expect("mode store");
     assert_eq!(cache.load_mode().as_deref(), Some("rule"));

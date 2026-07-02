@@ -47,9 +47,10 @@ async fn test_supervisor_lifecycle() {
     // Give it a moment to process the reload message
     sleep(Duration::from_millis(500)).await;
 
-    // if handle.is_finished() {
-    //     panic!("Supervisor task finished unexpectedly");
-    // }
+    assert!(
+        !handle.reload_sender().is_closed(),
+        "supervisor reload channel closed unexpectedly"
+    );
 
     {
         let state = handle.state().await;

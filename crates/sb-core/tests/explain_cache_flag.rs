@@ -13,11 +13,6 @@ mod explain_cache_tests {
 
         // 验证 cache_status 字段存在且初始为 None（因为这是直接查询，没有缓存）
         assert!(explain.cache_status.is_none());
-
-        println!("Decision: {}", explain.decision);
-        println!("Reason: {}", explain.reason);
-        println!("Reason kind: {}", explain.reason_kind);
-        println!("Cache status: {:?}", explain.cache_status);
     }
 
     #[test]
@@ -27,9 +22,6 @@ mod explain_cache_tests {
         // IP 解析应该有特定的 reason_kind
         assert!(explain.reason_kind == "ip" || explain.reason_kind == "default");
         assert!(explain.cache_status.is_none());
-
-        println!("IP decision: {}", explain.decision);
-        println!("IP reason: {}", explain.reason);
     }
 
     #[test]
@@ -38,9 +30,6 @@ mod explain_cache_tests {
 
         assert!(!explain.decision.is_empty());
         assert!(explain.cache_status.is_none());
-
-        println!("Port decision: {}", explain.decision);
-        println!("Port reason: {}", explain.reason);
     }
 
     #[tokio::test]
@@ -54,17 +43,11 @@ mod explain_cache_tests {
         assert!(!explain.reason.is_empty());
         assert!(!explain.reason_kind.is_empty());
         assert!(explain.cache_status.is_none());
-
-        println!("UDP decision: {}", explain.decision);
-        println!("UDP reason: {}", explain.reason);
-        println!("UDP reason kind: {}", explain.reason_kind);
     }
 }
 
 #[cfg(not(all(feature = "router_cache_explain", feature = "router_cache_lru_demo")))]
 mod no_features {
     #[test]
-    fn test_features_disabled() {
-        println!("router_cache_explain or router_cache_lru_demo feature disabled");
-    }
+    fn test_features_disabled() {}
 }

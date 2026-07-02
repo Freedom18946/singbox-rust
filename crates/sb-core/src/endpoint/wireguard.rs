@@ -427,11 +427,7 @@ impl WireGuardEndpoint {
 
             connection_handler: Arc::new(parking_lot::RwLock::new(None)),
             tcp_accept_rxs: parking_lot::Mutex::new(Vec::new()),
-            listen_ports: ir
-                .wireguard_listen_ports
-                .as_ref()
-                .map(|v| v.clone())
-                .unwrap_or_default(),
+            listen_ports: ir.wireguard_listen_ports.clone().unwrap_or_default(),
             dns_resolver: dns,
             #[cfg(feature = "router")]
             router,
@@ -1264,8 +1260,11 @@ mod tests {
         socket.local_addr().unwrap().port()
     }
 
+    type CapturedTcpPayload = (InboundContext, Vec<u8>);
+    type CaptureTcpSender = tokio::sync::oneshot::Sender<CapturedTcpPayload>;
+
     struct CaptureTcpHandler {
-        tx: TokioMutex<Option<tokio::sync::oneshot::Sender<(InboundContext, Vec<u8>)>>>,
+        tx: TokioMutex<Option<CaptureTcpSender>>,
     }
 
     #[async_trait::async_trait]

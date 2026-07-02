@@ -3256,14 +3256,14 @@ mod tests {
         }
     }
 
-    fn dns_global_test_lock() -> &'static Mutex<()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
+    fn dns_global_test_lock() -> &'static tokio::sync::Mutex<()> {
+        static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
+        LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
     }
 
     #[test]
     fn runtime_dns_global_publish_is_commit_only() {
-        let _lock = dns_global_test_lock().lock().unwrap();
+        let _lock = dns_global_test_lock().blocking_lock();
         let _guard = DnsGlobalGuard::capture();
         let old_resolver = test_dns_resolver("old-dns");
         let new_resolver = test_dns_resolver("new-dns");
@@ -3300,7 +3300,7 @@ mod tests {
     #[tokio::test(flavor = "current_thread")]
     async fn reload_dns_build_failure_keeps_global_resolver_and_registries() {
         let _adapter_serial = SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK.lock().await;
-        let _dns_serial = dns_global_test_lock().lock().unwrap();
+        let _dns_serial = dns_global_test_lock().lock().await;
         let _dns_guard = DnsGlobalGuard::capture();
         let _registry_guard = RuntimeRegistryGuard::capture();
         crate::adapter::registry::clear_runtime_registries();

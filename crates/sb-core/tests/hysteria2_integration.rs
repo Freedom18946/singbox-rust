@@ -428,8 +428,10 @@ async fn test_hysteria2_auth_hash_performance() {
     let elapsed = start.elapsed();
 
     // Hash generation should be fast
-    assert!(elapsed < Duration::from_millis(100));
-    println!("1000 auth hash generations took: {:?}", elapsed);
+    assert!(
+        elapsed < Duration::from_millis(100),
+        "1000 auth hash generations took {elapsed:?}"
+    );
 }
 
 #[cfg(feature = "out_hysteria2")]
@@ -463,6 +465,8 @@ async fn test_hysteria2_obfuscation_performance() {
     let elapsed = start.elapsed();
 
     // Obfuscation should be fast
-    assert!(elapsed < Duration::from_millis(100));
-    println!("1000 obfuscation operations on 1KB took: {:?}", elapsed);
+    assert!(
+        elapsed < Duration::from_millis(100),
+        "1000 obfuscation operations on 1KB took {elapsed:?}"
+    );
 }

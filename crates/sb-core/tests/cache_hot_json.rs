@@ -8,8 +8,8 @@ fn cache_hot_has_items() {
     lru.put("b", 2);
     register_router_hot_adapter(lru);
     let js = sb_core::router::cache_hot::hot_json(8);
-    println!("Hot JSON output: {}", js);
     assert!(js.contains("limit"));
     assert!(js.contains("items"));
-    assert!(js.contains("count"));
+    assert!(js.contains("\"count\":2"));
+    assert!(js.contains("hash_prefix"));
 }

@@ -190,8 +190,10 @@ async fn test_tcp_transport_timeout() -> anyhow::Result<()> {
     }
     // Error could be "timeout" or "connection closed" depending on timing, but mostly timeout
     // TcpTransport wraps errors with context, so we check string representation
-    println!("Error: {:?}", err);
-    assert!(err.to_string().to_lowercase().contains("timeout"));
+    assert!(
+        err.to_string().to_lowercase().contains("timeout"),
+        "expected timeout error, got {err:?}"
+    );
 
     Ok(())
 }
