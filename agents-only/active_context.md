@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-03) - app sb-bench env/CSV audit cleanup
+
+- **`app/src/bin/sb-bench.rs` audit cleanup DONE locally**: `SB_BENCH_PAR=0` now falls back to
+  the default positive parallelism instead of reaching `runs.div_ceil(0)` and panicking.
+- **CSV output contract tightened**: `SB_BENCH_CSV` writes now propagate filesystem errors for
+  TCP/UDP/DNS summaries instead of silently ignoring failed report writes.
+- **Test coverage tightened**: focused `sb-bench` tests cover zero-parallelism fallback and CSV
+  write error reporting in addition to existing invalid target/name paths.
+- **Verification PASS**: app fmt, focused `sb-bench` tests, bench binary build, app all-target/
+  all-feature check, strict app clippy, real `SB_BENCH_PAR=0` CLI smoke, residual scan, and
+  `git diff --check`.
+- **Scope note**: app benchmark helper CLI hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app bench io input audit cleanup
 
 - **`app bench io` audit cleanup DONE locally**: zero `--requests` and zero `--concurrency`
@@ -208,22 +222,6 @@
   paths; doctests; locked check; Linux/Windows/Android target check + clippy; residual
   debug/placeholder scan; `git diff --check`.
 - **Scope note**: sb-platform audit/test hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - sb-metrics audit cleanup
-
-- **`crates/sb-metrics` audit cleanup DONE locally**: unused direct deps were removed,
-  stale/debug-style comments and the short-lived metrics example were cleaned, HTTP request
-  duration buckets now use real millisecond bounds, and selector failover labels are admitted
-  before metric registration.
-- **Staged-surface docs calibrated**: cardinality, transfer, SOCKS, and HTTP helper modules now
-  state explicit-call / compatibility scope instead of implying automatic workspace-wide wiring.
-- **Verification PASS**: `cargo fmt -p sb-metrics --check`, `cargo check -p sb-metrics
-  --all-targets --offline`, `cargo test -p sb-metrics --all-targets --offline`,
-  `cargo clippy -p sb-metrics --all-targets --all-features --offline -- -D warnings`,
-  `cargo check -p sb-metrics --all-targets --locked`, sb-metrics doctests, residual audit scan,
-  and `git diff --check`.
-- **Scope note**: sb-metrics audit/test hygiene only. No REALITY closure, dual-kernel
   BHV/parity movement, release packaging completion, or workflow automation is claimed.
 
 ## Strategic State

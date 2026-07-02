@@ -104,13 +104,7 @@ async fn bench_tcp(addr: &str, runs: usize) -> Result<serde_json::Value> {
     }
 
     let json = histogram_json(&hist);
-    if let Ok(path) = std::env::var("SB_BENCH_CSV") {
-        let csv_content = format!(
-            "p50,p90,p99,max,min\n{},{},{},{},{}\n",
-            json["p50"], json["p90"], json["p99"], json["max"], json["min"]
-        );
-        let _ = std::fs::write(format!("{}_tcp", path), csv_content);
-    }
+    write_bench_csv_if_configured(BenchSeries::Tcp, &json)?;
     Ok(json)
 }
 
@@ -161,13 +155,7 @@ async fn bench_udp(addr: &str, runs: usize) -> Result<serde_json::Value> {
     }
 
     let json = histogram_json(&hist);
-    if let Ok(path) = std::env::var("SB_BENCH_CSV") {
-        let csv_content = format!(
-            "p50,p90,p99,max,min\n{},{},{},{},{}\n",
-            json["p50"], json["p90"], json["p99"], json["max"], json["min"]
-        );
-        let _ = std::fs::write(path, csv_content);
-    }
+    write_bench_csv_if_configured(BenchSeries::Udp, &json)?;
     Ok(json)
 }
 
@@ -223,14 +211,43 @@ async fn bench_dns(addr: &str, qname: &str, runs: usize) -> Result<serde_json::V
     }
 
     let json = histogram_json(&hist);
-    if let Ok(path) = std::env::var("SB_BENCH_CSV") {
-        let csv_content = format!(
-            "p50,p90,p99,max,min\n{},{},{},{},{}\n",
-            json["p50"], json["p90"], json["p99"], json["max"], json["min"]
-        );
-        let _ = std::fs::write(format!("{}_dns", path), csv_content);
-    }
+    write_bench_csv_if_configured(BenchSeries::Dns, &json)?;
     Ok(json)
+}
+
+#[cfg(feature = "bench")]
+#[derive(Clone, Copy)]
+enum BenchSeries {
+    Tcp,
+    Udp,
+    Dns,
+}
+
+#[cfg(feature = "bench")]
+fn write_bench_csv_if_configured(series: BenchSeries, summary: &serde_json::Value) -> Result<()> {
+    let Ok(path) = std::env::var("SB_BENCH_CSV") else {
+        return Ok(());
+    };
+    write_bench_csv(&path, series, summary)
+}
+
+#[cfg(feature = "bench")]
+fn write_bench_csv(
+    base_path: &str,
+    series: BenchSeries,
+    summary: &serde_json::Value,
+) -> Result<()> {
+    let path = match series {
+        BenchSeries::Tcp => format!("{base_path}_tcp"),
+        BenchSeries::Udp => base_path.to_string(),
+        BenchSeries::Dns => format!("{base_path}_dns"),
+    };
+    let csv_content = format!(
+        "p50,p90,p99,max,min\n{},{},{},{},{}\n",
+        summary["p50"], summary["p90"], summary["p99"], summary["max"], summary["min"]
+    );
+    std::fs::write(&path, csv_content)
+        .with_context(|| format!("failed to write benchmark CSV '{path}'"))
 }
 
 #[cfg(feature = "bench")]
@@ -255,9 +272,20 @@ fn bench_env_usize(key: &str, default: usize) -> usize {
         Ok(v) => v,
         Err(_) => return default,
     };
+    parse_bench_env_usize(key, &raw, default)
+}
+
+#[cfg(feature = "bench")]
+fn parse_bench_env_usize(key: &str, raw: &str, default: usize) -> usize {
     let t = raw.trim();
     match t.parse::<usize>() {
-        Ok(v) => v,
+        Ok(v) if v > 0 => v,
+        Ok(_) => {
+            tracing::warn!(
+                "env '{key}' value '{t}' must be greater than zero; using default {default}"
+            );
+            default
+        }
         Err(e) => {
             tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}");
             default
@@ -295,5 +323,32 @@ mod tests {
             .await
             .unwrap_err();
         assert!(err.to_string().contains("SB_BENCH_DNS_NAME"));
+    }
+
+    #[test]
+    fn bench_env_usize_rejects_zero() {
+        assert_eq!(parse_bench_env_usize("SB_BENCH_PAR", "0", 3), 3);
+    }
+
+    #[test]
+    fn bench_csv_write_reports_errors() -> Result<()> {
+        let dir = tempfile::tempdir()?;
+        let summary = json!({
+            "p50": 1,
+            "p90": 2,
+            "p99": 3,
+            "max": 4,
+            "min": 0,
+        });
+
+        let err = write_bench_csv(
+            dir.path().to_string_lossy().as_ref(),
+            BenchSeries::Udp,
+            &summary,
+        )
+        .expect_err("writing CSV to a directory should fail");
+
+        assert!(err.to_string().contains("failed to write benchmark CSV"));
+        Ok(())
     }
 }
