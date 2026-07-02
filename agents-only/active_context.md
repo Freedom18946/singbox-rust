@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-03) - app merge inline-resource audit cleanup
+
+- **`app merge` inline-resource audit cleanup DONE locally**: missing TLS/SSH/ECH inline path
+  resources now return a structured read error instead of silently leaving unresolved `*_path`
+  fields in generated output.
+- **Write contract tightened**: merge now aborts before writing the output file when a requested
+  inline resource cannot be read.
+- **Test coverage tightened**: a real `merge` binary integration test covers missing
+  `certificate_path` failure output, non-zero exit behavior, and no output-file creation.
+- **Verification PASS**: app fmt, focused `merge_cli` test, merge binary check, app
+  all-target/all-feature check, strict app clippy, and `git diff --check`.
+- **Scope note**: app merge CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app sb-bench env/CSV audit cleanup
 
 - **`app/src/bin/sb-bench.rs` audit cleanup DONE locally**: `SB_BENCH_PAR=0` now falls back to
@@ -208,21 +222,6 @@
   `git diff --check`, and app all-target/all-feature check (existing prefetch warnings only).
 - **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - sb-platform audit cleanup
-
-- **`crates/sb-platform` audit cleanup DONE locally**: Android process matching now
-  compiles through procfs without the unwired JNI placeholder, Windows API feature gates
-  cover the actual Win32 calls, and OS detection includes Android.
-- **Platform behavior calibrated**: Linux network monitor callbacks emit change events from
-  netlink polling, system proxy command failures are propagated instead of being silently
-  accepted, WinInet/env proxy handling recognizes SOCKS `ALL_PROXY` and PAC settings, and
-  Windows TUN now fails explicitly instead of exposing a fake active adapter.
-- **Verification PASS**: sb-platform fmt/check/test/clippy for all-features and no-default
-  paths; doctests; locked check; Linux/Windows/Android target check + clippy; residual
-  debug/placeholder scan; `git diff --check`.
-- **Scope note**: sb-platform audit/test hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
 
 ## Strategic State
 

@@ -29,7 +29,7 @@ pub fn run(global: &GlobalArgs, args: MergeArgs) -> Result<()> {
     let mut merged = config_loader::load_merged_value(&entries)?;
 
     // Inline known path resources for TLS/ECH/SSH compatibility
-    inline_path_resources(&mut merged);
+    inline_path_resources(&mut merged)?;
 
     // Pretty output
     let output_pretty = serde_json::to_string_pretty(&merged).context("encode merged JSON")?;
@@ -67,70 +67,67 @@ fn normalize(s: &str) -> String {
 }
 
 /// Inline known path resources (TLS cert/key, ECH config/key, SSH private key)
-fn inline_path_resources(v: &mut serde_json::Value) {
+fn inline_path_resources(v: &mut serde_json::Value) -> Result<()> {
     use serde_json::Value as V;
     match v {
         V::Object(map) => {
             // Handle TLS certificate/key paths at this level
             if let Some(V::String(path)) = map.get("certificate_path") {
-                if let Some(lines) = read_path_lines(path) {
-                    map.insert(
-                        "certificate".to_string(),
-                        V::Array(lines.into_iter().map(V::String).collect()),
-                    );
-                }
+                let lines = read_path_lines(path)?;
+                map.insert(
+                    "certificate".to_string(),
+                    V::Array(lines.into_iter().map(V::String).collect()),
+                );
             }
             if let Some(V::String(path)) = map.get("key_path") {
-                if let Some(lines) = read_path_lines(path) {
-                    map.insert(
-                        "key".to_string(),
-                        V::Array(lines.into_iter().map(V::String).collect()),
-                    );
-                }
+                let lines = read_path_lines(path)?;
+                map.insert(
+                    "key".to_string(),
+                    V::Array(lines.into_iter().map(V::String).collect()),
+                );
             }
             // SSH private key path
             if let Some(V::String(path)) = map.get("private_key_path") {
-                if let Some(lines) = read_path_lines(path) {
-                    map.insert(
-                        "private_key".to_string(),
-                        V::Array(lines.into_iter().map(V::String).collect()),
-                    );
-                }
+                let lines = read_path_lines(path)?;
+                map.insert(
+                    "private_key".to_string(),
+                    V::Array(lines.into_iter().map(V::String).collect()),
+                );
             }
             // ECH nested object
             if let Some(V::Object(ech_map)) = map.get_mut("ech") {
                 if let Some(V::String(path)) = ech_map.get("key_path") {
-                    if let Some(lines) = read_path_lines(path) {
-                        ech_map.insert(
-                            "key".to_string(),
-                            V::Array(lines.into_iter().map(V::String).collect()),
-                        );
-                    }
+                    let lines = read_path_lines(path)?;
+                    ech_map.insert(
+                        "key".to_string(),
+                        V::Array(lines.into_iter().map(V::String).collect()),
+                    );
                 }
                 if let Some(V::String(path)) = ech_map.get("config_path") {
-                    if let Some(lines) = read_path_lines(path) {
-                        ech_map.insert(
-                            "config".to_string(),
-                            V::Array(lines.into_iter().map(V::String).collect()),
-                        );
-                    }
+                    let lines = read_path_lines(path)?;
+                    ech_map.insert(
+                        "config".to_string(),
+                        V::Array(lines.into_iter().map(V::String).collect()),
+                    );
                 }
             }
 
             for value in map.values_mut() {
-                inline_path_resources(value);
+                inline_path_resources(value)?;
             }
         }
         V::Array(arr) => {
             for v in arr {
-                inline_path_resources(v);
+                inline_path_resources(v)?;
             }
         }
         _ => {}
     }
+    Ok(())
 }
 
-fn read_path_lines(path: &str) -> Option<Vec<String>> {
-    let content = fs::read_to_string(path).ok()?;
-    Some(content.lines().map(|s| s.trim_end().to_string()).collect())
+fn read_path_lines(path: &str) -> Result<Vec<String>> {
+    let content =
+        fs::read_to_string(path).with_context(|| format!("read inline resource path {path}"))?;
+    Ok(content.lines().map(|s| s.trim_end().to_string()).collect())
 }
