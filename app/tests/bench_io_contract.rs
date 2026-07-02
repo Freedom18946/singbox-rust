@@ -44,20 +44,18 @@ fn build_app(features: &str) -> PathBuf {
     let target_dir = target_dir_for(features);
     std::fs::create_dir_all(&target_dir).expect("create target dir");
     let bin = bin_path(&target_dir);
-    if !bin.exists() {
-        let mut cmd = Command::new("cargo");
-        cmd.args(["build", "-p", "app", "--bin", "app"]);
-        if !features.is_empty() {
-            cmd.arg("--features");
-            cmd.arg(features);
-        }
-        cmd.env("CARGO_TARGET_DIR", &target_dir);
-        let status = cmd.status().expect("build app");
-        assert!(
-            status.success(),
-            "failed to build app with features: {features}"
-        );
+    let mut cmd = Command::new("cargo");
+    cmd.args(["build", "-p", "app", "--bin", "app"]);
+    if !features.is_empty() {
+        cmd.arg("--features");
+        cmd.arg(features);
     }
+    cmd.env("CARGO_TARGET_DIR", &target_dir);
+    let status = cmd.status().expect("build app");
+    assert!(
+        status.success(),
+        "failed to build app with features: {features}"
+    );
     bin
 }
 
@@ -110,4 +108,29 @@ fn bench_io_with_feature_outputs_fixed_schema_json() {
     for key in ["p50", "p90", "p99", "rps", "throughput_bps", "elapsed_ms"] {
         assert!(v.get(key).is_some(), "missing key: {}", key);
     }
+}
+
+#[cfg(all(feature = "reqwest", feature = "bench-cli"))]
+#[test]
+fn bench_io_rejects_zero_concurrency() {
+    let bin = build_app("bench-cli,reqwest");
+    let out = Command::new(bin)
+        .arg("bench")
+        .arg("io")
+        .arg("--url")
+        .arg("http://127.0.0.1:0")
+        .arg("--requests")
+        .arg("1")
+        .arg("--concurrency")
+        .arg("0")
+        .arg("--json")
+        .output()
+        .expect("run app bin");
+
+    assert!(!out.status.success(), "zero concurrency must fail");
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    assert!(
+        stderr.contains("--concurrency must be greater than 0"),
+        "stderr did not report zero concurrency: {stderr}"
+    );
 }

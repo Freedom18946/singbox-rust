@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-07-03) - app bench io input audit cleanup
+
+- **`app bench io` audit cleanup DONE locally**: zero `--requests` and zero `--concurrency`
+  now return structured input errors instead of producing a successful no-work benchmark result.
+- **HTTP method handling tightened**: the reqwest method conversion now reports invalid methods
+  explicitly instead of silently falling back to `GET` if called outside clap validation.
+- **Test coverage tightened**: focused bench unit tests cover zero requests/concurrency, and the
+  real bench CLI contract test covers `--concurrency 0` with a freshly rebuilt app binary.
+- **Verification PASS**: app fmt, focused bench unit/CLI tests, app all-target/all-feature check,
+  strict app clippy, real zero-concurrency CLI smoke, and `git diff --check`.
+- **Scope note**: app bench CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app coverage-http CLI audit cleanup
 
 - **`app/src/bin/coverage-http.rs` audit cleanup DONE locally**: invalid `SB_COV_ADDR` now
@@ -211,23 +224,6 @@
   `cargo check -p sb-metrics --all-targets --locked`, sb-metrics doctests, residual audit scan,
   and `git diff --check`.
 - **Scope note**: sb-metrics audit/test hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - sb-core audit cleanup
-
-- **`crates/sb-core` audit cleanup DONE locally**: router hot-cache registration now
-  stores the hot source independently, so `register_router_hot_adapter` alone exports
-  non-empty hot items; strict clippy issues in router reject handling, WireGuard listen
-  ports, test helper types, and async test locking were cleaned.
-- **Test hygiene DONE locally**: the GeoIP provider placeholder test was replaced by a
-  weak-owner registry integration test, hot-cache JSON assertions now catch empty-item
-  regressions, and noisy success-path test `println!` output was removed or converted to
-  assertions.
-- **Verification PASS**: focused changed-test set, `cargo check -p sb-core --all-targets
-  --all-features`, `cargo clippy -p sb-core --all-targets --all-features -- -D warnings`,
-  `cargo test -p sb-core --all-targets --all-features`, `cargo fmt --check`,
-  `git diff --check`, and `verify-consistency.sh`.
-- **Scope note**: sb-core audit/test hygiene only. No REALITY closure, dual-kernel
   BHV/parity movement, release packaging completion, or workflow automation is claimed.
 
 ## Strategic State

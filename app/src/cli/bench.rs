@@ -217,6 +217,16 @@ fn load_body(arg: &str) -> Result<String> {
     }
 }
 
+fn validate_io_inputs(requests: u32, concurrency: usize) -> Result<()> {
+    if requests == 0 {
+        anyhow::bail!("--requests must be greater than 0");
+    }
+    if concurrency == 0 {
+        anyhow::bail!("--concurrency must be greater than 0");
+    }
+    Ok(())
+}
+
 #[derive(Serialize, Clone, Debug, PartialEq)]
 struct BenchJsonOut {
     // fixed schema keys
@@ -267,6 +277,7 @@ async fn bench_io(
     save_path: Option<std::path::PathBuf>,
     out_path: Option<std::path::PathBuf>,
 ) -> Result<()> {
+    validate_io_inputs(requests, concurrency)?;
     let mut cb = reqwest::Client::builder().timeout(Duration::from_millis(timeout_ms));
     if insecure {
         cb = cb.danger_accept_invalid_certs(true);
@@ -279,7 +290,8 @@ async fn bench_io(
     let stats = Arc::new(Mutex::new(IoStats::default()));
     let lat = Arc::new(Mutex::new(Vec::<u64>::with_capacity(requests as usize)));
     let mut joins = Vec::with_capacity(concurrency);
-    let method = Method::from_bytes(method.as_bytes()).unwrap_or(Method::GET);
+    let method = Method::from_bytes(method.as_bytes())
+        .with_context(|| format!("invalid HTTP method `{method}`"))?;
     // 将 Option<Result<String>> 转换为 Result<Option<String>>
     let body_text = body.map(|b| load_body(&b)).transpose()?;
     for _ in 0..concurrency {
@@ -432,6 +444,26 @@ mod tests {
         assert!((h.cdf[0] - 1.0 / 5.0).abs() < 1e-9); // 1/5 = 0.2
         assert!((h.cdf[1] - 4.0 / 5.0).abs() < 1e-9); // (1+3)/5 = 0.8
         assert!((h.cdf[2] - 1.0).abs() < 1e-9); // (1+3+1)/5 = 1.0
+    }
+
+    #[test]
+    fn test_validate_io_inputs_rejects_zero_requests() {
+        let err = validate_io_inputs(0, 1)
+            .err()
+            .map(|err| err.to_string())
+            .unwrap_or_default();
+
+        assert!(err.contains("--requests"));
+    }
+
+    #[test]
+    fn test_validate_io_inputs_rejects_zero_concurrency() {
+        let err = validate_io_inputs(1, 0)
+            .err()
+            .map(|err| err.to_string())
+            .unwrap_or_default();
+
+        assert!(err.contains("--concurrency"));
     }
 
     #[test]
