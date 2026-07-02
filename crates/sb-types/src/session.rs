@@ -193,24 +193,27 @@ impl Session {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::error::Error;
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn target_addr_display() {
         let domain = TargetAddr::domain("example.com", 443);
         assert_eq!(domain.to_string(), "example.com:443");
 
-        let socket = TargetAddr::ip("127.0.0.1".parse().unwrap(), 8080);
+        let socket = TargetAddr::ip(IpAddr::V4(Ipv4Addr::LOCALHOST), 8080);
         assert_eq!(socket.to_string(), "127.0.0.1:8080");
     }
 
     #[test]
-    fn session_serialization() {
+    fn session_serialization() -> Result<(), Box<dyn Error>> {
         let session = Session::new(
             1,
             InboundTag::new("socks"),
             TargetAddr::domain("google.com", 443),
         );
-        let json = serde_json::to_string(&session).unwrap();
+        let json = serde_json::to_string(&session)?;
         assert!(json.contains("google.com"));
+        Ok(())
     }
 }

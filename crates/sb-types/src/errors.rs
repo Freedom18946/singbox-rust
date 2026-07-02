@@ -242,6 +242,7 @@ impl From<TransportError> for CoreError {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::error::Error;
 
     #[test]
     fn core_error_class() {
@@ -250,9 +251,10 @@ mod tests {
     }
 
     #[test]
-    fn core_error_serialization() {
+    fn core_error_serialization() -> Result<(), Box<dyn Error>> {
         let e = CoreError::dns("NXDOMAIN");
-        let json = serde_json::to_string(&e).unwrap();
+        let json = serde_json::to_string(&e)?;
         assert!(json.contains("NXDOMAIN"));
+        Ok(())
     }
 }

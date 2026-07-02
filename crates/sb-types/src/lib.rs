@@ -371,12 +371,12 @@ impl Display for IssuePayload {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::error::Error;
+
     #[test]
-    fn issuecode_serialization() {
-        let res = serde_json::to_string(&IssueCode::SchemaInvalid);
-        match res {
-            Ok(j) => assert_eq!(j, "\"SchemaInvalid\""),
-            Err(e) => panic!("serialization failed: {e}"),
-        }
+    fn issuecode_serialization() -> Result<(), Box<dyn Error>> {
+        let json = serde_json::to_string(&IssueCode::SchemaInvalid)?;
+        assert_eq!(json, "\"SchemaInvalid\"");
+        Ok(())
     }
 }

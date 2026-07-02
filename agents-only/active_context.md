@@ -18,8 +18,13 @@
 - **Opaque stream contract tightened**: `BoxedStream` docs no longer describe a placeholder, and
   the marker trait has a blanket `Send + Sync + 'static` impl with a regression test proving
   opaque stream tokens can be boxed without adding runtime/async dependencies.
-- **Verification PASS**: sb-types fmt, all-target/all-feature check, unit tests, doctests,
-  strict clippy, normal dependency-tree review, residual audit scan, and `git diff --check`.
+- **HTTP response contract tightened**: `HttpResponse` now offers normalized response-header
+  construction/insertion, keeps case-insensitive direct-field compatibility, and the reqwest
+  app adapter uses that contract. sb-types test scan noise (`unwrap`/`panic`/dummy fixtures)
+  was removed.
+- **Verification PASS**: sb-types/app fmt, sb-types all-target/all-feature check, unit tests,
+  doctests, strict clippy, normal dependency-tree review, clean residual audit scan,
+  `git diff --check`, and app all-target/all-feature check (existing prefetch warnings only).
 - **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, release packaging completion, or workflow automation is claimed.
 

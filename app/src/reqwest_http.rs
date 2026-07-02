@@ -97,11 +97,7 @@ impl HttpClient for ReqwestHttpClient {
                 message: format!("failed to read response body: {e}"),
             })?;
 
-            Ok(HttpResponse {
-                status,
-                headers,
-                body: body.to_vec(),
-            })
+            Ok(HttpResponse::new(status, headers, body.to_vec()))
         })
     }
 }

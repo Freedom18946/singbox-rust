@@ -62,13 +62,51 @@ impl HttpRequest {
 }
 
 impl HttpResponse {
+    /// Create a response, normalizing header keys for stable lookup.
+    pub fn new(
+        status: u16,
+        headers: impl IntoIterator<Item = (impl Into<String>, impl Into<String>)>,
+        body: impl Into<Vec<u8>>,
+    ) -> Self {
+        let mut response = Self {
+            status,
+            headers: HashMap::new(),
+            body: body.into(),
+        };
+        for (key, value) in headers {
+            response.insert_header(key, value);
+        }
+        response
+    }
+
+    /// Insert a response header, normalizing the key to lowercase ASCII.
+    pub fn insert_header(
+        &mut self,
+        key: impl Into<String>,
+        value: impl Into<String>,
+    ) -> Option<String> {
+        self.headers
+            .insert(key.into().to_ascii_lowercase(), value.into())
+    }
+
+    /// Add a header to the response.
+    pub fn with_header(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.insert_header(key, value);
+        self
+    }
+
     /// Get a header value by key (case-insensitive lookup).
     pub fn header(&self, key: &str) -> Option<&str> {
-        let key_lower = key.to_lowercase();
+        let key_lower = key.to_ascii_lowercase();
         self.headers
-            .iter()
-            .find(|(k, _)| k.to_lowercase() == key_lower)
-            .map(|(_, v)| v.as_str())
+            .get(&key_lower)
+            .map(String::as_str)
+            .or_else(|| {
+                self.headers
+                    .iter()
+                    .find(|(k, _)| k.eq_ignore_ascii_case(key))
+                    .map(|(_, v)| v.as_str())
+            })
     }
 
     /// Check if the status code indicates success (2xx).
@@ -91,4 +129,49 @@ pub trait HttpClient: Send + Sync {
     ) -> std::pin::Pin<
         Box<dyn std::future::Future<Output = Result<HttpResponse, crate::CoreError>> + Send + '_>,
     >;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::HttpResponse;
+    use std::collections::HashMap;
+
+    #[test]
+    fn response_new_normalizes_header_keys_for_lookup() {
+        let response = HttpResponse::new(
+            200,
+            [("ETag", "v1"), ("Last-Modified", "today")],
+            Vec::new(),
+        );
+
+        assert_eq!(response.header("etag"), Some("v1"));
+        assert_eq!(response.header("ETAG"), Some("v1"));
+        assert_eq!(response.header("last-modified"), Some("today"));
+        assert!(response.headers.contains_key("etag"));
+        assert!(response.headers.contains_key("last-modified"));
+    }
+
+    #[test]
+    fn response_header_lookup_preserves_direct_field_compatibility() {
+        let response = HttpResponse {
+            status: 200,
+            headers: HashMap::from([("ETag".to_string(), "direct".to_string())]),
+            body: Vec::new(),
+        };
+
+        assert_eq!(response.header("etag"), Some("direct"));
+    }
+
+    #[test]
+    fn response_success_is_limited_to_2xx() {
+        assert!(
+            HttpResponse::new(204, std::iter::empty::<(&str, &str)>(), Vec::new()).is_success()
+        );
+        assert!(
+            !HttpResponse::new(199, std::iter::empty::<(&str, &str)>(), Vec::new()).is_success()
+        );
+        assert!(
+            !HttpResponse::new(300, std::iter::empty::<(&str, &str)>(), Vec::new()).is_success()
+        );
+    }
 }

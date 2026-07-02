@@ -131,10 +131,10 @@ mod tests {
     #[test]
     fn service_trait_object_safety() {
         // Verify Service can be used as trait object
-        struct DummyService;
-        impl Service for DummyService {
+        struct FixtureService;
+        impl Service for FixtureService {
             fn service_type(&self) -> &str {
-                "dummy"
+                "fixture"
             }
             fn tag(&self) -> &str {
                 "svc"
@@ -150,8 +150,8 @@ mod tests {
             }
         }
 
-        let svc: Box<dyn Service> = Box::new(DummyService);
-        assert_eq!(svc.service_type(), "dummy");
+        let svc: Box<dyn Service> = Box::new(FixtureService);
+        assert_eq!(svc.service_type(), "fixture");
         assert_eq!(svc.tag(), "svc");
         assert!(svc.start(StartStage::Initialize).is_ok());
         assert!(svc.close().is_ok());
@@ -159,8 +159,8 @@ mod tests {
 
     #[test]
     fn lifecycle_trait_object_safety() {
-        struct DummyLifecycle;
-        impl Lifecycle for DummyLifecycle {
+        struct FixtureLifecycle;
+        impl Lifecycle for FixtureLifecycle {
             fn start(
                 &self,
                 _stage: StartStage,
@@ -172,7 +172,7 @@ mod tests {
             }
         }
 
-        let lc: Box<dyn Lifecycle> = Box::new(DummyLifecycle);
+        let lc: Box<dyn Lifecycle> = Box::new(FixtureLifecycle);
         assert!(lc.start(StartStage::Start).is_ok());
         assert!(lc.close().is_ok());
     }
