@@ -372,6 +372,7 @@ webpki-roots = "0.26"
 rand = "0.8"
 x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 rcgen = "0.12"
+time = "0.3"
 
 sb-core     = { path = "../crates/sb-core", features = ["scaffold"], optional = true }
 sb-adapters = { path = "../crates/sb-adapters", optional = true }
@@ -442,7 +443,6 @@ sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"
 async-trait = "0.1"
 sb-metrics = { path = "../crates/sb-metrics" }
-time = "0.3"
 futures.workspace = true
 
 [build-dependencies]

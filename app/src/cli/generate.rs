@@ -258,10 +258,9 @@ fn generate_reality_keypair() -> Result<()> {
 
 /// Generate self-signed TLS cert + private key (PEM)
 fn generate_tls_keypair(cn: String, days: u32) -> Result<()> {
-    use rcgen::generate_simple_self_signed;
-    let _ = days; // rcgen simple API doesn't expose validity; ignore for now.
-    let cert =
-        generate_simple_self_signed(vec![cn]).map_err(|e| anyhow::anyhow!("generate cert: {e}"))?;
+    let params = tls_certificate_params(cn, days)?;
+    let cert = rcgen::Certificate::from_params(params)
+        .map_err(|e| anyhow::anyhow!("generate cert: {e}"))?;
     let cert_pem = cert
         .serialize_pem()
         .map_err(|e| anyhow::anyhow!("serialize cert: {e}"))?;
@@ -270,6 +269,21 @@ fn generate_tls_keypair(cn: String, days: u32) -> Result<()> {
     println!("Certificate:\n{}", cert_pem.trim_end());
     println!("PrivateKey:\n{}", key_pem.trim_end());
     Ok(())
+}
+
+fn tls_certificate_params(cn: String, days: u32) -> Result<rcgen::CertificateParams> {
+    anyhow::ensure!(days > 0, "--days must be greater than zero");
+
+    let now = time::OffsetDateTime::now_utc();
+    let validity = time::Duration::days(i64::from(days));
+    let not_after = now
+        .checked_add(validity)
+        .ok_or_else(|| anyhow::anyhow!("--days value is too large"))?;
+
+    let mut params = rcgen::CertificateParams::new(vec![cn]);
+    params.not_before = now;
+    params.not_after = not_after;
+    Ok(params)
 }
 
 /// Generate VAPID (P-256) keypair
@@ -471,5 +485,26 @@ mod tests {
     fn test_tls_keypair_generation() {
         let result = generate_tls_keypair("localhost".to_string(), 1);
         assert!(result.is_ok());
+    }
+
+    #[test]
+    fn test_tls_keypair_days_sets_validity_window() -> Result<()> {
+        let params = tls_certificate_params("localhost".to_string(), 7)?;
+
+        assert_eq!(
+            params.not_after - params.not_before,
+            time::Duration::days(7)
+        );
+        Ok(())
+    }
+
+    #[test]
+    fn test_tls_keypair_rejects_zero_days() {
+        let result = tls_certificate_params("localhost".to_string(), 0);
+
+        assert!(matches!(
+            result.as_ref().map_err(|err| err.to_string()),
+            Err(message) if message.contains("--days")
+        ));
     }
 }

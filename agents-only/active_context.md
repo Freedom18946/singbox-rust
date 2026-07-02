@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-03) - app generate TLS keypair audit cleanup
+
+- **`app generate tls-keypair --days` audit cleanup DONE locally**: the CLI now builds explicit
+  `rcgen::CertificateParams` so `--days` controls the self-signed certificate validity window
+  instead of being accepted and ignored.
+- **Input contract tightened**: `--days 0` is rejected with a structured error, and the app
+  dependency graph now treats `time` as a production dependency for certificate validity math.
+- **Test coverage tightened**: focused generate CLI tests cover the validity-window duration and
+  zero-day rejection path without adding new residual `expect`/`panic!` scan noise.
+- **Verification PASS**: app fmt, focused TLS keypair tests, app all-target/all-feature check,
+  strict app clippy, residual scan, and `git diff --check`.
+- **Scope note**: app key-generation CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app preflight CLI audit cleanup
 
 - **`app/src/bin/preflight.rs` audit cleanup DONE locally**: preflight now fails explicitly on
@@ -66,22 +80,6 @@
   `git diff --check`, and app all-target/all-feature check (existing prefetch warnings only).
 - **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - sb-transport audit cleanup
-
-- **`crates/sb-transport` audit cleanup DONE locally**: enhanced TLS security config now
-  actually applies `SB_TLS_MIN` via rustls protocol-version selection, removes the unusable
-  cipher-suite placeholder field, and enforces strict SNI override checks before dialing.
-- **Transport hygiene tightened**: metrics registration no longer falls back to unrelated
-  `dummy_*` collectors, UoT v2 domain-address input now fails loudly instead of becoming
-  `0.0.0.0:port`, REALITY env tests are serialized, and the ECH example command points at
-  the real example target.
-- **Docs calibrated**: `webpki_roots_config()` docs now describe the actual built-in root
-  store behavior rather than an old empty-root placeholder note.
-- **Verification PASS**: sb-transport fmt, no-default/all-features checks, all-target tests,
-  doctests, strict clippy, residual audit scan, and `git diff --check`.
-- **Scope note**: sb-transport audit/test hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
 
 ## Resume (2026-07-02) - sb-tls audit cleanup
 
