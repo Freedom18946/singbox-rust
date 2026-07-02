@@ -10,6 +10,21 @@
 
 ---
 
+## Resume (2026-07-02) - sb-tls audit cleanup
+
+- **`crates/sb-tls` audit cleanup DONE locally**: feature-gated REALITY/uTLS examples now
+  declare `required-features`, so no-default all-target builds no longer compile
+  unavailable example surfaces.
+- **ECH keygen bounds tightened**: ECHConfig/keygen helpers now return structured errors
+  instead of silently truncating u8/u16 length-prefixed fields; regression tests cover
+  invalid public-key length and oversized public names.
+- **Docs calibrated**: duplicate REALITY connector docs, stale ECH integration wording,
+  old task labels, and drift-prone all-green status text were removed or made stable.
+- **Verification PASS**: sb-tls fmt, no-default/all-features checks, all-target tests,
+  doctests, strict clippy, residual audit scan, and `git diff --check`.
+- **Scope note**: sb-tls audit/test hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - sb-test-utils audit cleanup
 
 - **`crates/sb-test-utils` audit cleanup DONE locally**: stale crate-level docs now match
@@ -198,30 +213,6 @@
   Shadowsocks/HTTP-chain tests; `cargo fmt --check`; `git diff --check`.
 - **Scope note**: app hygiene only. No REALITY closure, dual-kernel BHV/parity movement,
   workflow automation, or release packaging completion is claimed.
-
-## Previous Resume (2026-06-30) - root files release acceptance
-
-- **Root file acceptance DONE locally**: the requested root release/navigation/config
-  file set received a release-level hygiene pass. The stale workspace fuzz exclude
-  now points at root `fuzz/`, README no longer treats `agents-only/log.md` as the
-  volatile-state source, and `deny.toml` records the remaining no-fixed-release
-  `rsa` advisory exception for the optional Arti/Tor graph.
-- **Dependency/API hygiene DONE locally**: hickory moved to 0.26 across `app`,
-  `sb-core`, and `interop-lab`; russh moved to 0.60.3 for SSH adapters; app JWT
-  dropped direct `rsa`/`pkcs1` and now builds RS256 JWK decoding keys from RSA
-  components. Root and fuzz lockfiles were refreshed by local gates.
-- **Verification PASS**: historical record compressed in `agents-only/archive/release_cleanup_2026_06_summary.md`.
-  Format, focused JWT test, app/adapters all-features checks, workspace check,
-  workspace all-features/all-targets clippy, cargo-deny advisories/license/bans/
-  sources, fuzz-check, metadata workspace-membership check, Makefile dry-run,
-  docs-link check, and boundaries passed locally. Clippy and deny still emit
-  existing warning-level diagnostics but exit 0.
-- **Spike note**: no spike artifact was deleted in this round. Tracked A41/A42
-  spike materials remain historical projection/mapping evidence, not an expiry
-  cleanup target.
-- **Scope note**: root/config/dependency hygiene only. No product behavior claim,
-  REALITY closure, dual-kernel BHV/parity movement, workflow automation, or release
-  packaging completion is claimed.
 
 ## Previous Resume (2026-06-30) - Claude memory cleanup policy refresh
 

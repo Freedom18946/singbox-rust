@@ -72,6 +72,25 @@ utls = []  # uTLS client fingerprinting
 native-certs = ["dep:rustls-native-certs"]
 cert-watch = ["dep:notify", "dep:tokio-util"]
 
+[[example]]
+name = "reality_clienthello_dump"
+required-features = ["reality"]
+
+[[example]]
+name = "reality_clienthello_remote_socket_trace"
+required-features = ["reality"]
+
+[[example]]
+name = "reality_clienthello_socket_trace"
+required-features = ["reality"]
+
+[[example]]
+name = "reality_clienthello_trace"
+required-features = ["reality"]
+
+[[example]]
+name = "tls_clienthello_probe"
+required-features = ["utls"]
 
 [lints]
 workspace = true

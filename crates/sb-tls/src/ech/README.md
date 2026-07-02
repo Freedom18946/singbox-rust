@@ -4,9 +4,7 @@
 
 This module provides ECH (Encrypted Client Hello) support for singbox-rust, implementing the TLS extension that encrypts the ClientHello message to prevent traffic analysis and SNI-based blocking.
 
-## Current Status
-
-### ✅ Completed (Task 2.1)
+## Current Capabilities
 
 1. **Research**: rustls ECH support status
    - rustls 0.23+ provides client-side ECH support (TLS 1.3 only)
@@ -117,8 +115,8 @@ This module provides ECH (Encrypted Client Hello) support for singbox-rust, impl
 
 ### Authenticated Encryption (AEAD)
 - ✅ AES-128-GCM - 0x0001
-- ⚠️ AES-256-GCM - 0x0002 (defined, not implemented)
-- ⚠️ ChaCha20-Poly1305 - 0x0003 (defined, not implemented)
+- ⚠️ AES-256-GCM - 0x0002 (recognized by config parsing, not supported by the current HPKE helper)
+- ⚠️ ChaCha20-Poly1305 - 0x0003 (recognized by config parsing, not supported by the current HPKE helper)
 
 ## Integration with sing-box
 
@@ -149,19 +147,19 @@ Compatible with sing-box ECH configuration:
 }
 ```
 
-## Next Steps (Future Tasks)
+## Known Gaps
 
-### Task 2.3: QUIC-ECH Alignment
+### QUIC-ECH Alignment
 - QUIC transport ECH support
 - Different handshake flow handling
 - QUIC-specific ECH configuration
 
-### Task 2.4: Server-Side ECH
+### Server-Side ECH
 - ECH key schedule + decryption
 - HelloRetryRequest handling
 - Retry configs / rejection logic
 
-### Task 2.5: Testing
+### Testing
 - E2E tests with packet capture
 - Compatibility tests with upstream sing-box
 
@@ -171,8 +169,6 @@ Run ECH module tests:
 ```bash
 cargo test -p sb-tls --features ech --lib
 ```
-
-All tests passing ✅
 
 ## References
 

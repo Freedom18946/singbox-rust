@@ -6,7 +6,7 @@ This crate provides TLS abstractions and anti-censorship protocols for singbox-r
 
 - **`reality`** (default): REALITY anti-censorship protocol
 - **`utls`**: uTLS-style fingerprinting (best-effort cipher suite/ALPN ordering via rustls)
-- **`ech`**: Encrypted Client Hello (config + HPKE implemented; handshake integration pending)
+- **`ech`**: Encrypted Client Hello (client handshake integration; server/QUIC support pending)
 - **`acme`**: ACME helpers for certificate management (feature-gated)
 
 ## Modules

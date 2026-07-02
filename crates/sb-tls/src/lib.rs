@@ -67,8 +67,6 @@ pub type TlsIoStream = Box<dyn TlsStream>;
 /// - 标准 TLS 1.3 (rustls)
 /// - REALITY (anti-censorship)
 /// - REALITY (抗审查)
-/// - REALITY (anti-censorship)
-/// - REALITY (抗审查)
 /// - ECH (encrypted client hello)
 /// - ECH (加密客户端 Hello)
 #[async_trait]
