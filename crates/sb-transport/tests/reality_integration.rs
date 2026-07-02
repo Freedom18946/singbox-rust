@@ -4,6 +4,9 @@
 mod reality_tests {
     use sb_tls::RealityClientConfig;
     use sb_transport::{RealityDialer, TcpDialer};
+    use std::sync::Mutex;
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
 
     #[test]
     fn test_reality_dialer_creation() {
@@ -43,6 +46,7 @@ mod reality_tests {
 
     #[test]
     fn test_reality_dialer_from_env_missing_vars() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
         // Save current environment state
         let saved_target = std::env::var("SB_REALITY_TARGET").ok();
         let saved_key = std::env::var("SB_REALITY_PUBLIC_KEY").ok();
@@ -66,6 +70,7 @@ mod reality_tests {
 
     #[test]
     fn test_reality_dialer_from_env_with_vars() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
         // Set required environment variables
         std::env::set_var("SB_REALITY_TARGET", "www.apple.com");
         std::env::set_var(
@@ -88,6 +93,7 @@ mod reality_tests {
 
     #[test]
     fn test_reality_dialer_from_env_defaults() {
+        let _guard = ENV_LOCK.lock().expect("env lock");
         // Set only required environment variables
         std::env::set_var("SB_REALITY_TARGET", "www.example.com");
         std::env::set_var(

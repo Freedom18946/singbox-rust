@@ -6,7 +6,7 @@
 //! Run with:
 //! ```bash
 //! export SB_ECH_CONFIG="your_base64_encoded_ech_config"
-//! cargo run --example ech_example --features transport_ech
+//! cargo run --example ech_dialer_example --features transport_ech
 //! ```
 
 #[cfg(feature = "transport_ech")]
@@ -60,7 +60,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     // Method 2: Create ECH dialer with manual configuration
     use sb_tls::EchClientConfig;
 
-    // Example configuration (this is a placeholder, not a real config)
+    // Intentionally invalid sample config for constructor error-path coverage.
     let ech_config = EchClientConfig {
         enabled: true,
         config: Some("example_base64_config".to_string()),
@@ -110,6 +110,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(not(feature = "transport_ech"))]
 fn main() {
     eprintln!("This example requires the 'transport_ech' feature.");
-    eprintln!("Run with: cargo run --example ech_example --features transport_ech");
+    eprintln!("Run with: cargo run --example ech_dialer_example --features transport_ech");
     std::process::exit(1);
 }

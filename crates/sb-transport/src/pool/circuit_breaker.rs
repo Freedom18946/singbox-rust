@@ -177,7 +177,7 @@ mod tests {
                     if count < *limit {
                         Err(DialError::Other("connection failed".to_string()))
                     } else {
-                        // Return a dummy stream
+                        // Return an in-memory stream for the test.
                         let (client, _server) = tokio::io::duplex(64);
                         Ok(Box::new(client))
                     }

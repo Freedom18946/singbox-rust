@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-02) - sb-transport audit cleanup
+
+- **`crates/sb-transport` audit cleanup DONE locally**: enhanced TLS security config now
+  actually applies `SB_TLS_MIN` via rustls protocol-version selection, removes the unusable
+  cipher-suite placeholder field, and enforces strict SNI override checks before dialing.
+- **Transport hygiene tightened**: metrics registration no longer falls back to unrelated
+  `dummy_*` collectors, UoT v2 domain-address input now fails loudly instead of becoming
+  `0.0.0.0:port`, REALITY env tests are serialized, and the ECH example command points at
+  the real example target.
+- **Docs calibrated**: `webpki_roots_config()` docs now describe the actual built-in root
+  store behavior rather than an old empty-root placeholder note.
+- **Verification PASS**: sb-transport fmt, no-default/all-features checks, all-target tests,
+  doctests, strict clippy, residual audit scan, and `git diff --check`.
+- **Scope note**: sb-transport audit/test hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - sb-tls audit cleanup
 
 - **`crates/sb-tls` audit cleanup DONE locally**: feature-gated REALITY/uTLS examples now
@@ -213,17 +229,6 @@
   Shadowsocks/HTTP-chain tests; `cargo fmt --check`; `git diff --check`.
 - **Scope note**: app hygiene only. No REALITY closure, dual-kernel BHV/parity movement,
   workflow automation, or release packaging completion is claimed.
-
-## Previous Resume (2026-06-30) - Claude memory cleanup policy refresh
-
-- **`.claude` record reverted**: pushed commit `0a7c3abc` (tracked `agents-only` documentation about
-  `.claude/`) was reverted by `5bca4f5f`; local `.claude/` remains present, ignored, and untracked.
-- **Cleanup discipline updated**: root `CLAUDE.md` and Claude project memory now record the user rule:
-  cleanup tasks must ask delete vs update/keep before acting; `.claude/` is Claude Code local state
-  and must not be tracked, staged, committed, pushed, or documented in tracked artifacts unless
-  explicitly requested.
-- **Scope note**: memory/policy correction only. No product behavior, workflow automation, release
-  packaging, REALITY closure, or dual-kernel BHV/parity movement is claimed.
 
 ## Strategic State
 

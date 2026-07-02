@@ -165,11 +165,11 @@ impl<D: Dialer + Send + Sync + 'static> Dialer for TlsDialer<D> {
 // - Suitable for standard HTTPS connections / 适用于标准的 HTTPS 连接
 ///
 /// ## Notes / 注意事项
-/// The current implementation uses an empty root store as a placeholder. In production, you should:
-/// 当前实现使用空的根证书存储作为占位符。在生产环境中，应该：
-// - Use `webpki-roots` crate to load built-in root certificates / 使用 `webpki-roots` crate 加载内置根证书
-// - Or use `rustls-native-certs` to load system root certificates / 或使用 `rustls-native-certs` 加载系统根证书
-// - Or manually load custom root certificates / 或手动加载自定义根证书
+/// The current implementation loads built-in Mozilla root certificates through
+/// `webpki-roots`. Use `rustls-native-certs` or manually load custom root
+/// certificates only when a deployment needs OS-specific trust stores or private CAs.
+/// 当前实现通过 `webpki-roots` 加载内置 Mozilla 根证书。仅当部署需要系统证书库或私有 CA 时，
+/// 才需要使用 `rustls-native-certs` 或手动加载自定义根证书。
 ///
 /// ## rustls 0.23 Compatibility / rustls 0.23 兼容性
 /// This implementation is based on rustls 0.23 API, where RootCertStore usage

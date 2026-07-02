@@ -46,12 +46,8 @@ pub fn get_or_register_counter_vec(name: &str, help: &str, labels: &[&str]) -> I
 
     // Create and register a new counter vec.
     // 创建并注册一个新的计数器向量。
-    let vec = IntCounterVec::new(Opts::new(name, help), labels).unwrap_or_else(|_| {
-        // Fallback dummy counter on initialization failure — guarantees type availability.
-        // 初始化失败时的回退虚拟计数器 — 保证类型可用性。
-        #[allow(clippy::unwrap_used)]
-        IntCounterVec::new(Opts::new("dummy_counter", "dummy"), &["label"]).unwrap()
-    });
+    let vec = IntCounterVec::new(Opts::new(name, help), labels)
+        .unwrap_or_else(|err| panic!("invalid transport counter metric '{name}': {err}"));
     // Best-effort registration; duplicate names should remain observable rather than silent.
     // 尽力注册；重复名称应保持可观测，而不是静默吞掉。
     if let Err(err) = sb_metrics::shared_registry().register_cloned(name, &vec) {
@@ -73,12 +69,8 @@ pub fn get_or_register_gauge_vec_f64(name: &str, help: &str, labels: &[&str]) ->
         }
     }
 
-    let vec = GaugeVec::new(Opts::new(name, help), labels).unwrap_or_else(|_| {
-        // Fallback dummy gauge vector
-        // 回退虚拟仪表向量
-        #[allow(clippy::unwrap_used)]
-        GaugeVec::new(Opts::new("dummy_gauge", "dummy"), &["label"]).unwrap()
-    });
+    let vec = GaugeVec::new(Opts::new(name, help), labels)
+        .unwrap_or_else(|err| panic!("invalid transport gauge metric '{name}': {err}"));
     if let Err(err) = sb_metrics::shared_registry().register_cloned(name, &vec) {
         tracing::debug!(metric = name, error = %err, "transport gauge registration skipped");
     }
@@ -87,4 +79,21 @@ pub fn get_or_register_gauge_vec_f64(name: &str, help: &str, labels: &[&str]) ->
         map.insert(name.to_string(), vec.clone());
     }
     vec
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    #[should_panic(expected = "invalid transport counter metric")]
+    fn counter_registration_rejects_invalid_metric_name() {
+        let _ = get_or_register_counter_vec("invalid-metric-name", "help", &["label"]);
+    }
+
+    #[test]
+    #[should_panic(expected = "invalid transport gauge metric")]
+    fn gauge_registration_rejects_invalid_label_name() {
+        let _ = get_or_register_gauge_vec_f64("transport_valid_metric", "help", &["bad-label"]);
+    }
 }

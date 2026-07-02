@@ -176,7 +176,7 @@ impl QuicDialer {
 
         // Note: quinn 0.11 has different API for stream settings
         // These are now configured differently or have default values
-        // We'll use defaults for now
+        // Use the endpoint defaults; transport-specific options are applied below.
         // 注意：quinn 0.11 具有不同的流设置 API
         // 这些现在配置方式不同或具有默认值
         // 我们目前使用默认值

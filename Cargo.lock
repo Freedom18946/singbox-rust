@@ -7483,6 +7483,7 @@ dependencies = [
  "prost 0.13.5",
  "quinn",
  "rand 0.8.6",
+ "rcgen 0.13.2",
  "rustls",
  "rustls-pemfile",
  "sb-metrics",

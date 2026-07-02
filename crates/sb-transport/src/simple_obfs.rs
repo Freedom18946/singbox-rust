@@ -147,14 +147,14 @@ impl<S> SimpleObfsStream<S> {
         buf.put_u8(0x03);
         buf.put_u8(0x01); // TLS 1.0 for ClientHello
 
-        // Length placeholder (filled later)
+        // Length slot filled after the record body is assembled.
         let len_pos = buf.len();
         buf.put_u16(0);
 
         // Handshake header
         buf.put_u8(0x01); // ClientHello
 
-        // Handshake length placeholder
+        // Handshake length slot filled after the handshake body is assembled.
         let hs_len_pos = buf.len();
         buf.put_u8(0);
         buf.put_u16(0);
@@ -181,7 +181,7 @@ impl<S> SimpleObfsStream<S> {
 
         // Extensions
         let ext_start = buf.len();
-        buf.put_u16(0); // extension length placeholder
+        buf.put_u16(0); // extension length slot
 
         // SNI extension
         buf.put_u16(0x0000); // type: server_name

@@ -194,7 +194,7 @@ impl Dialer for HttpUpgradeDialer {
                 // If we read more than headers, we need to handle the extra data.
                 // Since IoStream is Box<dyn AsyncReadWrite>, we can't easily put back data.
                 // For this simple implementation, we assume server doesn't send data immediately
-                // or we error if it does (which is safer for now).
+                // or fail if it does, which keeps the upgrade parser conservative.
                 // 如果我们读取的不仅仅是头部，我们需要处理额外的数据。
                 // 由于 IoStream 是 Box<dyn AsyncReadWrite>，我们很难放回数据。
                 // 对于这个简单的实现，我们假设服务器不会立即发送数据

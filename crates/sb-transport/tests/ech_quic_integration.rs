@@ -33,7 +33,7 @@ mod ech_quic_tests {
         config_list.push(0x01);
         config_list.extend_from_slice(&[0x00, 0x20]); // X25519
 
-        // Public key length + dummy public key (32 bytes for X25519)
+        // Public key length + deterministic test public key (32 bytes for X25519)
         config_list.extend_from_slice(&[0x00, 0x20]);
         config_list.extend_from_slice(&[0x01; 32]); // Dummy key for testing
 

@@ -233,12 +233,10 @@ pub fn decode_packet_v2(buf: &mut BytesMut) -> io::Result<Option<UdpPacket>> {
             SocketAddr::from((ip, port))
         }
         0x03 => {
-            // Domain not supported for decoded address, return placeholder
-            let domain_len = buf[1] as usize;
-            let port_offset = 2 + domain_len;
-            let port = u16::from_be_bytes([buf[port_offset], buf[port_offset + 1]]);
-            // Use unspecified address with port for domain
-            SocketAddr::from(([0, 0, 0, 0], port))
+            return Err(io::Error::new(
+                ErrorKind::InvalidData,
+                "UoT v2 domain addresses cannot be represented as SocketAddr",
+            ));
         }
         _ => {
             return Err(io::Error::new(
@@ -447,6 +445,25 @@ mod tests {
 
         assert_eq!(decoded.addr, packet.addr);
         assert_eq!(decoded.data, packet.data);
+    }
+
+    #[test]
+    fn test_decode_v2_domain_address_rejected() {
+        let mut encoded = BytesMut::new();
+        encoded.put_u8(AddressType::Domain as u8);
+        encoded.put_u8(11);
+        encoded.put_slice(b"example.com");
+        encoded.put_u16(53);
+        encoded.put_u16(4);
+        encoded.put_slice(b"data");
+
+        let err = decode_packet_v2(&mut encoded).unwrap_err();
+        assert_eq!(err.kind(), ErrorKind::InvalidData);
+        assert!(
+            err.to_string()
+                .contains("cannot be represented as SocketAddr"),
+            "unexpected error: {err}"
+        );
     }
 
     #[test]
