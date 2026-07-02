@@ -548,14 +548,9 @@ mod tests {
                     assert!(service.start(StartStage::PostStart).is_ok());
                     assert!(service.start(StartStage::Started).is_ok());
                     assert!(service.close().is_ok());
-                } else {
-                    // Expected in environments without systemd-resolved
-                    println!("Skipping lifecycle test: systemd-resolved not available");
                 }
             }
-            Err(_e) => {
-                println!("Skipping lifecycle test: failed to create service");
-            }
+            Err(_e) => {}
         }
     }
 }

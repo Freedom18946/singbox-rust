@@ -65,9 +65,8 @@ pub struct SocksInboundConfig {
     /// Outbound registry handle
     /// 出站注册表句柄
     pub outbounds: Arc<OutboundRegistryHandle>,
-    /// Reserved for future: used when we natively start the udp module here
-    /// 保留给未来：当我们在这里内置启动 udp 模块时使用
-    #[allow(dead_code)]
+    /// UDP NAT entry TTL used by the SOCKS UDP associate runtime.
+    /// SOCKS UDP ASSOCIATE 运行时使用的 UDP NAT 条目 TTL。
     pub udp_nat_ttl: Duration,
     /// User credentials for authentication
     pub users: Option<Vec<Credentials>>,
@@ -195,7 +194,8 @@ pub async fn run_with_ready(
         let stats = cfg.stats.clone();
         let conn_tracker = cfg.conn_tracker.clone();
         let udp_runtime =
-            udp::UdpDatagramRuntime::new(Some(cfg.router.clone()), Some(cfg.outbounds.clone()));
+            udp::UdpDatagramRuntime::new(Some(cfg.router.clone()), Some(cfg.outbounds.clone()))
+                .with_nat_ttl(cfg.udp_nat_ttl);
         tokio::spawn(async move {
             if let Err(e) = udp::serve_udp_datagrams_with_runtime(
                 sock,
@@ -1158,135 +1158,6 @@ where
     let mut b = [0u8; 2];
     s.read_exact(&mut b).await?;
     Ok(u16::from_be_bytes(b))
-}
-
-// 构造 RouteCtx 的小助手（避免借用/解引用细节）
-// Helper for constructing RouteCtx (avoid borrowing/dereferencing details)
-#[allow(dead_code)] // Reserved for context building
-fn route_ctx_from_endpoint(ep: &Endpoint) -> RouteCtx<'_> {
-    match ep {
-        Endpoint::Domain(h, p) => RouteCtx {
-            host: Some(h.as_str()),
-            ip: None,
-            port: Some(*p),
-            transport: Transport::Tcp,
-            network: "tcp",
-            ..Default::default()
-        },
-        Endpoint::Ip(sa) => RouteCtx {
-            host: None,
-            ip: Some(sa.ip()),
-            port: Some(sa.port()),
-            transport: Transport::Tcp,
-            network: "tcp",
-            ..Default::default()
-        },
-    }
-}
-
-// 供 UDP 子模块复用（入站内部工具）
-// Reused by UDP submodule (inbound internal utility)
-fn _target_to_string_lossy(ep: &Endpoint) -> String {
-    match ep {
-        Endpoint::Ip(sa) => sa.to_string(),
-        Endpoint::Domain(h, p) => format!("{}:{}", h, p),
-    }
-}
-
-pub struct SocksInbound {
-    // Placeholder fields for the structure
-}
-
-impl SocksInbound {
-    pub async fn run(&self) -> anyhow::Result<()> {
-        // ... 既有 TCP 接受/处理逻辑 ...
-        // ... Existing TCP accept/handle logic ...
-        let compat_conn_tracker = Arc::new(sb_common::conntrack::ConnTracker::new());
-
-        // NOTE(linus): UDP Associate 接入（默认关闭）。仅当显式设置 SB_SOCKS_UDP_ENABLE=1 时启用。
-        // 行为守恒：不开关 → 不绑定端口，不起后台任务。
-        // NOTE(linus): UDP Associate integration (disabled by default). Enabled only when SB_SOCKS_UDP_ENABLE=1 is explicitly set.
-        // Behavior conservation: No switch -> No port binding, no background task.
-        if std::env::var("SB_SOCKS_UDP_ENABLE").is_ok() {
-            // 绑定：支持 SB_SOCKS_UDP_BIND="0.0.0.0:0,[::]:0" 多地址
-            // Bind: Support SB_SOCKS_UDP_BIND="0.0.0.0:0,[::]:0" multiple addresses
-            let sockets = udp::bind_udp_from_env_or_any()
-                .await
-                .map_err(|e| anyhow::anyhow!("bind_udp_from_env_or_any failed: {e}"))?;
-            // 起 NAT 驱逐占位（内部会 spawn，并持续运行；目前不依赖 self 的成员，零侵入）
-            // Start NAT eviction placeholder (internally spawns and runs continuously; currently does not depend on self members, zero intrusion)
-            let nat = std::sync::Arc::new(sb_core::net::datagram::UdpNatMap::new(
-                std::time::Duration::from_secs(60),
-            ));
-            udp::spawn_nat_evictor(&udp::UdpRuntime {
-                map: nat,
-                ttl: std::time::Duration::from_secs(60),
-                scan: std::time::Duration::from_secs(30),
-            });
-            // 后台处理 UDP 报文（解析+上游转发+回写）
-            // Background processing of UDP packets (parse + upstream forward + write back)
-            for s in sockets {
-                let conn_tracker = compat_conn_tracker.clone();
-                tokio::spawn({
-                    let sock = s.clone();
-                    async move {
-                        // 这里的 sock 已经是 Arc<UdpSocket>，与新签名匹配
-                        // sock here is already Arc<UdpSocket>, matching the new signature
-                        if let Err(e) =
-                            udp::serve_udp_datagrams(sock, None, None, None, conn_tracker).await
-                        {
-                            tracing::warn!("socks/udp serve ended: {e}");
-                        }
-                    }
-                });
-                tracing::info!(
-                    "socks: UDP inbound enabled (SB_SOCKS_UDP_ENABLE=1) bind={:?}",
-                    s.local_addr()
-                );
-            }
-        }
-
-        // NOTE(linus): TCP（仅 UDP_ASSOCIATE）接入（默认关闭）。
-        // NOTE(linus): TCP (UDP_ASSOCIATE only) integration (disabled by default).
-        if std::env::var("SB_SOCKS_TCP_ENABLE").is_ok() {
-            // 如果用户只开了 TCP 开关而没开 UDP，我们也要保证有一个 UDP 绑定用于 BND.ADDR/PORT
-            // If user only enabled TCP switch but not UDP, we must ensure there is a UDP binding for BND.ADDR/PORT
-            if udp::get_udp_bind_addr().is_none() {
-                let sockets = udp::bind_udp_from_env_or_any()
-                    .await
-                    .map_err(|e| anyhow::anyhow!("bind_udp_from_env_or_any failed: {e}"))?;
-                for s in sockets {
-                    let conn_tracker = compat_conn_tracker.clone();
-                    tokio::spawn({
-                        let sock = s.clone();
-                        async move {
-                            if let Err(e) =
-                                udp::serve_udp_datagrams(sock, None, None, None, conn_tracker).await
-                            {
-                                tracing::warn!("socks/udp (autostart for TCP) ended: {e}");
-                            }
-                        }
-                    });
-                    tracing::info!(
-                        "socks: auto-enable UDP for TCP UDP_ASSOCIATE, bind={:?}",
-                        s.local_addr()
-                    );
-                }
-            }
-            let addr =
-                std::env::var("SB_SOCKS_TCP_ADDR").unwrap_or_else(|_| "127.0.0.1:1080".to_string());
-            let addr_for_log = addr.clone();
-            tokio::spawn(async move {
-                let addr = addr; // move 进闭包，避免后续 borrow moved value
-                                 // move into closure to avoid subsequent borrow moved value
-                if let Err(e) = crate::inbound::socks::tcp::run_tcp(&addr).await {
-                    tracing::warn!("socks/tcp run failed: {e}");
-                }
-            });
-            tracing::info!("socks: TCP (UDP_ASSOCIATE) enabled at {}", addr_for_log);
-        }
-        Ok(())
-    }
 }
 
 #[derive(Debug)]

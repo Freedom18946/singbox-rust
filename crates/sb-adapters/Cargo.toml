@@ -228,10 +228,6 @@ network_monitor = ["dep:sb-platform", "sb-core/network_monitor"]
 tsnet = []
 libtailscale = []
 
-
-[lints.rust]
-unexpected_cfgs = { level = "warn", check-cfg = ['cfg(disabled_test_temporarily)'] }
-
 [[bench]]
 name = "adapters_conn"
 harness = false

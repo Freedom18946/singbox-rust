@@ -55,9 +55,7 @@ impl Socks5Mock {
                 };
                 let me2 = me.clone();
                 tokio::spawn(async move {
-                    if let Err(e) = Self::handle_tcp(&mut s, me2.udp_addr).await {
-                        eprintln!("[socks5-mock] {e:?}");
-                    }
+                    let _ = Self::handle_tcp(&mut s, me2.udp_addr).await;
                 });
             }
         });
@@ -133,7 +131,6 @@ async fn socks5_udp_full_roundtrip_via_router_and_proxy() -> anyhow::Result<()> 
     let mock = match Socks5Mock::new().await {
         Ok(v) => Arc::new(v),
         Err(e) if should_skip_anyhow(&e) => {
-            eprintln!("skipping socks udp full e2e test: PermissionDenied binding socket");
             return Ok(());
         }
         Err(e) => return Err(e),
@@ -153,7 +150,6 @@ async fn socks5_udp_full_roundtrip_via_router_and_proxy() -> anyhow::Result<()> 
     let inbound = match sb_adapters::testsupport::spawn_socks_udp_inbound().await {
         Ok(v) => v,
         Err(e) if should_skip_anyhow(&e) => {
-            eprintln!("skipping socks udp full e2e test: PermissionDenied binding inbound socket");
             return Ok(());
         }
         Err(e) => return Err(e),
@@ -165,7 +161,6 @@ async fn socks5_udp_full_roundtrip_via_router_and_proxy() -> anyhow::Result<()> 
         Err(e)
             if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1) =>
         {
-            eprintln!("skipping socks udp full e2e test: PermissionDenied binding client socket");
             return Ok(());
         }
         Err(e) => return Err(e.into()),
@@ -178,7 +173,6 @@ async fn socks5_udp_full_roundtrip_via_router_and_proxy() -> anyhow::Result<()> 
             || e.raw_os_error() == Some(1)
             || e.to_string().contains("Operation not permitted")
         {
-            eprintln!("skipping socks udp full e2e test: PermissionDenied sending client datagram");
             return Ok(());
         }
         return Err(e.into());

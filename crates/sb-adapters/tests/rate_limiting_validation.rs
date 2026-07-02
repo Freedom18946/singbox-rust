@@ -6,9 +6,6 @@
 //! 3. Configurable QPS limits
 //! 4. Sliding window rate limiter
 //!
-//! Run with:
-//!   cargo test --package sb-adapters --test rate_limiting_validation -- --nocapture
-
 use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use std::net::{IpAddr, Ipv4Addr};
 use std::time::Duration;
@@ -42,8 +39,6 @@ fn test_trojan_rate_limit_per_ip() {
         !limiter.allow_connection(ip),
         "Connection 6 should be rate limited"
     );
-
-    println!("✓ Trojan per-IP rate limiting validated (5 conn/10s)");
 }
 
 #[test]
@@ -71,8 +66,6 @@ fn test_shadowsocks_rate_limit_per_ip() {
         !limiter.allow_connection(ip),
         "Connection 11 should be rate limited"
     );
-
-    println!("✓ Shadowsocks per-IP rate limiting validated (10 conn/5s)");
 }
 
 #[test]
@@ -99,8 +92,6 @@ fn test_rate_limit_multiple_ips() {
         assert!(limiter.allow_connection(ip2));
     }
     assert!(!limiter.allow_connection(ip2));
-
-    println!("✓ Multiple IP isolation validated");
 }
 
 // ============================================================================
@@ -135,8 +126,6 @@ fn test_trojan_auth_failure_tracking() {
     let is_banned = limiter.record_auth_failure(ip);
     assert!(is_banned, "IP should be banned after 6 failures");
     assert!(limiter.is_banned(ip), "IP should remain banned");
-
-    println!("✓ Trojan auth failure tracking validated (5 failures/60s)");
 }
 
 #[test]
@@ -160,8 +149,6 @@ fn test_shadowsocks_auth_failure_tracking() {
     // 4th failure bans
     limiter.record_auth_failure(ip);
     assert!(limiter.is_banned(ip), "4 failures should ban");
-
-    println!("✓ Shadowsocks auth failure tracking validated (3 failures/30s)");
 }
 
 #[test]
@@ -190,8 +177,6 @@ fn test_auth_failure_window_expiry() {
     // New failure should not trigger ban (old ones expired)
     limiter.record_auth_failure(ip);
     assert!(!limiter.is_banned(ip), "Single new failure should not ban");
-
-    println!("✓ Auth failure window expiry validated");
 }
 
 // ============================================================================
@@ -218,8 +203,6 @@ fn test_trojan_qps_limiting() {
         !limiter.allow_request(ip),
         "Request 11 should be rate limited"
     );
-
-    println!("✓ Trojan QPS limiting validated (10 req/s)");
 }
 
 #[test]
@@ -242,8 +225,6 @@ fn test_shadowsocks_qps_limiting() {
         !limiter.allow_request(ip),
         "Request 21 should be rate limited"
     );
-
-    println!("✓ Shadowsocks QPS limiting validated (20 req/s)");
 }
 
 #[test]
@@ -276,8 +257,6 @@ fn test_qps_token_bucket_refill() {
         !limiter.allow_request(ip),
         "Should be rate limited after consuming refilled token"
     );
-
-    println!("✓ QPS token bucket refill validated");
 }
 
 #[test]
@@ -294,8 +273,6 @@ fn test_qps_no_limit() {
     for _ in 0..1000 {
         assert!(limiter.allow_request(ip));
     }
-
-    println!("✓ QPS no-limit mode validated");
 }
 
 // ============================================================================
@@ -332,8 +309,6 @@ fn test_sliding_window_behavior() {
         limiter.allow_connection(ip),
         "Should allow connection after window expiry"
     );
-
-    println!("✓ Sliding window rate limiter validated");
 }
 
 #[test]
@@ -359,8 +334,6 @@ fn test_connection_window_recovery() {
     assert!(limiter.allow_connection(ip));
     assert!(limiter.allow_connection(ip));
     assert!(!limiter.allow_connection(ip));
-
-    println!("✓ Connection window recovery validated");
 }
 
 // ============================================================================
@@ -384,22 +357,4 @@ fn test_env_var_configuration() {
     std::env::remove_var("SB_INBOUND_RATE_LIMIT_PER_IP");
     std::env::remove_var("SB_INBOUND_RATE_LIMIT_WINDOW_SEC");
     std::env::remove_var("SB_INBOUND_RATE_LIMIT_QPS");
-
-    println!("✓ Environment variable configuration validated");
-}
-
-// ============================================================================
-// SUMMARY TEST
-// ============================================================================
-
-#[test]
-fn test_rate_limiting_validation_summary() {
-    println!("\n=== Rate Limiting Validation Summary ===");
-    println!("✓ Per-IP Connection Limiting: Trojan, Shadowsocks, Multi-IP");
-    println!("✓ Auth Failure Tracking: Trojan (5/60s), Shadowsocks (3/30s), Window expiry");
-    println!("✓ QPS Limiting: Trojan (10 req/s), Shadowsocks (20 req/s), Token bucket refill");
-    println!("✓ Sliding Window: Window behavior, Recovery, Expiry");
-    println!("✓ Configuration: Environment variables");
-    println!("\nAll rate limiting features validated successfully!");
-    println!("=========================================\n");
 }

@@ -94,6 +94,11 @@ pub mod urltest;
 // 重导出 trait 以便轻松访问
 pub use crate::traits::*;
 
+#[allow(dead_code)]
+fn unsupported_ir_conversion(what: &'static str) -> crate::error::AdapterError {
+    crate::error::AdapterError::NotImplemented { what }
+}
+
 // IR to adapter construction bridges
 // IR 到适配器构造的桥接
 #[cfg(feature = "adapter-http")]
@@ -218,9 +223,18 @@ impl TryFrom<&sb_config::ir::OutboundIR> for socks4::Socks4Connector {
 impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocks::ShadowsocksConnector {
     type Error = crate::error::AdapterError;
 
-    fn try_from(_ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
-        // For now, create default connector - real implementation would parse IR
-        Ok(Self::default())
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::Shadowsocks {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected Shadowsocks outbound type",
+            ));
+        }
+
+        Err(unsupported_ir_conversion(
+            "TryFrom<OutboundIR> for ShadowsocksConnector",
+        ))
     }
 }
 
@@ -269,9 +283,18 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocksr::ShadowsocksROutbound 
 impl TryFrom<&sb_config::ir::OutboundIR> for trojan::TrojanConnector {
     type Error = crate::error::AdapterError;
 
-    fn try_from(_ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
-        // For now, create default connector - real implementation would parse IR
-        Ok(Self::default())
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::Trojan {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected Trojan outbound type",
+            ));
+        }
+
+        Err(unsupported_ir_conversion(
+            "TryFrom<OutboundIR> for TrojanConnector",
+        ))
     }
 }
 
@@ -279,9 +302,18 @@ impl TryFrom<&sb_config::ir::OutboundIR> for trojan::TrojanConnector {
 impl TryFrom<&sb_config::ir::OutboundIR> for vmess::VmessConnector {
     type Error = crate::error::AdapterError;
 
-    fn try_from(_ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
-        // For now, create default connector - real implementation would parse IR
-        Ok(Self::default())
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::Vmess {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected VMess outbound type",
+            ));
+        }
+
+        Err(unsupported_ir_conversion(
+            "TryFrom<OutboundIR> for VmessConnector",
+        ))
     }
 }
 
@@ -289,9 +321,18 @@ impl TryFrom<&sb_config::ir::OutboundIR> for vmess::VmessConnector {
 impl TryFrom<&sb_config::ir::OutboundIR> for vless::VlessConnector {
     type Error = crate::error::AdapterError;
 
-    fn try_from(_ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
-        // For now, create default connector - real implementation would parse IR
-        Ok(Self::default())
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::Vless {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected VLESS outbound type",
+            ));
+        }
+
+        Err(unsupported_ir_conversion(
+            "TryFrom<OutboundIR> for VlessConnector",
+        ))
     }
 }
 
@@ -350,9 +391,18 @@ impl TryFrom<&sb_config::ir::OutboundIR> for hysteria2::Hysteria2Connector {
 impl TryFrom<&sb_config::ir::OutboundIR> for dns::DnsConnector {
     type Error = crate::error::AdapterError;
 
-    fn try_from(_ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
-        // For now, create default connector - real implementation would parse IR
-        Ok(Self::default())
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::Dns {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected DNS outbound type",
+            ));
+        }
+
+        Err(unsupported_ir_conversion(
+            "TryFrom<OutboundIR> for DnsConnector",
+        ))
     }
 }
 
@@ -360,9 +410,18 @@ impl TryFrom<&sb_config::ir::OutboundIR> for dns::DnsConnector {
 impl TryFrom<&sb_config::ir::OutboundIR> for tuic::TuicConnector {
     type Error = crate::error::AdapterError;
 
-    fn try_from(_ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
-        // For now, create default connector - real implementation would parse IR
-        Ok(Self::default())
+    fn try_from(ir: &sb_config::ir::OutboundIR) -> Result<Self, Self::Error> {
+        use sb_config::ir::OutboundType;
+
+        if ir.ty != OutboundType::Tuic {
+            return Err(crate::error::AdapterError::InvalidConfig(
+                "Expected TUIC outbound type",
+            ));
+        }
+
+        Err(unsupported_ir_conversion(
+            "TryFrom<OutboundIR> for TuicConnector",
+        ))
     }
 }
 

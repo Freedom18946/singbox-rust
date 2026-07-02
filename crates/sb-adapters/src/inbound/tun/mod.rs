@@ -5,7 +5,8 @@
 //! - IP/TCP packet construction with proper checksums
 //! - Platform hooks for auto_route, auto_redirect, strict_route
 //!
-//! NOTE: This is skeleton/WIP code. Warnings are suppressed until full implementation.
+//! Runtime traffic is handled by the Enhanced backend; manual stack helpers are
+//! kept out of production construction paths.
 #![allow(unused, dead_code)]
 
 use std::io;
@@ -447,10 +448,8 @@ fn parse_tun_ip_entry(raw: &str) -> io::Result<IpAddr> {
     })
 }
 
+#[cfg(test)]
 mod stack;
-
-use stack::TunStack;
-use tokio::sync::mpsc;
 
 /// TUN inbound with full TCP session management
 pub struct TunInbound {
@@ -469,10 +468,6 @@ pub struct TunInbound {
     sniff_override_destination: bool,
     /// UDP NAT table for TUN UDP forwarding
     udp_nat: Arc<UdpNatTable>,
-    /// Userspace network stack
-    stack: Arc<tokio::sync::Mutex<TunStack>>,
-    /// Receiver for packets from stack to TUN
-    stack_rx: Arc<tokio::sync::Mutex<mpsc::Receiver<Vec<u8>>>>,
     /// Platform hook for routing configuration
     platform_hook: Box<dyn TunPlatformHook>,
     prepared_enhanced: parking_lot::Mutex<Option<PreparedEnhancedTunRuntime>>,
@@ -488,14 +483,6 @@ impl TunInbound {
         sniff: bool,
         sniff_override_destination: bool,
     ) -> Self {
-        // Create a dummy channel for now; actual channel will be created in run() or passed in
-        // For simplicity, we initialize TunStack here but it might need reconfiguration.
-        // Actually, TunStack needs the TX channel to write back to TUN.
-        // We'll initialize it with a dummy channel and replace it later, or change the design.
-        // Better: Initialize TunStack in run() or make it Option.
-        // Let's make it Option<Arc<Mutex<TunStack>>> or just initialize it with a disconnected channel.
-        let (tx, rx) = mpsc::channel(128);
-        let stack = TunStack::new(cfg.mtu as usize, tx);
         let platform_hook = platform::create_platform_hook();
         let session_manager = Arc::new(TcpSessionManager::new());
         let udp_nat = Arc::new(UdpNatTable::new(None));
@@ -510,8 +497,6 @@ impl TunInbound {
             sniff,
             sniff_override_destination,
             udp_nat,
-            stack: Arc::new(tokio::sync::Mutex::new(stack)),
-            stack_rx: Arc::new(tokio::sync::Mutex::new(rx)),
             platform_hook,
             prepared_enhanced: parking_lot::Mutex::new(None),
         }
@@ -1503,7 +1488,7 @@ mod tests {
     }
 
     #[tokio::test]
-    #[ignore]
+    #[ignore = "manual feeder helper is not wired into the Enhanced runtime path"]
     async fn tun_from_json_and_feeder_works() {
         let router = create_dummy_router();
         let v = json!({
@@ -1513,8 +1498,6 @@ mod tests {
         });
         let inbound = TunInbound::from_json(&v, router).expect("from_json");
         inbound.serve().expect("serve");
-        // 向内存 feeder 注入一帧（只在 test 构建下可用）
-        // inbound.inject_test_frame(&[0u8; 60]); // 伪造一帧
         tokio::time::sleep(std::time::Duration::from_millis(50)).await;
     }
 

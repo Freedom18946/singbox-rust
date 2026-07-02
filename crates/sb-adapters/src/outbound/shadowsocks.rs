@@ -1229,10 +1229,7 @@ mod tests {
     async fn bind_udp_socket() -> Option<Arc<UdpSocket>> {
         match tokio::net::UdpSocket::bind("127.0.0.1:0").await {
             Ok(socket) => Some(Arc::new(socket)),
-            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-                eprintln!("skipping shadowsocks udp test: permission denied");
-                None
-            }
+            Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => None,
             Err(e) => panic!("udp bind failed: {e}"),
         }
     }

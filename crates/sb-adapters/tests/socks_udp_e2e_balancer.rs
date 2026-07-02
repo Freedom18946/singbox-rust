@@ -139,7 +139,6 @@ async fn socks5_udp_balancer_rr_with_failover() -> anyhow::Result<()> {
     let a = match Socks5Mock::new(true).await {
         Ok(v) => Arc::new(v),
         Err(e) if should_skip_anyhow(&e) => {
-            eprintln!("skipping socks udp balancer test: PermissionDenied binding socket");
             return Ok(());
         }
         Err(e) => return Err(e),
@@ -147,7 +146,6 @@ async fn socks5_udp_balancer_rr_with_failover() -> anyhow::Result<()> {
     let b = match Socks5Mock::new(false).await {
         Ok(v) => Arc::new(v),
         Err(e) if should_skip_anyhow(&e) => {
-            eprintln!("skipping socks udp balancer test: PermissionDenied binding socket");
             return Ok(());
         }
         Err(e) => return Err(e),
@@ -172,7 +170,6 @@ async fn socks5_udp_balancer_rr_with_failover() -> anyhow::Result<()> {
     let inbound = match sb_adapters::testsupport::spawn_socks_udp_inbound().await {
         Ok(v) => v,
         Err(e) if should_skip_anyhow(&e) => {
-            eprintln!("skipping socks udp balancer test: PermissionDenied binding inbound socket");
             return Ok(());
         }
         Err(e) => return Err(e),
@@ -183,7 +180,6 @@ async fn socks5_udp_balancer_rr_with_failover() -> anyhow::Result<()> {
         Err(e)
             if e.kind() == std::io::ErrorKind::PermissionDenied || e.raw_os_error() == Some(1) =>
         {
-            eprintln!("skipping socks udp balancer test: PermissionDenied binding client socket");
             return Ok(());
         }
         Err(e) => return Err(e.into()),

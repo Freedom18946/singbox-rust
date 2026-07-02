@@ -91,6 +91,7 @@ fn max_entries() -> usize {
 pub struct UdpDatagramRuntime {
     pub router: Option<Arc<RouterHandle>>,
     pub outbounds: Option<Arc<OutboundRegistryHandle>>,
+    pub nat_ttl: Option<Duration>,
 }
 
 impl UdpDatagramRuntime {
@@ -98,7 +99,16 @@ impl UdpDatagramRuntime {
         router: Option<Arc<RouterHandle>>,
         outbounds: Option<Arc<OutboundRegistryHandle>>,
     ) -> Self {
-        Self { router, outbounds }
+        Self {
+            router,
+            outbounds,
+            nat_ttl: None,
+        }
+    }
+
+    pub fn with_nat_ttl(mut self, ttl: Duration) -> Self {
+        self.nat_ttl = (!ttl.is_zero()).then_some(ttl);
+        self
     }
 }
 
@@ -1310,7 +1320,7 @@ pub async fn serve_udp_datagrams_with_runtime(
     runtime: UdpDatagramRuntime,
 ) -> Result<()> {
     let upstream_timeout = upstream_timeout_ms();
-    let ttl = timeout.or_else(nat_ttl_from_env);
+    let ttl = runtime.nat_ttl.or(timeout).or_else(nat_ttl_from_env);
     let map = NAT_MAP
         .get_or_init(|| async { Arc::new(UdpNatMap::new(ttl)) })
         .await

@@ -1,9 +1,7 @@
-//! Userspace network stack wrapper using smoltcp.
+//! Test-only userspace network stack wrapper using smoltcp.
 //!
-//! This module provides a high-level interface to the smoltcp stack,
-//! bridging between the TUN interface (raw bytes) and Tokio streams (TCP/UDP).
-//!
-//! NOTE: Skeleton/WIP code - warnings suppressed.
+//! The production TUN inbound uses the Enhanced backend. This module is kept out
+//! of production builds and remains available for focused smoltcp experiments.
 #![allow(unused, dead_code, unreachable_pub)]
 
 use std::collections::{HashMap, VecDeque};

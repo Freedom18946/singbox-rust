@@ -126,15 +126,10 @@ impl DnsConnector {
                 Ok(Box::new(stream))
             }
             DnsTransport::DoT => {
-                // DNS over TLS - for now, fallback to TCP
-                tracing::warn!("DNS over TLS not fully implemented, falling back to TCP");
-                let stream =
-                    tokio::time::timeout(self.config.timeout, TcpStream::connect(server_addr))
-                        .await
-                        .map_err(|_| AdapterError::Timeout(self.config.timeout))?
-                        .map_err(AdapterError::Io)?;
-
-                Ok(Box::new(stream))
+                let _ = server_addr;
+                Err(AdapterError::NotImplemented {
+                    what: "DNS over TLS transport",
+                })
             }
             DnsTransport::DoH => {
                 #[cfg(feature = "dns_doh")]
@@ -189,6 +184,12 @@ impl DnsConnector {
 
     /// Validate DNS configuration
     fn validate_config(&self) -> Result<()> {
+        if matches!(self.config.transport, DnsTransport::DoT) {
+            return Err(AdapterError::NotImplemented {
+                what: "DNS over TLS transport",
+            });
+        }
+
         if self.config.timeout.is_zero() {
             return Err(AdapterError::InvalidConfig("DNS timeout cannot be zero"));
         }

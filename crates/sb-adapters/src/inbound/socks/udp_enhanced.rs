@@ -1,6 +1,8 @@
-//! Enhanced SOCKS5 UDP Associate implementation with real forwarding
+//! Legacy standalone SOCKS5 UDP Associate experiment.
 //!
-//! This module provides production-ready SOCKS5 UDP forwarding with:
+//! The active SOCKS UDP runtime is `udp.rs`; this file is not wired into the
+//! current `socks` module. It is kept as a reference for the older NAT-table
+//! experiment with:
 //! - O(log N) NAT table eviction using binary heap
 //! - Comprehensive metrics and error classification
 //! - Environment-controlled features for safety
@@ -11,15 +13,15 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 
+use sb_core::error::SbError;
+use sb_core::net::datagram::UdpConntrackMeta;
+use sb_core::net::datagram::UdpTargetAddr;
 use sb_core::net::udp_nat::{
     record_upstream_failure, update_flow_metrics, NatKey, NatMap, TargetAddr, UpstreamError,
 };
-use sb_core::net::datagram::UdpTargetAddr;
 use sb_core::outbound::udp_socks5;
-use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::router::rules as rules_global;
-use sb_core::error::SbError;
-use sb_core::net::datagram::UdpConntrackMeta;
+use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 
 #[cfg(feature = "metrics")]
 use metrics::{counter, gauge, histogram};
@@ -58,7 +60,9 @@ fn parse_socks5_udp_header(buf: &[u8]) -> Result<(TargetAddr, usize)> {
 
     // Check reserved fields and fragment
     if buf[0] != 0 || buf[1] != 0 || buf[2] != 0 {
-        bail!(SbError::parse("Invalid SOCKS5 UDP reserved fields or fragment"));
+        bail!(SbError::parse(
+            "Invalid SOCKS5 UDP reserved fields or fragment"
+        ));
     }
 
     let atyp = buf[3];
@@ -70,7 +74,12 @@ fn parse_socks5_udp_header(buf: &[u8]) -> Result<(TargetAddr, usize)> {
             if buf.len() < offset + 6 {
                 bail!(SbError::parse("IPv4 address too short"));
             }
-            let ip = std::net::Ipv4Addr::new(buf[offset], buf[offset + 1], buf[offset + 2], buf[offset + 3]);
+            let ip = std::net::Ipv4Addr::new(
+                buf[offset],
+                buf[offset + 1],
+                buf[offset + 2],
+                buf[offset + 3],
+            );
             offset += 4;
             let port = u16::from_be_bytes([buf[offset], buf[offset + 1]]);
             offset += 2;
@@ -135,13 +144,28 @@ fn encode_socks5_udp_reply(target: &SocketAddr, payload: &[u8]) -> Vec<u8> {
     reply
 }
 
+fn reply_addr_for_target(upstream_socket: &UdpSocket, target: &TargetAddr) -> SocketAddr {
+    match target {
+        TargetAddr::Ip(addr) => *addr,
+        TargetAddr::Domain(_, port) => upstream_socket.peer_addr().unwrap_or_else(|err| {
+            tracing::debug!(
+                error = %err,
+                "socks5-udp(enhanced): connected upstream peer unavailable for domain reply"
+            );
+            SocketAddr::from(([127, 0, 0, 1], *port))
+        }),
+    }
+}
+
 /// Create upstream UDP socket for direct connection
 async fn create_upstream_socket(target: &TargetAddr) -> Result<Arc<UdpSocket>> {
     let socket = match target {
         TargetAddr::Ip(addr) => {
-            let sock = UdpSocket::bind("0.0.0.0:0").await
+            let sock = UdpSocket::bind("0.0.0.0:0")
+                .await
                 .map_err(|e| anyhow::Error::from(SbError::from(e)))?;
-            sock.connect(addr).await
+            sock.connect(addr)
+                .await
                 .map_err(|e| anyhow::Error::from(SbError::from(e)))?;
             sock
         }
@@ -151,10 +175,14 @@ async fn create_upstream_socket(target: &TargetAddr) -> Result<Arc<UdpSocket>> {
                 .await
                 .map_err(|e| anyhow::Error::from(SbError::dns(format!("resolve failed: {}", e))))?
                 .next()
-                .ok_or_else(|| anyhow::Error::from(SbError::dns(format!("Failed to resolve domain: {}", host))))?;
-            let sock = UdpSocket::bind("0.0.0.0:0").await
+                .ok_or_else(|| {
+                    anyhow::Error::from(SbError::dns(format!("Failed to resolve domain: {}", host)))
+                })?;
+            let sock = UdpSocket::bind("0.0.0.0:0")
+                .await
                 .map_err(|e| anyhow::Error::from(SbError::from(e)))?;
-            sock.connect(addr).await
+            sock.connect(addr)
+                .await
                 .map_err(|e| anyhow::Error::from(SbError::from(e)))?;
             sock
         }
@@ -192,7 +220,10 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
         return Ok(());
     }
 
-    tracing::info!("Starting enhanced SOCKS5 UDP service on {}", socket.local_addr()?);
+    tracing::info!(
+        "Starting enhanced SOCKS5 UDP service on {}",
+        socket.local_addr()?
+    );
 
     // Initialize NAT map with TTL from environment
     let ttl = nat_ttl_from_env();
@@ -286,7 +317,8 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                                 e
                             );
                             #[cfg(feature = "metrics")]
-                            counter!("socks_udp_error_total", "class" => "proxy_no_fallback").increment(1);
+                            counter!("socks_udp_error_total", "class" => "proxy_no_fallback")
+                                .increment(1);
                             continue;
                         }
                     }
@@ -299,12 +331,16 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                 continue;
             }
             RDecision::Direct => {}
-            RDecision::Hijack { .. } | RDecision::Sniff { .. } | RDecision::Resolve | RDecision::HijackDns => {
+            RDecision::Hijack { .. }
+            | RDecision::Sniff { .. }
+            | RDecision::Resolve
+            | RDecision::HijackDns => {
                 tracing::warn!(
                     "socks5-udp(enhanced): unsupported routing decision in UDP handler; direct fallback is disabled; packet dropped"
                 );
                 #[cfg(feature = "metrics")]
-                counter!("socks_udp_error_total", "class" => "unsupported_no_fallback").increment(1);
+                counter!("socks_udp_error_total", "class" => "unsupported_no_fallback")
+                    .increment(1);
                 continue;
             }
         }
@@ -316,7 +352,10 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
         };
 
         // Get or create upstream socket
-        let mut conntrack_meta: Option<(Arc<dyn sb_core::net::metered::TrafficRecorder>, tokio_util::sync::CancellationToken)> = None;
+        let mut conntrack_meta: Option<(
+            Arc<dyn sb_core::net::metered::TrafficRecorder>,
+            tokio_util::sync::CancellationToken,
+        )> = None;
         let upstream_socket = match nat_map.get(&nat_key).await {
             Some(existing) => {
                 conntrack_meta = nat_map.get_conntrack_meta(&nat_key).await;
@@ -366,7 +405,8 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                             new_socket
                         } else {
                             #[cfg(feature = "metrics")]
-                            counter!("socks_udp_error_total", "class" => "nat_capacity").increment(1);
+                            counter!("socks_udp_error_total", "class" => "nat_capacity")
+                                .increment(1);
                             continue;
                         }
                     }
@@ -407,7 +447,10 @@ fn spawn_response_handler(
     upstream_socket: Arc<UdpSocket>,
     client_addr: SocketAddr,
     target: TargetAddr,
-    conntrack: Option<(Arc<dyn sb_core::net::metered::TrafficRecorder>, tokio_util::sync::CancellationToken)>,
+    conntrack: Option<(
+        Arc<dyn sb_core::net::metered::TrafficRecorder>,
+        tokio_util::sync::CancellationToken,
+    )>,
 ) {
     tokio::spawn(async move {
         let mut buffer = vec![0u8; 64 * 1024];
@@ -428,14 +471,7 @@ fn spawn_response_handler(
                         break;
                     }
 
-                    // For IP targets, we can get the actual source address
-                    let reply_addr = match &target {
-                        TargetAddr::Ip(addr) => *addr,
-                        TargetAddr::Domain { host: _, port } => {
-                            // Use a placeholder - we should track actual resolved address
-                            SocketAddr::from(([127, 0, 0, 1], *port))
-                        }
-                    };
+                    let reply_addr = reply_addr_for_target(&upstream_socket, &target);
 
                     let reply = encode_socks5_udp_reply(&reply_addr, &buffer[..bytes_received]);
 
@@ -481,7 +517,10 @@ mod tests {
 
         match target {
             TargetAddr::Ip(addr) => {
-                assert_eq!(addr.ip(), std::net::IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1)));
+                assert_eq!(
+                    addr.ip(),
+                    std::net::IpAddr::V4(Ipv4Addr::new(192, 168, 1, 1))
+                );
                 assert_eq!(addr.port(), 80);
             }
             _ => panic!("Expected IP target"),
@@ -521,5 +560,17 @@ mod tests {
         // Test invalid address type
         let buf = vec![0, 0, 0, 0xFF];
         assert!(parse_socks5_udp_header(&buf).is_err());
+    }
+
+    #[tokio::test]
+    async fn domain_reply_addr_uses_connected_upstream_peer() {
+        let upstream = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        let upstream_addr = upstream.local_addr().unwrap();
+        let socket = UdpSocket::bind("127.0.0.1:0").await.unwrap();
+        socket.connect(upstream_addr).await.unwrap();
+
+        let target = TargetAddr::Domain("example.com".to_string(), 53);
+
+        assert_eq!(reply_addr_for_target(&socket, &target), upstream_addr);
     }
 }

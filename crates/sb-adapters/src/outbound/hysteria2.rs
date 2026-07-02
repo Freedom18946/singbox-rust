@@ -106,12 +106,18 @@ impl OutboundConnector for Hysteria2Connector {
 mod proto {
     use super::Hysteria2AdapterConfig;
     use crate::outbound::quic_util::{quic_connect, QuicBidiStream, QuicConfig};
+    use parking_lot::Mutex as SyncMutex;
     use quinn::Connection;
     use rand::Rng;
     use sha2::{Digest, Sha256};
+    use std::cmp;
+    use std::future::Future;
     use std::io;
+    use std::pin::Pin;
     use std::sync::Arc;
+    use std::task::{Context, Poll};
     use std::time::{Duration, Instant};
+    use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};
     use tokio::sync::Mutex;
 
     // ---- Congestion control types ----
@@ -132,72 +138,246 @@ mod proto {
 
     // ---- Bandwidth limiter ----
 
+    #[derive(Debug)]
+    struct TokenBucket {
+        limit_per_sec: Option<u64>,
+        tokens: u64,
+        last_refill: Instant,
+    }
+
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    pub(super) struct RatePermit {
+        pub(super) allowed: usize,
+        pub(super) wait: Option<Duration>,
+    }
+
+    impl TokenBucket {
+        fn new(limit_mbps: Option<u32>) -> Self {
+            let limit_per_sec =
+                limit_mbps.map(|mbps| ((mbps as u64).saturating_mul(1_000_000) / 8).max(1));
+            Self {
+                limit_per_sec,
+                tokens: limit_per_sec.unwrap_or(u64::MAX),
+                last_refill: Instant::now(),
+            }
+        }
+
+        fn refill(&mut self) {
+            let Some(limit) = self.limit_per_sec else {
+                self.tokens = u64::MAX;
+                return;
+            };
+            let elapsed = self.last_refill.elapsed();
+            if elapsed >= Duration::from_secs(1) {
+                self.tokens = limit;
+                self.last_refill = Instant::now();
+            }
+        }
+
+        fn permit(&mut self, requested: usize) -> RatePermit {
+            if requested == 0 {
+                return RatePermit {
+                    allowed: 0,
+                    wait: None,
+                };
+            }
+
+            self.refill();
+            if self.limit_per_sec.is_none() {
+                return RatePermit {
+                    allowed: requested,
+                    wait: None,
+                };
+            }
+
+            let allowed = cmp::min(requested as u64, self.tokens) as usize;
+            if allowed > 0 {
+                return RatePermit {
+                    allowed,
+                    wait: None,
+                };
+            }
+
+            let elapsed = self.last_refill.elapsed();
+            let wait = Duration::from_secs(1).saturating_sub(elapsed);
+            RatePermit {
+                allowed: 0,
+                wait: Some(wait.max(Duration::from_millis(1))),
+            }
+        }
+
+        fn consume(&mut self, bytes: usize) {
+            if self.limit_per_sec.is_some() {
+                self.tokens = self.tokens.saturating_sub(bytes as u64);
+            }
+        }
+    }
+
     #[derive(Clone, Debug)]
-    struct BandwidthLimiter {
-        up_limit: Option<u32>,
-        down_limit: Option<u32>,
-        last_reset: Arc<Mutex<Instant>>,
-        up_tokens: Arc<Mutex<u32>>,
-        down_tokens: Arc<Mutex<u32>>,
+    pub(super) struct BandwidthLimiter {
+        up: Arc<SyncMutex<TokenBucket>>,
+        down: Arc<SyncMutex<TokenBucket>>,
     }
 
     impl BandwidthLimiter {
-        fn new(up_mbps: Option<u32>, down_mbps: Option<u32>) -> Self {
+        pub(super) fn new(up_mbps: Option<u32>, down_mbps: Option<u32>) -> Self {
             Self {
-                up_limit: up_mbps,
-                down_limit: down_mbps,
-                last_reset: Arc::new(Mutex::new(Instant::now())),
-                up_tokens: Arc::new(Mutex::new(up_mbps.unwrap_or(0) * 1024 * 1024)),
-                down_tokens: Arc::new(Mutex::new(down_mbps.unwrap_or(0) * 1024 * 1024)),
+                up: Arc::new(SyncMutex::new(TokenBucket::new(up_mbps))),
+                down: Arc::new(SyncMutex::new(TokenBucket::new(down_mbps))),
             }
         }
 
-        #[allow(dead_code)]
-        async fn consume_up(&self, bytes: u32) -> bool {
-            if self.up_limit.is_none() {
-                return true;
-            }
-            let mut tokens = self.up_tokens.lock().await;
-            if *tokens >= bytes {
-                *tokens -= bytes;
-                true
-            } else {
-                false
+        pub(super) fn permit_up(&self, requested: usize) -> RatePermit {
+            self.up.lock().permit(requested)
+        }
+
+        pub(super) fn permit_down(&self, requested: usize) -> RatePermit {
+            self.down.lock().permit(requested)
+        }
+
+        pub(super) fn consume_up(&self, bytes: usize) {
+            self.up.lock().consume(bytes);
+        }
+
+        pub(super) fn consume_down(&self, bytes: usize) {
+            self.down.lock().consume(bytes);
+        }
+    }
+
+    pub(super) struct Hysteria2BidiStream {
+        inner: QuicBidiStream,
+        limiter: Option<Arc<BandwidthLimiter>>,
+        read_sleep: Option<Pin<Box<tokio::time::Sleep>>>,
+        write_sleep: Option<Pin<Box<tokio::time::Sleep>>>,
+    }
+
+    impl Hysteria2BidiStream {
+        fn new(inner: QuicBidiStream, limiter: Option<Arc<BandwidthLimiter>>) -> Self {
+            Self {
+                inner,
+                limiter,
+                read_sleep: None,
+                write_sleep: None,
             }
         }
 
-        #[allow(dead_code)]
-        async fn consume_down(&self, bytes: u32) -> bool {
-            if self.down_limit.is_none() {
-                return true;
+        fn poll_sleep(
+            slot: &mut Option<Pin<Box<tokio::time::Sleep>>>,
+            wait: Duration,
+            cx: &mut Context<'_>,
+        ) -> Poll<()> {
+            if slot.is_none() {
+                *slot = Some(Box::pin(tokio::time::sleep(wait)));
             }
-            let mut tokens = self.down_tokens.lock().await;
-            if *tokens >= bytes {
-                *tokens -= bytes;
-                true
-            } else {
-                false
-            }
-        }
-
-        async fn refill_tokens(&self) {
-            let mut last_reset = self.last_reset.lock().await;
-            let now = Instant::now();
-            let elapsed = now.duration_since(*last_reset);
-
-            if elapsed >= Duration::from_secs(1) {
-                if let Some(up_limit) = self.up_limit {
-                    let mut up_tokens = self.up_tokens.lock().await;
-                    *up_tokens = up_limit * 1024 * 1024;
+            let sleep = slot.as_mut().expect("sleep must be initialized");
+            match sleep.as_mut().poll(cx) {
+                Poll::Ready(()) => {
+                    *slot = None;
+                    Poll::Ready(())
                 }
-                if let Some(down_limit) = self.down_limit {
-                    let mut down_tokens = self.down_tokens.lock().await;
-                    *down_tokens = down_limit * 1024 * 1024;
-                }
-                *last_reset = now;
+                Poll::Pending => Poll::Pending,
             }
         }
     }
+
+    impl AsyncRead for Hysteria2BidiStream {
+        fn poll_read(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &mut ReadBuf<'_>,
+        ) -> Poll<io::Result<()>> {
+            let this = self.get_mut();
+            let Some(limiter) = this.limiter.clone() else {
+                return Pin::new(&mut this.inner).poll_read(cx, buf);
+            };
+
+            loop {
+                let permit = limiter.permit_down(buf.remaining());
+                if permit.allowed == 0 {
+                    if let Some(wait) = permit.wait {
+                        if Self::poll_sleep(&mut this.read_sleep, wait, cx).is_pending() {
+                            return Poll::Pending;
+                        }
+                        continue;
+                    }
+                    return Poll::Ready(Ok(()));
+                }
+
+                let before = buf.filled().len();
+                if permit.allowed >= buf.remaining() {
+                    match Pin::new(&mut this.inner).poll_read(cx, buf) {
+                        Poll::Ready(Ok(())) => {
+                            let read = buf.filled().len().saturating_sub(before);
+                            limiter.consume_down(read);
+                            return Poll::Ready(Ok(()));
+                        }
+                        other => return other,
+                    }
+                }
+
+                let mut limited = vec![0u8; permit.allowed];
+                let mut limited_buf = ReadBuf::new(&mut limited);
+                match Pin::new(&mut this.inner).poll_read(cx, &mut limited_buf) {
+                    Poll::Ready(Ok(())) => {
+                        let read = limited_buf.filled().len();
+                        buf.put_slice(limited_buf.filled());
+                        limiter.consume_down(read);
+                        return Poll::Ready(Ok(()));
+                    }
+                    Poll::Ready(Err(err)) => return Poll::Ready(Err(err)),
+                    Poll::Pending => return Poll::Pending,
+                }
+            }
+        }
+    }
+
+    impl AsyncWrite for Hysteria2BidiStream {
+        fn poll_write(
+            self: Pin<&mut Self>,
+            cx: &mut Context<'_>,
+            buf: &[u8],
+        ) -> Poll<io::Result<usize>> {
+            let this = self.get_mut();
+            let Some(limiter) = this.limiter.clone() else {
+                return Pin::new(&mut this.inner).poll_write(cx, buf);
+            };
+
+            loop {
+                let permit = limiter.permit_up(buf.len());
+                if permit.allowed == 0 {
+                    if let Some(wait) = permit.wait {
+                        if Self::poll_sleep(&mut this.write_sleep, wait, cx).is_pending() {
+                            return Poll::Pending;
+                        }
+                        continue;
+                    }
+                    return Poll::Ready(Ok(0));
+                }
+
+                let to_write = &buf[..permit.allowed];
+                return match Pin::new(&mut this.inner).poll_write(cx, to_write) {
+                    Poll::Ready(Ok(written)) => {
+                        limiter.consume_up(written);
+                        Poll::Ready(Ok(written))
+                    }
+                    Poll::Ready(Err(err)) => Poll::Ready(Err(err)),
+                    Poll::Pending => Poll::Pending,
+                };
+            }
+        }
+
+        fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            let this = self.get_mut();
+            Pin::new(&mut this.inner).poll_flush(cx)
+        }
+
+        fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
+            let this = self.get_mut();
+            Pin::new(&mut this.inner).poll_shutdown(cx)
+        }
+    }
+
+    impl Unpin for Hysteria2BidiStream {}
 
     // ---- Hysteria2Inner: full protocol implementation ----
 
@@ -493,11 +673,6 @@ mod proto {
             host: &str,
             port: u16,
         ) -> io::Result<(quinn::SendStream, quinn::RecvStream)> {
-            // Check bandwidth limits before opening tunnel
-            if let Some(ref limiter) = self.bandwidth_limiter {
-                limiter.refill_tokens().await;
-            }
-
             // Open bidirectional stream for TCP relay
             let (mut send_stream, mut recv_stream) = connection
                 .open_bi()
@@ -576,7 +751,11 @@ mod proto {
 
         // ---- Public connect entry point ----
 
-        pub(super) async fn connect(&self, host: &str, port: u16) -> io::Result<QuicBidiStream> {
+        pub(super) async fn connect(
+            &self,
+            host: &str,
+            port: u16,
+        ) -> io::Result<Hysteria2BidiStream> {
             // Get or create QUIC connection with pooling
             let connection = self.get_connection().await?;
 
@@ -584,7 +763,10 @@ mod proto {
             let (send_stream, recv_stream) =
                 self.create_tcp_tunnel(&connection, host, port).await?;
 
-            Ok(QuicBidiStream::new(send_stream, recv_stream))
+            Ok(Hysteria2BidiStream::new(
+                QuicBidiStream::new(send_stream, recv_stream),
+                self.bandwidth_limiter.clone(),
+            ))
         }
     }
 }
@@ -643,5 +825,26 @@ mod tests {
         assert_ne!(data, original, "obfuscated data should differ");
         inner.apply_obfuscation(&mut data);
         assert_eq!(data, original, "double XOR should restore original");
+    }
+
+    #[cfg(feature = "adapter-hysteria2")]
+    #[test]
+    fn test_bandwidth_limiter_consumes_configured_tokens() {
+        let limiter = proto::BandwidthLimiter::new(Some(1), Some(1));
+        let one_megabit_per_sec = 1_000_000usize / 8;
+
+        let first = limiter.permit_up(one_megabit_per_sec);
+        assert_eq!(first.allowed, one_megabit_per_sec);
+        assert!(first.wait.is_none());
+
+        limiter.consume_up(one_megabit_per_sec);
+        let exhausted = limiter.permit_up(1);
+        assert_eq!(exhausted.allowed, 0);
+        assert!(exhausted.wait.is_some());
+
+        let down = limiter.permit_down(one_megabit_per_sec);
+        assert_eq!(down.allowed, one_megabit_per_sec);
+        limiter.consume_down(one_megabit_per_sec);
+        assert_eq!(limiter.permit_down(1).allowed, 0);
     }
 }

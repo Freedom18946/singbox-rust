@@ -844,7 +844,6 @@ mod tests {
                     std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::AddrNotAvailable
                 ) =>
             {
-                eprintln!("skipping tuic connect_via_router: cannot bind upstream ({e})");
                 return;
             }
             Err(e) => panic!("bind upstream: {e}"),

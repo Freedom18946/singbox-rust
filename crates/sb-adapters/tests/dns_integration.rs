@@ -149,7 +149,7 @@ fn test_dns_connector_implements_debug_clone() {
 // Async Tests
 // ============================================================================
 
-fn skip_if_net_denied(err: &AdapterError, label: &str) -> bool {
+fn skip_if_net_denied(err: &AdapterError, _label: &str) -> bool {
     match err {
         AdapterError::Io(e)
             if matches!(
@@ -157,7 +157,6 @@ fn skip_if_net_denied(err: &AdapterError, label: &str) -> bool {
                 std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::AddrNotAvailable
             ) =>
         {
-            eprintln!("skipping {label}: network not permitted ({e})");
             true
         }
         _ => false,
@@ -236,7 +235,45 @@ async fn test_dns_connector_dial_tcp() {
 }
 
 #[tokio::test]
-#[ignore] // Network behavior varies - may succeed immediately on some systems
+async fn test_dns_connector_dot_is_explicitly_unsupported() {
+    let config = DnsConfig {
+        server: IpAddr::V4(Ipv4Addr::new(1, 1, 1, 1)),
+        port: Some(853),
+        transport: DnsTransport::DoT,
+        timeout: Duration::from_secs(1),
+        tls_server_name: Some("cloudflare-dns.com".to_string()),
+        query_timeout: Duration::from_secs(1),
+        enable_edns0: true,
+        edns0_buffer_size: 1232,
+        doh_url: None,
+    };
+
+    let connector = DnsConnector::new(config);
+    let start_result = connector.start().await;
+    assert!(matches!(
+        start_result,
+        Err(AdapterError::NotImplemented {
+            what: "DNS over TLS transport"
+        })
+    ));
+
+    let result = connector
+        .dial(Target::tcp("example.com", 53), DialOpts::new())
+        .await;
+
+    assert!(
+        matches!(
+            result,
+            Err(AdapterError::NotImplemented {
+                what: "DNS over TLS transport"
+            })
+        ),
+        "DoT must not fall back to plaintext TCP"
+    );
+}
+
+#[tokio::test]
+#[ignore = "network behavior varies; non-routable timeout may succeed immediately on some systems"]
 async fn test_dns_connector_timeout() {
     // Use a non-routable IP
     let config = DnsConfig {
@@ -298,7 +335,6 @@ async fn test_dns_connector_dial_doh() {
         }
         if let AdapterError::Other(msg) = e {
             if msg.contains("DoH setup failed") {
-                eprintln!("skipping test_dns_connector_dial_doh: {msg}");
                 return;
             }
         }
