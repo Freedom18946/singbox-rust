@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-03) - app metadata bin JSON audit cleanup
+
+- **`app` metadata binaries audit cleanup DONE locally**: `version`, `sb-version`, and
+  `sb-rule-coverage` now return `Result` and propagate JSON serialization errors instead of
+  panicking through `unwrap`.
+- **Contract coverage tightened**: existing version/sb-version JSON tests still cover their
+  output shapes, and a new `sb_rule_coverage_bin` integration test locks the plain JSON array
+  snapshot shape without an ok/data envelope.
+- **Verification PASS**: app fmt, focused metadata-bin tests, app all-target/all-feature check,
+  strict app clippy, real bin smoke runs for all three commands, residual scan, and
+  `git diff --check`.
+- **Scope note**: app metadata CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app sb-explaind input audit cleanup
 
 - **`app/src/bin/sb-explaind.rs` audit cleanup DONE locally**: invalid `SB_DEBUG_ADDR` now
@@ -110,22 +124,6 @@
   `git diff --check`, and app all-target/all-feature check (existing prefetch warnings only).
 - **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - sb-subscribe audit cleanup
-
-- **`crates/sb-subscribe` audit cleanup DONE locally**: Clash `MATCH` and sing-box
-  `route.final` now survive subscription parsing as `default=...` DSL lines instead of
-  being dropped from the generated profile.
-- **Output/provider hygiene tightened**: view/diff/preview JSON now escapes dynamic object
-  keys and unknown plan kinds via structured JSON builders; ruleset provider cache now
-  expands cached text/base64 bodies instead of returning a placeholder expansion.
-- **Test hygiene DONE locally**: empty compile-only shape test was replaced with assertions,
-  schema fixture failures return structured test errors, and new regression tests cover
-  default-route preservation, JSON escaping, and provider cache hit/miss behavior.
-- **Verification PASS**: sb-subscribe fmt, no-default/all-features checks, all-target tests,
-  doctests, strict clippy, residual audit scan, and `git diff --check`.
-- **Scope note**: sb-subscribe audit/test hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
 
 ## Resume (2026-07-02) - sb-security audit cleanup
 

@@ -1,7 +1,8 @@
+use anyhow::Result;
 use app::cli::buildinfo;
 use serde_json::json;
 
-fn main() {
+fn main() -> Result<()> {
     // 注意：features 可按需扩展（通过 cfg! 宏与 env 变量）
     let mut feats = vec![];
     if cfg!(feature = "schema-v2") {
@@ -30,7 +31,8 @@ fn main() {
             "build_ts": bi.build_ts
         }
     });
-    println!("{}", serde_json::to_string(&obj).unwrap());
+    println!("{}", serde_json::to_string(&obj)?);
+    Ok(())
 }
 
 fn build_fingerprint() -> String {

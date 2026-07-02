@@ -1,7 +1,8 @@
+use anyhow::Result;
 use app::cli::{buildinfo, version::collect_features};
 use serde_json::json;
 
-fn main() {
+fn main() -> Result<()> {
     // RC tooling expects a flat version info object without ok/data envelope.
     let bi = buildinfo::current();
     let features = collect_features();
@@ -16,5 +17,6 @@ fn main() {
             "target": env!("TARGET"),
         }
     });
-    println!("{}", serde_json::to_string(&obj).unwrap());
+    println!("{}", serde_json::to_string(&obj)?);
+    Ok(())
 }
