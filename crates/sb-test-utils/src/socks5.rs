@@ -7,8 +7,8 @@
 //!   SOCKS5 握手（无认证）
 //! - UDP ASSOCIATE command
 //!   UDP ASSOCIATE 命令
-//! - UDP packet echo functionality
-//!   UDP 数据包回显功能
+//! - UDP packet echo functionality for legacy relay tests
+//!   面向 legacy relay 测试的 UDP 数据包回显功能
 //!
 //! ## Example / 示例
 //!
@@ -23,18 +23,21 @@
 //!     // 连接到 TCP 控制地址以建立关联
 //!     // Send UDP packets to udp_addr
 //!     // 发送 UDP 数据包到 udp_addr
-//!     // Packets will be echoed back
-//!     // 数据包将被回显
+//!     // Packets will be echoed back using the mock relay reply shape.
+//!     // 数据包将以 mock relay 回复形状回显。
 //! }
 //! ```
 //!
 //! ## Strategic Implementation Notes / 战略实施说明
 //!
-//! Unlike the full SOCKS5 implementation in `sb-inbound`, this mock server is designed specifically for
-//! testing *clients* (like `sb-outbound`'s SOCKS5 outbound). It simplifies the state machine to focus
-//! on verifying that clients correctly initiate connections and handle basic UDP relaying.
-//! 与 `sb-inbound` 中的完整 SOCKS5 实现不同，此 Mock 服务器专门设计用于测试 *客户端*（如 `sb-outbound` 的 SOCKS5 出站）。
+//! Unlike a full SOCKS5 server, this mock is designed specifically for testing client-side
+//! SOCKS5 relay code. It simplifies the state machine to focus on verifying that clients
+//! correctly initiate connections and handle basic UDP relaying.
+//! For compatibility with existing relay tests, UDP replies identify the client source as the reply
+//! destination instead of preserving the request destination address.
+//! 与完整 SOCKS5 服务器不同，此 Mock 专门用于测试客户端侧 SOCKS5 relay 代码。
 //! 它简化了状态机，专注于验证客户端是否正确发起连接并处理基本的 UDP 中继。
+//! 为兼容现有 relay 测试，UDP 回复使用客户端来源作为回复目标，而不是保留请求目标地址。
 
 use std::net::{Ipv4Addr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -49,8 +52,8 @@ use tokio::net::{TcpListener, UdpSocket};
 ///   SOCKS5 握手（无需认证）
 /// - UDP ASSOCIATE command only
 ///   仅支持 UDP ASSOCIATE 命令
-/// - UDP packet echo (sends back received payload)
-///   UDP 数据包回显（发回接收到的负载）
+/// - UDP packet echo for relay tests (sends back received payload)
+///   面向 relay 测试的 UDP 数据包回显（发回接收到的负载）
 ///
 /// Returns a tuple of (TCP control address, UDP relay address).
 /// 返回一个元组 (TCP 控制地址, UDP 中继地址)。
@@ -59,7 +62,7 @@ use tokio::net::{TcpListener, UdpSocket};
 ///
 /// ```rust,no_run
 /// # use sb_test_utils::socks5::start_mock_socks5;
-/// # #[tokio::main]
+/// # #[tokio::main(flavor = "current_thread")]
 /// # async fn main() {
 /// let (tcp_addr, udp_addr) = start_mock_socks5().await.unwrap();
 /// println!("SOCKS5 TCP: {}, UDP: {}", tcp_addr, udp_addr);
@@ -78,9 +81,11 @@ use tokio::net::{TcpListener, UdpSocket};
 /// +----+------+------+----------+----------+----------+
 /// ```
 ///
-/// The mock server extracts the DATA portion and echoes it back
-/// in a SOCKS5 UDP REPLY format.
-/// Mock 服务器提取 DATA 部分，并以 SOCKS5 UDP REPLY 格式将其回显。
+/// The mock server extracts the DATA portion and echoes it back in a SOCKS5 UDP
+/// REPLY format. The reply address is the client source address for compatibility
+/// with existing relay tests, not a full SOCKS5 upstream response model.
+/// Mock 服务器提取 DATA 部分，并以 SOCKS5 UDP REPLY 格式将其回显。为兼容现有 relay
+/// 测试，回复地址使用客户端来源地址，并不模拟完整 SOCKS5 上游响应模型。
 ///
 /// # Errors / 错误
 ///
@@ -107,7 +112,7 @@ pub async fn start_mock_socks5() -> anyhow::Result<(SocketAddr, SocketAddr)> {
 /// Spawn the UDP echo loop task.
 ///
 /// Receives SOCKS5 UDP packets, extracts the payload, and echoes it back
-/// wrapped in a SOCKS5 UDP REPLY format.
+/// wrapped in the legacy relay-test UDP reply format.
 fn spawn_udp_echo_loop(udp: UdpSocket) {
     tokio::spawn(async move {
         let mut buf = vec![0u8; 2048];
@@ -164,8 +169,8 @@ fn spawn_udp_echo_loop(udp: UdpSocket) {
             // Extract payload
             let payload = &buf[i..n];
 
-            // Build SOCKS5 UDP REPLY
-            // RSV(2) + FRAG(1) + ATYP(1) + BND.ADDR + BND.PORT + DATA
+            // Build legacy relay-test UDP REPLY:
+            // RSV(2) + FRAG(1) + ATYP(1) + CLIENT.ADDR + CLIENT.PORT + DATA
             let mut out = Vec::with_capacity(3 + 1 + 4 + 2 + payload.len());
             out.extend_from_slice(&[0, 0, 0]); // RSV + FRAG
             out.push(0x01); // ATYP: IPv4
@@ -191,9 +196,7 @@ fn spawn_tcp_control_handler(tcp: TcpListener, udp_addr: SocketAddr) {
 
             let udp_addr = udp_addr;
             tokio::spawn(async move {
-                if let Err(e) = handle_socks5_handshake(&mut stream, udp_addr).await {
-                    eprintln!("SOCKS5 handshake error: {e}");
-                }
+                let _ = handle_socks5_handshake(&mut stream, udp_addr).await;
             });
         }
     });
@@ -239,10 +242,14 @@ async fn handle_socks5_handshake(
         anyhow::bail!("Invalid SOCKS version in request");
     }
 
+    if request_header[2] != 0x00 {
+        write_socks5_reply(stream, 0x01, udp_addr).await?;
+        anyhow::bail!("Invalid SOCKS reserved byte in request");
+    }
+
     if request_header[1] != 0x03 {
         // Only support UDP ASSOCIATE (0x03)
-        let reply = [0x05, 0x07, 0x00, 0x01, 0, 0, 0, 0, 0, 0];
-        stream.write_all(&reply).await?;
+        write_socks5_reply(stream, 0x07, udp_addr).await?;
         anyhow::bail!("Command not supported: {}", request_header[1]);
     }
 
@@ -268,22 +275,32 @@ async fn handle_socks5_handshake(
             let mut domain = vec![0u8; len[0] as usize + 2];
             stream.read_exact(&mut domain).await?;
         }
-        _ => anyhow::bail!("Unsupported ATYP: {}", atyp[0]),
+        _ => {
+            write_socks5_reply(stream, 0x08, udp_addr).await?;
+            anyhow::bail!("Unsupported ATYP: {}", atyp[0]);
+        }
     }
 
     // Send success reply with bound UDP address
     // VER(1) + REP(1) + RSV(1) + ATYP(1) + BND.ADDR + BND.PORT
-    let mut reply = Vec::new();
-    reply.extend_from_slice(&[0x05, 0x00, 0x00, 0x01]); // Success, IPv4
+    write_socks5_reply(stream, 0x00, udp_addr).await?;
+
+    let mut drain = [0u8; 256];
+    while stream.read(&mut drain).await? != 0 {}
+
+    Ok(())
+}
+
+async fn write_socks5_reply(
+    stream: &mut tokio::net::TcpStream,
+    reply_code: u8,
+    udp_addr: SocketAddr,
+) -> anyhow::Result<()> {
+    let mut reply = Vec::with_capacity(10);
+    reply.extend_from_slice(&[0x05, reply_code, 0x00, 0x01]);
     reply.extend_from_slice(&Ipv4Addr::LOCALHOST.octets());
     reply.extend_from_slice(&udp_addr.port().to_be_bytes());
-
     stream.write_all(&reply).await?;
-
-    // Keep connection alive (in real SOCKS5, client should keep it open)
-    // For testing purposes, we can just let it idle or close
-    tokio::time::sleep(tokio::time::Duration::from_secs(60)).await;
-
     Ok(())
 }
 
@@ -291,6 +308,17 @@ async fn handle_socks5_handshake(
 mod tests {
     use super::*;
     use std::io;
+    use tokio::net::{TcpStream, UdpSocket};
+    use tokio::time::{timeout, Duration};
+
+    async fn connect_and_select_no_auth(tcp_addr: SocketAddr) -> anyhow::Result<TcpStream> {
+        let mut stream = TcpStream::connect(tcp_addr).await?;
+        stream.write_all(&[0x05, 0x01, 0x00]).await?;
+        let mut method = [0u8; 2];
+        stream.read_exact(&mut method).await?;
+        assert_eq!(method, [0x05, 0x00]);
+        Ok(stream)
+    }
 
     fn is_permission_denied(err: &anyhow::Error) -> bool {
         err.chain().any(|cause| {
@@ -310,7 +338,7 @@ mod tests {
             Ok(value) => value,
             Err(err) => {
                 if is_permission_denied(&err) {
-                    eprintln!("Skipping: permission denied starting mock socks5");
+                    crate::skip::skip_with_reason("mock socks5 startup test", err);
                     return;
                 }
                 panic!("unexpected error starting mock socks5: {err:?}");
@@ -320,5 +348,59 @@ mod tests {
         assert!(tcp_addr.port() > 0);
         assert!(udp_addr.port() > 0);
         assert_ne!(tcp_addr.port(), udp_addr.port());
+    }
+
+    #[tokio::test]
+    async fn tcp_udp_associate_rejects_nonzero_reserved_byte() -> anyhow::Result<()> {
+        let (tcp_addr, _udp_addr) = start_mock_socks5().await?;
+        let mut stream = connect_and_select_no_auth(tcp_addr).await?;
+
+        stream
+            .write_all(&[0x05, 0x03, 0x01, 0x01, 0, 0, 0, 0, 0, 0])
+            .await?;
+
+        let mut reply = [0u8; 10];
+        stream.read_exact(&mut reply).await?;
+        assert_eq!(&reply[..4], &[0x05, 0x01, 0x00, 0x01]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn tcp_control_returns_failure_for_unsupported_command() -> anyhow::Result<()> {
+        let (tcp_addr, _udp_addr) = start_mock_socks5().await?;
+        let mut stream = connect_and_select_no_auth(tcp_addr).await?;
+
+        stream
+            .write_all(&[0x05, 0x01, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await?;
+
+        let mut reply = [0u8; 10];
+        stream.read_exact(&mut reply).await?;
+        assert_eq!(&reply[..4], &[0x05, 0x07, 0x00, 0x01]);
+        Ok(())
+    }
+
+    #[tokio::test]
+    async fn udp_echo_reply_uses_client_source_for_legacy_relay_tests() -> anyhow::Result<()> {
+        let (_tcp_addr, udp_addr) = start_mock_socks5().await?;
+        let client = UdpSocket::bind(("127.0.0.1", 0)).await?;
+        let client_port = client.local_addr()?.port();
+        let payload = b"relay-payload";
+
+        let mut packet = Vec::new();
+        packet.extend_from_slice(&[0, 0, 0, 0x01]);
+        packet.extend_from_slice(&[1, 2, 3, 4]);
+        packet.extend_from_slice(&5678u16.to_be_bytes());
+        packet.extend_from_slice(payload);
+        client.send_to(&packet, udp_addr).await?;
+
+        let mut reply = [0u8; 128];
+        let (n, _from) = timeout(Duration::from_secs(1), client.recv_from(&mut reply)).await??;
+
+        assert_eq!(&reply[..4], &[0, 0, 0, 0x01]);
+        assert_eq!(&reply[4..8], &Ipv4Addr::LOCALHOST.octets());
+        assert_eq!(u16::from_be_bytes([reply[8], reply[9]]), client_port);
+        assert_eq!(&reply[10..n], payload);
+        Ok(())
     }
 }

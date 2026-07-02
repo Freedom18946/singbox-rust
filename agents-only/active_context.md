@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-02) - sb-test-utils audit cleanup
+
+- **`crates/sb-test-utils` audit cleanup DONE locally**: stale crate-level docs now match
+  the actual exported helpers, and the redundant `tokio/full` dev-dependency was removed.
+- **SOCKS5 mock hygiene tightened**: unsupported TCP request paths return protocol failure
+  replies, RSV is validated, background handshake errors no longer print noisy diagnostics,
+  and fixed 60-second association sleeps were replaced by connection EOF handling.
+- **Compatibility documented and tested**: legacy UDP relay reply shape is explicit and
+  covered by regression tests alongside unsupported-command and invalid-RSV cases.
+- **Verification PASS**: sb-test-utils fmt/check/tests/doctests/strict clippy, focused
+  sb-core SOCKS5/UDP caller tests, residual audit scan, and `git diff --check`.
+- **Scope note**: sb-test-utils audit/test hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - sb-subscribe audit cleanup
 
 - **`crates/sb-subscribe` audit cleanup DONE locally**: Clash `MATCH` and sing-box
@@ -184,22 +198,6 @@
   Shadowsocks/HTTP-chain tests; `cargo fmt --check`; `git diff --check`.
 - **Scope note**: app hygiene only. No REALITY closure, dual-kernel BHV/parity movement,
   workflow automation, or release packaging completion is claimed.
-
-## Previous Resume (2026-06-30) - agents-only archive strong compression
-
-- **Archive strong compression DONE locally**: raw closed-phase archive packets under
-  `agents-only/archive/` were replaced by compact summaries:
-  `archive/README.md`, `archive/l01_l25_summary.md`, `archive/mt_summary.md`,
-  `archive/reality_summary.md`, `archive/legacy_research_summary.md`,
-  `archive/release_cleanup_2026_06_summary.md`, and
-  `archive/adr_l19_3_1_sb_core_role.md`.
-- **Pointers refreshed**: live/navigation/reference docs now point to compressed archive
-  summaries instead of deleted raw `L*`, `MT-*`, `logs`, `analysis`, `dump`, and
-  `release-cleanup-2026-06` paths. Live entry files, post1313, reference, memory,
-  templates, and current evidence working sets stayed in place.
-- **Scope note**: archive/documentation hygiene only. No product behavior claim,
-  REALITY closure, dual-kernel BHV/parity movement, workflow automation, or release
-  packaging completion is claimed.
 
 ## Previous Resume (2026-06-30) - root files release acceptance
 

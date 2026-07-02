@@ -1,23 +1,19 @@
 //! Shared test utilities for singbox-rust workspace
 //! singbox-rust 工作区的共享测试工具
 //!
-//! This crate provides common testing utilities that are used across
-//! multiple crates in the workspace, including:
-//! 本 crate 提供了在工作区多个 crate 中使用的通用测试工具，包括：
+//! This crate provides common testing utilities used by workspace tests:
+//! 本 crate 提供了工作区测试使用的通用测试工具：
 //!
 //! - Mock SOCKS5 server implementation
 //!   Mock SOCKS5 服务器实现
-//! - Mock HTTP server utilities
-//!   Mock HTTP 服务器工具
-//! - Test data generation helpers
-//!   测试数据生成助手
+//! - Standardized skip helpers for environment-limited tests
+//!   面向环境受限测试的标准化跳过助手
 //!
 //! # Strategic Context / 战略背景
 //!
-//! This crate serves as a foundational infrastructure for testing `sb-box`, `sb-inbound`, and `sb-outbound`.
-//! By centralizing mock implementations, we ensure consistent behavior across integration tests and avoid code duplication.
-//! 本 crate 作为 `sb-box`、`sb-inbound` 和 `sb-outbound` 测试的基础设施。
-//! 通过集中管理 Mock 实现，我们确保了集成测试中行为的一致性，并避免了代码重复。
+//! This crate centralizes small reusable test helpers so integration tests can
+//! avoid duplicating network mocks and environment skip handling.
+//! 本 crate 集中管理小型可复用测试助手，避免集成测试重复实现网络 mock 和环境跳过逻辑。
 //!
 //! ## Usage / 用法
 //!
