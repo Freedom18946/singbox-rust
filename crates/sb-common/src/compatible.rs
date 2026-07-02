@@ -7,8 +7,9 @@ use std::sync::atomic::{AtomicBool, Ordering};
 static LOW_MEMORY_DEVICE: AtomicBool = AtomicBool::new(false);
 
 /// Check if the current device is considered "low memory".
-/// On Go side, this checks `debug.SetMemoryLimit` or `sys` constraints.
-/// Rust stub: defaults to false, can be set by platform init.
+///
+/// This is a process-local compatibility flag. Platform initialization code can
+/// set it after probing OS-specific memory constraints.
 pub fn is_low_memory_device() -> bool {
     LOW_MEMORY_DEVICE.load(Ordering::Relaxed)
 }
@@ -19,7 +20,9 @@ pub fn set_low_memory_device(is_low: bool) {
 }
 
 /// Get the OS version as a string.
-/// Stub implementation.
+///
+/// Returns the target OS family label. Callers that need exact kernel or
+/// release versions should use platform-specific probes.
 pub fn os_version() -> String {
     #[cfg(target_os = "android")]
     {

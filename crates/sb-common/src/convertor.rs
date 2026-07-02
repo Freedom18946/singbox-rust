@@ -5,14 +5,12 @@
 //! proxy configuration formats (Clash, Surge, Quantumult, etc.) and
 //! the native sing-box format.
 //!
-//! # Supported Formats
+//! # Format Coverage
 //!
-//! - Clash YAML
-//! - Surge configuration
-//! - Quantumult X
-//! - Shadowrocket
-//! - V2Ray JSON
-//! - Subscription URLs (base64)
+//! `ConfigFormat::detect` recognizes Clash, Surge, Quantumult X, V2Ray JSON,
+//! sing-box JSON, and base64 subscription content. `ConfigConverter::parse`
+//! currently materializes proxy nodes for Clash YAML and base64 subscriptions;
+//! URI helpers parse `ss://`, `vmess://`, `vless://`, and `trojan://` entries.
 
 use serde_yaml::Value as YamlValue;
 use std::collections::HashMap;
@@ -453,6 +451,10 @@ impl ConfigConverter {
     }
 
     /// Parse content and detect format automatically.
+    ///
+    /// Node extraction is implemented for Clash YAML and base64 subscription
+    /// content. Other detected formats return their `ConfigFormat` without
+    /// populating `nodes`.
     pub fn parse(&mut self, content: &str) -> ConfigFormat {
         let format = ConfigFormat::detect(content);
 
@@ -518,7 +520,6 @@ impl ConfigConverter {
         }
     }
 
-    /// Parse a single Clash proxy line (inline YAML).
     /// Parse a single Clash proxy line.
     fn parse_clash_proxy_line(&self, line: &str) -> Option<ProxyNode> {
         let line = line.trim_start_matches('-').trim();

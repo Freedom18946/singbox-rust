@@ -8,7 +8,8 @@ pub enum Val<'a> {
     NumI(i64),
     NumF(f64),
     Bool(bool),
-    Raw(&'a str), // 已经是合法 JSON 片段时可用
+    /// Trusted raw JSON fragment. The caller is responsible for validity.
+    Raw(&'a str),
 }
 
 fn esc(s: &str) -> String {
@@ -49,7 +50,11 @@ pub fn obj<const N: usize>(kvs: [(&str, Val); N]) -> String {
                 s.push_str(&format!("{}", n));
             }
             Val::NumF(n) => {
-                s.push_str(&format!("{}", n));
+                if n.is_finite() {
+                    s.push_str(&format!("{}", n));
+                } else {
+                    s.push_str("null");
+                }
             }
             Val::Bool(b) => {
                 s.push_str(if b { "true" } else { "false" });
@@ -90,7 +95,7 @@ pub fn arr_num_u(list: &[u64]) -> String {
     s
 }
 
-/// R40：对象数组（预构造的对象字符串）
+/// R40：对象数组（预构造且可信的 JSON 对象字符串）
 pub fn arr_obj(items: &[String]) -> String {
     let mut s = String::from("[");
     for (i, v) in items.iter().enumerate() {
@@ -101,4 +106,23 @@ pub fn arr_obj(items: &[String]) -> String {
     }
     s.push(']');
     s
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_finite_float_serializes_as_null() {
+        assert_eq!(obj([("value", Val::NumF(f64::NAN))]), r#"{"value":null}"#);
+        assert_eq!(
+            obj([("value", Val::NumF(f64::INFINITY))]),
+            r#"{"value":null}"#
+        );
+    }
+
+    #[test]
+    fn finite_float_serializes_as_number() {
+        assert_eq!(obj([("value", Val::NumF(1.5))]), r#"{"value":1.5}"#);
+    }
 }

@@ -20,8 +20,10 @@
 //!
 //! let fingerprint = Ja3Fingerprint::from_client_hello(&client_hello_data);
 //! if let Some(fp) = fingerprint {
-//!     println!("JA3 hash: {}", fp.hash());
-//!     println!("JA3 string: {}", fp.ja3_string());
+//!     let hash = fp.hash();
+//!     let ja3 = fp.ja3_string();
+//!     assert_eq!(hash.len(), 32);
+//!     assert!(ja3.contains(','));
 //! }
 //! ```
 
@@ -140,7 +142,10 @@ impl Ja3Fingerprint {
         // Parse extensions
         let extensions_len = read_u16(data, pos)? as usize;
         pos += 2;
-        let extensions_end = pos.checked_add(extensions_len)?.min(data.len());
+        let extensions_end = pos.checked_add(extensions_len)?;
+        if extensions_end > data.len() {
+            return None;
+        }
 
         let mut extensions = Vec::new();
         let mut supported_groups = Vec::new();
@@ -246,13 +251,6 @@ impl fmt::Display for Ja3Fingerprint {
 /// This is a minimal implementation - in production, use a proper crypto library.
 mod md5 {
     pub(super) struct Digest([u8; 16]);
-
-    impl Digest {
-        #[allow(dead_code)]
-        pub(super) fn bytes(&self) -> &[u8; 16] {
-            &self.0
-        }
-    }
 
     impl std::fmt::LowerHex for Digest {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
@@ -361,8 +359,8 @@ mod tests {
             0x00, 0x04, 0x00, 0x2f, // TLS_RSA_WITH_AES_128_CBC_SHA
             0x00, 0x35, // TLS_RSA_WITH_AES_256_CBC_SHA
             // Compression methods
-            0x01, 0x00, // Extensions length = 0x26 (38 bytes)
-            0x00, 0x26, // SNI extension (type 0x0000, length 16)
+            0x01, 0x00, // Extensions length = 0x22 (34 bytes)
+            0x00, 0x22, // SNI extension (type 0x0000, length 16)
             0x00, 0x00, 0x00, 0x10, 0x00, 0x0e, 0x00, 0x00, 0x0b, b'e', b'x', b'a', b'm', b'p',
             b'l', b'e', b'.', b'c', b'o', b'm',
             // Supported Groups extension (type 0x000a, length 4)
@@ -433,5 +431,13 @@ mod tests {
         assert!(Ja3Fingerprint::from_client_hello(&[0x17, 0x03, 0x03]).is_none()); // Not handshake
         assert!(Ja3Fingerprint::from_client_hello(&[0x16, 0x03, 0x03, 0x00, 0x05, 0x02]).is_none());
         // Not ClientHello
+    }
+
+    #[test]
+    fn rejects_truncated_extensions_block() {
+        let mut hello = sample_client_hello();
+        hello[53] = hello[53].saturating_add(1);
+
+        assert!(Ja3Fingerprint::from_client_hello(&hello).is_none());
     }
 }

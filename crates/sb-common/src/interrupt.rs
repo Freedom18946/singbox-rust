@@ -115,14 +115,16 @@ impl TaskMonitor {
 
     /// Record task completion.
     pub fn task_completed(&self) {
-        self.active.fetch_sub(1, Ordering::Relaxed);
-        self.completed.fetch_add(1, Ordering::Relaxed);
+        if self.finish_task() {
+            self.completed.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Record task failure.
     pub fn task_failed(&self) {
-        self.active.fetch_sub(1, Ordering::Relaxed);
-        self.failed.fetch_add(1, Ordering::Relaxed);
+        if self.finish_task() {
+            self.failed.fetch_add(1, Ordering::Relaxed);
+        }
     }
 
     /// Get active task count.
@@ -157,6 +159,14 @@ impl TaskMonitor {
             tokio::time::sleep(std::time::Duration::from_millis(10)).await;
         }
         true
+    }
+
+    fn finish_task(&self) -> bool {
+        self.active
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |active| {
+                active.checked_sub(1)
+            })
+            .is_ok()
     }
 }
 
@@ -233,5 +243,22 @@ mod tests {
 
         assert_eq!(monitor.failed_count(), 1);
         assert_eq!(monitor.completed_count(), 0);
+    }
+
+    #[tokio::test]
+    async fn test_task_monitor_does_not_underflow_active_count() {
+        let monitor = TaskMonitor::new();
+
+        monitor.task_completed();
+        monitor.task_failed();
+
+        assert_eq!(monitor.active_count(), 0);
+        assert_eq!(monitor.completed_count(), 0);
+        assert_eq!(monitor.failed_count(), 0);
+        assert!(
+            monitor
+                .wait_timeout(std::time::Duration::from_millis(1))
+                .await
+        );
     }
 }

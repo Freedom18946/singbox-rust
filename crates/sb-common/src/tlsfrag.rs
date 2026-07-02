@@ -49,8 +49,8 @@ fn checked_advance(pos: usize, len: usize, data_len: usize) -> Option<usize> {
 /// Configuration for TLS fragmentation.
 #[derive(Debug, Clone)]
 pub struct FragmentConfig {
-    /// Fragment size range (min, max). Each fragment will be randomly sized
-    /// between these values (inclusive).
+    /// Fragment size range (min, max). Fragment sizes are selected
+    /// deterministically within this range for reproducible behavior.
     pub size_range: (usize, usize),
     /// Delay between sending fragments.
     pub delay: Duration,
@@ -93,7 +93,7 @@ impl FragmentConfig {
     }
 }
 
-/// Fragment data into pieces of random sizes within the configured range.
+/// Fragment data into reproducibly sized pieces within the configured range.
 fn fragment_data(data: &[u8], config: &FragmentConfig) -> Vec<Vec<u8>> {
     if data.is_empty() || !config.enabled {
         return vec![data.to_vec()];
@@ -104,7 +104,6 @@ fn fragment_data(data: &[u8], config: &FragmentConfig) -> Vec<Vec<u8>> {
     let mut offset = 0;
 
     while offset < data.len() {
-        // Use a simple deterministic "random" based on offset for reproducibility
         let range = max_size.saturating_sub(min_size) + 1;
         let size = if range > 1 {
             min_size + (offset % range)
@@ -183,7 +182,10 @@ pub fn extract_sni(data: &[u8]) -> Option<String> {
     // Extensions length
     let extensions_len = read_u16(data, pos)? as usize;
     pos += 2;
-    let extensions_end = pos.checked_add(extensions_len)?.min(data.len());
+    let extensions_end = pos.checked_add(extensions_len)?;
+    if extensions_end > data.len() {
+        return None;
+    }
 
     // Parse extensions
     while pos + 4 <= extensions_end && pos + 4 <= data.len() {
@@ -252,17 +254,6 @@ pub fn fragment_client_hello(data: &[u8], config: &FragmentConfig) -> Vec<Vec<u8
     }
 }
 
-/// Statistics about fragmentation.
-#[derive(Debug, Clone, Default)]
-pub struct FragmentStats {
-    /// Total messages fragmented.
-    pub messages_fragmented: u64,
-    /// Total fragments created.
-    pub fragments_created: u64,
-    /// Total bytes fragmented.
-    pub bytes_fragmented: u64,
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -290,7 +281,7 @@ mod tests {
             0x01, // Length: 1 byte
             0x00, // null compression
             // Extensions
-            0x00, 0x26, // Length: 38 bytes
+            0x00, 0x1b, // Length: 27 bytes
             // SNI extension
             0x00, 0x00, // Type: server_name
             0x00, 0x10, // Length: 16 bytes
@@ -321,6 +312,15 @@ mod tests {
         let hello = sample_client_hello();
         let sni = extract_sni(&hello);
         assert_eq!(sni, Some("example.com".to_string()));
+    }
+
+    #[test]
+    fn test_extract_sni_rejects_truncated_extensions_block() {
+        let mut hello = sample_client_hello();
+        hello[51] = hello[51].saturating_add(1);
+
+        assert!(is_client_hello(&hello));
+        assert_eq!(extract_sni(&hello), None);
     }
 
     #[test]
