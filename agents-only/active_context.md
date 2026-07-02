@@ -10,6 +10,18 @@
 
 ---
 
+## Resume (2026-07-03) - app subs CLI audit cleanup
+
+- **`app/src/bin/subs.rs` audit cleanup DONE locally**: subscription merge/diff CLI now returns
+  structured errors for read/parse/write failures instead of panicking through `expect`/`unwrap`.
+- **Test coverage tightened**: `subs_merge_diff` now covers invalid JSON failure output and
+  asserts the CLI reports a parse error without a panic; existing merge/diff success coverage
+  was converted to fallible assertions without path/string unwraps.
+- **Verification PASS**: app fmt, focused `subs_merge_diff` test, app all-target/all-feature
+  check, strict app clippy, residual scan, and `git diff --check`.
+- **Scope note**: app subscription CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app prefetch audit cleanup
 
 - **`app` prefetch CLI audit cleanup DONE locally**: prefetch stats/watch output now includes
@@ -216,19 +228,6 @@
 - **Scope note**: examples/schema-fixture hygiene only. No product behavior, release
   packaging completion, REALITY closure, dual-kernel BHV/parity movement, or workflow
   automation is claimed.
-
-## Resume (2026-07-01) - docs release hygiene
-
-- **`docs/` release hygiene DONE locally**: live docs were aligned with current
-  source-first examples, disabled workflow policy, `app` binary invocation, maintained
-  `deployments/` assets, and admin `/metricsz` operations path. Historical docs keep
-  provenance banners; live docs no longer advertise workflow-generated release artifacts.
-- **Verification PASS**: strict `app check`, `route --explain --with-trace`, and
-  `run --check` for `examples/quick-start/01-minimal.json`; docs local-link scan;
-  active-doc stale-command scan; `git diff --check`.
-- **Scope note**: documentation hygiene only. No product behavior, release packaging
-  completion, REALITY closure, dual-kernel BHV/parity movement, or workflow automation
-  is claimed.
 
 ## Strategic State
 

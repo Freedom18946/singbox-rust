@@ -25,38 +25,43 @@ enum Cmd {
     Diff { old: String, new: String },
 }
 
-fn read_json(p: &str) -> Value {
-    let b = fs::read(p).expect("read file");
-    serde_json::from_slice(&b).expect("parse json")
+fn read_json(p: &str) -> anyhow::Result<Value> {
+    let bytes = fs::read(p).map_err(|err| anyhow::anyhow!("failed to read {p}: {err}"))?;
+    serde_json::from_slice(&bytes)
+        .map_err(|err| anyhow::anyhow!("failed to parse JSON from {p}: {err}"))
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let cli = Cli::parse();
     match cli.cmd {
         Cmd::Merge { base, extras, out } => {
-            let base = read_json(&base);
-            let extras_v = extras.iter().map(|p| read_json(p)).collect::<Vec<_>>();
+            let base = read_json(&base)?;
+            let extras_v = extras
+                .iter()
+                .map(|p| read_json(p))
+                .collect::<anyhow::Result<Vec<_>>>()?;
             let (merged, mres) = merge(base, &extras_v);
-            fs::write(&out, serde_json::to_string_pretty(&merged).unwrap()).expect("write out");
-            println!("{}", serde_json::to_string_pretty(&serde_json::json!({
+            let merged_json = serde_json::to_string_pretty(&merged)?;
+            fs::write(&out, merged_json)
+                .map_err(|err| anyhow::anyhow!("failed to write {out}: {err}"))?;
+            let report = serde_json::json!({
                 "task":"subs.merge",
                 "out": out,
                 "added":{"inbounds":mres.added_inbounds,"outbounds":mres.added_outbounds,"rules":mres.added_rules}
-            })).unwrap());
+            });
+            println!("{}", serde_json::to_string_pretty(&report)?);
         }
         Cmd::Diff { old, new } => {
-            let o = read_json(&old);
-            let n = read_json(&new);
+            let o = read_json(&old)?;
+            let n = read_json(&new)?;
             let d = diff(&o, &n);
-            println!(
-                "{}",
-                serde_json::to_string_pretty(&serde_json::json!({
-                    "task":"subs.diff",
-                    "added": d.added,
-                    "removed": d.removed
-                }))
-                .unwrap()
-            );
+            let report = serde_json::json!({
+                "task":"subs.diff",
+                "added": d.added,
+                "removed": d.removed
+            });
+            println!("{}", serde_json::to_string_pretty(&report)?);
         }
     }
+    Ok(())
 }
