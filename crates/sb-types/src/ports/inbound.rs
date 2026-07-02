@@ -5,7 +5,7 @@ use crate::ports::BoxFuture;
 use crate::session::{InboundTag, Session};
 use std::sync::Arc;
 
-/// Boxed async stream (placeholder - actual impl in sb-transport).
+/// Opaque boxed stream contract shared across adapter boundaries.
 pub type BoxedStream = Box<dyn AsyncStream>;
 
 /// Async stream trait (Send + Sync wrapper).
@@ -13,6 +13,8 @@ pub trait AsyncStream: Send + Sync + 'static {
     // This is a marker trait; actual I/O methods are on the concrete type.
     // We define this here to avoid depending on tokio in sb-types.
 }
+
+impl<T> AsyncStream for T where T: Send + Sync + 'static {}
 
 /// Datagram packet for UDP handling.
 #[derive(Debug, Clone)]
@@ -51,4 +53,16 @@ pub trait InboundAcceptor: Send + Sync + 'static {
     /// Start accepting connections, calling handler for each.
     fn accept_loop(&self, handler: Arc<dyn InboundHandler>)
         -> BoxFuture<'_, Result<(), CoreError>>;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::BoxedStream;
+
+    struct OpaqueStreamToken;
+
+    #[test]
+    fn boxed_stream_accepts_send_sync_opaque_tokens() {
+        let _stream: BoxedStream = Box::new(OpaqueStreamToken);
+    }
 }

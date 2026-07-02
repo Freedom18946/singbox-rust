@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-07-03) - sb-types audit cleanup
+
+- **`crates/sb-types` audit cleanup DONE locally**: crate metadata now inherits the workspace
+  license/repository, test-only `serde_json` moved to dev-dependencies, and crate docs no longer
+  claim zero dependencies while `serde`/`thiserror` remain intentional contract dependencies.
+- **Opaque stream contract tightened**: `BoxedStream` docs no longer describe a placeholder, and
+  the marker trait has a blanket `Send + Sync + 'static` impl with a regression test proving
+  opaque stream tokens can be boxed without adding runtime/async dependencies.
+- **Verification PASS**: sb-types fmt, all-target/all-feature check, unit tests, doctests,
+  strict clippy, normal dependency-tree review, residual audit scan, and `git diff --check`.
+- **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - sb-transport audit cleanup
 
 - **`crates/sb-transport` audit cleanup DONE locally**: enhanced TLS security config now
@@ -214,21 +227,6 @@
   Kubernetes client dry-run was blocked by the absent local API server.
 - **Scope note**: deployment-template hygiene only. No release packaging completion,
   REALITY closure, dual-kernel BHV/parity movement, or workflow automation is claimed.
-
-## Resume (2026-06-30) - app release hygiene
-
-- **`app/` release hygiene DONE locally**: removed dead/undiscoverable app source, empty or
-  permanently disabled placeholder tests, simulated performance/validation tests, and ignored
-  stale `app/target/rc` artifacts.
-- **Analyze patch API fixed**: app registry now delegates supported patch kinds to real
-  `sb_core::router::analyze_fix` builders; `supported_patch_kinds()` accepts current
-  `patch_kinds` payloads. The implicit `merge` bin is now explicit in `app/Cargo.toml`.
-- **Verification PASS**: `cargo test -p app --all-features --test registry_demo`;
-  `cargo test -p app --all-features supported_patch_kinds_parse_current_core_payload`;
-  `cargo check -p app --all-targets --all-features`; focused performance/protocol/
-  Shadowsocks/HTTP-chain tests; `cargo fmt --check`; `git diff --check`.
-- **Scope note**: app hygiene only. No REALITY closure, dual-kernel BHV/parity movement,
-  workflow automation, or release packaging completion is claimed.
 
 ## Strategic State
 

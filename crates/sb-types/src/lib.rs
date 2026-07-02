@@ -20,9 +20,9 @@
 //!    - `IssueCode` provides machine-readable error categorization for metrics and logs.
 //!    - `IssueCode` 为指标和日志提供机器可读的错误分类。
 //!
-//! 4. **Zero Dependencies / 零依赖**:
-//!    - Keeps the dependency tree minimal to allow fast compilation and easy inclusion in any part of the system (e.g. WASM, embedded).
-//!    - 保持依赖树最小化，以允许快速编译并轻松包含在系统的任何部分（例如 WASM，嵌入式）。
+//! 4. **Minimal Dependencies / 最小依赖**:
+//!    - Uses only lightweight contract dependencies while avoiding runtime, async, or web stacks, so the crate remains easy to include broadly.
+//!    - 仅使用轻量级契约依赖，并避免运行时、异步或 Web 栈，使本 crate 易于广泛引入。
 
 // ============================================================================
 // Module declarations (V2 architecture)
