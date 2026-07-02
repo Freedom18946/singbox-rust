@@ -9,19 +9,14 @@ use sb_runtime::prelude::*;
 #[cfg(feature = "handshake_alpha")]
 use sb_runtime::trojan::Trojan;
 #[cfg(feature = "handshake_alpha")]
-use std::env;
-#[cfg(feature = "handshake_alpha")]
-use std::fs;
+use tempfile::tempdir;
 
 #[test]
 #[cfg(feature = "handshake_alpha")]
 fn test_replay_decode_strict_mode() -> Result<()> {
     let trojan = Trojan::new("example.com".to_string(), 443);
-    let temp_dir = env::temp_dir();
-    let log_path = temp_dir.join("replay_strict.jsonl");
-
-    // Clean up any existing file from previous runs
-    let _ = fs::remove_file(&log_path);
+    let temp_dir = tempdir()?;
+    let log_path = temp_dir.path().join("replay_strict.jsonl");
 
     // Create a session log with valid frames
     let logger = SessionLog::new(&log_path);
@@ -37,8 +32,6 @@ fn test_replay_decode_strict_mode() -> Result<()> {
     // In strict mode, errors should cause immediate failure
     // The result depends on whether decode_ack accepts the test data
 
-    // Cleanup
-    let _ = fs::remove_file(&log_path);
     Ok(())
 }
 
@@ -46,11 +39,8 @@ fn test_replay_decode_strict_mode() -> Result<()> {
 #[cfg(feature = "handshake_alpha")]
 fn test_replay_with_loopback_session() -> Result<()> {
     let trojan = Trojan::new("example.com".to_string(), 443);
-    let temp_dir = env::temp_dir();
-    let log_path = temp_dir.join("replay_loopback.jsonl");
-
-    // Clean up any existing file from previous runs
-    let _ = fs::remove_file(&log_path);
+    let temp_dir = tempdir()?;
+    let log_path = temp_dir.path().join("replay_loopback.jsonl");
 
     // Generate a real session using run_once
     let _metrics = run_once(&trojan, 42, Some(&log_path))?;
@@ -66,7 +56,5 @@ fn test_replay_with_loopback_session() -> Result<()> {
     // In strict mode, if there are errors, it should have failed earlier
     assert_eq!(errors_strict, 0);
 
-    // Cleanup
-    let _ = fs::remove_file(&log_path);
     Ok(())
 }

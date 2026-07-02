@@ -11,7 +11,7 @@ use std::path::PathBuf;
 /// Test seeds for golden outputs
 const GOLDEN_SEEDS: &[u64] = &[1, 42, 100];
 
-/// Convert bytes to hex string for debugging
+/// Convert bytes to hex string for golden summaries.
 fn hex_encode(data: &[u8]) -> String {
     data.iter().map(|b| format!("{:02x}", b)).collect()
 }
@@ -101,13 +101,8 @@ fn test_golden_outputs() {
                 seed
             );
 
-            println!(
-                "Generated golden: {} -> len={} head16={} tail16={}",
-                filename,
-                len,
-                golden["head16"].as_str().unwrap_or(""),
-                golden["tail16"].as_str().unwrap_or("")
-            );
+            assert!(golden.get("head16").and_then(Value::as_str).is_some());
+            assert!(golden.get("tail16").and_then(Value::as_str).is_some());
         }
     }
 

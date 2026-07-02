@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-07-02) - sb-runtime audit cleanup
+
+- **`crates/sb-runtime` audit cleanup DONE locally**: offline Trojan/VMess alpha handshakes
+  now encode host length as `u16le` with bounded host bytes, avoiding previous `u8`
+  truncation for hosts longer than 255 bytes.
+- **Test/runtime hygiene DONE locally**: JSONL streaming skips blank lines without fake
+  zero-length frames while returning parse failures; replay files use isolated `tempfile`
+  directories; golden/debug/placeholder/dead-code remnants were removed or clarified.
+- **Verification PASS**: sb-runtime fmt, no-default/all-features checks, all-target tests,
+  doctests, strict clippy, residual debug/placeholder scan, and `git diff --check`.
+- **Scope note**: sb-runtime audit/test hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - sb-platform audit cleanup
 
 - **`crates/sb-platform` audit cleanup DONE locally**: Android process matching now
@@ -222,17 +235,6 @@
   explicitly requested.
 - **Scope note**: memory/policy correction only. No product behavior, workflow automation, release
   packaging, REALITY closure, or dual-kernel BHV/parity movement is claimed.
-
-## Previous Resume (2026-06-30) - .cargo release acceptance
-
-- **`.cargo` DONE locally**: `.cargo/config.toml` received release-level review. The ignored
-  `[doc] rustdocflags` placement was corrected to `[build].rustdocflags`, making rustdoc warning
-  denial effective; two exposed CLI rustdoc comment warnings were fixed.
-- **Verification PASS**: historical record compressed in `agents-only/archive/release_cleanup_2026_06_summary.md`. Focused HTTP/3
-  feature checks, fallback-linker check, real `app` link, `cargo xtask help`, app rustdoc build,
-  workspace all-features check, boundaries, consistency, and `git diff --check` passed.
-- **Scope note**: Cargo-configuration hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, workflow automation, or release packaging completion is claimed.
 
 ## Strategic State
 

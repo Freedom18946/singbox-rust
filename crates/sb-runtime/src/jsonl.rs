@@ -7,11 +7,11 @@
 //! 依赖 `loopback::Frame` 结构，不引入 IO 以外的副作用。
 //!
 //! # Key Features / 主要功能
-//! - **Streaming Read**: Fault-tolerant skipping of empty lines and parsing failures.
+//! - **Streaming Read**: Skips empty lines and reports parse failures.
 //! - **Statistical Verification**: Frame count, throughput, timestamps, etc.
 //! - **Replay Verification**: Strict/Lenient modes.
 //!
-//! - **流式读取**: 容错跳过空行和解析失败行。
+//! - **流式读取**: 跳过空行并报告解析失败行。
 //! - **基本统计验证**: 帧数、传输量、时间戳等。
 //! - **回放校验**: 严格/宽松模式。
 use crate::loopback::Frame;
@@ -24,8 +24,8 @@ use std::{
     time::SystemTime,
 };
 
-/// Stream frames from JSONL file (Fault-tolerant: skips empty/failed lines).
-/// 逐帧流式读取 JSONL 文件（容错：跳过空行与解析失败行）。
+/// Stream frames from JSONL file (skips empty lines and returns parse failures).
+/// 逐帧流式读取 JSONL 文件（跳过空行，解析失败作为错误返回）。
 ///
 /// # Arguments / 参数
 ///
@@ -33,7 +33,7 @@ use std::{
 ///
 /// # Returns / 返回
 ///
-/// Iterator of frames, automatically filtering empty lines.
+/// Iterator of frames, automatically skipping empty lines.
 /// 返回帧的迭代器，自动过滤空行。
 ///
 /// # Errors / 错误
@@ -46,38 +46,24 @@ pub fn stream_frames<P: AsRef<Path>>(p: P) -> Result<impl Iterator<Item = Result
     let mut rdr = BufReader::new(f);
     let mut buf = String::new();
 
-    // 使用生成器风格的迭代器
     let iter = std::iter::from_fn(move || {
         buf.clear();
         match rdr.read_line(&mut buf) {
             Ok(0) => None, // EOF
             Ok(_) => {
                 let line = buf.trim();
-                // 跳过空行，继续读取下一行
                 if line.is_empty() {
-                    return Some(Ok(Frame {
-                        ts_ms: 0,
-                        dir: crate::loopback::FrameDir::Tx,
-                        len: 0,
-                        head8_hex: String::new(),
-                        tail8_hex: String::new(),
-                    }));
+                    return Some(None);
                 }
                 match serde_json::from_str::<Frame>(line) {
-                    Ok(f) => Some(Ok(f)),
-                    Err(e) => Some(Err(anyhow!("parse JSONL failed: {e}"))),
+                    Ok(f) => Some(Some(Ok(f))),
+                    Err(e) => Some(Some(Err(anyhow!("parse JSONL failed: {e}")))),
                 }
             }
-            Err(e) => Some(Err(anyhow!("read_line failed: {e}"))),
+            Err(e) => Some(Some(Err(anyhow!("read_line failed: {e}")))),
         }
     })
-    .filter(|r| {
-        // 过滤掉空行占位符
-        match r {
-            Ok(f) => f.len > 0,
-            Err(_) => true,
-        }
-    });
+    .flatten();
 
     Ok(iter)
 }

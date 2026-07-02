@@ -55,7 +55,6 @@
 //! ```
 
 #![deny(unused_must_use)]
-#![allow(clippy::needless_return)]
 
 // ==================== Feature-gated modules ====================
 // 以下模块仅在启用 `handshake_alpha` feature 时暴露
@@ -108,21 +107,6 @@ pub use scenario::*;
 #[cfg(all(feature = "handshake_alpha", feature = "io_local_alpha"))]
 pub use tcp_local::*;
 
-// ==================== Disabled state fallback ====================
-// 未启用 alpha 时的占位模块，确保 crate 可编译
-
-/// 占位模块，确保 crate 在未启用 feature 时仍可编译
-///
-/// 此模块不导出任何公共 API，仅用于避免空 crate 的编译器警告
-#[cfg(not(feature = "handshake_alpha"))]
-mod disabled {
-    /// 空操作函数，仅用于确保模块非空
-    ///
-    /// 此函数不应被调用，仅作为占位符存在
-    #[allow(dead_code)]
-    pub(crate) fn _noop() {}
-}
-
 // ==================== Prelude module ====================
 // 提供便捷的 glob import
 
@@ -150,7 +134,7 @@ pub mod prelude {
     pub use crate::tcp_local::*;
 }
 
-/// 空 prelude 占位符
+/// Empty prelude module for feature-disabled builds.
 ///
 /// 在未启用 `handshake_alpha` feature 时提供空的 prelude 模块，
 /// 防止依赖方的 `use` 语句报错

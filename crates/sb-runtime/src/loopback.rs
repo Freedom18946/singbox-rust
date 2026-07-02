@@ -374,16 +374,15 @@ impl Obfuscator for XorObfuscator {
 /// 将字节转换为十六进制字符串
 ///
 /// # 性能
-/// 使用预分配容量的字符串和 `fmt::Write`，避免多次分配
+/// 使用预分配容量的字符串和静态 hex 表，避免多次分配
 fn hex_encode(data: &[u8]) -> String {
-    use std::fmt::Write;
-    data.iter()
-        .fold(String::with_capacity(data.len() * 2), |mut s, b| {
-            if write!(s, "{b:02x}").is_err() {
-                return String::new();
-            }
-            s
-        })
+    const HEX: &[u8; 16] = b"0123456789abcdef";
+    let mut out = String::with_capacity(data.len() * 2);
+    for &b in data {
+        out.push(HEX[(b >> 4) as usize] as char);
+        out.push(HEX[(b & 0x0f) as usize] as char);
+    }
+    out
 }
 
 /// 对 JSONL 帧进行回放解码验证（仅使用 RX 帧）
@@ -503,13 +502,11 @@ mod tests {
 
     #[test]
     fn test_replay_decode() -> Result<()> {
-        use std::env;
-        use std::fs;
+        use tempfile::tempdir;
 
         let t = Trojan::new("example.com".to_string(), 443);
-        // 准备一个临时 JSONL，包含两个帧（tx 被忽略，rx 被使用）
-        let dir = env::temp_dir();
-        let p = dir.join("hs.tmp.jsonl");
+        let dir = tempdir()?;
+        let p = dir.path().join("hs.tmp.jsonl");
         let logger = SessionLog::new(&p);
 
         logger.log_frame(&Frame::new(FrameDir::Tx, b"abcdef"))?;
@@ -520,7 +517,6 @@ mod tests {
         // decode_ack 可能根据实现严格性返回 0 或 1 个错误
         assert!(errs == 0 || errs == 1);
 
-        let _ = fs::remove_file(&p);
         Ok(())
     }
 

@@ -53,3 +53,25 @@ fn verify_disorder() {
     let v = basic_verify(&p).unwrap();
     assert_eq!(v.get("ts_disorder").unwrap().as_u64().unwrap(), 1);
 }
+
+#[test]
+fn stream_frames_skips_blank_lines() {
+    let dir = tempdir().unwrap();
+    let p = dir.path().join("blank.jsonl");
+    let frame = serde_json::to_string(&Frame {
+        ts_ms: 1,
+        dir: FrameDir::Tx,
+        len: 10,
+        head8_hex: "aa".into(),
+        tail8_hex: "aa".into(),
+    })
+    .unwrap();
+    fs::write(&p, format!("\n{frame}\n\n")).unwrap();
+
+    let frames = stream_frames(&p)
+        .unwrap()
+        .collect::<Result<Vec<_>, _>>()
+        .unwrap();
+    assert_eq!(frames.len(), 1);
+    assert_eq!(frames[0].len, 10);
+}

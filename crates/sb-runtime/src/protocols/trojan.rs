@@ -1,11 +1,11 @@
-//! Trojan offline encode/ack (deterministic, placeholder implementation)
+//! Trojan offline encode/ack (deterministic test stub implementation)
 //!
 //! Provides deterministic handshake test stub for Trojan protocol.
 //! No real encryption, only for shape/length/reproducibility verification.
 //! 提供 Trojan 协议的确定性握手测试桩。
 //! 不做真实加密，仅用于 shape/长度/可复现性校验。
 
-use crate::handshake::{derive_bytes, Handshake, ProtoCtx};
+use crate::handshake::{bounded_host_bytes, derive_bytes, Handshake, ProtoCtx};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -35,11 +35,11 @@ impl Trojan {
 
 impl Handshake for Trojan {
     fn encode_init(&self, seed: u64) -> Vec<u8> {
-        // 伪结构：[LEN host][host bytes][port u16le][preface 16]
-        let h = self.ctx.host.as_bytes();
-        let mut out = Vec::with_capacity(1 + h.len() + 2 + 16);
+        // 伪结构：[host_len u16le][host bytes][port u16le][preface 16]
+        let h = bounded_host_bytes(&self.ctx.host);
+        let mut out = Vec::with_capacity(2 + h.len() + 2 + 16);
 
-        out.push(h.len() as u8);
+        out.extend_from_slice(&(h.len() as u16).to_le_bytes());
         out.extend_from_slice(h);
         out.extend_from_slice(&self.ctx.port.to_le_bytes());
         out.extend_from_slice(&derive_bytes(seed ^ 0x5430_4A41, 16));
@@ -66,6 +66,14 @@ mod tests {
         let init1 = t.encode_init(42);
         let init2 = t.encode_init(42);
         assert_eq!(init1, init2, "encode_init should be deterministic");
+    }
+
+    #[test]
+    fn test_trojan_host_length_uses_u16() {
+        let host = "a".repeat(300);
+        let t = Trojan::new(host, 443);
+        let init = t.encode_init(42);
+        assert_eq!(u16::from_le_bytes([init[0], init[1]]), 300);
     }
 
     #[test]

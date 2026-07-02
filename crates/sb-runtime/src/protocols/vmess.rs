@@ -1,11 +1,11 @@
-//! VMess offline encode/ack (deterministic, placeholder implementation)
+//! VMess offline encode/ack (deterministic test stub implementation)
 //!
 //! Provides deterministic handshake test stub for VMess protocol.
 //! No real encryption, only for shape/length/reproducibility verification.
 //! 提供 VMess 协议的确定性握手测试桩。
 //! 不做真实加密，仅用于 shape/长度/可复现性校验。
 
-use crate::handshake::{derive_bytes, Handshake, ProtoCtx};
+use crate::handshake::{bounded_host_bytes, derive_bytes, Handshake, ProtoCtx};
 use anyhow::Result;
 use serde::{Deserialize, Serialize};
 
@@ -35,15 +35,15 @@ impl Vmess {
 
 impl Handshake for Vmess {
     fn encode_init(&self, seed: u64) -> Vec<u8> {
-        // 伪结构：固定头 8B + 随机域 24B + hostlen/host + port
-        let h = self.ctx.host.as_bytes();
-        let mut out = Vec::with_capacity(8 + 24 + 1 + h.len() + 2);
+        // 伪结构：固定头 8B + 随机域 24B + host_len u16le + host + port
+        let h = bounded_host_bytes(&self.ctx.host);
+        let mut out = Vec::with_capacity(8 + 24 + 2 + h.len() + 2);
 
         // 'VMESS\0\0\1'
         out.extend_from_slice(&[0x56, 0x4D, 0x45, 0x53, 0x53, 0, 0, 1]);
         out.extend_from_slice(&derive_bytes(seed ^ 0x5631_4535, 24));
 
-        out.push(h.len() as u8);
+        out.extend_from_slice(&(h.len() as u16).to_le_bytes());
         out.extend_from_slice(h);
         out.extend_from_slice(&self.ctx.port.to_le_bytes());
 
@@ -77,6 +77,14 @@ mod tests {
         let init = v.encode_init(42);
         // 检查 magic bytes 'VMESS'
         assert_eq!(&init[0..5], b"VMESS");
+    }
+
+    #[test]
+    fn test_vmess_host_length_uses_u16() {
+        let host = "a".repeat(300);
+        let v = Vmess::new(host, 443);
+        let init = v.encode_init(42);
+        assert_eq!(u16::from_le_bytes([init[32], init[33]]), 300);
     }
 
     #[test]

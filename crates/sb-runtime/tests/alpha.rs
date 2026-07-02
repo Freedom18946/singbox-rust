@@ -5,9 +5,12 @@ use sb_runtime::prelude::*;
 fn trojan_seed42_len_head() {
     let t = sb_runtime::protocols::trojan::Trojan::new("example.com".into(), 443);
     let bytes = t.encode_init(42);
-    assert!(bytes.len() >= 19, "len too small");
+    assert!(bytes.len() >= 20, "len too small");
     // 只断言前缀特征，避免实现细节锁死
-    assert_eq!(bytes[0] as usize, "example.com".len());
+    assert_eq!(
+        u16::from_le_bytes([bytes[0], bytes[1]]) as usize,
+        "example.com".len()
+    );
 }
 #[test]
 fn vmess_seed42_magic() {

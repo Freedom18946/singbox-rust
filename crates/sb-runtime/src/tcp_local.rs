@@ -137,9 +137,7 @@ pub async fn spawn_echo_once(bind: SocketAddr, xor_key: Option<u8>) -> Result<So
                 if let Some(k) = xor_key {
                     xor_inplace(&mut out, k);
                 }
-                if let Err(err) = s.write_all(&out).await {
-                    eprintln!("tcp_local echo write failed: {err}");
-                }
+                drop(s.write_all(&out).await);
             }
         }
     });

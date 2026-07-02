@@ -89,6 +89,16 @@ pub struct ProtoCtx {
     pub port: u16,
 }
 
+pub(crate) fn bounded_host_bytes(host: &str) -> &[u8] {
+    let bytes = host.as_bytes();
+    let max_len = usize::from(u16::MAX);
+    if bytes.len() > max_len {
+        &bytes[..max_len]
+    } else {
+        bytes
+    }
+}
+
 /// Simple xorshift64* PRNG (Consistent with CLI) / 简单 xorshift64* PRNG（与 CLI 保持一致）
 ///
 /// This is a fast pseudo-random number generator for test scenarios.
@@ -110,8 +120,8 @@ pub fn xorshift64star(mut x: u64) -> u64 {
     x.wrapping_mul(0x2545_F491_4F6C_DD1D)
 }
 
-/// Derive fixed-length bytes from seed (for placeholder fields).
-/// 从 seed 派生固定长度字节（用于占位字段）。
+/// Derive fixed-length bytes from seed (for deterministic protocol fields).
+/// 从 seed 派生固定长度字节（用于确定性协议字段）。
 ///
 /// Uses `xorshift64star` PRNG to generate deterministic byte sequences.
 /// 使用 `xorshift64star` PRNG 生成确定性的字节序列。
