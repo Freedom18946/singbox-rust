@@ -10,6 +10,21 @@
 
 ---
 
+## Resume (2026-07-03) - app prom CLI audit cleanup
+
+- **`app prom` audit cleanup DONE locally**: the Prometheus CLI now awaits async scrape/hist
+  handlers from the top-level Tokio runtime instead of panicking through nested
+  `Handle::current().block_on(...)`.
+- **Filter input contract tightened**: `prom scrape --filter` now validates regex syntax before
+  any HTTP request and returns a structured `invalid --filter regex` error instead of silently
+  disabling the filter.
+- **Test coverage tightened**: focused prom unit tests cover valid/invalid filter compilation,
+  and a real `app prom scrape` integration test locks the no-panic invalid-filter path.
+- **Verification PASS**: app fmt, focused prom unit/integration tests, app all-target/all-feature
+  check, strict app clippy, real invalid-filter CLI smoke, and `git diff --check`.
+- **Scope note**: app Prometheus CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app tools synctime audit cleanup
 
 - **`app/src/cli/tools.rs` audit cleanup DONE locally**: `tools synctime` now computes local
@@ -209,19 +224,6 @@
   variables, unique dashboard UIDs, alert expressions, source-backed metric names, and
   stale scrape-token regressions.
 - **Scope note**: Grafana monitoring asset hygiene only. No product behavior, release
-  packaging completion, REALITY closure, dual-kernel BHV/parity movement, or workflow
-  automation is claimed.
-
-## Resume (2026-07-02) - fuzz release hygiene
-
-- **`fuzz/` release hygiene DONE locally**: root core-dump ignore no longer hides
-  `fuzz/targets/core/` or `fuzz/regression/core/`; core fuzz targets and regression
-  anchor are tracked, fuzz metadata verification is wired into maintained entrypoints,
-  unknown regression targets fail fast, and clean-all no longer removes tracked seeds.
-- **Verification PASS**: metadata verifier, shell syntax, fmt, fuzz check/build,
-  deterministic seed regeneration, invalid-target negative check, full seed replay,
-  regression no-input path, consistency, and `git diff --check`.
-- **Scope note**: fuzz harness/release hygiene only. No product behavior, release
   packaging completion, REALITY closure, dual-kernel BHV/parity movement, or workflow
   automation is claimed.
 

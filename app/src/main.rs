@@ -81,7 +81,7 @@ async fn main() -> anyhow::Result<()> {
         #[cfg(feature = "prefetch")]
         cli::Commands::Prefetch(a) => cli::prefetch::main(a),
         cli::Commands::Auth(a) => cli::auth::main(a),
-        cli::Commands::Prom(a) => cli::prom::main(a),
+        cli::Commands::Prom(a) => cli::prom::main(a).await,
         #[cfg(feature = "dev-cli")]
         cli::Commands::Report(a) => cli::report::main(a),
         #[cfg(feature = "bench-cli")]

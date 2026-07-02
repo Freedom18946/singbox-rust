@@ -77,7 +77,7 @@ impl fmt::Display for HistFormat {
     }
 }
 
-pub fn main(a: PromArgs) -> Result<()> {
+pub async fn main(a: PromArgs) -> Result<()> {
     match a.cmd {
         PromCmd::Scrape {
             url,
@@ -86,20 +86,14 @@ pub fn main(a: PromArgs) -> Result<()> {
             labels,
             jsonl,
             json,
-        } => {
-            // We are already in a Tokio runtime (app main), so we can block_on safely.
-            tokio::runtime::Handle::current()
-                .block_on(scrape(url, filter, select, labels, jsonl, json))
-        }
+        } => scrape(url, filter, select, labels, jsonl, json).await,
         PromCmd::Hist {
             url,
             metrics,
             labels,
             group_by,
             format,
-        } => {
-            tokio::runtime::Handle::current().block_on(hist(metrics, url, labels, group_by, format))
-        }
+        } => hist(metrics, url, labels, group_by, format).await,
     }
 }
 
@@ -148,6 +142,14 @@ pub(crate) fn labels_match(all: &BTreeMap<String, String>, sel: &BTreeMap<String
         .all(|(k, want)| all.get(k).is_some_and(|v| v == want))
 }
 
+fn compile_filter_regex(filter: Option<String>) -> Result<Option<Regex>> {
+    filter
+        .map(|pattern| {
+            Regex::new(&pattern).with_context(|| format!("invalid --filter regex `{pattern}`"))
+        })
+        .transpose()
+}
+
 async fn scrape(
     url: String,
     filter: Option<String>,
@@ -156,12 +158,12 @@ async fn scrape(
     jsonl: bool,
     _json: bool,
 ) -> Result<()> {
+    let filter_re = compile_filter_regex(filter)?;
     let txt = http_get_text(&url).await?;
     let re =
         Regex::new(r"^([a-zA-Z_:][a-zA-Z0-9_:]*)(\{[^}]*\})?\s+([-+]?\d+(\.\d+)?|NaN|\+?Inf)$")
             .context("invalid regex pattern for metrics parsing")?;
     let mut out: Vec<Sample> = Vec::new();
-    let filter_re = filter.and_then(|f| Regex::new(&f).ok());
     let sel: Option<Vec<String>> =
         select.map(|s| s.split(',').map(|x| x.trim().to_string()).collect());
     let label_sel = parse_label_kvs(&labels);
@@ -461,6 +463,27 @@ mod tests {
         assert!(labels_match(&all, &sel_none));
         assert!(labels_match(&all, &sel_hit));
         assert!(!labels_match(&all, &sel_miss));
+    }
+
+    #[test]
+    fn test_compile_filter_regex_accepts_valid_pattern() -> Result<()> {
+        let Some(re) = compile_filter_regex(Some("^http_".to_string()))? else {
+            anyhow::bail!("filter regex was not compiled");
+        };
+
+        assert!(re.is_match("http_requests_total"));
+        assert!(!re.is_match("tcp_connections_total"));
+        Ok(())
+    }
+
+    #[test]
+    fn test_compile_filter_regex_rejects_invalid_pattern() {
+        let err = compile_filter_regex(Some("[".to_string()))
+            .err()
+            .map(|err| err.to_string())
+            .unwrap_or_default();
+
+        assert!(err.contains("invalid --filter regex"));
     }
 
     #[test]
