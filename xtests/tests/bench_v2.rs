@@ -38,24 +38,18 @@ fn spawn_udp_echo() -> std::io::Result<SocketAddr> {
 fn bench_v2_produces_csv_and_json() {
     let tcp_addr = match spawn_tcp_echo() {
         Ok(addr) => addr,
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            eprintln!("skip bench_v2_produces_csv_and_json: tcp bind permission denied");
-            return;
-        }
         Err(e) => panic!("bind tcp: {e}"),
     };
     let udp_addr = match spawn_udp_echo() {
         Ok(addr) => addr,
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            eprintln!("skip bench_v2_produces_csv_and_json: udp bind permission denied");
-            return;
-        }
         Err(e) => panic!("bind udp: {e}"),
     };
     thread::sleep(Duration::from_millis(100));
     let csv_path = std::env::temp_dir().join(format!("sb-bench-udp-{}.csv", std::process::id()));
+    let tcp_path = PathBuf::from(format!("{}_tcp", csv_path.display()));
     let dns_path = PathBuf::from(format!("{}_dns", csv_path.display()));
     let _ = std::fs::remove_file(&csv_path);
+    let _ = std::fs::remove_file(&tcp_path);
     let _ = std::fs::remove_file(&dns_path);
 
     let bin = xtests::ensure_workspace_bin("app", "sb-bench", &["bench"]);
@@ -77,6 +71,9 @@ fn bench_v2_produces_csv_and_json() {
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).expect("json");
     assert!(v.get("udp_rtt_ms").is_some(), "no udp_rtt_ms");
     assert!(std::fs::metadata(&csv_path).is_ok(), "csv missing");
+    assert!(std::fs::metadata(&tcp_path).is_ok(), "tcp csv missing");
+    assert!(std::fs::metadata(&dns_path).is_ok(), "dns csv missing");
     let _ = std::fs::remove_file(csv_path);
+    let _ = std::fs::remove_file(tcp_path);
     let _ = std::fs::remove_file(dns_path);
 }

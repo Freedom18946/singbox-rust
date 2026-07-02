@@ -1,7 +1,7 @@
 {
   "admin_addr": "127.0.0.1:64194",
-  "binary": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/debug/run",
-  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_hot_reload_long_test_19920_1772842979808.json",
+  "binary": "$REPO/target/debug/run",
+  "config": "<tmp>/singbox_hot_reload_long_test_19920_1772842979808.json",
   "fd_delta": 0,
   "final_fds": 13,
   "final_rss_kb": 13856,

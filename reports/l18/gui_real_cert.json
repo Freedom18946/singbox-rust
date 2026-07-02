@@ -9,7 +9,7 @@
     "rust": "http://127.0.0.1:19090"
   },
   "sandbox": {
-    "root": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/sandbox/gui_real_20260307T100646Z_6339",
+    "root": "$REPO/reports/l18/sandbox/gui_real_20260307T100646Z_6339",
     "precheck_pass": true,
     "postcheck_pass": true,
     "system_proxy_snapshot_unchanged": true,

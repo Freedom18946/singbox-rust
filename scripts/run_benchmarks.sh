@@ -75,8 +75,8 @@ with open(baseline_file, "w", encoding="utf-8") as f:
 
 print(f"Baseline written with {len(benchmarks)} benchmark entries")
 PYTHON_SCRIPT
-    echo '{"generated":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","benchmarks":{},"note":"No Criterion data found yet"}' > "$BASELINE_FILE"
-    echo "Baseline placeholder created (python unavailable or parse failed)"
+    echo '{"generated":"'"$(date -u +%Y-%m-%dT%H:%M:%SZ)"'","status":"placeholder","evidence":"none","benchmarks":{},"note":"No Criterion data found yet; python was unavailable or parsing failed"}' > "$BASELINE_FILE"
+    echo "Baseline placeholder created without benchmark evidence"
 fi
 
 if [ ! -f "$LATENCY_FILE" ]; then
@@ -84,6 +84,8 @@ if [ ! -f "$LATENCY_FILE" ]; then
     cat > "$LATENCY_FILE" << EOF
 {
   "generated": "$(date -u +%Y-%m-%dT%H:%M:%SZ)",
+  "status": "placeholder",
+  "evidence": "none",
   "protocols": {
     "socks5": {"p50_ns": null, "p95_ns": null, "p99_ns": null, "sample_size": 0},
     "shadowsocks": {"p50_ns": null, "p95_ns": null, "p99_ns": null, "sample_size": 0},

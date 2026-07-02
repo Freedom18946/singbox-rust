@@ -59,7 +59,7 @@ curl --version
 - 一键脚本（server + client）
 
   ```bash
-  # 默认使用 examples/singbox/certs/anytls.local.{crt,key}，若不存在则回退为自签
+  # 默认使用 examples/singbox/certs/anytls.local.{crt,key}.fixture，若不存在则回退为自签
   ./scripts/dev-up.sh
   ```
 
@@ -183,4 +183,3 @@ new file mode 100644
 ```
 
 > 若不希望新增 `Makefile`，可改用 `Taskfile.yml` 或 `docker-compose.yml` 复用同一脚本逻辑。
-

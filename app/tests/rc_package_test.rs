@@ -12,16 +12,12 @@ fn test_run_rc_script_execution() {
         .output()
         .expect("Failed to execute run-rc script");
 
-    // The script should run without error
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        println!("Script stderr: {}", stderr);
-        // Allow failure if jq is not available or other dependencies are missing
-        if stderr.contains("jq is required") || stderr.contains("not found") {
-            println!("Skipping test due to missing dependencies");
-            return;
-        }
-    }
+    assert!(
+        output.status.success(),
+        "run-rc script failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // If successful, check that RC directory was created
     assert!(
@@ -290,16 +286,14 @@ fn test_manifest_schema_validation() {
 #[test]
 #[ignore]
 fn test_rc_package_integration() {
-    // Skip this test if we don't have required tools
-    if !Command::new("jq")
-        .arg("--version")
-        .output()
-        .map(|o| o.status.success())
-        .unwrap_or(false)
-    {
-        println!("Skipping integration test - jq not available");
-        return;
-    }
+    assert!(
+        Command::new("jq")
+            .arg("--version")
+            .output()
+            .map(|o| o.status.success())
+            .unwrap_or(false),
+        "jq is required for RC package integration"
+    );
 
     // Build sb-version if not present
     let sb_version_exists = fs::metadata("target/debug/sb-version").is_ok()
@@ -323,12 +317,12 @@ fn test_rc_package_integration() {
         .output()
         .expect("Failed to execute run-rc script");
 
-    if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        println!("RC script failed: {}", stderr);
-        // This might fail in CI environment, so we'll make it non-fatal
-        return;
-    }
+    assert!(
+        output.status.success(),
+        "RC script failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&output.stdout),
+        String::from_utf8_lossy(&output.stderr)
+    );
 
     // Verify RC directory exists and has expected files
     assert!(

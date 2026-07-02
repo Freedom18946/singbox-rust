@@ -3,13 +3,21 @@ set -euo pipefail
 
 CARGO_HOME_DIR="${CARGO_HOME:-$HOME/.cargo}"
 ADVISORY_DB_DIR="${CARGO_HOME_DIR}/advisory-db"
+ADVISORY_DBS_DIR="${CARGO_HOME_DIR}/advisory-dbs"
 REGISTRY_INDEX_DIR="${CARGO_HOME_DIR}/registry/index"
 REGISTRY_CACHE_DIR="${CARGO_HOME_DIR}/registry/cache"
 
 missing=0
 
-if [ ! -d "${ADVISORY_DB_DIR}" ]; then
-  echo "Missing advisory DB: ${ADVISORY_DB_DIR}"
+has_advisory_db=0
+if [ -d "${ADVISORY_DB_DIR}" ]; then
+  has_advisory_db=1
+elif find "${ADVISORY_DBS_DIR}" -mindepth 1 -maxdepth 1 -type d -name 'advisory-db-*' 2>/dev/null | grep -q .; then
+  has_advisory_db=1
+fi
+
+if [ "${has_advisory_db}" -eq 0 ]; then
+  echo "Missing advisory DB under: ${ADVISORY_DB_DIR} or ${ADVISORY_DBS_DIR}/advisory-db-*"
   missing=1
 fi
 
@@ -26,4 +34,4 @@ if [ "${missing}" -ne 0 ]; then
 fi
 
 export CARGO_NET_OFFLINE=true
-exec cargo deny --offline check
+exec cargo deny --offline --locked check

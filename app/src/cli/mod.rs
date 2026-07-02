@@ -92,7 +92,6 @@ pub mod geosite;
 #[cfg(feature = "dev-cli")]
 pub mod health;
 pub mod help;
-pub mod json;
 #[cfg(feature = "manpage")]
 pub mod man;
 pub mod merge;

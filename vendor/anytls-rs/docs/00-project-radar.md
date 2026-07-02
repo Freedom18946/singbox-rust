@@ -3,7 +3,7 @@
 ## 1. 代码地图（按职责）
 
 - 顶层结构  
-  - `.github/workflows/` — GitHub Actions：多平台构建、测试、基准与发布流水线  
+  - `.github/workflows/` — upstream 自动化目录；当前仓库禁用 GitHub Actions / workflow automation
   - `benches/` — 会话、流、TLS、客户端-服务端等性能基准  
   - `docs/` — 架构、测试、指南、版本总结与发布文档  
   - `scripts/` — 构建/发布辅助脚本（如 `release.sh`）  

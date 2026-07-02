@@ -1,6 +1,6 @@
 {
   "core": "rust",
-  "url": "file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/scripts/l18/fixtures/capability_negotiation/case_breaking_changes_non_empty.json",
+  "url": "file://$REPO/scripts/l18/fixtures/capability_negotiation/case_breaking_changes_non_empty.json",
   "required": true,
   "checked": true,
   "pass": false,

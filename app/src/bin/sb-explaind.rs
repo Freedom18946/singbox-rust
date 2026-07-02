@@ -94,22 +94,22 @@ async fn handle(
                 ),
             ));
         }
-        let sec = req_sec.min(max_sec).max(1);
-        let freq = match std::env::var("SB_PPROF_FREQ") {
-            Ok(raw) => {
-                let t = raw.trim();
-                match t.parse::<i32>() {
-                    Ok(v) => v,
-                    Err(e) => {
-                        tracing::warn!("env 'SB_PPROF_FREQ' value '{t}' is not a valid i32; silent parse fallback is disabled; using default 100: {e}");
-                        100
-                    }
-                }
-            }
-            Err(_) => 100,
-        };
         #[cfg(feature = "pprof")]
         {
+            let sec = req_sec.min(max_sec).max(1);
+            let freq = match std::env::var("SB_PPROF_FREQ") {
+                Ok(raw) => {
+                    let t = raw.trim();
+                    match t.parse::<i32>() {
+                        Ok(v) => v,
+                        Err(e) => {
+                            tracing::warn!("env 'SB_PPROF_FREQ' value '{t}' is not a valid i32; silent parse fallback is disabled; using default 100: {e}");
+                            100
+                        }
+                    }
+                }
+                Err(_) => 100,
+            };
             return match collect_pprof(sec, freq).await {
                 Ok(buf) => Ok(http_util::ok_octet("image/svg+xml", buf)),
                 Err(e) => Ok(http_util::text(StatusCode::GATEWAY_TIMEOUT, &e)),

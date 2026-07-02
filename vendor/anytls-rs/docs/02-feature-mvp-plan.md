@@ -116,7 +116,7 @@ cargo run --release --bin anytls-server -- \
   --key /path/to/server.key
 ```
 
-- 快速联调：`./scripts/dev-up.sh`（默认复用 `examples/singbox/certs/anytls.local.{crt,key}`；可通过 `HTTP_ADDR=127.0.0.1:8080` 同时启动 HTTP 代理；支持 `IDLE_SESSION_CHECK_INTERVAL` / `IDLE_SESSION_TIMEOUT` / `MIN_IDLE_SESSION` 环境变量映射客户端会话池，对应 CLI `-I/-T/-M`、服务端 `-I/-T/-M`）
+- 快速联调：`./scripts/dev-up.sh`（默认复用 `examples/singbox/certs/anytls.local.{crt,key}.fixture`；可通过 `HTTP_ADDR=127.0.0.1:8080` 同时启动 HTTP 代理；支持 `IDLE_SESSION_CHECK_INTERVAL` / `IDLE_SESSION_TIMEOUT` / `MIN_IDLE_SESSION` 环境变量映射客户端会话池，对应 CLI `-I/-T/-M`、服务端 `-I/-T/-M`）
 - 自动化校验：`./scripts/dev-verify.sh`（启动服务端/客户端并通过 SOCKS5 执行 curl 验证）
 
 - 建议日志：`RUST_LOG=info,anytls=debug`
@@ -170,4 +170,3 @@ cargo run --release --bin anytls-server -- \
 - sing-box AnyTLS outbound 配置：<https://sing-box.sagernet.org/configuration/outbound/anytls/>
 - anytls-go 实现：<https://github.com/anytls/anytls-go>
 - anytls-rs `server/`, `session/`, `client/` 模块源码
-

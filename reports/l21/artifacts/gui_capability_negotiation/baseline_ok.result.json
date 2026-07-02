@@ -1,6 +1,6 @@
 {
   "core": "rust",
-  "url": "file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/scripts/l18/fixtures/capability_negotiation/case_ok.json",
+  "url": "file://$REPO/scripts/l18/fixtures/capability_negotiation/case_ok.json",
   "required": true,
   "checked": true,
   "pass": true,

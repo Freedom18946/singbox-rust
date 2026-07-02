@@ -56,15 +56,17 @@ grep "Peak" reports/stress-tests/*.log
 ## Cleanup
 
 ```bash
-# Remove logs older than 7 days
-find reports/stress-tests/ -name "*.log" -mtime +7 -delete
+# Preview logs older than 7 days before deleting anything
+find reports/stress-tests/ -name "*.log" -mtime +7 -print
 
-# Compress old logs
-find reports/stress-tests/ -name "*.log" -mtime +1 -exec gzip {} \;
+# Preview old logs that could be compressed
+find reports/stress-tests/ -name "*.log" -mtime +1 -print
 
-# Archive all logs
-tar -czf stress-tests-$(date +%Y%m%d).tar.gz reports/stress-tests/
+# Preview all log files before archiving
+find reports/stress-tests/ -type f -print
 ```
+
+Deletion, compression, and archive creation are manual follow-up actions after the preview output is reviewed.
 
 ## Implementation
 

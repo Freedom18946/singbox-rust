@@ -67,6 +67,7 @@ mod tests {
 
     /// Helper to generate self-signed test certificates
     async fn generate_test_certs() -> (String, String) {
+        use std::path::Path;
         use std::process::Command;
 
         let cert_path = "/tmp/hysteria_test_cert.pem";
@@ -91,15 +92,19 @@ mod tests {
             ])
             .output();
 
-        if output.is_ok() {
-            (cert_path.to_string(), key_path.to_string())
-        } else {
-            // Fallback: use existing test cert if available
-            (
-                "tests/configs/test_cert.pem".to_string(),
-                "tests/configs/test_cert.pem".to_string(),
-            )
+        if let Ok(output) = output {
+            if output.status.success()
+                && Path::new(cert_path).is_file()
+                && Path::new(key_path).is_file()
+            {
+                return (cert_path.to_string(), key_path.to_string());
+            }
         }
+
+        (
+            "tests/configs/test_cert.pem".to_string(),
+            "tests/configs/test_key.fixture".to_string(),
+        )
     }
 
     /// Helper to start an echo server

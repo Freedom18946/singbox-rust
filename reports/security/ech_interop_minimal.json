@@ -15,8 +15,8 @@
       "rc": 1,
       "error_count": 0,
       "warning_count": 1,
-      "stdout_path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/security/ech_interop_minimal_logs/tcp_ech_pass.stdout.json",
-      "stderr_path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/security/ech_interop_minimal_logs/tcp_ech_pass.stderr.log"
+      "stdout_path": "$REPO/reports/security/ech_interop_minimal_logs/tcp_ech_pass.stdout.json",
+      "stderr_path": "$REPO/reports/security/ech_interop_minimal_logs/tcp_ech_pass.stderr.log"
     },
     {
       "case_id": "quic_ech_reject_fail",
@@ -28,8 +28,8 @@
       "rc": 3,
       "error_count": 1,
       "warning_count": 1,
-      "stdout_path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/security/ech_interop_minimal_logs/quic_ech_reject_fail.stdout.json",
-      "stderr_path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/security/ech_interop_minimal_logs/quic_ech_reject_fail.stderr.log"
+      "stdout_path": "$REPO/reports/security/ech_interop_minimal_logs/quic_ech_reject_fail.stdout.json",
+      "stderr_path": "$REPO/reports/security/ech_interop_minimal_logs/quic_ech_reject_fail.stderr.log"
     },
     {
       "case_id": "quic_ech_experimental_pass",
@@ -41,8 +41,8 @@
       "rc": 1,
       "error_count": 0,
       "warning_count": 2,
-      "stdout_path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/security/ech_interop_minimal_logs/quic_ech_experimental_pass.stdout.json",
-      "stderr_path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/security/ech_interop_minimal_logs/quic_ech_experimental_pass.stderr.log"
+      "stdout_path": "$REPO/reports/security/ech_interop_minimal_logs/quic_ech_experimental_pass.stdout.json",
+      "stderr_path": "$REPO/reports/security/ech_interop_minimal_logs/quic_ech_experimental_pass.stderr.log"
     }
   ]
 }

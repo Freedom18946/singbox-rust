@@ -5,5 +5,5 @@
   "status": "PASS",
   "exit_code": 0,
   "command": "cargo test -p sb-api capabilities_contract_suite -- --nocapture",
-  "log_file": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l19/contracts/capabilities_contract.log"
+  "log_file": "$REPO/reports/l19/contracts/capabilities_contract.log"
 }

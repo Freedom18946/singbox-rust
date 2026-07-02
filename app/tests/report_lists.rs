@@ -14,4 +14,20 @@ fn report_includes_file_lists_and_bin_gates() {
     // bin gates should exist (arrays)
     assert!(metrics["bin_gates"]["minimal_bins"].is_array());
     assert!(metrics["bin_gates"]["router_gated_bins"].is_array());
+    let minimal_bins = metrics["bin_gates"]["minimal_bins"]
+        .as_array()
+        .expect("minimal_bins array");
+    let router_gated_bins = metrics["bin_gates"]["router_gated_bins"]
+        .as_array()
+        .expect("router_gated_bins array");
+    assert!(
+        minimal_bins.iter().any(|bin| bin.as_str() == Some("check")),
+        "minimal bin gates should include check"
+    );
+    assert!(
+        router_gated_bins
+            .iter()
+            .any(|bin| bin.as_str() == Some("run")),
+        "router-gated bin gates should include run"
+    );
 }

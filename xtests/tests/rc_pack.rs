@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::time::SystemTime;
 
 fn project_root() -> PathBuf {
     Path::new(env!("CARGO_MANIFEST_DIR"))
@@ -10,11 +11,9 @@ fn project_root() -> PathBuf {
 }
 
 fn find_run_rc_script(root: &Path) -> PathBuf {
-    let candidates = [root.join("scripts/run-rc"), root.join("app/scripts/run-rc")];
-    for path in candidates {
-        if path.exists() {
-            return path;
-        }
+    let path = root.join("app/scripts/run-rc");
+    if path.exists() {
+        return path;
     }
     panic!("run-rc script not found in expected locations");
 }
@@ -29,12 +28,26 @@ fn normalize_rc_dir(root: &Path, stdout: &str) -> Option<PathBuf> {
     }
 }
 
+fn has_fresh_artifact(rc_dir: &Path, prefix: &str, started: SystemTime) -> bool {
+    fs::read_dir(rc_dir)
+        .ok()
+        .into_iter()
+        .flat_map(|iter| iter.filter_map(Result::ok))
+        .filter(|entry| entry.file_name().to_string_lossy().starts_with(prefix))
+        .any(|entry| {
+            entry
+                .metadata()
+                .and_then(|metadata| metadata.modified())
+                .map(|modified| modified >= started)
+                .unwrap_or(false)
+        })
+}
+
 #[test]
 fn rc_pack_generates_snapshots() {
     let root = project_root();
     let run_rc = find_run_rc_script(&root);
-    let _ = fs::remove_dir_all(root.join("target/rc"));
-    let _ = fs::remove_dir_all(root.join("app/target/rc"));
+    let started = SystemTime::now();
 
     let output = Command::new("bash")
         .arg(run_rc)
@@ -56,26 +69,9 @@ fn rc_pack_generates_snapshots() {
         rc_dir.display()
     );
 
-    let has_version = fs::read_dir(&rc_dir)
-        .ok()
-        .into_iter()
-        .flat_map(|iter| iter.filter_map(Result::ok))
-        .any(|entry| entry.file_name().to_string_lossy().starts_with("version-"));
-    let has_ci_metadata = fs::read_dir(&rc_dir)
-        .ok()
-        .into_iter()
-        .flat_map(|iter| iter.filter_map(Result::ok))
-        .any(|entry| {
-            entry
-                .file_name()
-                .to_string_lossy()
-                .starts_with("ci-metadata-")
-        });
-    let has_manifest = fs::read_dir(&rc_dir)
-        .ok()
-        .into_iter()
-        .flat_map(|iter| iter.filter_map(Result::ok))
-        .any(|entry| entry.file_name().to_string_lossy().starts_with("manifest-"));
+    let has_version = has_fresh_artifact(&rc_dir, "version-", started);
+    let has_ci_metadata = has_fresh_artifact(&rc_dir, "ci-metadata-", started);
+    let has_manifest = has_fresh_artifact(&rc_dir, "manifest-", started);
 
     assert!(
         has_version && has_ci_metadata && has_manifest,

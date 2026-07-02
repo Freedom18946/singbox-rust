@@ -11,7 +11,7 @@ Run these commands when the network is available to populate local caches:
 
 These populate:
 
-- `~/.cargo/advisory-db` (RustSec advisory database)
+- `~/.cargo/advisory-db` or `~/.cargo/advisory-dbs/advisory-db-*` (RustSec advisory database, depending on `cargo-deny` version)
 - `~/.cargo/registry` (crate index + cache)
 
 ## Offline Check

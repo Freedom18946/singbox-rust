@@ -51,7 +51,7 @@
 ./scripts/dev-verify.sh
 ```
 
-脚本默认使用 `examples/singbox/certs/anytls.local.{crt,key}`。如果端口冲突，可通过 `SERVER_ADDR`、`CLIENT_ADDR`、`HTTP_ADDR` 环境变量覆盖。
+脚本默认使用 `examples/singbox/certs/anytls.local.{crt,key}.fixture`。如果端口冲突，可通过 `SERVER_ADDR`、`CLIENT_ADDR`、`HTTP_ADDR` 环境变量覆盖。
 
 ### 3. 手动运行（两个终端）
 
@@ -60,8 +60,8 @@
 cargo run --release --bin anytls-server -- \
   -l 0.0.0.0:8443 \
   -p your_password \
-  --cert ./examples/singbox/certs/anytls.local.crt \
-  --key  ./examples/singbox/certs/anytls.local.key \
+  --cert ./examples/singbox/certs/anytls.local.crt.fixture \
+  --key  ./examples/singbox/certs/anytls.local.key.fixture \
   --watch-cert \
   --expiry-warning-days 7 \
   -L info \

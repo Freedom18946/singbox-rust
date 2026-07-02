@@ -13,7 +13,7 @@ use std::time::Duration;
 fn main() -> Result<()> {
     let mut args = env::args().skip(1);
     match args.next().as_deref() {
-        Some("e2e") => cmd_e2e(),
+        Some("e2e") | Some("e2e-smoke") => cmd_e2e_smoke(),
         Some("fmt") => cmd_fmt(),
         Some("clippy") => cmd_clippy(),
         Some("check-all") => cmd_check_all(),
@@ -54,12 +54,12 @@ fn print_help() {
     feature-matrix   构建 CLI/DNS/adapter 特性矩阵
 
   测试:
-    e2e              端到端测试流程
+    e2e-smoke        端到端 smoke 流程（e2e 为兼容别名）
     test-all         运行所有测试套件
     bench            运行基准测试
 
   工具:
-    schema           生成/验证 JSON schema
+    schema           检查或导出 JSON schema
     metrics-check    验证 Prometheus metrics
 
   CI/CD:
@@ -73,11 +73,21 @@ fn print_help() {
     CARGO_TARGET_DIR    自定义构建目录
     RUST_LOG            控制输出详细度
     XTASK_SKIP_BUILD    跳过构建步骤（调试用）
+    APP_E2E_APIKEY      覆盖 e2e-smoke 使用的本地测试 API key
 
 示例:
     cargo xtask fmt
-    cargo xtask e2e
+    cargo xtask e2e-smoke
     cargo xtask ci
+
+schema:
+    cargo xtask schema              输出内置 schema 统计信息
+    cargo xtask schema --check      验证内置 schema 可解析
+    cargo xtask schema --export     将内置 schema 输出到 stdout
+    cargo xtask schema --export PATH
+
+metrics-check:
+    cargo xtask metrics-check --addr 127.0.0.1:19090 --strict-labels
 
 详细文档: xtask/README.md
 "#
@@ -170,7 +180,7 @@ fn cmd_feature_matrix() -> Result<()> {
         results.push((case.package, case.name, passed));
     }
 
-    // Write report
+    // Write feature matrix report for local inspection.
     let report_dir = Path::new("reports");
     std::fs::create_dir_all(report_dir)
         .with_context(|| format!("创建报告目录失败: {}", report_dir.display()))?;
@@ -445,19 +455,14 @@ fn run_feature_case(case: &MatrixCase) -> Result<()> {
 }
 
 #[derive(Clone, Copy)]
-#[allow(dead_code)]
 enum MatrixCommand {
     Check,
-    Build,
-    Test,
 }
 
 impl MatrixCommand {
     fn as_str(&self) -> &'static str {
         match self {
             MatrixCommand::Check => "check",
-            MatrixCommand::Build => "build",
-            MatrixCommand::Test => "test",
         }
     }
 }
@@ -490,20 +495,8 @@ impl MatrixCase {
         self
     }
 
-    #[allow(dead_code)]
-    fn with_all_features(mut self) -> Self {
-        self.all_features = true;
-        self
-    }
-
     fn with_features(mut self, features: &'static [&'static str]) -> Self {
         self.features = features;
-        self
-    }
-
-    #[allow(dead_code)]
-    fn with_extra_args(mut self, args: &'static [&'static str]) -> Self {
-        self.extra_args = args;
         self
     }
 }
@@ -528,8 +521,8 @@ fn cmd_test_all() -> Result<()> {
     Ok(())
 }
 
-fn cmd_e2e() -> Result<()> {
-    section("端到端测试流程");
+fn cmd_e2e_smoke() -> Result<()> {
+    section("端到端 smoke 流程");
 
     // 0) 构建应用（带关键特性）
     if env::var("XTASK_SKIP_BUILD").is_err() {
@@ -569,12 +562,12 @@ fn cmd_e2e() -> Result<()> {
 
     // 3) 启动服务器
     info("启动服务器...");
-    let apikey = "secret-e2e-key-123";
+    let apikey = env::var("APP_E2E_APIKEY").unwrap_or_else(|_| "xtask-e2e-fixture-key".to_string());
     let child = spawn_app(
         &app_bin,
         &["run", "--config", "examples/e2e/minimal.yaml"],
         &[
-            ("APP_E2E_APIKEY", apikey),
+            ("APP_E2E_APIKEY", apikey.as_str()),
             ("ADMIN_LISTEN", "127.0.0.1:18080"),
         ],
     )?;
@@ -600,14 +593,14 @@ fn cmd_e2e() -> Result<()> {
     assert_json_has(&route, &["dest", "matched_rule", "chain", "outbound"])?;
     success("✓ route 命令正常");
 
-    // 5) metrics 端点（跳过：需要端口检测）
-    info("跳过 metrics 端点测试（需要端口检测支持）");
+    // 5) metrics 端点（smoke 模式跳过：需要端口检测）
+    info("smoke 模式跳过 metrics 端点测试（需要端口检测支持）");
 
-    // 6) admin 认证测试（跳过：同上）
-    info("跳过 admin 认证测试（需要端口检测支持）");
+    // 6) admin 认证测试（smoke 模式跳过：同上）
+    info("smoke 模式跳过 admin 认证测试（需要端口检测支持）");
 
     drop(guard);
-    success("E2E 测试完成");
+    success("E2E smoke 测试完成");
     Ok(())
 }
 
@@ -635,20 +628,44 @@ fn cmd_bench() -> Result<()> {
 // ============================================================================
 
 fn cmd_schema(args: Vec<String>) -> Result<()> {
-    section("Schema 工具");
-
-    if args.contains(&"--export".to_string()) {
-        warn("--export 功能尚未实现");
-        info("当前仅支持统计信息");
+    let export_stdout = matches!(args.as_slice(), [flag] if flag == "--export");
+    if !export_stdout {
+        section("Schema 工具");
     }
 
     // 读取内置 schema（从 sb-config crate）
     let schema = include_str!("../../crates/sb-config/src/validator/v2_schema.json");
+    let parsed: serde_json::Value =
+        serde_json::from_str(schema).context("内置 schema JSON 解析失败")?;
     let bytes = schema.len();
     let lines = schema.lines().count();
 
-    println!(r#"{{"schema_bytes":{},"schema_lines":{}}}"#, bytes, lines);
-    success("Schema 统计完成");
+    match args.as_slice() {
+        [] => {
+            println!(r#"{{"schema_bytes":{},"schema_lines":{}}}"#, bytes, lines);
+            success("Schema 统计完成");
+        }
+        [flag] if flag == "--check" => {
+            success("Schema JSON 解析通过");
+        }
+        [flag] if flag == "--export" => {
+            println!("{}", serde_json::to_string_pretty(&parsed)?);
+        }
+        [flag, path] if flag == "--export" => {
+            let export_path = Path::new(path);
+            if let Some(parent) = export_path.parent().filter(|p| !p.as_os_str().is_empty()) {
+                std::fs::create_dir_all(parent)
+                    .with_context(|| format!("创建目录失败: {}", parent.display()))?;
+            }
+            let body = format!("{}\n", serde_json::to_string_pretty(&parsed)?);
+            std::fs::write(export_path, body)
+                .with_context(|| format!("写入 schema 失败: {}", export_path.display()))?;
+            success(&format!("Schema 已导出: {}", export_path.display()));
+        }
+        _ => {
+            bail!("未知 schema 参数。用法: cargo xtask schema [--check|--export [PATH]]");
+        }
+    }
     Ok(())
 }
 
@@ -666,6 +683,7 @@ fn cmd_metrics_check(args: Vec<String>) -> Result<()> {
 
     // 可选：要求 inbound_error_total 必须存在（否则报错）
     let require_inbound_errors = args.iter().any(|a| a == "--require-inbound-errors");
+    let strict_labels = args.iter().any(|a| a == "--strict-labels");
 
     info(&format!("连接到: {}", addr));
 
@@ -737,7 +755,13 @@ fn cmd_metrics_check(args: Vec<String>) -> Result<()> {
     }
 
     if !disallowed.is_empty() {
-        warn(&format!("发现未授权的 labels: {:?}", disallowed));
+        if strict_labels {
+            bail!("发现未授权的 labels: {:?}", disallowed);
+        }
+        warn(&format!(
+            "发现未授权的 labels: {:?}（使用 --strict-labels 可将其作为错误）",
+            disallowed
+        ));
     }
 
     success(&format!("Metrics 验证完成 ({} 行)", lines.len()));
@@ -758,7 +782,7 @@ fn cmd_ci() -> Result<()> {
         ("Clippy", cmd_clippy),
         ("特性检查", cmd_check_all),
         ("测试套件", cmd_test_all),
-        ("E2E 测试", cmd_e2e),
+        ("E2E smoke", cmd_e2e_smoke),
     ];
 
     for (name, func) in steps {
@@ -809,13 +833,15 @@ fn cargo_build_app(extra: &[&str]) -> Result<()> {
         eprint!("{}", String::from_utf8_lossy(&output.stderr));
     }
 
-    // 允许警告但不允许错误
     if !output.status.success() {
-        let stderr = String::from_utf8_lossy(&output.stderr);
-        if stderr.contains("error:") && stderr.contains("aborting due to") {
-            bail!("构建失败：编译错误");
-        }
-        warn("构建完成但有警告");
+        bail!(
+            "cargo {:?} 构建失败，退出码 {}",
+            args,
+            output
+                .status
+                .code()
+                .map_or_else(|| "unknown".to_string(), |code| code.to_string())
+        );
     }
 
     Ok(())

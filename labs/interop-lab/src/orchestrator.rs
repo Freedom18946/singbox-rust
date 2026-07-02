@@ -6,7 +6,7 @@ use crate::diff_report::{build_diff_report, to_markdown as diff_to_markdown};
 use crate::go_collector::{collect_go_snapshot, save_go_snapshot_to_dir};
 use crate::gui_replay::run_gui_sequence;
 use crate::kernel::{launch_kernel, wait_until_ready, KernelSession};
-use crate::leak_detector::detect_memory_leak;
+use crate::leak_detector::{detect_fd_leak, detect_memory_leak, sample_fd_count};
 use crate::snapshot::{HttpResult, KernelKind, NormalizedError, NormalizedSnapshot, TrafficResult};
 use crate::upstream::{apply_faults, run_traffic_plan, start_upstreams};
 use crate::util::{
@@ -265,12 +265,14 @@ pub async fn run_case(
 
         match launch_kernel(mode.clone(), &launch_spec, &kernel_log_dir).await {
             Ok(mut session) => {
+                sample_kernel_fd_count(&session, &mut snapshot).await;
                 if let Err(err) = run_gui_sequence(case, &session.api, &mut snapshot).await {
                     snapshot.errors.push(NormalizedError {
                         stage: "gui_sequence".to_string(),
                         message: err.to_string(),
                     });
                 }
+                sample_kernel_fd_count(&session, &mut snapshot).await;
 
                 match run_traffic_plan_with_kernel_control(
                     case,
@@ -293,6 +295,7 @@ pub async fn run_case(
                         });
                     }
                 }
+                sample_kernel_fd_count(&session, &mut snapshot).await;
 
                 if let Some(post_steps) = &case.post_traffic_gui_sequence {
                     let post_case = CaseSpec {
@@ -307,6 +310,7 @@ pub async fn run_case(
                             message: err.to_string(),
                         });
                     }
+                    sample_kernel_fd_count(&session, &mut snapshot).await;
                 }
 
                 evaluate_assertions(case, &mut snapshot);
@@ -418,6 +422,15 @@ pub async fn run_case(
         failures,
         diff_report_path,
     })
+}
+
+async fn sample_kernel_fd_count(session: &KernelSession, snapshot: &mut NormalizedSnapshot) {
+    let Some(pid) = session.child.as_ref().and_then(tokio::process::Child::id) else {
+        return;
+    };
+    if let Some(count) = sample_fd_count(pid).await {
+        snapshot.fd_samples.push(count);
+    }
 }
 
 async fn run_traffic_plan_with_kernel_control(
@@ -1519,10 +1532,8 @@ async fn execute_tcp_drain_during_shutdown_action(
     );
 
     match kernel_result {
-        Ok(kernel_detail) => TrafficResult {
-            name: name.to_string(),
-            success: true, // initial echo succeeded = connection was active
-            detail: json!({
+        Ok(kernel_detail) => {
+            let mut detail = json!({
                 "action": "tcp_drain_during_shutdown",
                 "addr": addr,
                 "proxy": proxy,
@@ -1531,8 +1542,16 @@ async fn execute_tcp_drain_during_shutdown_action(
                 "shutdown_elapsed_ms": shutdown_elapsed_ms,
                 "hold_ms": hold_ms,
                 "kernel_control": kernel_detail,
-            }),
-        },
+            });
+            if !drain_echo_ok {
+                detail["error"] = json!("drain echo failed after kernel shutdown");
+            }
+            TrafficResult {
+                name: name.to_string(),
+                success: drain_echo_ok,
+                detail,
+            }
+        }
         Err(err) => TrafficResult {
             name: name.to_string(),
             success: false,
@@ -2145,6 +2164,7 @@ fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<V
                 _ => None,
             }),
         "memory" => resolve_memory_assertion(snapshot, &parts[1..]),
+        "fd" => resolve_fd_assertion(snapshot, &parts[1..]),
         "http" if parts.len() == 3 => snapshot
             .http_results
             .iter()
@@ -2177,6 +2197,15 @@ fn resolve_assertion_value(snapshot: &NormalizedSnapshot, key: &str) -> Option<V
     }
 }
 
+fn leak_signal_json(signal: crate::leak_detector::LeakSignal) -> Value {
+    json!({
+        "kind": signal.kind,
+        "message": signal.message,
+        "slope": signal.slope,
+        "threshold": signal.threshold
+    })
+}
+
 fn resolve_memory_assertion(snapshot: &NormalizedSnapshot, path: &[&str]) -> Option<Value> {
     if path.is_empty() {
         return None;
@@ -2200,22 +2229,10 @@ fn resolve_memory_assertion(snapshot: &NormalizedSnapshot, path: &[&str]) -> Opt
             detect_memory_leak(&snapshot.memory_series, None).is_some()
         )),
         "leak" if path.len() == 1 => {
-            detect_memory_leak(&snapshot.memory_series, None).map(|signal| {
-                json!({
-                    "kind": signal.kind,
-                    "message": signal.message,
-                    "slope": signal.slope,
-                    "threshold": signal.threshold
-                })
-            })
+            detect_memory_leak(&snapshot.memory_series, None).map(leak_signal_json)
         }
         "leak" => detect_memory_leak(&snapshot.memory_series, None).and_then(|signal| {
-            let root = json!({
-                "kind": signal.kind,
-                "message": signal.message,
-                "slope": signal.slope,
-                "threshold": signal.threshold
-            });
+            let root = leak_signal_json(signal);
             resolve_json_path(&root, &path[1..])
         }),
         idx_str => {
@@ -2232,6 +2249,33 @@ fn resolve_memory_assertion(snapshot: &NormalizedSnapshot, path: &[&str]) -> Opt
                 "oslimit": point.oslimit
             });
             resolve_json_path(&root, &path[1..])
+        }
+    }
+}
+
+fn resolve_fd_assertion(snapshot: &NormalizedSnapshot, path: &[&str]) -> Option<Value> {
+    if path.is_empty() {
+        return None;
+    }
+
+    match path[0] {
+        "count" => Some(json!(snapshot.fd_samples.len())),
+        "peak" => snapshot.fd_samples.iter().max().map(|v| json!(v)),
+        "leak_detected" => Some(json!(detect_fd_leak(&snapshot.fd_samples, None).is_some())),
+        "leak" if path.len() == 1 => {
+            detect_fd_leak(&snapshot.fd_samples, None).map(leak_signal_json)
+        }
+        "leak" => detect_fd_leak(&snapshot.fd_samples, None).and_then(|signal| {
+            let root = leak_signal_json(signal);
+            resolve_json_path(&root, &path[1..])
+        }),
+        idx_str => {
+            let idx = idx_str.parse::<usize>().ok()?;
+            if path.len() == 1 {
+                snapshot.fd_samples.get(idx).map(|v| json!(v))
+            } else {
+                None
+            }
         }
     }
 }
@@ -2384,6 +2428,7 @@ mod tests {
             "downloadTotal": 42,
             "uploadTotal": 21
         }));
+        snapshot.fd_samples = vec![40, 42, 44, 46];
 
         assert_eq!(
             resolve_assertion_value(&snapshot, "ws.connections_stream.frame_count"),
@@ -2408,6 +2453,22 @@ mod tests {
         assert_eq!(
             resolve_assertion_value(&snapshot, "connections.downloadTotal"),
             Some(json!(42))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "fd.count"),
+            Some(json!(4))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "fd.peak"),
+            Some(json!(46))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "fd.leak_detected"),
+            Some(json!(true))
+        );
+        assert_eq!(
+            resolve_assertion_value(&snapshot, "fd.leak.kind"),
+            Some(json!("file_descriptor"))
         );
     }
 

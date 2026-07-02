@@ -1,4 +1,5 @@
-#!/bin/bash
+#!/usr/bin/env bash
+set -euo pipefail
 
 # Verification script for Schema v2 error format implementation
 # This script verifies that all task requirements are met
@@ -8,19 +9,21 @@ echo
 
 # Check 1: Verify --schema-v2-validate flag exists
 echo "1. Checking --schema-v2-validate flag implementation..."
-if grep -q "schema_v2_validate.*bool" app/src/cli/check.rs; then
+if grep -q 'arg(long = "schema-v2-validate")' app/src/cli/check/args.rs \
+    && grep -q "pub schema_v2: bool" app/src/cli/check/args.rs; then
     echo "   ✅ --schema-v2-validate flag is implemented"
 else
     echo "   ❌ --schema-v2-validate flag not found"
     exit 1
 fi
 
-# Check 2: Verify validate_schema_v2 function exists
-echo "2. Checking validate_schema_v2 function..."
-if grep -q "fn validate_schema_v2" app/src/cli/check.rs; then
-    echo "   ✅ validate_schema_v2 function is implemented"
+# Check 2: Verify schema v2 validation flow exists
+echo "2. Checking schema v2 validation flow..."
+if grep -q "v2::validate_v2" app/src/cli/check/run.rs \
+    && grep -q "fn convert_v2_issue" app/src/cli/check/run.rs; then
+    echo "   ✅ schema v2 validation flow is implemented"
 else
-    echo "   ❌ validate_schema_v2 function not found"
+    echo "   ❌ schema v2 validation flow not found"
     exit 1
 fi
 
@@ -78,25 +81,26 @@ fi
 
 # Check 7: Verify feature flag integration
 echo "7. Checking feature flag integration..."
-if grep -q 'feature = "schema-v2"' app/src/cli/check.rs; then
+if grep -q 'feature = "schema-v2"' app/src/cli/check/run.rs; then
     echo "   ✅ schema-v2 feature flag integration found"
 else
     echo "   ❌ schema-v2 feature flag integration not found"
     exit 1
 fi
 
-# Check 8: Verify JSON pointer extraction
-echo "8. Checking RFC6901 JSON pointer implementation..."
-if grep -q "extract_json_pointer_from_error" app/src/cli/check.rs; then
-    echo "   ✅ JSON pointer extraction is implemented"
+# Check 8: Verify JSON pointer propagation
+echo "8. Checking RFC6901 JSON pointer propagation..."
+if grep -q 'v2_issue.get("ptr")' app/src/cli/check/run.rs; then
+    echo "   ✅ JSON pointer propagation is implemented"
 else
-    echo "   ❌ JSON pointer extraction not found"
+    echo "   ❌ JSON pointer propagation not found"
     exit 1
 fi
 
 # Check 9: Verify error classification
 echo "9. Checking error classification..."
-if grep -q "classify_schema_error" app/src/cli/check.rs; then
+if grep -q '"UnknownField" => IssueCode::UnknownField' app/src/cli/check/run.rs \
+    && grep -q '"MissingRequired" => IssueCode::MissingRequired' app/src/cli/check/run.rs; then
     echo "   ✅ Error classification is implemented"
 else
     echo "   ❌ Error classification not found"
@@ -105,7 +109,7 @@ fi
 
 # Check 10: Verify test configuration files
 echo "10. Checking test configuration files..."
-if [ -f "test_schema_v2_valid.yaml" ] && [ -f "test_schema_v2_invalid.yaml" ]; then
+if [ -f "tests/configs/test_schema_v2_valid.yaml" ] && [ -f "tests/configs/test_schema_v2_invalid.yaml" ]; then
     echo "   ✅ Test configuration files are created"
 else
     echo "   ❌ Test configuration files not found"

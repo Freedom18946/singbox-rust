@@ -31,7 +31,7 @@ fn check_json_shape() {
         ])
         .output()
         .expect("run");
-    // Fixture intentionally triggers warnings, so check returns warning exit code.
+    // Fixture intentionally triggers diagnostics, so check returns a non-zero diagnostic exit code.
     assert!(
         matches!(out.status.code(), Some(1) | Some(2)),
         "unexpected exit status: {:?}, stderr={}",

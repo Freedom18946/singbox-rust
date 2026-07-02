@@ -1,84 +1,28 @@
 use assert_cmd::Command;
 use serde_json::Value;
-use std::env;
 use std::path::PathBuf;
-use std::process::Command as StdCommand;
-use std::sync::Once;
 
-#[allow(unused_imports)]
-use singbox_bin as _;
-
-fn ensure_binary() {
-    static BUILD: Once = Once::new();
-    BUILD.call_once(|| {
-        let mut cmd = StdCommand::new("cargo");
-        cmd.args(["build", "-p", "app"]);
-
-        let mut features = Vec::new();
-        if cfg!(feature = "explain") {
-            features.push("explain");
-        }
-        if cfg!(feature = "metrics") {
-            features.push("metrics");
-        }
-        if cfg!(feature = "sbcore_analyze_json") {
-            features.push("sbcore_analyze_json");
-        }
-
-        if !features.is_empty() {
-            cmd.arg("--features");
-            cmd.arg(features.join(","));
-        }
-
-        let status = cmd.status().expect("build app");
-        assert!(status.success(), "failed to build app binary for xtests");
-    });
-}
-
-fn cargo_bin_path(name: &str) -> Result<PathBuf, String> {
-    let key = format!("CARGO_BIN_EXE_{name}");
-    if let Ok(path) = env::var(&key) {
-        return Ok(PathBuf::from(path));
-    }
-
-    let exe = if cfg!(windows) {
-        format!("{name}.exe")
-    } else {
-        name.to_string()
-    };
-
-    let profile = env::var("PROFILE").unwrap_or_else(|_| "debug".to_string());
-    // `CARGO_BIN_EXE_*` is only populated for binaries in the same package as the test.
-    // Here we build and execute the workspace `app` crate, so compute path from repo root.
-    let workspace = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .ok_or_else(|| "failed to find workspace root".to_string())?
-        .to_path_buf();
-    let path = workspace.join("target").join(profile).join(exe);
-    Ok(path)
-}
-
-fn run_check(cfg: &str, level: &str) -> Value {
-    ensure_binary();
-    let bin = cargo_bin_path("app").expect("locate app");
+fn run_check(cfg: &str) -> Value {
+    let bin = xtests::ensure_workspace_bin("app", "app", &[]);
     assert!(bin.exists(), "app binary not found at {:?}", bin);
     let tests_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"));
     let mut cmd = Command::new(bin);
     let out = cmd
-        .env("SB_CHECK_ANALYZE", "1")
-        .env("SB_CHECK_ANALYZE_LEVEL", level)
-        .env("SB_CHECK_RULEID", "1")
         .current_dir(tests_root)
-        .args(["check", "-c", cfg, "--format", "json"])
+        .args(["check", "-c", cfg, "--format", "json", "--with-rule-id"])
         .output()
         .expect("run app check");
-    serde_json::from_slice(&out.stdout).unwrap()
+    serde_json::from_slice(&out.stdout).expect("check json")
 }
 
 #[test]
-fn conflict_group_has_members_and_ruleid() {
-    let v = run_check("tests/assets/check/bad_conflict.yaml", "error");
-    let issues = v.get("issues").unwrap().as_array().unwrap();
+fn duplicate_match_rules_are_allowed() {
+    let v = run_check("tests/assets/check/duplicate_match_allowed.yaml");
+    let issues = v
+        .get("issues")
+        .expect("issues")
+        .as_array()
+        .expect("issues array");
     // Current checker behavior: duplicated match rules are allowed and
     // evaluated by first-match precedence, so no schema issue is emitted.
     assert!(
@@ -90,8 +34,12 @@ fn conflict_group_has_members_and_ruleid() {
 
 #[test]
 fn unreachable_group_exists() {
-    let v = run_check("tests/assets/check/bad_unreachable.yaml", "error");
-    let issues = v.get("issues").unwrap().as_array().unwrap();
+    let v = run_check("tests/assets/check/bad_unreachable.yaml");
+    let issues = v
+        .get("issues")
+        .expect("issues")
+        .as_array()
+        .expect("issues array");
     assert!(
         !issues.is_empty(),
         "expected issues for unreachable fixture"

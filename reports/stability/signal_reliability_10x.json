@@ -1,6 +1,6 @@
 {
-  "binary": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/run",
-  "config": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T/singbox_signal_long_test_75195_1772874046279.json",
+  "binary": "$REPO/target/release/run",
+  "config": "<tmp>/singbox_signal_long_test_75195_1772874046279.json",
   "iterations": 10,
   "result": "pass",
   "rounds": [

@@ -36,7 +36,7 @@ Not attempted (ENV_LIMITED — no external network dependency required for G1).
 ## Config
 
 `labs/interop-lab/configs/l18_gui_rust.json`
-- Clash API: 127.0.0.1:19090 (secret: test-secret)
+- Clash API: 127.0.0.1:19090 (secret: <test fixture secret>)
 - SOCKS inbound: 127.0.0.1:11810
 - Route final: my-group (selector → direct, alt-direct)
 

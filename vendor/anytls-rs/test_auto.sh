@@ -3,6 +3,8 @@
 
 set -e
 
+ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+
 # 颜色输出
 RED='\033[0;31m'
 GREEN='\033[0;32m'
@@ -11,32 +13,78 @@ NC='\033[0m' # No Color
 
 # 配置
 TEST_DIR="/tmp/anytls_test_$$"
+BINARY_DIR="${ROOT_DIR}/target/release"
+SERVER_BIN="${BINARY_DIR}/anytls-server"
+CLIENT_BIN="${BINARY_DIR}/anytls-client"
 SERVER_PORT=8443
 CLIENT_PORT=1080
 SERVER_ADDR="127.0.0.1:${SERVER_PORT}"
 PASSWORD="test_password_123"
+SERVER_PID=""
+CLIENT_PID=""
+
+cleanup_and_exit() {
+    local exit_code=${1:-0}
+
+    # 停止进程
+    if [ -n "${CLIENT_PID}" ]; then
+        kill ${CLIENT_PID} 2>/dev/null || true
+    fi
+    if [ -n "${SERVER_PID}" ]; then
+        kill ${SERVER_PID} 2>/dev/null || true
+    fi
+    sleep 1
+
+    for pid in ${CLIENT_PID} ${SERVER_PID}; do
+        if [ -n "${pid}" ] && ps -p ${pid} > /dev/null 2>&1; then
+            kill -9 ${pid} 2>/dev/null || true
+        fi
+    done
+
+    if [ ${exit_code} -ne 0 ]; then
+        echo ""
+        echo "测试失败，保留日志目录: ${TEST_DIR}"
+        echo "请检查日志文件排查问题"
+    else
+        echo ""
+        read -p "删除测试目录? (y/N): " -n 1 -r
+        echo
+        if [[ $REPLY =~ ^[Yy]$ ]]; then
+            cd /
+            rm -rf "${TEST_DIR}"
+            echo "测试目录已删除"
+        else
+            echo "测试目录保留: ${TEST_DIR}"
+        fi
+    fi
+
+    exit ${exit_code}
+}
+
+# 设置退出陷阱
+trap 'cleanup_and_exit 1' INT TERM
 
 echo "=========================================="
 echo "AnyTLS-RS 自动化测试脚本"
 echo "=========================================="
 echo ""
 
+# 检查二进制文件
+if [ ! -f "${SERVER_BIN}" ] || [ ! -f "${CLIENT_BIN}" ]; then
+    echo -e "${RED}[错误] 二进制文件不存在，请先编译:${NC}"
+    echo "  cd ${ROOT_DIR}"
+    echo "  cargo build --release --bins"
+    exit 1
+fi
+
 # 创建测试目录
 mkdir -p "${TEST_DIR}"
 cd "${TEST_DIR}"
 echo "[1/8] 创建测试目录: ${TEST_DIR}"
 
-# 检查二进制文件
-if [ ! -f "../target/release/anytls-server" ] || [ ! -f "../target/release/anytls-client" ]; then
-    echo -e "${RED}[错误] 二进制文件不存在，请先编译:${NC}"
-    echo "  cd $(dirname $0)"
-    echo "  cargo build --release --bins"
-    exit 1
-fi
-
 # 复制二进制文件
-cp ../target/release/anytls-server ./
-cp ../target/release/anytls-client ./
+cp "${SERVER_BIN}" ./
+cp "${CLIENT_BIN}" ./
 echo "[2/8] 二进制文件已复制"
 
 # 启动服务器
@@ -207,44 +255,6 @@ echo "查看完整日志:"
 echo "  tail -f ${TEST_DIR}/server.log"
 echo "  tail -f ${TEST_DIR}/client.log"
 echo "=========================================="
-
-# 清理函数
-cleanup_and_exit() {
-    local exit_code=${1:-0}
-    
-    # 停止进程
-    kill ${CLIENT_PID} 2>/dev/null || true
-    kill ${SERVER_PID} 2>/dev/null || true
-    sleep 1
-    
-    for pid in ${CLIENT_PID} ${SERVER_PID}; do
-        if ps -p ${pid} > /dev/null 2>&1; then
-            kill -9 ${pid} 2>/dev/null || true
-        fi
-    done
-    
-    if [ ${exit_code} -ne 0 ]; then
-        echo ""
-        echo "测试失败，保留日志目录: ${TEST_DIR}"
-        echo "请检查日志文件排查问题"
-    else
-        echo ""
-        read -p "删除测试目录? (y/N): " -n 1 -r
-        echo
-        if [[ $REPLY =~ ^[Yy]$ ]]; then
-            cd ..
-            rm -rf "${TEST_DIR}"
-            echo "测试目录已删除"
-        else
-            echo "测试目录保留: ${TEST_DIR}"
-        fi
-    fi
-    
-    exit ${exit_code}
-}
-
-# 设置退出陷阱
-trap 'cleanup_and_exit 1' INT TERM
 
 # 测试完成
 if [ -f "${TEST_OUTPUT}" ] && grep -q "origin" "${TEST_OUTPUT}"; then

@@ -1,8 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-# Wrapper to call workspace-level rc-verify so tests under app/ work.
+# Wrapper to call the workspace-level rc-verify helper so tests under app/ work.
 SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
-ROOT="$(cd "${SCRIPT_DIR}/.." && pwd)"
-exec bash "${ROOT}/scripts/rc-verify" "$@"
-
+WORKSPACE_ROOT="$(cd "${SCRIPT_DIR}/../.." && pwd)"
+exec bash "${WORKSPACE_ROOT}/scripts/tools/release/rc-verify.sh" "$@"

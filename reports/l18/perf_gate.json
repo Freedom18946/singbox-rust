@@ -134,15 +134,15 @@
     }
   },
   "inputs": {
-    "lock_file": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/perf_gate.lock.json",
-    "perf_work_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf",
+    "lock_file": "$REPO/reports/l18/perf/perf_gate.lock.json",
+    "perf_work_dir": "$REPO/reports/l18/perf",
     "perf_rounds": 3,
     "round_trim_each_side": 1,
-    "go_bin": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.14/sing-box",
-    "go_config": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/l18_perf_go.json",
+    "go_bin": "$REPO/go_fork_source/sing-box-1.12.14/sing-box",
+    "go_config": "$REPO/labs/interop-lab/configs/l18_perf_go.json",
     "go_proxy_port": 11811,
-    "rust_bin": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/run",
-    "rust_config": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/l18_perf_rust.json",
+    "rust_bin": "$REPO/target/release/run",
+    "rust_config": "$REPO/labs/interop-lab/configs/l18_perf_rust.json",
     "rust_proxy_port": 11810,
     "rust_build_features": "acceptance",
     "rust_build_enabled": 1,
@@ -184,12 +184,12 @@
     },
     "request_connect_timeout_sec": 3,
     "request_max_time_sec": 8,
-    "memory_report": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/memory_comparison.json",
+    "memory_report": "$REPO/reports/l18/perf/memory_comparison.json",
     "local_target": "http://127.0.0.1:18080/",
     "round_dirs": [
-      "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/round_01",
-      "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/round_02",
-      "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/perf/round_03"
+      "$REPO/reports/l18/perf/round_01",
+      "$REPO/reports/l18/perf/round_02",
+      "$REPO/reports/l18/perf/round_03"
     ]
   }
 }

@@ -1,5 +1,3 @@
-#![allow(dead_code)] // File system scanning utilities - work in progress
-
 #[cfg(feature = "dev-cli")]
 use ignore::WalkBuilder;
 #[cfg(feature = "dev-cli")]
@@ -119,7 +117,6 @@ impl Scanner {
             vec![]
         };
 
-        let _ = Regex::new(r"\brespond_json_error\s*\(");
         // 仅统计可能设置响应头为 text/plain 的代码片段：
         // - header("content-type", "text/plain")
         // - .content_type("text/plain")
@@ -217,7 +214,7 @@ impl Scanner {
         }
 
         // 解析 app/Cargo.toml 的 [[bin]] 门控（用 TOML 解析更稳）
-        let gates = parse_bin_gates_toml(self.root.join("app").join("Cargo.toml"));
+        let gates = parse_bin_gates_toml(resolve_app_manifest_path(&self.root));
 
         Ok(FsReport {
             root: self.root.display().to_string(),
@@ -254,6 +251,15 @@ fn is_source_file(p: &Path) -> bool {
         Some("md") => false,
         _ => false,
     }
+}
+
+#[cfg(feature = "dev-cli")]
+fn resolve_app_manifest_path(root: &Path) -> PathBuf {
+    let workspace_app_manifest = root.join("app").join("Cargo.toml");
+    if workspace_app_manifest.is_file() {
+        return workspace_app_manifest;
+    }
+    root.join("Cargo.toml")
 }
 
 #[cfg(feature = "dev-cli")]
@@ -295,6 +301,57 @@ fn parse_bin_gates_toml(toml_path: PathBuf) -> BinGates {
     g.minimal_bins.sort();
     g.router_gated_bins.sort();
     g
+}
+
+#[cfg(all(test, feature = "dev-cli"))]
+mod tests {
+    use super::{parse_bin_gates_toml, resolve_app_manifest_path};
+    use std::fs;
+
+    #[test]
+    fn resolves_manifest_from_workspace_or_app_root() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let workspace_app = temp.path().join("app");
+        fs::create_dir(&workspace_app).expect("create app dir");
+        fs::write(
+            workspace_app.join("Cargo.toml"),
+            "[package]\nname = \"app\"\n",
+        )
+        .expect("write app manifest");
+
+        assert_eq!(
+            resolve_app_manifest_path(temp.path()),
+            workspace_app.join("Cargo.toml")
+        );
+        assert_eq!(
+            resolve_app_manifest_path(&workspace_app),
+            workspace_app.join("Cargo.toml")
+        );
+    }
+
+    #[test]
+    fn parses_non_empty_bin_gate_lists() {
+        let temp = tempfile::tempdir().expect("tempdir");
+        let manifest = temp.path().join("Cargo.toml");
+        fs::write(
+            &manifest,
+            r#"
+[[bin]]
+name = "check"
+path = "src/bin/check.rs"
+
+[[bin]]
+name = "run"
+path = "src/bin/run.rs"
+required-features = ["router"]
+"#,
+        )
+        .expect("write manifest");
+
+        let gates = parse_bin_gates_toml(manifest);
+        assert_eq!(gates.minimal_bins, vec!["check"]);
+        assert_eq!(gates.router_gated_bins, vec!["run"]);
+    }
 }
 
 fn parse_fs_scan_env_usize(key: &str, default: usize) -> usize {

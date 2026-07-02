@@ -94,13 +94,63 @@ def main():
             rec.stop()
         for p in reversed(procs):
             if p.poll() is None:
+                pgid = None
                 try:
-                    os.killpg(os.getpgid(p.pid), signal.SIGTERM); p.wait(timeout=5)
-                except Exception:
+                    pgid = os.getpgid(p.pid)
+                except ProcessLookupError:
+                    continue
+                except OSError as exc:
+                    print(f"warn: failed to read process pgid pid={p.pid}: {exc}", file=sys.stderr)
+                if pgid is not None:
                     try:
-                        os.killpg(os.getpgid(p.pid), signal.SIGKILL)
-                    except Exception:
-                        pass
+                        os.killpg(pgid, signal.SIGTERM)
+                    except ProcessLookupError:
+                        continue
+                    except OSError as exc:
+                        print(f"warn: failed to SIGTERM process pid={p.pid}: {exc}", file=sys.stderr)
+                try:
+                    p.wait(timeout=5)
+                except subprocess.TimeoutExpired:
+                    if pgid is not None:
+                        try:
+                            os.killpg(pgid, signal.SIGKILL)
+                        except ProcessLookupError:
+                            continue
+                        except OSError as exc:
+                            print(f"warn: failed to SIGKILL process pid={p.pid}: {exc}", file=sys.stderr)
+                    p.wait(timeout=5)
+
+    def terminate_client_process(kernel, cp):
+        pgid = None
+        try:
+            pgid = os.getpgid(cp.pid)
+        except ProcessLookupError:
+            pass
+        except OSError as exc:
+            print(f"warn: failed to read {kernel}_client pgid pid={cp.pid}: {exc}", file=sys.stderr)
+
+        if pgid is not None:
+            try:
+                os.killpg(pgid, signal.SIGTERM)
+            except ProcessLookupError:
+                pass
+            except OSError as exc:
+                print(f"warn: failed to SIGTERM {kernel}_client pid={cp.pid}: {exc}", file=sys.stderr)
+
+        try:
+            cp.wait(timeout=5)
+            return
+        except subprocess.TimeoutExpired:
+            pass
+
+        if pgid is not None:
+            try:
+                os.killpg(pgid, signal.SIGKILL)
+            except ProcessLookupError:
+                pass
+            except OSError as exc:
+                print(f"warn: failed to SIGKILL {kernel}_client pid={cp.pid}: {exc}", file=sys.stderr)
+        cp.wait(timeout=5)
 
     try:
         r = subprocess.run(["python3", str(RENDER), "--manifest", str(FIXTURE / "manifest.json"),
@@ -133,11 +183,9 @@ def main():
             cap.wait_port(socks)
             token_ok[kernel] = sum(1 for _ in range(args.runs) if curl(socks, url, token)) == args.runs
             import time; time.sleep(0.4)
-            try:
-                os.killpg(os.getpgid(cp.pid), signal.SIGTERM); cp.wait(timeout=5)
-            except Exception:
-                pass
-            procs.remove(cp)
+            terminate_client_process(kernel, cp)
+            if cp in procs:
+                procs.remove(cp)
 
         rec.stop()
         go = [P.parse_record((rawdir / "go" / f).read_bytes()) for f in sorted(os.listdir(rawdir / "go"))]

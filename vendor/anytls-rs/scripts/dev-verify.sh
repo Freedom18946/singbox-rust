@@ -7,8 +7,8 @@ ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 PASSWORD=${PASSWORD:-testpass}
 SERVER_ADDR=${SERVER_ADDR:-127.0.0.1:8443}
 CLIENT_ADDR=${CLIENT_ADDR:-127.0.0.1:1080}
-CERT_PATH=${CERT_PATH:-${ROOT_DIR}/examples/singbox/certs/anytls.local.crt}
-KEY_PATH=${KEY_PATH:-${ROOT_DIR}/examples/singbox/certs/anytls.local.key}
+CERT_PATH=${CERT_PATH:-${ROOT_DIR}/examples/singbox/certs/anytls.local.crt.fixture}
+KEY_PATH=${KEY_PATH:-${ROOT_DIR}/examples/singbox/certs/anytls.local.key.fixture}
 CURL_TARGET=${CURL_TARGET:-http://httpbin.org/get}
 SERVER_LOG=${SERVER_LOG:-info,anytls=debug}
 CLIENT_LOG=${CLIENT_LOG:-info,anytls=debug}
@@ -132,4 +132,3 @@ print(f"[dev-verify] ✅ Proxy check succeeded: {url}")
 PY
 
 echo "[dev-verify] Success. Tearing down..."
-

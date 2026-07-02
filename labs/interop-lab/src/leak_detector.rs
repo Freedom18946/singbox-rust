@@ -30,7 +30,6 @@ pub enum LeakKind {
 const DEFAULT_MEMORY_SLOPE_THRESHOLD: f64 = 100_000.0;
 
 /// Default slope threshold for fd leak detection (fds per sample).
-#[allow(dead_code)]
 const DEFAULT_FD_SLOPE_THRESHOLD: f64 = 1.0;
 
 /// Detect a memory leak from a series of `MemoryPoint` samples.
@@ -63,7 +62,6 @@ pub fn detect_memory_leak(series: &[MemoryPoint], threshold: Option<f64>) -> Opt
 /// Detect a file descriptor leak from a series of fd-count samples.
 ///
 /// Expects samples taken at regular intervals (e.g. via `lsof -p`).
-#[allow(dead_code)]
 pub fn detect_fd_leak(fd_samples: &[u64], threshold: Option<f64>) -> Option<LeakSignal> {
     let threshold = threshold.unwrap_or(DEFAULT_FD_SLOPE_THRESHOLD);
     if fd_samples.len() < 3 {
@@ -90,7 +88,6 @@ pub fn detect_fd_leak(fd_samples: &[u64], threshold: Option<f64>) -> Option<Leak
 /// Sample fd count for a process using `lsof -p <pid>`.
 ///
 /// Returns `None` if the process doesn't exist or lsof is unavailable.
-#[allow(dead_code)]
 pub async fn sample_fd_count(pid: u32) -> Option<u64> {
     let output = tokio::process::Command::new("lsof")
         .arg("-p")

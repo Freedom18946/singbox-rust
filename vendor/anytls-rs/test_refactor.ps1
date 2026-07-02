@@ -31,7 +31,8 @@ Write-Host "  (注意：如果测试被锁定，这一步会跳过)" -Foreground
 
 # 清理旧的测试文件
 try {
-    Remove-Item "D:\dev\rust\anytls-rs\target\debug\deps\anytls_rs-*.exe" -ErrorAction SilentlyContinue
+    $targetDeps = Join-Path $PSScriptRoot "target\debug\deps\anytls_rs-*.exe"
+    Remove-Item $targetDeps -ErrorAction SilentlyContinue
 } catch {}
 
 # 4. 代码统计
@@ -60,4 +61,3 @@ Write-Host "3. 测试多次请求验证锁竞争已解决"
 
 Write-Host ""
 Write-Host "=== 测试脚本完成 ===" -ForegroundColor Green
-

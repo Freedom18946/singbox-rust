@@ -51,7 +51,7 @@ High-performance and observable AnyTLS implementation in Rust, designed to mitig
 ./scripts/dev-verify.sh
 ```
 
-Both scripts rely on `examples/singbox/certs/anytls.local.{crt,key}`. Override ports/passwords via `SERVER_ADDR`, `CLIENT_ADDR`, `HTTP_ADDR`, `PASSWORD`, etc.
+Both scripts rely on `examples/singbox/certs/anytls.local.{crt,key}.fixture`. Override ports/passwords via `SERVER_ADDR`, `CLIENT_ADDR`, `HTTP_ADDR`, `PASSWORD`, etc.
 
 ### 3. Manual walkthrough (two terminals)
 
@@ -60,8 +60,8 @@ Both scripts rely on `examples/singbox/certs/anytls.local.{crt,key}`. Override p
 cargo run --release --bin anytls-server -- \
   -l 0.0.0.0:8443 \
   -p your_password \
-  --cert ./examples/singbox/certs/anytls.local.crt \
-  --key  ./examples/singbox/certs/anytls.local.key \
+  --cert ./examples/singbox/certs/anytls.local.crt.fixture \
+  --key  ./examples/singbox/certs/anytls.local.key.fixture \
   --watch-cert \
   --expiry-warning-days 7 \
   -L info \
@@ -237,4 +237,3 @@ MIT License – see [LICENSE](LICENSE).
 ---
 
 **Like the project? Consider starring ⭐ the repository!**
-

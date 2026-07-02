@@ -25,7 +25,7 @@
         "enabled": true,
         "server_name": "anytls.local",
         "insecure": false,
-        "certificate_path": "/Users/mickey/dev/rust/anytls-rs/examples/singbox/certs/anytls.local.crt"
+        "certificate_path": "./certs/anytls.local.crt.fixture"
       }
     },
     {
@@ -51,4 +51,3 @@
     }
   ]
 }
-

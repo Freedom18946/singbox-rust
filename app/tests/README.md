@@ -217,8 +217,8 @@ Expected output files for golden tests (snapshot testing):
 - `version_output.json` - Expected output from `version --json`
 - `check_good_output.json` - Expected output from `check` on valid config
 - `check_bad_output.json` - Expected output from `check` on invalid config
-- `explain_tcp_output.json` - Expected output from `route-explain --protocol tcp`
-- `explain_udp_output.json` - Expected output from `route-explain --protocol udp`
+- `explain_tcp_output.json` - Expected output from `route --explain --format json` (default TCP)
+- `explain_udp_output.json` - Expected output from `route --explain --udp --format json`
 - `config_*.json` - Test configuration files
 
 ### CLI Fixtures (`app/tests/cli/fixtures/`)
@@ -252,7 +252,7 @@ golden/
 ├── version_output.json          # Expected output from `version --json`
 ├── check_good_output.json       # Expected output from `check` on valid config
 ├── check_bad_output.json        # Expected output from `check` on invalid config
-└── explain_tcp_output.json      # Expected output from `route-explain`
+└── explain_tcp_output.json      # Expected output from route explain JSON
 ```
 
 ## Adding New Tests

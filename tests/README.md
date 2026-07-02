@@ -10,7 +10,6 @@ tests/
 ├── data/           # 测试数据文件
 ├── docs/           # 测试相关实现文档
 ├── e2e/            # E2E 测试模块（被根 .rs 文件通过 #[path] 引用）
-├── integration/    # 集成测试（.rs 源文件）
 ├── scripts/        # 验证脚本
 ├── stress/         # 压力测试模块（被 app/tests/stress_tests.rs 引用）
 ├── hysteria_v1_e2e.rs   # → app [[test]]

@@ -1,4 +1,5 @@
-# Ignore all runtime-generated content
+# Ignore runtime-generated stress-test logs. Other historical generated
+# artifacts under reports/ may be intentionally tracked as audit evidence.
 stress-tests/**/*.log
 stress-tests/**/*.txt
 stress-tests/**/*.gz

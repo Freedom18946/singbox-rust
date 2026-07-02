@@ -1,6 +1,6 @@
 {
   "core": "rust",
-  "url": "file:///Users/bob/Desktop/Projects/ING/sing/singbox-rust/scripts/l18/fixtures/capability_negotiation/case_required_status_blocked.json",
+  "url": "file://$REPO/scripts/l18/fixtures/capability_negotiation/case_required_status_blocked.json",
   "required": true,
   "checked": true,
   "pass": false,

@@ -129,8 +129,3 @@ mod t_scaffold {
         );
     }
 }
-
-#[cfg(not(feature = "scaffold"))]
-#[test]
-fn skip_without_scaffold() { /* no-op; scaffold not enabled */
-}

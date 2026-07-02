@@ -1,6 +1,6 @@
 {
   "ok": false,
-  "file": "/var/folders/pm/6phgtql93mx_f_j37_0f2qcc0000gn/T//l20-ech-interop-gE958d/quic_ech_reject_fail.json",
+  "file": "<tmp>//l20-ech-interop-gE958d/quic_ech_reject_fail.json",
   "issues": [
     {
       "level": "warning",

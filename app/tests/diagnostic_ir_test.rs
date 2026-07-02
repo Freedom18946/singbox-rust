@@ -1,4 +1,4 @@
-//! Diagnostic test to examine IR conversion for HTTP/SOCKS outbounds
+//! IR conversion contract tests for HTTP/SOCKS outbounds.
 
 #[test]
 fn test_http_outbound_ir_conversion() {
@@ -16,17 +16,9 @@ fn test_http_outbound_ir_conversion() {
 
     let ir = sb_config::validator::v2::to_ir_v1(&config);
 
-    // Print the IR for inspection
-    println!("IR: {:#?}", ir);
-
     // Check outbounds
     assert!(!ir.outbounds.is_empty(), "IR should have outbounds");
     let outbound = &ir.outbounds[0];
-
-    println!("Outbound type: {:?}", outbound.ty);
-    println!("Outbound server: {:?}", outbound.server);
-    println!("Outbound port: {:?}", outbound.port);
-    println!("Outbound name: {:?}", outbound.name);
 
     // These should be populated from the JSON
     assert!(outbound.server.is_some(), "Server should be present in IR");
@@ -54,11 +46,6 @@ fn test_socks_outbound_ir_conversion() {
     // Check outbounds
     assert!(!ir.outbounds.is_empty(), "IR should have outbounds");
     let outbound = &ir.outbounds[0];
-
-    println!("Outbound type: {:?}", outbound.ty);
-    println!("Outbound server: {:?}", outbound.server);
-    println!("Outbound port: {:?}", outbound.port);
-    println!("Outbound name: {:?}", outbound.name);
 
     // These should be populated from the JSON
     assert!(outbound.server.is_some(), "Server should be present in IR");
@@ -110,7 +97,6 @@ fn test_http_adapter_builder_with_ir() {
     };
 
     let result = builder(&param, &ir, &ctx);
-    println!("Builder result: {:?}", result.is_some());
 
     assert!(
         result.is_some(),

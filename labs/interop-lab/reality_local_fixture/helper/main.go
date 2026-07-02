@@ -95,7 +95,7 @@ func runHTTPTarget(listen, token string) {
 	if err != nil {
 		log.Fatalf("http listen %s: %v", listen, err)
 	}
-	fmt.Printf("READY mode=http-target addr=%s token=%s\n", listen, token)
+	fmt.Printf("READY mode=http-target addr=%s token_set=%t token_len=%d\n", listen, token != "", len(token))
 	os.Stdout.Sync()
 	srv := &http.Server{Handler: mux}
 	if err := srv.Serve(ln); err != nil {

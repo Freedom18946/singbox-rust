@@ -1,5 +1,10 @@
 # Go vs Rust Diff Analysis (2026-01-31)
 
+> Historical snapshot only. This report predates the current Go `sing-box@1.13.13`
+> reference and must not be used as the current parity ledger. Current status lives
+> in `agents-only/active_context.md`, `agents-only/reference/GO_PARITY_MATRIX.md`,
+> and `labs/interop-lab/docs/dual_kernel_golden_spec.md`.
+
 ## Baseline
 
 - Go reference: `go_fork_source/sing-box-1.12.14`

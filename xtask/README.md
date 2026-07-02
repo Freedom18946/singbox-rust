@@ -16,10 +16,11 @@ cargo xtask help
 | `clippy` | 运行 clippy 检查 |
 | `check-all` | 检查所有特性组合 |
 | `feature-matrix` | 构建 CLI/DNS/adapter 特性矩阵 |
-| `e2e` | 端到端测试流程 |
+| `e2e-smoke` | 端到端 smoke 流程 |
+| `e2e` | `e2e-smoke` 的兼容别名 |
 | `test-all` | 运行所有测试套件 |
 | `bench` | 运行基准测试（需要 nightly） |
-| `schema` | 生成/验证 JSON schema |
+| `schema` | 检查或导出内置 JSON schema |
 | `metrics-check` | 验证 Prometheus metrics 端点 |
 | `ci` | 完整 CI 流程（本地模拟） |
 | `preflight` | 提交前快速检查 |
@@ -29,6 +30,23 @@ cargo xtask help
 - `CARGO_TARGET_DIR`: 自定义构建目录（默认：`target`）
 - `RUST_LOG`: 控制输出详细度
 - `XTASK_SKIP_BUILD`: 跳过构建步骤（调试用）
+- `APP_E2E_APIKEY`: 覆盖 `e2e-smoke` 使用的本地测试 API key
+
+## Schema
+
+```bash
+cargo xtask schema
+cargo xtask schema --check
+cargo xtask schema --export
+cargo xtask schema --export /tmp/v2_schema.json
+```
+
+## Metrics
+
+```bash
+cargo xtask metrics-check --addr 127.0.0.1:19090
+cargo xtask metrics-check --addr 127.0.0.1:19090 --strict-labels
+```
 
 ## 依赖
 

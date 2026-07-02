@@ -13,6 +13,8 @@ EOF
 }
 
 PROFILE="fast"
+SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+ROOT_DIR="$(cd "${SCRIPT_DIR}/.." && pwd)"
 API_URL="${L17_CANARY_API_URL:-http://127.0.0.1:19090}"
 PID_FILE="${L17_CANARY_PID_FILE:-}"
 STATUS_FILE="reports/stability/l17_capstone_status.json"
@@ -111,17 +113,19 @@ else
 fi
 
 if [[ "${L17_GUI_SMOKE_AUTO:-0}" == "1" ]]; then
-  GUI_ROOT="${L17_GUI_ROOT:-/Users/bob/Desktop/Projects/ING/sing/singbox-rust/GUI_fork_source/GUI.for.SingBox-1.25.1}"
-  KERNEL_BIN="${L17_GUI_KERNEL_BIN:-/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/run}"
-  GUI_CONFIG="${L17_GUI_CONFIG:-/Users/bob/Desktop/Projects/ING/sing/singbox-rust/configs/example.json}"
+  GUI_ROOT="${L17_GUI_ROOT:-${ROOT_DIR}/GUI_fork_source/GUI.for.SingBox-1.25.1}"
+  KERNEL_BIN="${L17_GUI_KERNEL_BIN:-${ROOT_DIR}/target/release/run}"
+  GUI_CONFIG="${L17_GUI_CONFIG:-${ROOT_DIR}/configs/example.json}"
+  GUI_REPORT="${L17_GUI_REPORT:-${ROOT_DIR}/reports/gui_integration_test.md}"
+  GUI_ARTIFACTS_DIR="${L17_GUI_ARTIFACTS_DIR:-${ROOT_DIR}/reports/gui-smoke-artifacts}"
   if [[ -d "$GUI_ROOT" && -x "$KERNEL_BIN" && -f "$GUI_CONFIG" ]]; then
     if scripts/gui_smoke_test.sh \
       --gui-root "$GUI_ROOT" \
       --kernel-bin "$KERNEL_BIN" \
       --config "$GUI_CONFIG" \
       --api-url "$API_URL" \
-      --report /Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/gui_integration_test.md \
-      --artifacts-dir /Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/gui-smoke-artifacts; then
+      --report "$GUI_REPORT" \
+      --artifacts-dir "$GUI_ARTIFACTS_DIR"; then
       GUI_STATUS="PASS"
     else
       GUI_STATUS="FAIL"

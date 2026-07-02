@@ -1,5 +1,5 @@
 #![cfg(all(feature = "explain", feature = "pprof"))]
-use std::path::PathBuf;
+use std::net::TcpListener;
 use std::process::{Command, Stdio};
 use std::thread::sleep;
 use std::time::Duration;
@@ -14,12 +14,8 @@ impl Drop for ChildGuard {
 }
 
 #[test]
+#[ignore = "manual smoke: builds and runs sb-explaind with pprof enabled"]
 fn pprof_endpoint_smoke() {
-    if std::env::var("XT_PPROF_SMOKE").ok().as_deref() != Some("1") {
-        eprintln!("skipping pprof smoke; set XT_PPROF_SMOKE=1 to enable");
-        return;
-    }
-
     if Command::new("curl")
         .arg("--version")
         .stdout(Stdio::null())
@@ -30,7 +26,7 @@ fn pprof_endpoint_smoke() {
         panic!("curl not found in PATH");
     }
 
-    let bin = resolved_bin("sb-explaind");
+    let bin = xtests::ensure_workspace_bin("app", "sb-explaind", &["explain", "pprof"]);
     assert!(
         bin.exists(),
         "sb-explaind binary is not available at {:?}; build with explain+pprof features",
@@ -43,18 +39,36 @@ fn pprof_endpoint_smoke() {
     let svg_path = e2e_dir.join("flame.svg");
     let _ = std::fs::remove_file(&svg_path);
 
-    let addr = "127.0.0.1:28089";
+    let listener = TcpListener::bind("127.0.0.1:0").expect("reserve pprof port");
+    let addr = listener.local_addr().expect("pprof addr").to_string();
+    drop(listener);
     let child = Command::new(bin)
         .env("SB_PPROF", "1")
-        .env("SB_DEBUG_ADDR", addr)
+        .env("SB_DEBUG_ADDR", &addr)
         .stdout(Stdio::null())
         .stderr(Stdio::null())
         .spawn()
         .expect("spawn sb-explaind");
     let guard = ChildGuard(child);
 
-    // give the server time to boot
-    sleep(Duration::from_secs(1));
+    let mut ready = false;
+    for _ in 0..20 {
+        let status = Command::new("curl")
+            .args(["-fsS", &format!("http://{}/debug/pprof/status", addr)])
+            .stdout(Stdio::null())
+            .stderr(Stdio::null())
+            .status()
+            .expect("run curl");
+        if status.success() {
+            ready = true;
+            break;
+        }
+        sleep(Duration::from_millis(250));
+    }
+    assert!(
+        ready,
+        "sb-explaind pprof status endpoint did not become ready"
+    );
 
     let mut curl_status = None;
     for _ in 0..5 {
@@ -81,13 +95,8 @@ fn pprof_endpoint_smoke() {
         "curl failed to fetch pprof output"
     );
 
-    // ensure we clean up the process
     drop(guard);
 
     let meta = std::fs::metadata(&svg_path).expect("pprof output");
     assert!(meta.len() > 0, "flamegraph output is empty");
-}
-
-fn resolved_bin(name: &str) -> PathBuf {
-    xtests::workspace_bin(name)
 }

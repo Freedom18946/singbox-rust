@@ -10,8 +10,8 @@
     "spawned_pid": null
   },
   "artifacts": {
-    "output_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/stability/tun_macos_longrun/20260304T152843Z",
-    "log_file": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/stability/tun_macos_longrun/20260304T152843Z/tun_macos_longrun.log",
+    "output_dir": "$REPO/reports/stability/tun_macos_longrun/20260304T152843Z",
+    "log_file": "$REPO/reports/stability/tun_macos_longrun/20260304T152843Z/tun_macos_longrun.log",
     "process_max_file": "",
     "process_samples_csv": ""
   },

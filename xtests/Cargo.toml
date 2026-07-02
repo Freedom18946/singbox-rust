@@ -8,26 +8,12 @@ license.workspace = true
 [features]
 default = []
 explain = ["singbox-bin/explain"]
-metrics = ["singbox-bin/prom"]
-dsl_analyze = ["singbox-bin/dsl_analyze"]
 pprof = ["singbox-bin/pprof"]
-tls_reality = ["singbox-bin/tls_reality"]
-tls_ech = ["singbox-bin/tls_ech"]
-adapter-hysteria = ["sb-core/out_hysteria"]
-adapter-hysteria2 = ["sb-core/out_hysteria2"]
-adapter-ssh = ["sb-core/out_ssh"]
-adapter-tuic = ["sb-core/out_tuic"]
-sbcore_analyze_json = []
 
 [dev-dependencies]
 assert_cmd = "2"
 serde_json = "1"
-predicates = "3"
 singbox-bin = { path = "../app", package = "app" }
-
-[dependencies]
-sb-core = { path = "../crates/sb-core" }
-tokio = { version = "1", features = ["rt", "macros"] }
 
 [package.metadata]
 description = "Workspace integration tests"

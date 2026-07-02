@@ -14,8 +14,8 @@
     "sample_interval_sec": 300
   },
   "stability_artifacts": {
-    "report_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/batches/20260307T101914Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/canary/stability_reports",
-    "config_path": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/reports/l18/batches/20260307T101914Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/canary/stability_reports/stability_test_config.json"
+    "report_dir": "$REPO/reports/l18/batches/20260307T101914Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/canary/stability_reports",
+    "config_path": "$REPO/reports/l18/batches/20260307T101914Z-l18-daily-preflight/capstone_daily_fixedcfg/r1/canary/stability_reports/stability_test_config.json"
   },
   "gates": {
     "preflight": "PASS",

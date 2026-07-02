@@ -4,8 +4,8 @@
   "rust": {
     "status": "pass",
     "reason": "",
-    "binary": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/target/release/run",
-    "config": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/l18_perf_rust.json",
+    "binary": "$REPO/target/release/run",
+    "config": "$REPO/labs/interop-lab/configs/l18_perf_rust.json",
     "measurements": {
       "idle": {
         "rss_kb": 1872,
@@ -28,8 +28,8 @@
   "go": {
     "status": "pass",
     "reason": "",
-    "binary": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/go_fork_source/sing-box-1.12.14/sing-box",
-    "config": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/configs/l18_perf_go.json",
+    "binary": "$REPO/go_fork_source/sing-box-1.12.14/sing-box",
+    "config": "$REPO/labs/interop-lab/configs/l18_perf_go.json",
     "measurements": {
       "idle": {
         "rss_kb": 1968,

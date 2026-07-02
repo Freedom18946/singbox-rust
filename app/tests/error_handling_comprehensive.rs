@@ -3,13 +3,39 @@
 //! Ensures that all error conditions are handled gracefully and
 //! return appropriate error codes to clients.
 
-#![allow(
-    clippy::assertions_on_constants,
-    clippy::useless_vec,
-    clippy::const_is_empty
-)]
 use std::io::{Error, ErrorKind};
 use std::time::Duration;
+
+fn parse_socks5_greeting(input: &[u8]) -> Result<&[u8], Error> {
+    if input.len() < 2 {
+        return Err(Error::new(
+            ErrorKind::UnexpectedEof,
+            "SOCKS5 greeting missing method count",
+        ));
+    }
+    if input[0] != 0x05 {
+        return Err(Error::new(
+            ErrorKind::InvalidData,
+            "SOCKS5 greeting has unsupported version",
+        ));
+    }
+    let method_count = input[1] as usize;
+    if input.len() < 2 + method_count {
+        return Err(Error::new(
+            ErrorKind::UnexpectedEof,
+            "SOCKS5 greeting method list is incomplete",
+        ));
+    }
+    Ok(&input[2..2 + method_count])
+}
+
+fn parse_http_request_head(input: &[u8]) -> Result<httparse::Status<usize>, Error> {
+    let mut headers = [httparse::EMPTY_HEADER; 8];
+    let mut request = httparse::Request::new(&mut headers);
+    request
+        .parse(input)
+        .map_err(|err| Error::new(ErrorKind::InvalidData, err.to_string()))
+}
 
 /// Test connection refused error handling
 #[tokio::test]
@@ -77,53 +103,38 @@ async fn test_network_unreachable() {
 /// Test protocol version mismatch
 #[test]
 fn test_socks_version_mismatch() {
-    // SOCKS4 version (0x04) sent to SOCKS5 server
-    let invalid_version: u8 = 0x04;
-    assert_ne!(invalid_version, 0x05, "Version mismatch should be detected");
-}
-
-/// Test authentication failure scenarios
-#[test]
-fn test_authentication_failures() {
-    // Test various authentication error scenarios
-    // - Invalid credentials
-    // - Expired credentials
-    // - Unsupported auth method
-
-    // Placeholder for authentication error handling
-}
-
-/// Test resource exhaustion handling
-#[tokio::test]
-async fn test_resource_exhaustion() {
-    // Test behavior when system resources are exhausted
-    // - Too many open connections
-    // - Memory limits
-    // - File descriptor limits
-
-    // Placeholder - actual implementation would attempt to exhaust resources
+    let err = parse_socks5_greeting(&[0x04, 0x01, 0x00]).expect_err("SOCKS4 must be rejected");
+    assert_eq!(err.kind(), ErrorKind::InvalidData);
 }
 
 /// Test malformed protocol data
 #[test]
 fn test_malformed_protocol_data() {
-    // Test handling of malformed protocol data
-    let malformed_socks5 = vec![0x05, 0xFF]; // Invalid number of methods
+    let malformed_socks5 = [0x05, 0xFF]; // Claims 255 methods but supplies none.
     let malformed_http = b"INVALID HTTP REQUEST\r\n\r\n";
 
-    assert!(!malformed_socks5.is_empty());
-    assert!(!malformed_http.is_empty());
+    let socks_err =
+        parse_socks5_greeting(&malformed_socks5).expect_err("truncated SOCKS5 greeting");
+    assert_eq!(socks_err.kind(), ErrorKind::UnexpectedEof);
+
+    let http_err = parse_http_request_head(malformed_http).expect_err("bad HTTP version");
+    assert_eq!(http_err.kind(), ErrorKind::InvalidData);
 }
 
 /// Test partial data / incomplete handshake
 #[test]
 fn test_incomplete_handshake() {
-    // Test handling when client sends incomplete data and disconnects
-    let incomplete_socks5 = vec![0x05]; // Just version, no methods
+    let incomplete_socks5 = [0x05]; // Just version, no method count.
     let incomplete_http = b"CONNECT"; // Incomplete HTTP request
 
-    assert_eq!(incomplete_socks5.len(), 1);
-    assert_eq!(incomplete_http.len(), 7);
+    let socks_err =
+        parse_socks5_greeting(&incomplete_socks5).expect_err("incomplete SOCKS5 greeting");
+    assert_eq!(socks_err.kind(), ErrorKind::UnexpectedEof);
+
+    assert!(matches!(
+        parse_http_request_head(incomplete_http).expect("partial HTTP request should parse"),
+        httparse::Status::Partial
+    ));
 }
 
 /// Test concurrent error conditions
@@ -145,27 +156,27 @@ async fn test_concurrent_error_handling() {
     }
 }
 
-/// Test error metrics are properly recorded
-#[test]
-#[cfg(feature = "metrics")]
-fn test_error_metrics_recording() {
-    // Verify that errors are properly counted in metrics
-    // This would check that counter increments happen on errors
-}
-
 /// Test graceful degradation
 #[tokio::test]
 async fn test_graceful_degradation() {
-    // Verify system continues operating when non-critical errors occur
-    // - Continue accepting new connections when one fails
-    // - Proper cleanup of failed connections
+    let failing = tokio::spawn(async { tokio::net::TcpStream::connect("127.0.0.1:1").await });
+    let independent = tokio::spawn(async { Ok::<_, Error>("still-running") });
+
+    assert!(failing.await.expect("failing task should join").is_err());
+    assert_eq!(
+        independent
+            .await
+            .expect("independent task should join")
+            .expect("independent task should succeed"),
+        "still-running"
+    );
 }
 
 /// Test error message clarity
 #[test]
 fn test_error_message_clarity() {
     // Verify error messages are helpful for debugging
-    let error = Error::new(
+    let error = create_test_error(
         ErrorKind::ConnectionRefused,
         "Failed to connect to upstream",
     );
@@ -178,7 +189,6 @@ fn test_error_message_clarity() {
 }
 
 /// Helper function to create test errors
-#[allow(dead_code)]
 fn create_test_error(kind: ErrorKind, message: &str) -> Error {
     Error::new(kind, message)
 }

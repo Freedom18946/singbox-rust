@@ -2,7 +2,7 @@
   "generated_at": "2026-03-07T09:55:26Z",
   "profile": "nightly",
   "run_id": "20260307T095156Z-nightly-b51521ef",
-  "artifacts_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/artifacts/l18_dual_kernel",
+  "artifacts_dir": "$REPO/labs/interop-lab/artifacts/l18_dual_kernel",
   "go_api": "http://127.0.0.1:9090",
   "selected_case_count": 6,
   "results_count": 6,
@@ -61,7 +61,7 @@
         "counter_jitter": 0
       },
       "gate_score": 0.0,
-      "run_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/artifacts/l18_dual_kernel/l6_local_harness_smoke/20260307T095159Z-e0c0177b-8d19-4c95-8b48-9c5f8a65ec41"
+      "run_dir": "$REPO/labs/interop-lab/artifacts/l18_dual_kernel/l6_local_harness_smoke/20260307T095159Z-e0c0177b-8d19-4c95-8b48-9c5f8a65ec41"
     },
     {
       "case_id": "p0_clash_api_contract",
@@ -82,7 +82,7 @@
         "counter_jitter": 0
       },
       "gate_score": 7.0,
-      "run_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/artifacts/l18_dual_kernel/p0_clash_api_contract/20260307T095212Z-3d0712f9-200d-414f-a035-0b5fc99e8f9d"
+      "run_dir": "$REPO/labs/interop-lab/artifacts/l18_dual_kernel/p0_clash_api_contract/20260307T095212Z-3d0712f9-200d-414f-a035-0b5fc99e8f9d"
     },
     {
       "case_id": "p1_auth_negative_missing_token",
@@ -103,7 +103,7 @@
         "counter_jitter": 0
       },
       "gate_score": 1.0,
-      "run_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/artifacts/l18_dual_kernel/p1_auth_negative_missing_token/20260307T095238Z-9b3ec6a4-457c-40f7-be99-16efa2ae33d1"
+      "run_dir": "$REPO/labs/interop-lab/artifacts/l18_dual_kernel/p1_auth_negative_missing_token/20260307T095238Z-9b3ec6a4-457c-40f7-be99-16efa2ae33d1"
     },
     {
       "case_id": "p1_auth_negative_wrong_token",
@@ -124,7 +124,7 @@
         "counter_jitter": 0
       },
       "gate_score": 1.0,
-      "run_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/artifacts/l18_dual_kernel/p1_auth_negative_wrong_token/20260307T095252Z-3062cbb3-c37b-47f1-aded-621dc1f18ae4"
+      "run_dir": "$REPO/labs/interop-lab/artifacts/l18_dual_kernel/p1_auth_negative_wrong_token/20260307T095252Z-3062cbb3-c37b-47f1-aded-621dc1f18ae4"
     },
     {
       "case_id": "p1_optional_endpoints_contract",
@@ -145,7 +145,7 @@
         "counter_jitter": 0
       },
       "gate_score": 2.0,
-      "run_dir": "/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/artifacts/l18_dual_kernel/p1_optional_endpoints_contract/20260307T095305Z-5c50130d-44bd-43e8-9ae5-4aa79b4507b1"
+      "run_dir": "$REPO/labs/interop-lab/artifacts/l18_dual_kernel/p1_optional_endpoints_contract/20260307T095305Z-5c50130d-44bd-43e8-9ae5-4aa79b4507b1"
     },
     {
       "case_id": "p2_connections_ws_soak_dual_core",

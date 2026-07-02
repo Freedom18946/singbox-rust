@@ -78,7 +78,7 @@ reqwest_unstable = []
 subs_http   = ["observe", "reqwest", "url", "bytes", "futures-util", "sb-subscribe"]   # /subs/fetch
 subs_clash  = ["sb-subscribe/subs_clash"]
 subs_singbox= ["sb-subscribe/subs_singbox"]
-explain = ["sb-core/explain"]
+explain = ["sb-core/explain", "url"]
 rule_coverage = ["sb-core/rule_coverage"]
 rules_capture = ["admin_debug", "sb-core/rules_capture"]
 dsl_plus = ["sb-core/dsl_plus"]
@@ -117,7 +117,6 @@ reqwest = ["dep:reqwest"]
 transport_ech = ["sb-adapters/transport_ech", "sb-transport/transport_ech"]
 transport_reality = ["sb-adapters/transport_reality"]
 tun = ["adapter-tun"]
-tun_phase1_DISABLED = []
 tls-rustls = []
 dns-proto = ["hickory-proto"]
 adapter-hysteria = ["sb-adapters/adapter-hysteria"]
@@ -450,14 +449,19 @@ futures.workspace = true
 chrono = { workspace = true }
 
 [[test]]
+name = "adapter_bridge_scaffold"
+path = "tests/adapter_bridge_scaffold.rs"
+required-features = ["scaffold"]
+
+[[test]]
 name = "admin_auth_contract"
 path = "tests/admin_auth_contract.rs"
-required-features = ["admin_debug","auth","rate_limit"]
+required-features = ["admin_tests","admin_debug","auth","rate_limit"]
 
 [[test]]
 name = "cli"
 path = "tests/cli.rs"
-required-features = ["admin_debug","auth","rate_limit"]
+required-features = ["admin_tests","admin_debug","auth","rate_limit"]
 
 [[test]]
 name = "reality_tls_e2e"

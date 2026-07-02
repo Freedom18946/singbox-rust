@@ -176,9 +176,44 @@ fn test_outbound_adapters_instantiation() -> Result<()> {
     sb_adapters::register_all();
 
     let test_cases: Vec<(&str, serde_json::Value)> = vec![
-        // NOTE: HTTP and SOCKS outbounds temporarily disabled due to trait architecture mismatch
-        // See register.rs:142-144 and register.rs:172-174
-
+        // HTTP outbound
+        #[cfg(any(feature = "adapter-http", feature = "http", feature = "adapters"))]
+        (
+            "http",
+            json!({
+                "inbounds": [{
+                    "type": "mixed",
+                    "tag": "mixed-in",
+                    "listen": "127.0.0.1",
+                    "port": 10900
+                }],
+                "outbounds": [{
+                    "type": "http",
+                    "tag": "http-out",
+                    "server": "127.0.0.1",
+                    "port": 8080
+                }]
+            }),
+        ),
+        // SOCKS outbound
+        #[cfg(any(feature = "socks", feature = "adapters"))]
+        (
+            "socks",
+            json!({
+                "inbounds": [{
+                    "type": "mixed",
+                    "tag": "mixed-in",
+                    "listen": "127.0.0.1",
+                    "port": 10901
+                }],
+                "outbounds": [{
+                    "type": "socks",
+                    "tag": "socks-out",
+                    "server": "127.0.0.1",
+                    "port": 1080
+                }]
+            }),
+        ),
         // Shadowsocks outbound
         #[cfg(feature = "adapter-shadowsocks")]
         (
@@ -495,27 +530,26 @@ fn test_adapter_registry_robustness() -> Result<()> {
     Ok(())
 }
 
-/// Test that stub adapters provide helpful error messages
+/// Test that long-tail adapters are registered explicitly instead of relying on print-only smoke.
 #[test]
 #[cfg(feature = "adapters")]
 fn test_stub_adapter_warnings() {
+    use sb_core::adapter::registry;
+
     sb_adapters::register_all();
 
-    // Test stub inbounds (these should be registered but return warnings)
-    let stub_inbounds = vec!["naive", "shadowtls", "hysteria", "hysteria2", "tuic"];
-
-    for stub_type in stub_inbounds {
-        println!("Testing stub inbound: {}", stub_type);
-        // Stub adapters are registered but may not instantiate fully
-        // This test verifies they don't panic the registration system
+    for kind in ["naive", "shadowtls", "hysteria", "hysteria2", "tuic"] {
+        assert!(
+            registry::get_inbound(kind).is_some(),
+            "{kind} inbound should be registered"
+        );
     }
 
-    // Test stub outbounds
-    let stub_outbounds = vec!["tor", "anytls", "wireguard"];
-
-    for stub_type in stub_outbounds {
-        println!("Testing stub outbound: {}", stub_type);
-        // Stub adapters are registered but may not instantiate fully
+    for kind in ["tor", "anytls", "wireguard"] {
+        assert!(
+            registry::get_outbound(kind).is_some(),
+            "{kind} outbound should be registered"
+        );
     }
 }
 

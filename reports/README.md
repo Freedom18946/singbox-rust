@@ -8,6 +8,8 @@ Do not treat `reports/` as the sole source of truth for project status. Current 
 - `agents-only/active_context.md`
 - `agents-only/workpackage_latest.md`
 
+Many retained artifacts were generated on a local workstation. Paths such as `$REPO/...` and `<tmp>/...` are provenance fields, not portable rerun instructions.
+
 ## Layout
 
 Top-level reports:
@@ -52,6 +54,7 @@ This tree currently mixes tracked documents and tracked generated outputs. In pr
 
 - phase reports and summary markdown/json files are retained for audit history
 - bulky generated artifacts may still exist under `l18/`, `l21/artifacts/`, `benchmarks/criterion_data/`, `stability/`, and `stress-tests/`
+- historical JSON artifacts may contain normalized local-run path placeholders such as `$REPO/...` and `<tmp>/...`
 - new documentation should not assume every generated artifact here is authoritative, complete, or reproducible from the current slim snapshot
 
 If you add new material here:
@@ -63,14 +66,14 @@ If you add new material here:
 
 ## See Also
 
-- [Main README](/Users/bob/Desktop/Projects/ING/sing/singbox-rust/README.md)
-- [Development Guide](/Users/bob/Desktop/Projects/ING/sing/singbox-rust/docs/04-development/README.md)
-- [Dual-Kernel Golden Spec](/Users/bob/Desktop/Projects/ING/sing/singbox-rust/labs/interop-lab/docs/dual_kernel_golden_spec.md)
-- [Active Context](/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/active_context.md)
-- [Phase Map](/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/workpackage_latest.md)
-- [Go Parity Matrix](/Users/bob/Desktop/Projects/ING/sing/singbox-rust/agents-only/reference/GO_PARITY_MATRIX.md)
+- [Main README](../README.md)
+- [Development Guide](../docs/04-development/README.md)
+- [Dual-Kernel Golden Spec](../labs/interop-lab/docs/dual_kernel_golden_spec.md)
+- [Active Context](../agents-only/active_context.md)
+- [Phase Map](../agents-only/workpackage_latest.md)
+- [Go Parity Matrix](../agents-only/reference/GO_PARITY_MATRIX.md)
 
 ---
 
-**Last updated**: 2026-03-21
+**Last updated**: 2026-07-02
 **Purpose**: report index, historical evidence map, and artifact-orientation notes

@@ -69,11 +69,11 @@ The error system is implemented in `crates/sb-core/src/error.rs`:
 
 ### CLI Integration
 
-The CLI integration is implemented in `app/src/cli/check.rs`:
+The CLI integration is implemented in `app/src/cli/check/`:
 
-- `--schema-v2-validate` flag definition
-- `validate_schema_v2()` function for validation logic
-- Error classification and JSON pointer extraction
+- `args.rs` defines the `--schema-v2-validate` flag
+- `run.rs` invokes `v2::validate_v2()` and converts validator issues into CLI issues
+- Error classification and JSON pointer propagation
 - Integration with existing error reporting system
 
 ### Fingerprint Generation

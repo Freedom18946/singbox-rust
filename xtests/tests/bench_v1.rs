@@ -37,26 +37,14 @@ fn spawn_udp_echo() -> std::io::Result<SocketAddr> {
 fn bench_outputs_json() {
     let tcp_addr = match spawn_tcp_echo() {
         Ok(addr) => addr,
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            eprintln!("skip bench_outputs_json: tcp bind permission denied");
-            return;
-        }
         Err(e) => panic!("bind tcp: {e}"),
     };
     let udp_addr = match spawn_udp_echo() {
         Ok(addr) => addr,
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            eprintln!("skip bench_outputs_json: udp bind permission denied");
-            return;
-        }
         Err(e) => panic!("bind udp: {e}"),
     };
     let dns_addr = match spawn_udp_echo() {
         Ok(addr) => addr,
-        Err(e) if e.kind() == std::io::ErrorKind::PermissionDenied => {
-            eprintln!("skip bench_outputs_json: dns bind permission denied");
-            return;
-        }
         Err(e) => panic!("bind dns: {e}"),
     };
     thread::sleep(Duration::from_millis(100));

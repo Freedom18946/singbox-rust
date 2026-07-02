@@ -26,15 +26,15 @@
    ```bash
    PASSWORD=your_password
    LISTEN_ADDR="0.0.0.0:8443"
-   CERT_DIR="/Users/mickey/dev/rust/anytls-rs/examples/singbox/certs"
+   CERT_DIR="$(pwd)/certs"
 
    # 使用自签证书 anytls.local
    RUST_LOG=info,anytls=debug \
    cargo run --release --bin anytls-server -- \
      -l "${LISTEN_ADDR}" \
      -p "${PASSWORD}" \
-     --cert "${CERT_DIR}/anytls.local.crt" \
-     --key "${CERT_DIR}/anytls.local.key"
+     --cert "${CERT_DIR}/anytls.local.crt.fixture" \
+     --key "${CERT_DIR}/anytls.local.key.fixture"
    ```
 
    > 已预生成 `anytls.local` 自签证书；如需自定义域名，请使用 `rcgen` 或 openssl 生成新的 PEM 文件，并通过 `--cert/--key` 指定。

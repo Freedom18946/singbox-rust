@@ -1,8 +1,6 @@
 // SPDX-License-Identifier: Apache-2.0
 use clap::{Args as ClapArgs, Subcommand};
 
-#[cfg(all(feature = "admin_debug", feature = "prefetch"))]
-use self::types::PrefStats;
 #[cfg(all(feature = "admin_debug", feature = "subs_http", feature = "prefetch"))]
 use self::types::SampleOut;
 
@@ -381,22 +379,6 @@ fn heat(
     #[cfg(not(all(feature = "admin_debug", feature = "subs_http")))]
     {
         feature_guard("admin_debug + subs_http")
-    }
-}
-
-#[cfg(all(feature = "admin_debug", feature = "prefetch"))]
-#[allow(dead_code)]
-fn read_stats() -> PrefStats {
-    let runtime_deps = build_prefetch_runtime_deps();
-    let stats = collect_prefetch_cli_stats(&runtime_deps.metrics);
-    PrefStats {
-        total: stats.enq + stats.drop + stats.done + stats.fail + stats.retry,
-        succeeded: stats.done,
-        failed: stats.fail,
-        skipped: stats.drop,
-        bytes: stats.bytes,
-        duration_ms: stats.duration_ms,
-        canceled: false,
     }
 }
 

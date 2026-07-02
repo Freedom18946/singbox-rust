@@ -67,7 +67,7 @@ OUTBOUND_PROTOCOLS = {
     "hysteria":    {"impl": "crates/sb-core/src/outbound/hysteria/v1.rs", "tests": "app/tests/hysteria_outbound_test.rs"},
     "hysteria2":   {"impl": "crates/sb-core/src/outbound/hysteria2.rs", "tests": "app/tests/hysteria2_udp_e2e.rs"},
     "shadowtls":   {"impl": "crates/sb-adapters/src/outbound/shadowtls.rs", "tests": None},
-    "ssh":         {"impl": "crates/sb-core/src/outbound/ssh_stub.rs", "tests": None},
+    "ssh":         {"impl": "crates/sb-adapters/src/outbound/ssh.rs", "tests": None},
     "tor":         {"impl": "crates/sb-adapters/src/register.rs", "tests": "app/tests/tor_outbound_test.rs", "lines": "1297-1361"},
     "anytls":      {"impl": "crates/sb-adapters/src/outbound/anytls.rs", "tests": "app/tests/anytls_outbound_test.rs"},
     "wireguard":   {"impl": "crates/sb-core/src/outbound/wireguard.rs", "tests": None},

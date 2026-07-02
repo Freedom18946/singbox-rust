@@ -80,7 +80,11 @@ start_managed_go_oracle() {
   GO_ORACLE_PID="$!"
   for _ in $(seq 1 120); do
     local code
-    code="$(curl -s -o /dev/null -w '%{http_code}' -H "Authorization: Bearer ${GO_ORACLE_API_SECRET}" "${GO_ORACLE_API_URL}/version" || true)"
+    local curl_args=(-s -o /dev/null -w '%{http_code}')
+    if [[ -n "${GO_ORACLE_API_SECRET:-}" ]]; then
+      curl_args+=(-H "Authorization: Bearer ${GO_ORACLE_API_SECRET}")
+    fi
+    code="$(curl "${curl_args[@]}" "${GO_ORACLE_API_URL}/version" || true)"
     if [[ "${code}" == "200" || "${code}" == "204" || "${code}" == "401" ]]; then
       echo "go-oracle: ready pid=${GO_ORACLE_PID} api=${GO_ORACLE_API_URL}"
       return 0

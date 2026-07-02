@@ -32,7 +32,7 @@ DEFAULT_GO_BIN="${ROOT_DIR}/go_fork_source/sing-box-1.13.13/sing-box"
 GO_BIN="${L18_GO_BIN:-${DEFAULT_GO_BIN}}"
 GO_CONFIG="${L18_GO_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_go.json}"
 GO_API_URL="${L18_GO_API_URL:-http://127.0.0.1:9090}"
-GO_API_TOKEN="${L18_GO_API_TOKEN:-test-secret}"
+GO_API_TOKEN="${L18_GO_API_TOKEN:-}"
 GO_BUILD_ENABLED="${L18_GUI_GO_BUILD_ENABLED:-1}"
 GO_BUILD_TAGS="${L18_GUI_GO_BUILD_TAGS:-with_clash_api}"
 
@@ -40,7 +40,7 @@ DEFAULT_RUST_BIN="${ROOT_DIR}/target/release/run"
 RUST_BIN="${L18_RUST_BIN:-${DEFAULT_RUST_BIN}}"
 RUST_CONFIG="${L18_RUST_CONFIG:-${ROOT_DIR}/labs/interop-lab/configs/l18_gui_rust.json}"
 RUST_API_URL="${L18_RUST_API_URL:-http://127.0.0.1:19090}"
-RUST_API_TOKEN="${L18_RUST_API_TOKEN:-test-secret}"
+RUST_API_TOKEN="${L18_RUST_API_TOKEN:-}"
 RUST_BUILD_ENABLED="${L18_GUI_RUST_BUILD_ENABLED:-1}"
 RUST_BUILD_FEATURES="${L18_GUI_RUST_BUILD_FEATURES:-parity}"
 
@@ -612,15 +612,25 @@ curl_code() {
 websocket_code() {
   local api_url="$1"
   local path="$2"
+  local token="${3:-}"
+  local url="${api_url}${path}"
   local code=""
   local rc=0
+
+  if [[ -n "$token" ]]; then
+    if [[ "$url" == *\?* ]]; then
+      url="${url}&token=${token}"
+    else
+      url="${url}?token=${token}"
+    fi
+  fi
 
   code="$(curl -sS --http1.1 --max-time 3 -o /dev/null -w '%{http_code}' \
     -H 'Connection: Upgrade' \
     -H 'Upgrade: websocket' \
     -H 'Sec-WebSocket-Version: 13' \
     -H 'Sec-WebSocket-Key: dGhlIHNhbXBsZSBub25jZQ==' \
-    "${api_url}${path}" 2>/dev/null)" || rc=$?
+    "$url" 2>/dev/null)" || rc=$?
 
   if [[ "$code" == "101" || "$code" == "200" ]]; then
     echo "$code"
@@ -952,11 +962,7 @@ run_step() {
         fi
         ;;
       logs_panel)
-        local ws_path="/logs?level=debug"
-        if [[ -n "$token" ]]; then
-          ws_path="${ws_path}&token=${token}"
-        fi
-        code="$(websocket_code "$api_url" "$ws_path")"
+        code="$(websocket_code "$api_url" "/logs?level=debug" "$token")"
         if [[ "$code" == "101" || "$code" == "200" ]]; then
           note="/logs=${code}"
         elif [[ -s "$kernel_log" ]]; then

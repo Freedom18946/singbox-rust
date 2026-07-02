@@ -18,8 +18,10 @@ rustup toolchain install 1.92.0 -q || true
 RUSTUP_TOOLCHAIN=1.92.0 cargo check -q --workspace || { echo "MSRV check failed"; exit 1; }
 
 echo "[preflight] cargo-deny"
-if ! command -v cargo-deny >/dev/null 2>&1; then cargo install cargo-deny >/dev/null 2>&1 || true; fi
-cargo deny check || true
+if ! command -v cargo-deny >/dev/null 2>&1; then
+  cargo install cargo-deny >/dev/null 2>&1
+fi
+cargo deny check
 
 echo "[preflight] Rustdoc warnings as errors"
 RUSTDOCFLAGS="-D warnings" cargo doc --no-deps
@@ -35,6 +37,12 @@ mkdir -p dist
 BIN=$(ls target/release | head -n1)
 SIZE=$(stat -f%z target/release/$BIN 2>/dev/null || stat -c%s target/release/$BIN)
 echo "bin,$BIN,size,$SIZE" | tee dist/preflight-summary.csv
-cargo tree -q > dist/deps.txt || true
-cargo deny list -q > dist/licenses.txt || true
+if ! cargo tree -q > dist/deps.txt; then
+  echo "[preflight] WARNING: failed to write dist/deps.txt" >&2
+  echo "deps_txt,warning,failed" >> dist/preflight-summary.csv
+fi
+if ! cargo deny list -q > dist/licenses.txt; then
+  echo "[preflight] WARNING: failed to write dist/licenses.txt" >&2
+  echo "licenses_txt,warning,failed" >> dist/preflight-summary.csv
+fi
 echo "[preflight] Summary written to dist/preflight-summary.csv"

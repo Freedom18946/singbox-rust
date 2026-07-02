@@ -196,18 +196,28 @@ async fn test_route_explain_corrupt_database() {
 }
 
 #[tokio::test]
-async fn test_error_logging_rate_limiting() {
+async fn test_repeated_missing_geo_resource_failure_is_stable() {
     let cfg_path = geo_fixture_path("missing/config.yaml");
-    // Test that repeated access to the same broken resource doesn't spam logs
 
-    for _i in 0..5 {
-        let _output = Command::new(check_binary_path())
+    for attempt in 0..5 {
+        let output = Command::new(check_binary_path())
             .args(["--config", &cfg_path, "--format", "json"])
             .output()
             .expect("Failed to execute check command");
 
-        // In a real implementation, we would verify that logs are rate-limited
-        // For now, just ensure commands don't hang or crash
+        assert!(
+            !output.status.success(),
+            "attempt {attempt} should fail for missing geo resource"
+        );
+        let stdout = str::from_utf8(&output.stdout).expect("Invalid UTF-8 in stdout");
+        let result: Value = serde_json::from_str(stdout).expect("Invalid JSON output");
+        assert_eq!(result["ok"], false);
+        assert!(
+            result["issues"]
+                .as_array()
+                .is_some_and(|issues| !issues.is_empty()),
+            "attempt {attempt} should include issues"
+        );
     }
 }
 
@@ -264,8 +274,9 @@ async fn test_exit_codes() {
     // Test that different error conditions return appropriate exit codes
 
     // Missing database
+    let missing_cfg = geo_fixture_path("missing/config.yaml");
     let output = Command::new(check_binary_path())
-        .args(["--config", "app/tests/fixtures/geo/missing/config.yaml"])
+        .args(["--config", &missing_cfg, "--format", "json"])
         .output()
         .expect("Failed to execute check command");
 
@@ -275,8 +286,9 @@ async fn test_exit_codes() {
     );
 
     // Corrupt database
+    let corrupt_cfg = geo_fixture_path("corrupt/config.yaml");
     let output = Command::new(check_binary_path())
-        .args(["--config", "app/tests/fixtures/geo/corrupt/config.yaml"])
+        .args(["--config", &corrupt_cfg, "--format", "json"])
         .output()
         .expect("Failed to execute check command");
 
@@ -286,8 +298,9 @@ async fn test_exit_codes() {
     );
 
     // Legacy database
+    let legacy_cfg = geo_fixture_path("legacy/config.yaml");
     let output = Command::new(check_binary_path())
-        .args(["--config", "app/tests/fixtures/geo/legacy/config.yaml"])
+        .args(["--config", &legacy_cfg, "--format", "json"])
         .output()
         .expect("Failed to execute check command");
 
