@@ -42,15 +42,17 @@
 
 use serde::{ser::Serializer, Deserialize, Serialize};
 
-/// Recursively removes all `null` values from a JSON value.
-/// 递归地从 JSON 值中移除所有 `null` 值。
+/// Recursively removes object fields whose value is `null`.
+/// 递归移除值为 `null` 的对象字段。
 ///
 /// This function traverses objects and arrays, filtering out:
 /// 此函数遍历对象和数组，过滤掉：
 /// - Object keys with `null` values
 ///   值为 `null` 的对象键
-/// - Recursively processing nested structures
+/// - Recursively processing nested structures while preserving array positions,
+///   including `null` array elements
 ///   递归处理嵌套结构
+///   并保留数组位置，包括数组中的 `null` 元素
 ///
 /// # Performance / 性能
 /// Uses single-pass iteration with in-place mutation for efficiency.
@@ -74,13 +76,14 @@ fn strip_nulls(mut v: serde_json::Value) -> serde_json::Value {
     }
 }
 
-/// Custom serializer that skips `null` values in nested JSON structures.
-/// 自定义序列化器，跳过嵌套 JSON 结构中的 `null` 值。
+/// Custom serializer that skips `null` object fields in nested JSON structures.
+/// 自定义序列化器，跳过嵌套 JSON 结构中值为 `null` 的对象字段。
 ///
 /// Used by `ResponseEnvelope` to ensure clean JSON output without
-/// unnecessary `null` fields in the `data` payload.
+/// unnecessary `null` object fields in the `data` payload. Array elements are
+/// left intact.
 /// 由 `ResponseEnvelope` 使用，以确保输出干净的 JSON，
-/// 在 `data` 负载中没有不必要的 `null` 字段。
+/// 在 `data` 负载中没有不必要的 `null` 对象字段。数组元素保持不变。
 ///
 /// Note: Takes `&Option<T>` instead of `Option<&T>` to match serde's
 /// generated code expectations (cannot be changed without manual Serialize impl).
@@ -107,13 +110,19 @@ where
 /// optional metadata (request ID, error details).
 /// 为成功/失败响应提供一致的结构，并包含可选的元数据（请求 ID、错误详情）。
 ///
+/// Constructors emit `data` for success envelopes and `error` for failure
+/// envelopes. Deserialization remains permissive for wire compatibility; use
+/// `as_result` to normalize malformed envelopes into an internal error.
+/// 构造函数会为成功信封生成 `data`，为失败信封生成 `error`。
+/// 反序列化为了线缆兼容性保持宽松；使用 `as_result` 可将畸形信封归一化为内部错误。
+///
 /// # Fields / 字段
 /// - `ok`: `true` for success, `false` for errors
 ///   `ok`: `true` 表示成功，`false` 表示错误
-/// - `data`: Optional payload (only present when `ok == true`)
-///   `data`: 可选负载（仅当 `ok == true` 时存在）
-/// - `error`: Optional error details (only present when `ok == false`)
-///   `error`: 可选错误详情（仅当 `ok == false` 时存在）
+/// - `data`: Optional payload emitted by constructors for successful responses
+///   `data`: 构造函数为成功响应生成的可选负载
+/// - `error`: Optional error details emitted by constructors for failed responses
+///   `error`: 构造函数为失败响应生成的可选错误详情
 /// - `request_id`: Optional request tracking ID
 ///   `request_id`: 可选的请求跟踪 ID
 ///
@@ -426,6 +435,40 @@ mod tests {
         // Verify nested nulls are stripped
         assert!(!s.contains("field1"));
         assert!(s.contains("field2"));
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_ok_without_data_normalizes_to_internal_error(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let env: ResponseEnvelope<serde_json::Value> = serde_json::from_str(r#"{"ok":true}"#)?;
+        let result = env.as_result();
+
+        assert!(matches!(
+            result,
+            Err(ErrorBody {
+                kind: ErrorKind::Internal,
+                ref msg,
+                ..
+            }) if msg == "missing data in ok response"
+        ));
+        Ok(())
+    }
+
+    #[test]
+    fn malformed_error_without_error_body_normalizes_to_internal_error(
+    ) -> Result<(), Box<dyn std::error::Error>> {
+        let env: ResponseEnvelope<()> = serde_json::from_str(r#"{"ok":false}"#)?;
+        let result = env.as_result();
+
+        assert!(matches!(
+            result,
+            Err(ErrorBody {
+                kind: ErrorKind::Internal,
+                ref msg,
+                ..
+            }) if msg == "missing error in error response"
+        ));
         Ok(())
     }
 
