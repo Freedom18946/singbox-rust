@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-07-02) - sb-security audit cleanup
+
+- **`crates/sb-security` audit cleanup DONE locally**: token/credential redaction now
+  counts Unicode chars instead of bytes, fully masks very short tokens, and avoids the
+  prior short-Unicode leakage / emoji underflow panic class.
+- **Secret-source policy tightened**: env fallbacks are treated as development-only inline
+  configuration, rejected by the default secure loader, and marked insecure when explicitly
+  allowed; unsupported pattern validators now fail instead of silently accepting input.
+- **Verification PASS**: sb-security fmt, no-default/all-features checks, all-target tests,
+  doctests, strict clippy, residual audit scan, and `git diff --check`.
+- **Scope note**: sb-security audit/test hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - sb-runtime audit cleanup
 
 - **`crates/sb-runtime` audit cleanup DONE locally**: offline Trojan/VMess alpha handshakes
@@ -211,19 +224,6 @@
 - **Scope note**: repository-governance hygiene only. No product behavior, REALITY
   closure, dual-kernel BHV/parity movement, workflow automation, or release packaging
   completion is claimed.
-
-## Previous Resume (2026-06-30) - .e2e release acceptance
-
-- **`.e2e` DONE locally**: the runtime artifact tree and directly associated
-  `scripts/e2e/` entrypoints received a release-level hygiene pass. Root discovery now
-  resolves to the repository root, documented `pids/` and `soak/` anchors are tracked,
-  and cleanup oldest-file selection no longer depends on GNU `find -printf`.
-- **Verification PASS**: historical record compressed in `agents-only/archive/release_cleanup_2026_06_summary.md`. Bash/zsh
-  syntax checks, zsh source guard, dry-run cleanup modes, `.e2e/config.yaml` app check,
-  `git diff --check`, and the expected `GO_SINGBOX_BIN`-disabled diff path were
-  verified locally.
-- **Scope note**: E2E artifact/script hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, workflow automation, or release packaging completion is claimed.
 
 ## Previous Resume (2026-06-30) - Claude memory cleanup policy refresh
 

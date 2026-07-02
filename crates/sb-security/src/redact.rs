@@ -11,11 +11,13 @@
 //! - **Display**: Safe `Display` implementation for sensitive types. (显示：为敏感类型提供安全的 `Display` 实现)
 
 use std::fmt;
+use zeroize::ZeroizeOnDrop;
 
 /// Redacts an authentication token for safe logging
 ///
 /// Shows only the first 4 and last 4 characters, with the middle replaced by asterisks.
-/// For tokens shorter than 12 characters, shows only the first 2 or 4 characters.
+/// Tokens of 4 characters or fewer are fully redacted; other short tokens show
+/// only the first 2 or 4 characters.
 ///
 /// # Examples
 /// ```
@@ -30,35 +32,25 @@ pub fn redact_token(token: &str) -> String {
         return "********".to_string();
     }
 
-    let len = token.len();
+    let len = token.chars().count();
 
-    if len <= 8 {
-        // For very short tokens, show only first 2 chars
-        let prefix = &token[..token.char_indices().nth(2).map_or(len, |(idx, _)| idx)];
+    if len <= 4 {
+        "********".to_string()
+    } else if len <= 8 {
+        // For short tokens, show only the first 2 chars.
+        let prefix = prefix_chars(token, 2);
         format!("{prefix}******")
     } else if len <= 12 {
-        // For short tokens, show first 4 chars
-        let prefix = &token[..token.char_indices().nth(4).map_or(len, |(idx, _)| idx)];
+        // For medium tokens, show first 4 chars.
+        let prefix = prefix_chars(token, 4);
         format!("{prefix}****")
     } else {
-        // For longer tokens, show first 4 and last 4 chars
-        // Use byte slicing for ASCII-heavy tokens (common case optimization)
-        if token.is_ascii() {
-            let prefix = &token[..4];
-            let suffix = &token[len - 4..];
-            let middle_len = len - 8;
-            let asterisks = "*".repeat(middle_len.min(8)); // Cap at 8 asterisks
-            format!("{prefix}{asterisks}{suffix}")
-        } else {
-            // Handle Unicode properly
-            let chars: Vec<char> = token.chars().collect();
-            let char_count = chars.len();
-            let prefix: String = chars.iter().take(4).collect();
-            let suffix: String = chars.iter().skip(char_count - 4).collect();
-            let middle_len = char_count - 8;
-            let asterisks = "*".repeat(middle_len.min(8)); // Cap at 8 asterisks
-            format!("{prefix}{asterisks}{suffix}")
-        }
+        // For longer tokens, show first 4 and last 4 chars.
+        let prefix = prefix_chars(token, 4);
+        let suffix = suffix_chars(token, 4);
+        let middle_len = len - 8;
+        let asterisks = "*".repeat(middle_len.min(8)); // Cap at 8 asterisks
+        format!("{prefix}{asterisks}{suffix}")
     }
 }
 
@@ -117,28 +109,35 @@ pub fn redact_credential(credential: &str) -> String {
         return "****".to_string();
     }
 
-    let len = credential.len();
+    let len = credential.chars().count();
 
     if len <= 4 {
         "*".repeat(len)
     } else if len <= 8 {
-        let prefix_end = credential.char_indices().nth(2).map_or(len, |(idx, _)| idx);
-        let prefix = &credential[..prefix_end];
-        let asterisks = "*".repeat(len - prefix.len());
+        let prefix = prefix_chars(credential, 2);
+        let asterisks = "*".repeat(len - 2);
         format!("{prefix}{asterisks}")
     } else {
-        let prefix_end = credential.char_indices().nth(2).map_or(len, |(idx, _)| idx);
-        let prefix = &credential[..prefix_end];
-        let asterisks = "*".repeat((len - prefix.len()).min(10)); // Cap at 10 asterisks
+        let prefix = prefix_chars(credential, 2);
+        let asterisks = "*".repeat((len - 2).min(10)); // Cap at 10 asterisks
         format!("{prefix}{asterisks}")
     }
+}
+
+fn prefix_chars(value: &str, count: usize) -> String {
+    value.chars().take(count).collect()
+}
+
+fn suffix_chars(value: &str, count: usize) -> String {
+    let len = value.chars().count();
+    value.chars().skip(len.saturating_sub(count)).collect()
 }
 
 /// A wrapper type that automatically redacts its contents when displayed or logged
 ///
 /// This type ensures that sensitive information is never accidentally logged
 /// in its raw form.
-#[derive(Clone)]
+#[derive(Clone, ZeroizeOnDrop)]
 pub struct RedactedString {
     inner: String,
     redacted: String,
@@ -200,10 +199,10 @@ impl fmt::Debug for RedactedString {
     }
 }
 
-/// Macro to safely log with automatic credential redaction
+/// Macro to log values that have already been redacted
 ///
-/// This macro helps ensure that sensitive information is always redacted
-/// when logging.
+/// This macro does not inspect or transform arguments. Wrap sensitive values in
+/// `RedactedString` or call the redaction helpers before passing them to it.
 #[macro_export]
 macro_rules! log_with_redaction {
     ($level:ident, $($arg:tt)*) => {
@@ -221,7 +220,7 @@ mod tests {
         assert_eq!(redact_token(""), "********");
 
         // Very short token
-        assert_eq!(redact_token("abc"), "ab******");
+        assert_eq!(redact_token("abc"), "********");
         assert_eq!(redact_token("abcdef"), "ab******");
 
         // Short token
@@ -289,6 +288,17 @@ mod tests {
 
         // Long
         assert_eq!(redact_credential("verylongpassword123456"), "ve**********");
+    }
+
+    #[test]
+    fn test_redact_unicode_without_leaking_short_values() {
+        assert_eq!(redact_token("秘密"), "********");
+        assert_eq!(redact_token("😀😀😀😀"), "********");
+        assert_eq!(redact_token("令牌令牌12345"), "令牌令牌****");
+
+        assert_eq!(redact_credential("密码"), "**");
+        assert_eq!(redact_credential("密码123"), "密码***");
+        assert_eq!(redact_credential("🔑🔒secret"), "🔑🔒******");
     }
 
     #[test]

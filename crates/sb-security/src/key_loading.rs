@@ -53,7 +53,8 @@ pub enum KeySource {
     Env {
         /// Environment variable name
         name: String,
-        /// Optional fallback if env var is not set
+        /// Optional fallback if env var is not set. Fallback values are inline
+        /// configuration and are not considered secure for production use.
         fallback: Option<String>,
     },
     /// Load from file
@@ -79,7 +80,7 @@ impl KeySource {
         }
     }
 
-    /// Create an environment variable source with fallback
+    /// Create an environment variable source with a development-only fallback
     pub fn env_with_fallback(name: impl Into<String>, fallback: impl Into<String>) -> Self {
         Self::Env {
             name: name.into(),
@@ -105,7 +106,7 @@ impl KeySource {
     /// Check if this key source is considered secure for production use
     pub fn is_secure_for_production(&self) -> bool {
         match self {
-            KeySource::Env { .. } => true,
+            KeySource::Env { fallback, .. } => fallback.is_none(),
             KeySource::File { .. } => true,
             KeySource::Inline { .. } => false, // Inline is never secure for production
         }
@@ -258,14 +259,14 @@ impl SecretLoader {
             env_value
         };
 
-        let (final_value, actual_source) = match (value, fallback) {
+        let (final_value, actual_source, is_secure) = match (value, fallback) {
             (Some(env_val), _) => {
                 if env_val.is_empty() {
                     return Err(KeyLoadingError::EnvVarNotFound {
                         name: name.to_string(),
                     });
                 }
-                (env_val, format!("env:{}", name))
+                (env_val, format!("env:{}", name), true)
             }
             (None, Some(fallback_val)) => {
                 if fallback_val.is_empty() {
@@ -273,7 +274,11 @@ impl SecretLoader {
                         name: name.to_string(),
                     });
                 }
-                (fallback_val.to_string(), format!("env:{}(fallback)", name))
+                (
+                    fallback_val.to_string(),
+                    format!("env:{}(fallback)", name),
+                    false,
+                )
             }
             (None, None) => {
                 return Err(KeyLoadingError::EnvVarNotFound {
@@ -282,11 +287,13 @@ impl SecretLoader {
             }
         };
 
-        Ok(LoadedSecret::new(final_value, actual_source, true))
+        Ok(LoadedSecret::new(final_value, actual_source, is_secure))
     }
 
     /// Load from file
     fn load_from_file(&self, path: &str, trim: bool) -> Result<LoadedSecret, KeyLoadingError> {
+        self.validate_file_permissions(path)?;
+
         let content =
             std::fs::read_to_string(path).map_err(|source| KeyLoadingError::FileReadError {
                 path: path.to_string(),
@@ -304,9 +311,6 @@ impl SecretLoader {
                 path: path.to_string(),
             });
         }
-
-        // Check file permissions for security
-        self.validate_file_permissions(path)?;
 
         Ok(LoadedSecret::new(
             final_content,
@@ -417,12 +421,11 @@ pub mod validators {
     /// Validate that a secret matches a specific pattern
     pub fn pattern(regex: &'static str) -> impl Fn(&str) -> Result<(), String> {
         move |secret: &str| {
-            // Simple pattern matching without regex dependency
-            // For now, just check basic patterns
+            // Simple pattern matching without a regex dependency.
             match regex {
                 r"^[A-Za-z0-9+/]*={0,2}$" => base64()(secret), // Base64 pattern
                 r"^[0-9a-fA-F]+$" => hex()(secret),            // Hex pattern
-                _ => Ok(()),                                   // For now, accept any other pattern
+                _ => Err(format!("Unsupported pattern validator: {regex}")),
             }
         }
     }
@@ -448,6 +451,7 @@ mod tests {
     #[test]
     fn test_key_source_security() {
         assert!(KeySource::env("TEST_KEY").is_secure_for_production());
+        assert!(!KeySource::env_with_fallback("TEST_KEY", "fallback").is_secure_for_production());
         assert!(KeySource::file("/path/to/key").is_secure_for_production());
         assert!(!KeySource::inline("secret").is_secure_for_production());
     }
@@ -495,14 +499,26 @@ mod tests {
 
     #[test]
     fn test_secret_loader_env_fallback() -> Result<(), Box<dyn std::error::Error>> {
-        let mut loader = SecretLoader::new();
+        let mut loader = SecretLoader::allow_insecure();
         let source = KeySource::env_with_fallback("NONEXISTENT_VAR", "fallback-value");
         let secret = loader.load(&source)?;
 
         assert_eq!(secret.expose(), "fallback-value");
         assert_eq!(secret.source(), "env:NONEXISTENT_VAR(fallback)");
-        assert!(secret.is_secure());
+        assert!(!secret.is_secure());
         Ok(())
+    }
+
+    #[test]
+    fn test_secret_loader_rejects_env_fallback_in_secure_mode() {
+        let mut loader = SecretLoader::new();
+        let source = KeySource::env_with_fallback("NONEXISTENT_VAR", "fallback-value");
+        let result = loader.load(&source);
+
+        assert!(
+            matches!(result, Err(KeyLoadingError::InsecureConfiguration { .. })),
+            "Expected InsecureConfiguration error, got: {result:?}"
+        );
     }
 
     #[test]
@@ -576,6 +592,14 @@ mod tests {
         let ascii_validator = ascii_printable();
         assert!(ascii_validator("Hello World 123!").is_ok());
         assert!(ascii_validator("Hello\x00World").is_err());
+
+        // Test pattern validator
+        let hex_pattern = pattern(r"^[0-9a-fA-F]+$");
+        assert!(hex_pattern("deadbeef").is_ok());
+        assert!(hex_pattern("not-hex").is_err());
+
+        let unsupported_pattern = pattern(r"^secret-[0-9]+$");
+        assert!(unsupported_pattern("secret-123").is_err());
     }
 
     #[test]
@@ -596,7 +620,7 @@ mod tests {
 
         // Should not contain the actual secret
         assert!(!debug_output.contains("secret-value"));
-        // Should contain redacted placeholder
+        // Should contain redacted marker
         assert!(debug_output.contains("[REDACTED]"));
         // Should contain metadata
         assert!(debug_output.contains("test-source"));

@@ -50,12 +50,15 @@
 //! ```no_run
 //! use sb_security::{KeySource, SecretLoader};
 //!
+//! # fn main() -> Result<(), Box<dyn std::error::Error>> {
 //! let mut loader = SecretLoader::new();
 //! let source = KeySource::env("API_KEY");
-//! let secret = loader.load(&source).expect("Failed to load key");
+//! let secret = loader.load(&source)?;
 //!
 //! // Use secret.expose() only when needed for actual operations
-//! println!("Loaded from: {}", secret.source());
+//! let _source = secret.source();
+//! # Ok(())
+//! # }
 //! ```
 
 #![deny(clippy::unwrap_used, clippy::expect_used, clippy::panic)]
