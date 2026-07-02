@@ -9,9 +9,7 @@
 //!
 //! let result = validate_auto_route(&config);
 //! if !result.is_valid() {
-//!     for error in result.errors() {
-//!         eprintln!("Error: {}", error);
-//!     }
+//!     assert!(!result.errors().is_empty());
 //! }
 //! ```
 
@@ -438,22 +436,24 @@ pub fn check_route_conflicts(routes: &[String]) -> Vec<ValidationError> {
 }
 
 #[cfg(not(target_os = "linux"))]
-/// Check platform-specific route conflicts (stub for non-Linux).
+/// Check platform-specific route conflicts.
+///
+/// Non-Linux platforms currently do not expose route-table conflict probing here.
 pub fn check_route_conflicts(_routes: &[String]) -> Vec<ValidationError> {
     Vec::new()
 }
 
 #[cfg(test)]
-#[allow(clippy::unwrap_used, clippy::expect_used)]
 mod tests {
     use super::*;
+    use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
     fn test_valid_config() {
         let config = TunValidationConfig {
             name: "tun0".to_string(),
             mtu: 1500,
-            ipv4: Some("10.0.0.1".parse().expect("valid ipv4")),
+            ipv4: Some(IpAddr::V4(Ipv4Addr::new(10, 0, 0, 1))),
             ipv4_enabled: true,
             ..Default::default()
         };

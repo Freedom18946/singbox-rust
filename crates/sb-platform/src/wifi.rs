@@ -83,12 +83,11 @@ fn parse_airport_output(output: &str) -> Option<WifiInfo> {
 
 #[cfg(not(target_os = "macos"))]
 fn fetch_wifi_info_platform() -> Option<WifiInfo> {
-    // Other platforms stub
+    // WiFi lookup is currently implemented only through macOS airport output.
     None
 }
 
-#[cfg(test)]
-#[allow(clippy::expect_used)]
+#[cfg(all(test, target_os = "macos"))]
 mod tests {
     use super::*;
 
@@ -111,8 +110,10 @@ mod tests {
             MCS: 9
   channel: 149,80
 ";
-        let info = parse_airport_output(output).expect("should parse");
-        assert_eq!(info.ssid, "MyWiFiNetwork");
-        assert_eq!(info.bssid, "11:22:33:44:55:66");
+        let parsed = parse_airport_output(output).map(|info| (info.ssid, info.bssid));
+        assert_eq!(
+            parsed,
+            Some(("MyWiFiNetwork".to_string(), "11:22:33:44:55:66".to_string()))
+        );
     }
 }

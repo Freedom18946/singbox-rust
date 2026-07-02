@@ -17,7 +17,7 @@ impl LinuxTun {
     /// Open a TUN device on Linux using /dev/net/tun
     fn open_tun_device(config: &TunConfig) -> Result<(File, String), TunError> {
         // Open the TUN/TAP control device
-        let mut file = OpenOptions::new()
+        let file = OpenOptions::new()
             .read(true)
             .write(true)
             .open("/dev/net/tun")
@@ -224,29 +224,17 @@ impl LinuxTun {
 }
 
 #[cfg(test)]
-mod tests {
+mod syscall_tests {
     use super::*;
 
     #[test]
-    fn test_linux_ioctl_failure_path_is_handled() {
-        // This test does not perform a real ioctl; instead, validate that constructing
-        // the IfrData and calling into ioctl failure path would be handled.
-        // We simulate the open failure by trying to open a bogus device, which should
-        // return IoError/DeviceNotFound and not panic.
-        let cfg = TunConfig {
-            name: "tun-test".to_string(),
-            mtu: 1500,
-            ipv4: None,
-            ipv6: None,
-        };
-        // open_tun_device is private; exercise create() via TunDevice trait which calls it.
-        // This should fail on typical CI runners where /dev/net/tun is unavailable.
-        let res = LinuxTun::create(&cfg);
-        assert!(res.is_err());
+    fn test_ifr_data_truncates_long_name() {
+        let ifr = IfrData::new("abcdefghijklmnop");
+        assert_eq!(ifr.get_name().as_deref(), Some("abcdefghijklmno"));
     }
 
     #[test]
-    fn test_linux_fcntl_failure_mock() {
+    fn test_linux_fcntl_failure_path() {
         // SAFETY: Calling fcntl on an invalid fd (-1) is expected to return -1 and set errno.
         // This is a test-only negative path to ensure we can observe and handle failures
         // in similar syscalls if added.
@@ -262,7 +250,7 @@ impl TunDevice for LinuxTun {
     {
         let (file, actual_name) = Self::open_tun_device(config)?;
 
-        let mut device = Self {
+        let device = Self {
             file,
             name: actual_name,
             mtu: config.mtu,
@@ -329,7 +317,7 @@ struct IfrData {
 
 impl IfrData {
     fn new(name: &str) -> Self {
-        let mut ifr_name = [0u8; libc::IF_NAMESIZE];
+        let mut ifr_name = [0 as libc::c_char; libc::IF_NAMESIZE];
         let name_bytes = name.as_bytes();
         let copy_len = std::cmp::min(name_bytes.len(), libc::IF_NAMESIZE - 1);
 
@@ -370,11 +358,9 @@ mod tests {
     use std::net::{IpAddr, Ipv4Addr};
 
     #[test]
-    #[allow(clippy::expect_used)] // Test code, expect is acceptable
     fn test_ifr_data_creation() {
         let ifr = IfrData::new("test-tun");
-        let name = ifr.get_name().expect("should have valid name");
-        assert_eq!(name, "test-tun");
+        assert_eq!(ifr.get_name().as_deref(), Some("test-tun"));
     }
 
     #[test]
@@ -390,6 +376,7 @@ mod tests {
         use super::*;
 
         #[test]
+        #[ignore = "requires root privileges and a disposable Linux TUN environment"]
         fn test_linux_tun_creation() {
             let config = TunConfig {
                 name: "test-tun".to_string(),
@@ -405,18 +392,18 @@ mod tests {
                     assert_eq!(tun.mtu(), 1400);
                     assert!(tun.is_active());
 
-                    // Test read/write operations
-                    let test_data = b"test packet";
-                    let mut read_buf = [0u8; 1500];
-
-                    // Note: This would require actual packet data to test properly
                     let _ = tun.close();
                 }
-                Err(TunError::PermissionDenied) => {
-                    // Expected when running without root
-                    println!("Skipping test: requires root privileges");
-                }
-                Err(e) => panic!("Unexpected error: {:?}", e),
+                Err(error) => assert!(
+                    matches!(
+                        error,
+                        TunError::PermissionDenied
+                            | TunError::DeviceNotFound(_)
+                            | TunError::OperationFailed(_)
+                            | TunError::IoError(_)
+                    ),
+                    "unexpected Linux TUN creation error: {error:?}"
+                ),
             }
         }
     }

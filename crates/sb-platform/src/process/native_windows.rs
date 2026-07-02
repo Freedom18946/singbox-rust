@@ -14,7 +14,6 @@
 //! - MSDN: <https://learn.microsoft.com/en-us/windows/win32/api/iphlpapi/nf-iphlpapi-getextendedudptable>
 
 use super::{ConnectionInfo, ProcessInfo, ProcessMatchError, Protocol};
-use windows::Win32::Foundation::NO_ERROR;
 use windows::Win32::NetworkManagement::IpHelper::{
     GetExtendedTcpTable, GetExtendedUdpTable, MIB_TCPROW_OWNER_PID, MIB_TCPTABLE_OWNER_PID,
     MIB_UDPROW_OWNER_PID, MIB_UDPTABLE_OWNER_PID, TCP_TABLE_OWNER_PID_ALL, UDP_TABLE_OWNER_PID,
@@ -23,7 +22,10 @@ use windows::Win32::Networking::WinSock::AF_INET;
 use windows::Win32::System::ProcessStatus::K32GetProcessImageFileNameW;
 use windows::Win32::System::Threading::{OpenProcess, PROCESS_QUERY_LIMITED_INFORMATION};
 
-unsafe fn tcp_rows<'a>(buffer: &'a [u8]) -> Result<&'a [MIB_TCPROW_OWNER_PID], ProcessMatchError> {
+const ERROR_SUCCESS: u32 = 0;
+const ERROR_INSUFFICIENT_BUFFER: u32 = 122;
+
+unsafe fn tcp_rows(buffer: &[u8]) -> Result<&[MIB_TCPROW_OWNER_PID], ProcessMatchError> {
     if buffer.len() < std::mem::size_of::<u32>() {
         return Err(ProcessMatchError::SystemError(
             "TCP table buffer is truncated".to_string(),
@@ -46,7 +48,7 @@ unsafe fn tcp_rows<'a>(buffer: &'a [u8]) -> Result<&'a [MIB_TCPROW_OWNER_PID], P
     Ok(std::slice::from_raw_parts(table.table.as_ptr(), entries))
 }
 
-unsafe fn udp_rows<'a>(buffer: &'a [u8]) -> Result<&'a [MIB_UDPROW_OWNER_PID], ProcessMatchError> {
+unsafe fn udp_rows(buffer: &[u8]) -> Result<&[MIB_UDPROW_OWNER_PID], ProcessMatchError> {
     if buffer.len() < std::mem::size_of::<u32>() {
         return Err(ProcessMatchError::SystemError(
             "UDP table buffer is truncated".to_string(),
@@ -110,37 +112,40 @@ impl NativeWindowsProcessMatcher {
                 let mut size: u32 = 0;
 
                 // First call to get required buffer size
-                GetExtendedTcpTable(
+                let result = GetExtendedTcpTable(
                     None,
                     &mut size,
                     false,
                     AF_INET.0 as u32,
                     TCP_TABLE_OWNER_PID_ALL,
                     0,
-                )
-                .ok()
-                .map_err(|e| {
-                    ProcessMatchError::SystemError(format!(
-                        "GetExtendedTcpTable size query failed: {e:?}",
-                    ))
-                })?;
+                );
+                if result != ERROR_INSUFFICIENT_BUFFER && result != ERROR_SUCCESS {
+                    return Err(ProcessMatchError::SystemError(format!(
+                        "GetExtendedTcpTable size query failed: {result}",
+                    )));
+                }
+                if size == 0 {
+                    return Err(ProcessMatchError::ProcessNotFound);
+                }
 
                 // Allocate buffer
                 let mut buffer = vec![0u8; size as usize];
 
                 // Second call to get actual table
-                GetExtendedTcpTable(
+                let result = GetExtendedTcpTable(
                     Some(buffer.as_mut_ptr() as *mut _),
                     &mut size,
                     false,
                     AF_INET.0 as u32,
                     TCP_TABLE_OWNER_PID_ALL,
                     0,
-                )
-                .ok()
-                .map_err(|e| {
-                    ProcessMatchError::SystemError(format!("GetExtendedTcpTable failed: {e:?}"))
-                })?;
+                );
+                if result != ERROR_SUCCESS {
+                    return Err(ProcessMatchError::SystemError(format!(
+                        "GetExtendedTcpTable failed: {result}",
+                    )));
+                }
 
                 for row in tcp_rows(&buffer)? {
                     // Convert port from network byte order
@@ -169,37 +174,40 @@ impl NativeWindowsProcessMatcher {
                 let mut size: u32 = 0;
 
                 // First call to get required buffer size
-                GetExtendedUdpTable(
+                let result = GetExtendedUdpTable(
                     None,
                     &mut size,
                     false,
                     AF_INET.0 as u32,
                     UDP_TABLE_OWNER_PID,
                     0,
-                )
-                .ok()
-                .map_err(|e| {
-                    ProcessMatchError::SystemError(format!(
-                        "GetExtendedUdpTable size query failed: {e:?}",
-                    ))
-                })?;
+                );
+                if result != ERROR_INSUFFICIENT_BUFFER && result != ERROR_SUCCESS {
+                    return Err(ProcessMatchError::SystemError(format!(
+                        "GetExtendedUdpTable size query failed: {result}",
+                    )));
+                }
+                if size == 0 {
+                    return Err(ProcessMatchError::ProcessNotFound);
+                }
 
                 // Allocate buffer
                 let mut buffer = vec![0u8; size as usize];
 
                 // Second call to get actual table
-                GetExtendedUdpTable(
+                let result = GetExtendedUdpTable(
                     Some(buffer.as_mut_ptr() as *mut _),
                     &mut size,
                     false,
                     AF_INET.0 as u32,
                     UDP_TABLE_OWNER_PID,
                     0,
-                )
-                .ok()
-                .map_err(|e| {
-                    ProcessMatchError::SystemError(format!("GetExtendedUdpTable failed: {e:?}"))
-                })?;
+                );
+                if result != ERROR_SUCCESS {
+                    return Err(ProcessMatchError::SystemError(format!(
+                        "GetExtendedUdpTable failed: {result}",
+                    )));
+                }
 
                 for row in udp_rows(&buffer)? {
                     // Convert port from network byte order
@@ -259,7 +267,6 @@ impl NativeWindowsProcessMatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
     #[tokio::test]
     async fn test_native_windows_process_matcher_creation() {

@@ -252,9 +252,13 @@ mod tests {
     #[test]
     fn test_parse_proc_net_addr_ipv4() {
         // Example from /proc/net/tcp: "0100007F:1F90" = 127.0.0.1:8080
-        let addr = parse_proc_net_addr("0100007F:1F90").unwrap();
-        assert_eq!(addr.ip(), IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)));
-        assert_eq!(addr.port(), 8080);
+        let parsed = parse_proc_net_addr("0100007F:1F90")
+            .ok()
+            .map(|addr| (addr.ip(), addr.port()));
+        assert_eq!(
+            parsed,
+            Some((IpAddr::V4(Ipv4Addr::new(127, 0, 0, 1)), 8080))
+        );
     }
 
     #[tokio::test]

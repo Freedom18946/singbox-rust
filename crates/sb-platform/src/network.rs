@@ -121,6 +121,8 @@ fn get_mac_windows(iface: &str) -> Result<MacAddress, String> {
 
     loop {
         buffer = vec![0u8; buffer_size as usize];
+        // SAFETY: buffer points to writable storage of buffer_size bytes, and
+        // buffer_size remains valid for GetAdaptersAddresses to update.
         let result = unsafe {
             GetAdaptersAddresses(
                 AF_UNSPEC.0 as u32,
@@ -131,7 +133,7 @@ fn get_mac_windows(iface: &str) -> Result<MacAddress, String> {
             )
         };
 
-        match result.0 {
+        match result {
             0 => break,      // ERROR_SUCCESS
             111 => continue, // ERROR_BUFFER_OVERFLOW - retry with new size
             code => return Err(format!("GetAdaptersAddresses failed with error {code}")),

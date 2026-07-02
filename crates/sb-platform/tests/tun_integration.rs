@@ -1,12 +1,23 @@
-//! Integration tests for TUN device abstraction layer
-//! Tests the complete functionality required for Task 17
+//! Integration tests for the TUN device abstraction layer.
 
+use sb_platform::tun::validation::{validate_auto_route, TunValidationConfig};
 use sb_platform::tun::{create_platform_device, AsyncTunDevice, TunConfig, TunError, TunManager};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-#[tokio::test]
-async fn test_tun_device_abstraction_creation() {
-    // Test basic TUN device configuration
+fn is_environmental_tun_error(error: &TunError) -> bool {
+    match error {
+        TunError::UnsupportedPlatform
+        | TunError::PermissionDenied
+        | TunError::DeviceNotFound(_)
+        | TunError::DeviceBusy(_)
+        | TunError::OperationFailed(_)
+        | TunError::IoError(_) => true,
+        TunError::InvalidConfig(_) => false,
+    }
+}
+
+#[test]
+fn test_tun_device_abstraction_config() {
     let config = TunConfig {
         name: "test-tun0".to_string(),
         mtu: 1400,
@@ -16,7 +27,6 @@ async fn test_tun_device_abstraction_creation() {
         table: Some(100),
     };
 
-    // Test configuration validation
     assert_eq!(config.name, "test-tun0");
     assert_eq!(config.mtu, 1400);
     assert!(config.ipv4.is_some());
@@ -24,242 +34,93 @@ async fn test_tun_device_abstraction_creation() {
     assert_eq!(config.table, Some(100));
 }
 
-#[tokio::test]
-async fn test_platform_device_creation() {
+#[test]
+fn test_platform_device_creation_reports_real_outcome() {
     let config = TunConfig {
-        name: "test-platform".to_string(),
+        name: platform_test_name(),
         mtu: 1500,
         ..Default::default()
     };
 
-    // Test platform-specific device creation
-    // Note: This will return UnsupportedPlatform on unsupported systems
-    // or require privileges on supported platforms
     match create_platform_device(&config) {
         Ok(mut device) => {
-            // Device was created successfully
-            assert_eq!(device.name(), "test-platform");
+            assert!(!device.name().is_empty());
             assert_eq!(device.mtu(), 1500);
             assert!(device.is_active());
-
-            // Test basic operations
-            let mut read_buf = [0u8; 1500];
-            let test_packet = b"test packet data";
-
-            // These operations may not work without actual network setup
-            // but should not panic or crash
-            let _ = device.read(&mut read_buf);
-            let _ = device.write(test_packet);
-            let _ = device.close();
+            assert!(device.close().is_ok());
         }
-        Err(TunError::UnsupportedPlatform) => {
-            println!("Platform not supported for TUN devices - test skipped");
-        }
-        Err(TunError::PermissionDenied) => {
-            println!("Insufficient privileges for TUN device creation - test skipped");
-        }
-        Err(e) => {
-            println!("TUN device creation failed: {:?} - test skipped", e);
-        }
+        Err(error) => assert!(
+            is_environmental_tun_error(&error),
+            "unexpected TUN creation error: {error:?}"
+        ),
     }
 }
 
 #[tokio::test]
-async fn test_async_tun_device() {
+async fn test_async_tun_device_creation_reports_real_outcome() {
     let config = TunConfig {
-        name: "async-test".to_string(),
+        name: platform_test_name(),
         mtu: 1400,
         ..Default::default()
     };
 
-    // Test async wrapper creation
     match AsyncTunDevice::new(&config) {
         Ok(mut async_device) => {
-            assert_eq!(async_device.name(), "async-test");
+            assert!(!async_device.name().is_empty());
             assert_eq!(async_device.mtu(), 1400);
             assert!(async_device.is_active());
-
-            // Test async operations with timeout
-            let mut read_buf = [0u8; 1500];
-            let test_data = b"async test packet";
-
-            // Test async read with timeout
-            // Test read (synchronous)
-            let read_result = async_device.read(&mut read_buf);
-            match read_result {
-                Ok(_bytes_read) => {
-                    println!("Read completed successfully");
-                }
-                Err(e) => {
-                    println!("Read failed: {:?}", e);
-                }
-            }
-
-            // Test async write with timeout
-            // Test write (synchronous)
-            let write_result = async_device.write(test_data);
-            match write_result {
-                Ok(bytes_written) => {
-                    println!("Write completed: {} bytes", bytes_written);
-                    assert_eq!(bytes_written, test_data.len());
-                }
-                Err(e) => {
-                    println!("Write failed: {:?}", e);
-                }
-            }
-
-            // Clean up
-            let _ = async_device.close();
+            assert!(async_device.close().is_ok());
         }
-        Err(e) => {
-            println!("Async TUN device creation failed: {:?} - test skipped", e);
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_tun_manager_functionality() {
-    let mut manager = TunManager::new();
-
-    // Test manager initialization
-    assert_eq!(manager.list_devices().len(), 0);
-
-    // Test device creation through manager
-    let configs = vec![
-        TunConfig {
-            name: "manager-test-1".to_string(),
-            mtu: 1400,
-            ..Default::default()
-        },
-        TunConfig {
-            name: "manager-test-2".to_string(),
-            mtu: 1500,
-            ipv4: Some(IpAddr::V4(Ipv4Addr::new(10, 0, 1, 1))),
-            ..Default::default()
-        },
-    ];
-
-    let mut created_devices = 0;
-    for config in &configs {
-        match manager.create_device(config) {
-            Ok(()) => {
-                created_devices += 1;
-                println!("Created device: {}", config.name);
-            }
-            Err(e) => {
-                println!("Failed to create device {}: {:?}", config.name, e);
-            }
-        }
-    }
-
-    // Check device listing
-    let device_list = manager.list_devices();
-    assert_eq!(device_list.len(), created_devices);
-
-    // Test device access
-    for config in &configs {
-        if let Some(device) = manager.get_device(&config.name) {
-            assert_eq!(device.name(), config.name);
-            assert_eq!(device.mtu(), config.mtu);
-        }
-    }
-
-    // Test device removal
-    for config in &configs {
-        match manager.remove_device(&config.name) {
-            Ok(()) => {
-                println!("Removed device: {}", config.name);
-            }
-            Err(e) => {
-                println!("Failed to remove device {}: {:?}", config.name, e);
-            }
-        }
-    }
-
-    // Verify cleanup
-    let final_list = manager.list_devices();
-    assert!(final_list.is_empty());
-
-    // Test close all
-    manager.close_all().unwrap();
-}
-
-#[tokio::test]
-async fn test_error_handling() {
-    // Test invalid configurations
-    let invalid_configs = vec![
-        TunConfig {
-            name: "".to_string(), // Empty name
-            ..Default::default()
-        },
-        TunConfig {
-            name: "invalid-name-with-very-long-string-that-exceeds-reasonable-limits-for-interface-names".to_string(),
-            ..Default::default()
-        },
-    ];
-
-    for config in invalid_configs {
-        match create_platform_device(&config) {
-            Ok(_) => {
-                println!(
-                    "Unexpectedly succeeded with invalid config: {:?}",
-                    config.name
-                );
-            }
-            Err(e) => {
-                println!("Correctly failed with invalid config: {:?}", e);
-                // Verify we get appropriate error types
-                match e {
-                    TunError::InvalidConfig(_) => { /* Expected */ }
-                    TunError::UnsupportedPlatform => { /* Also acceptable */ }
-                    TunError::PermissionDenied => { /* Also acceptable */ }
-                    _ => { /* Other errors are also acceptable in test environment */ }
-                }
-            }
-        }
-    }
-}
-
-#[tokio::test]
-async fn test_platform_specific_behavior() {
-    // Test platform-specific device naming conventions
-    let platform_configs = vec![
-        #[cfg(target_os = "linux")]
-        TunConfig {
-            name: "tun42".to_string(),
-            ..Default::default()
-        },
-        #[cfg(target_os = "macos")]
-        TunConfig {
-            name: "utun42".to_string(),
-            ..Default::default()
-        },
-        #[cfg(target_os = "windows")]
-        TunConfig {
-            name: "TestWinTun".to_string(),
-            ..Default::default()
-        },
-    ];
-
-    for config in platform_configs {
-        match create_platform_device(&config) {
-            Ok(device) => {
-                println!("Platform-specific device created: {}", device.name());
-                // Verify the device follows platform conventions
-                assert!(!device.name().is_empty());
-                assert!(device.mtu() > 0);
-            }
-            Err(e) => {
-                println!("Platform-specific device creation failed: {:?}", e);
-                // This is acceptable for testing environments
-            }
-        }
+        Err(error) => assert!(
+            is_environmental_tun_error(&error),
+            "unexpected async TUN creation error: {error:?}"
+        ),
     }
 }
 
 #[test]
+fn test_tun_manager_empty_operations() {
+    let mut manager = TunManager::new();
+
+    assert!(manager.list_devices().is_empty());
+    assert!(manager.remove_device("missing-device").is_ok());
+    assert!(manager.close_all().is_ok());
+}
+
+#[test]
+fn test_tun_validation_rejects_invalid_config() {
+    let config = TunValidationConfig {
+        name: "invalid/name".to_string(),
+        mtu: 100,
+        auto_redirect: true,
+        auto_route: false,
+        ..Default::default()
+    };
+
+    let result = validate_auto_route(&config);
+    assert!(!result.is_valid());
+    assert!(result.errors().len() >= 2);
+}
+
+#[test]
+fn test_platform_specific_default_name() {
+    let config = TunConfig::default();
+
+    #[cfg(target_os = "linux")]
+    assert_eq!(config.name, "tun0");
+
+    #[cfg(target_os = "macos")]
+    assert_eq!(config.name, "utun8");
+
+    #[cfg(target_os = "windows")]
+    assert_eq!(config.name, "wintun");
+
+    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+    assert_eq!(config.name, "tun0");
+}
+
+#[test]
 fn test_tun_config_validation() {
-    // Test default configuration
     let default_config = TunConfig::default();
     assert!(!default_config.name.is_empty());
     assert_eq!(default_config.mtu, 1500);
@@ -268,7 +129,6 @@ fn test_tun_config_validation() {
     assert!(!default_config.auto_route);
     assert!(default_config.table.is_none());
 
-    // Test custom configuration
     let custom_config = TunConfig {
         name: "custom-tun".to_string(),
         mtu: 1400,
@@ -288,7 +148,6 @@ fn test_tun_config_validation() {
 
 #[test]
 fn test_error_types_comprehensive() {
-    // Test all error types can be created and displayed
     let errors = vec![
         TunError::UnsupportedPlatform,
         TunError::DeviceNotFound("test-device".to_string()),
@@ -300,114 +159,17 @@ fn test_error_types_comprehensive() {
     ];
 
     for error in errors {
-        let error_string = error.to_string();
-        assert!(!error_string.is_empty());
-        println!("Error: {}", error_string);
+        assert!(!error.to_string().is_empty());
     }
 }
 
-// Performance and stress tests
-#[tokio::test]
-async fn test_multiple_device_operations() {
-    let mut manager = TunManager::new();
-    let device_count = 5;
-
-    // Create multiple devices concurrently
-    let mut tasks = Vec::new();
-    for i in 0..device_count {
-        let config = TunConfig {
-            name: format!("stress-test-{}", i),
-            mtu: 1400 + (i as u32) * 100,
-            ..Default::default()
-        };
-
-        let task = async move {
-            match AsyncTunDevice::new(&config) {
-                Ok(device) => {
-                    println!("Created stress test device: {}", device.name());
-                    Some(device)
-                }
-                Err(e) => {
-                    println!("Failed to create stress test device: {:?}", e);
-                    None
-                }
-            }
-        };
-        tasks.push(task);
-    }
-
-    // Wait for all devices to be created
-    let results = futures::future::join_all(tasks).await;
-    let successful_devices: Vec<_> = results.into_iter().flatten().collect();
-
-    println!(
-        "Successfully created {} out of {} devices",
-        successful_devices.len(),
-        device_count
-    );
-
-    // Clean up all devices
-    for mut device in successful_devices {
-        let _ = device.close();
-    }
-
-    manager.close_all().unwrap();
-}
-
-// This test validates the core requirements for Task 17
-#[tokio::test]
-async fn test_task_17_requirements_validation() {
-    println!("=== Task 17 Requirements Validation ===");
-
-    // Requirement: Create TunDevice trait with platform-agnostic interface ✓
-    let config = TunConfig::default();
-
-    // Requirement: Implement platform-specific TUN devices ✓
-    #[cfg(target_os = "linux")]
-    {
-        println!("✓ Linux TUN implementation available");
-    }
-
+fn platform_test_name() -> String {
     #[cfg(target_os = "macos")]
-    {
-        println!("✓ macOS TUN implementation available");
-    }
+    return "utun".to_string();
 
     #[cfg(target_os = "windows")]
-    {
-        println!("✓ Windows TUN implementation available");
-    }
+    return "TestWinTun".to_string();
 
-    // Requirement: Add TUN device creation, read, write, and close operations ✓
-    match create_platform_device(&config) {
-        Ok(mut device) => {
-            println!("✓ TUN device creation successful");
-
-            // Test required operations
-            let mut buf = [0u8; 100];
-            let _ = device.read(&mut buf); // ✓ Read operation
-            let _ = device.write(b"test"); // ✓ Write operation
-            let _ = device.close(); // ✓ Close operation
-
-            println!("✓ All required TUN device operations available");
-        }
-        Err(e) => {
-            println!(
-                "⚠ TUN device creation failed: {:?} (acceptable in test environment)",
-                e
-            );
-            println!("✓ Error handling working correctly");
-        }
-    }
-
-    // Requirement: Platform-agnostic interface ✓
-    println!("✓ Platform-agnostic TunDevice trait implemented");
-
-    // Requirement: Async wrapper ✓
-    println!("✓ AsyncTunDevice wrapper implemented");
-
-    // Requirement: Device manager ✓
-    println!("✓ TunManager for multiple devices implemented");
-
-    println!("=== Task 17 Successfully Completed ===");
+    #[cfg(not(any(target_os = "macos", target_os = "windows")))]
+    "test-tun0".to_string()
 }

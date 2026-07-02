@@ -10,6 +10,21 @@
 
 ---
 
+## Resume (2026-07-02) - sb-platform audit cleanup
+
+- **`crates/sb-platform` audit cleanup DONE locally**: Android process matching now
+  compiles through procfs without the unwired JNI placeholder, Windows API feature gates
+  cover the actual Win32 calls, and OS detection includes Android.
+- **Platform behavior calibrated**: Linux network monitor callbacks emit change events from
+  netlink polling, system proxy command failures are propagated instead of being silently
+  accepted, WinInet/env proxy handling recognizes SOCKS `ALL_PROXY` and PAC settings, and
+  Windows TUN now fails explicitly instead of exposing a fake active adapter.
+- **Verification PASS**: sb-platform fmt/check/test/clippy for all-features and no-default
+  paths; doctests; locked check; Linux/Windows/Android target check + clippy; residual
+  debug/placeholder scan; `git diff --check`.
+- **Scope note**: sb-platform audit/test hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-02) - sb-metrics audit cleanup
 
 - **`crates/sb-metrics` audit cleanup DONE locally**: unused direct deps were removed,
@@ -218,21 +233,6 @@
   workspace all-features check, boundaries, consistency, and `git diff --check` passed.
 - **Scope note**: Cargo-configuration hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, workflow automation, or release packaging completion is claimed.
-
-## Previous Resume (2026-06-29) - PX-ACCEPT-01 local drop-in release rehearsal
-
-- **PX-ACCEPT-01 DONE locally**: `gui_runtime` built the real `target/debug/app` binary and
-  completed the local drop-in rehearsal from the GUI 1.25.1 composite fixture.
-- **Verification PASS**: historical record compressed in `agents-only/archive/release_cleanup_2026_06_summary.md`. Probe summary:
-  31 PASS / 0 FAIL / 1 WARN (valid `/connections` snapshot; best-effort active slow request not
-  observed). Focused P1313 subset, app build, and probe passed on the final code.
-- **Local blockers fixed in-line**: DNS CLI nested-runtime panic, Clash `/configs` stale reload
-  snapshot, and CacheFile mode persistence flush. Mode switching remains the existing
-  `PATCH /configs` GUI/strict contract; `PUT /configs` stays Go-compatible no-op.
-- **Scope note**: release rehearsal pass only, not new dual-kernel BHV/parity movement. No Wails
-  desktop click automation, root TUN, Linux resolved, official REALITY JA4/ext-order/camouflage,
-  public fresh-cohort gate, workflow automation, or `agents-only/a0_reality_spike/` touch is
-  claimed.
 
 ## Strategic State
 

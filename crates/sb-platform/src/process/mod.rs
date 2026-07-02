@@ -141,7 +141,6 @@ pub struct ProcessMatcher {
     #[cfg(not(feature = "native-process-match"))]
     windows_impl: windows::WindowsProcessMatcher,
     #[cfg(target_os = "windows")]
-    #[cfg(target_os = "windows")]
     #[cfg(feature = "native-process-match")]
     windows_native_impl: native_windows::NativeWindowsProcessMatcher,
     #[cfg(target_os = "android")]
@@ -170,7 +169,6 @@ impl ProcessMatcher {
             #[cfg(target_os = "windows")]
             #[cfg(not(feature = "native-process-match"))]
             windows_impl: windows::WindowsProcessMatcher::new()?,
-            #[cfg(target_os = "windows")]
             #[cfg(target_os = "windows")]
             #[cfg(feature = "native-process-match")]
             windows_native_impl: native_windows::NativeWindowsProcessMatcher::new()?,
@@ -238,14 +236,18 @@ impl ProcessMatcher {
         return self.windows_impl.find_process_id(conn).await;
 
         #[cfg(target_os = "windows")]
-        #[cfg(target_os = "windows")]
         #[cfg(feature = "native-process-match")]
         return self.windows_native_impl.find_process_id(conn).await;
 
         #[cfg(target_os = "android")]
         return self.android_impl.find_process_id(conn).await;
 
-        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "android"
+        )))]
         Err(ProcessMatchError::UnsupportedPlatform)
     }
 
@@ -267,14 +269,18 @@ impl ProcessMatcher {
         return self.windows_impl.get_process_info(pid).await;
 
         #[cfg(target_os = "windows")]
-        #[cfg(target_os = "windows")]
         #[cfg(feature = "native-process-match")]
         return self.windows_native_impl.get_process_info(pid).await;
 
         #[cfg(target_os = "android")]
         return self.android_impl.get_process_info(pid).await;
 
-        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "android"
+        )))]
         Err(ProcessMatchError::UnsupportedPlatform)
     }
 
@@ -286,13 +292,9 @@ impl ProcessMatcher {
     }
 }
 
-// REMOVED: Default trait implementation that violated workspace lint (unwrap_used = deny)
-// If you need a default instance, use ProcessMatcher::new().expect("initialization failed")
-// or handle the Result properly in your application code.
-
 // Platform-specific implementations
 
-#[cfg(target_os = "linux")]
+#[cfg(any(target_os = "linux", target_os = "android"))]
 mod linux;
 
 #[cfg(target_os = "macos")]
@@ -311,7 +313,6 @@ mod macos_common;
 mod windows;
 
 #[cfg(target_os = "windows")]
-#[cfg(target_os = "windows")]
 #[cfg(feature = "native-process-match")]
 mod native_windows;
 
@@ -327,13 +328,23 @@ mod tests {
     async fn test_process_matcher_creation() {
         let result = ProcessMatcher::new();
 
-        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "android"
+        ))]
         assert!(
             result.is_ok(),
             "ProcessMatcher creation should succeed on supported platforms"
         );
 
-        #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
+        #[cfg(not(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "android"
+        )))]
         assert!(
             result.is_err(),
             "ProcessMatcher creation should fail on unsupported platforms"
@@ -342,7 +353,12 @@ mod tests {
 
     #[tokio::test]
     async fn test_cache_cleanup() -> Result<(), Box<dyn std::error::Error>> {
-        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        #[cfg(any(
+            target_os = "linux",
+            target_os = "macos",
+            target_os = "windows",
+            target_os = "android"
+        ))]
         {
             let matcher = ProcessMatcher::new()?;
 

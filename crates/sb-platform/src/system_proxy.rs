@@ -18,17 +18,15 @@
 use std::{
     collections::HashMap,
     io,
-    io::ErrorKind,
-    process::{Command, Stdio},
     sync::atomic::{AtomicBool, Ordering},
     sync::Arc,
 };
 
+#[cfg(any(target_os = "macos", target_os = "linux", target_os = "android"))]
+use std::process::{Command, Stdio};
+
 use parking_lot::{Mutex, RwLock};
 use tracing::{debug, info};
-
-#[cfg(any(target_os = "linux", target_os = "android"))]
-use tracing::warn;
 
 /// Get the name of the default network interface.
 /// 获取默认网络接口的名称。
@@ -187,6 +185,7 @@ pub struct SystemProxyManager {
     port: u16,
     support_socks: bool,
     enabled: AtomicBool,
+    #[cfg(target_os = "macos")]
     interface_name: Mutex<String>,
     monitor: Option<Arc<dyn DefaultInterfaceMonitor>>,
     callback_handle: Mutex<Option<usize>>,
@@ -201,6 +200,7 @@ impl SystemProxyManager {
             port,
             support_socks,
             enabled: AtomicBool::new(false),
+            #[cfg(target_os = "macos")]
             interface_name: Mutex::new(String::new()),
             monitor: None,
             callback_handle: Mutex::new(None),
@@ -223,6 +223,7 @@ impl SystemProxyManager {
             port,
             support_socks,
             enabled: AtomicBool::new(false),
+            #[cfg(target_os = "macos")]
             interface_name: Mutex::new(String::new()),
             monitor: Some(monitor),
             callback_handle: Mutex::new(None),
@@ -237,6 +238,7 @@ impl SystemProxyManager {
 
     #[cfg(any(
         test,
+        target_os = "linux",
         not(any(
             target_os = "macos",
             target_os = "linux",
@@ -246,7 +248,7 @@ impl SystemProxyManager {
     ))]
     fn unsupported_platform_error(action: &str) -> io::Error {
         io::Error::new(
-            ErrorKind::Unsupported,
+            io::ErrorKind::Unsupported,
             format!("system proxy {action} is not supported on this platform"),
         )
     }
@@ -272,8 +274,14 @@ impl SystemProxyManager {
                         }
                         if let Some(iface) = new_interface {
                             debug!(interface = %iface.name, "Interface changed, updating proxy");
-                            // Update proxy on new interface
-                            let _ = update_macos_proxy(&iface.name, port, support_socks);
+                            if let Err(error) = update_macos_proxy(&iface.name, port, support_socks)
+                            {
+                                tracing::warn!(
+                                    interface = %iface.name,
+                                    error = %error,
+                                    "Failed to update system proxy after interface change"
+                                );
+                            }
                         }
                     });
 
@@ -329,7 +337,7 @@ impl SystemProxyManager {
 
         #[cfg(target_os = "macos")]
         {
-            self.disable_macos();
+            self.disable_macos()?;
         }
 
         #[cfg(target_os = "linux")]
@@ -377,7 +385,7 @@ impl SystemProxyManager {
 
             // Disable on old interface if any
             if !current_name.is_empty() {
-                disable_macos_proxy(&current_name, self.support_socks);
+                disable_macos_proxy(&current_name, self.support_socks)?;
             }
 
             // Enable on new interface
@@ -389,14 +397,15 @@ impl SystemProxyManager {
     }
 
     #[cfg(target_os = "macos")]
-    fn disable_macos(&self) {
+    fn disable_macos(&self) -> io::Result<()> {
         let interface_name = self.interface_name.lock().clone();
         if interface_name.is_empty() {
-            return;
+            return Ok(());
         }
 
-        disable_macos_proxy(&interface_name, self.support_socks);
+        disable_macos_proxy(&interface_name, self.support_socks)?;
         *self.interface_name.lock() = String::new();
+        Ok(())
     }
 
     #[cfg(target_os = "linux")]
@@ -407,42 +416,51 @@ impl SystemProxyManager {
         let kde = detect_kde_writer();
 
         if has_gsettings {
-            let _ = Command::new("gsettings")
-                .args(["set", "org.gnome.system.proxy.http", "host", addr])
-                .output();
-            let _ = Command::new("gsettings")
-                .args(["set", "org.gnome.system.proxy.http", "port", &port])
-                .output();
-            let _ = Command::new("gsettings")
-                .args(["set", "org.gnome.system.proxy.https", "host", addr])
-                .output();
-            let _ = Command::new("gsettings")
-                .args(["set", "org.gnome.system.proxy.https", "port", &port])
-                .output();
+            run_command(
+                "gsettings",
+                &["set", "org.gnome.system.proxy.http", "host", addr],
+            )?;
+            run_command(
+                "gsettings",
+                &["set", "org.gnome.system.proxy.http", "port", &port],
+            )?;
+            run_command(
+                "gsettings",
+                &["set", "org.gnome.system.proxy.https", "host", addr],
+            )?;
+            run_command(
+                "gsettings",
+                &["set", "org.gnome.system.proxy.https", "port", &port],
+            )?;
             if self.support_socks {
-                let _ = Command::new("gsettings")
-                    .args(["set", "org.gnome.system.proxy.socks", "host", addr])
-                    .output();
-                let _ = Command::new("gsettings")
-                    .args(["set", "org.gnome.system.proxy.socks", "port", &port])
-                    .output();
-                let _ = Command::new("gsettings")
-                    .args(["set", "org.gnome.system.proxy", "use-same-proxy", "true"])
-                    .output();
+                run_command(
+                    "gsettings",
+                    &["set", "org.gnome.system.proxy.socks", "host", addr],
+                )?;
+                run_command(
+                    "gsettings",
+                    &["set", "org.gnome.system.proxy.socks", "port", &port],
+                )?;
+                run_command(
+                    "gsettings",
+                    &["set", "org.gnome.system.proxy", "use-same-proxy", "true"],
+                )?;
             }
-            let _ = Command::new("gsettings")
-                .args(["set", "org.gnome.system.proxy", "mode", "manual"])
-                .output();
+            run_command(
+                "gsettings",
+                &["set", "org.gnome.system.proxy", "mode", "manual"],
+            )?;
         }
 
-        if let Some(kcmd) = kde {
-            set_kde_proxy(&kcmd, "http", addr, &port)?;
-            set_kde_proxy(&kcmd, "https", addr, &port)?;
+        if let Some(ref kcmd) = kde {
+            set_kde_proxy(kcmd, "http", addr, &port)?;
+            set_kde_proxy(kcmd, "https", addr, &port)?;
             if self.support_socks {
-                set_kde_proxy(&kcmd, "socks", addr, &port)?;
+                set_kde_proxy(kcmd, "socks", addr, &port)?;
             }
-            let _ = Command::new(&kcmd)
-                .args([
+            run_command(
+                kcmd,
+                &[
                     "--file",
                     "kioslaverc",
                     "--group",
@@ -450,20 +468,21 @@ impl SystemProxyManager {
                     "--key",
                     "ProxyType",
                     "1",
-                ])
-                .output();
-            let _ = Command::new("dbus-send")
-                .args([
+                ],
+            )?;
+            run_command(
+                "dbus-send",
+                &[
                     "--type=signal",
                     "/KIO/Scheduler",
                     "org.kde.KIO.Scheduler.reparseSlaveConfiguration",
                     "string:''",
-                ])
-                .output();
+                ],
+            )?;
         }
 
         if !has_gsettings && kde.is_none() {
-            warn!("System proxy unsupported desktop environment");
+            return Err(Self::unsupported_platform_error("enable"));
         }
 
         info!("System proxy set to {addr}:{port} (linux)");
@@ -476,14 +495,16 @@ impl SystemProxyManager {
         let kde = detect_kde_writer();
 
         if has_gsettings {
-            let _ = Command::new("gsettings")
-                .args(["set", "org.gnome.system.proxy", "mode", "none"])
-                .output();
+            run_command(
+                "gsettings",
+                &["set", "org.gnome.system.proxy", "mode", "none"],
+            )?;
         }
 
-        if let Some(kcmd) = kde {
-            let _ = Command::new(&kcmd)
-                .args([
+        if let Some(ref kcmd) = kde {
+            run_command(
+                kcmd,
+                &[
                     "--file",
                     "kioslaverc",
                     "--group",
@@ -491,16 +512,21 @@ impl SystemProxyManager {
                     "--key",
                     "ProxyType",
                     "0",
-                ])
-                .output();
-            let _ = Command::new("dbus-send")
-                .args([
+                ],
+            )?;
+            run_command(
+                "dbus-send",
+                &[
                     "--type=signal",
                     "/KIO/Scheduler",
                     "org.kde.KIO.Scheduler.reparseSlaveConfiguration",
                     "string:''",
-                ])
-                .output();
+                ],
+            )?;
+        }
+
+        if !has_gsettings && kde.is_none() {
+            return Err(Self::unsupported_platform_error("disable"));
         }
 
         info!("System proxy disabled (linux)");
@@ -527,15 +553,10 @@ impl SystemProxyManager {
 
         settings.set_value("ProxyEnable", &1u32)?;
         settings.set_value("ProxyServer", &proxy_server)?;
-
-        // Add default bypass for localhost if not present?
-        // Logic in Go adds "<local>" usually. Let's add it if missing or just set standard bypass.
-        // For now, minimal change to match previous logic (Command just set server/enable).
-        // Previous logic didn't set override.
-        // But `wininet.rs` detection reads it.
-        // Let's set a sensible default for bypass if not existing?
-        // Or just leave it? Go implementation usually sets it.
-        // Let's stick to simple Enable for now, matching the `reg add` commands we replaced.
+        let proxy_override: String = settings.get_value("ProxyOverride").unwrap_or_default();
+        if proxy_override.trim().is_empty() {
+            settings.set_value("ProxyOverride", &"<local>")?;
+        }
 
         Self::notify_system_proxy_change();
         info!("System proxy set on Windows -> 127.0.0.1:{}", self.port);
@@ -566,7 +587,8 @@ impl SystemProxyManager {
             InternetSetOptionW, INTERNET_OPTION_REFRESH, INTERNET_OPTION_SETTINGS_CHANGED,
         };
 
-        // We use a separate function to isolate the unsafe block and dependency
+        // SAFETY: InternetSetOptionW is called with documented null handles and no data
+        // payload for the SETTINGS_CHANGED and REFRESH notifications.
         unsafe {
             let _ = InternetSetOptionW(None, INTERNET_OPTION_SETTINGS_CHANGED, None, 0);
             let _ = InternetSetOptionW(None, INTERNET_OPTION_REFRESH, None, 0);
@@ -617,7 +639,7 @@ fn get_interface_display_name(interface_name: &str) -> io::Result<String> {
     let mapping = macos_hardware_port_map()?;
     mapping.get(interface_name).cloned().ok_or_else(|| {
         io::Error::new(
-            ErrorKind::NotFound,
+            io::ErrorKind::NotFound,
             format!("{interface_name} not found in networksetup"),
         )
     })
@@ -630,16 +652,19 @@ fn update_macos_proxy(interface_name: &str, port: u16, support_socks: bool) -> i
     let addr = "127.0.0.1";
 
     if support_socks {
-        let _ = Command::new("networksetup")
-            .args(["-setsocksfirewallproxy", &display_name, addr, &port_str])
-            .output();
+        run_command(
+            "networksetup",
+            &["-setsocksfirewallproxy", &display_name, addr, &port_str],
+        )?;
     }
-    let _ = Command::new("networksetup")
-        .args(["-setwebproxy", &display_name, addr, &port_str])
-        .output();
-    let _ = Command::new("networksetup")
-        .args(["-setsecurewebproxy", &display_name, addr, &port_str])
-        .output();
+    run_command(
+        "networksetup",
+        &["-setwebproxy", &display_name, addr, &port_str],
+    )?;
+    run_command(
+        "networksetup",
+        &["-setsecurewebproxy", &display_name, addr, &port_str],
+    )?;
 
     info!(
         "System proxy set on macOS interface {} -> {}:{}",
@@ -649,27 +674,43 @@ fn update_macos_proxy(interface_name: &str, port: u16, support_socks: bool) -> i
 }
 
 #[cfg(target_os = "macos")]
-fn disable_macos_proxy(interface_name: &str, support_socks: bool) {
+fn disable_macos_proxy(interface_name: &str, support_socks: bool) -> io::Result<()> {
     let Ok(display_name) = get_interface_display_name(interface_name) else {
-        return; // Interface may have been removed
+        return Ok(()); // Interface may have been removed
     };
 
     if support_socks {
-        let _ = Command::new("networksetup")
-            .args(["-setsocksfirewallproxystate", &display_name, "off"])
-            .output();
+        run_command(
+            "networksetup",
+            &["-setsocksfirewallproxystate", &display_name, "off"],
+        )?;
     }
-    let _ = Command::new("networksetup")
-        .args(["-setwebproxystate", &display_name, "off"])
-        .output();
-    let _ = Command::new("networksetup")
-        .args(["-setsecurewebproxystate", &display_name, "off"])
-        .output();
+    run_command("networksetup", &["-setwebproxystate", &display_name, "off"])?;
+    run_command(
+        "networksetup",
+        &["-setsecurewebproxystate", &display_name, "off"],
+    )?;
 
     info!("System proxy disabled on macOS interface {}", display_name);
+    Ok(())
 }
 
 // Linux helper functions
+
+#[cfg(any(target_os = "macos", target_os = "linux"))]
+fn run_command(program: &str, args: &[&str]) -> io::Result<()> {
+    let output = Command::new(program).args(args).output()?;
+    if output.status.success() {
+        Ok(())
+    } else {
+        let stderr = String::from_utf8_lossy(&output.stderr);
+        Err(io::Error::other(format!(
+            "{program} failed with status {:?}: {}",
+            output.status.code(),
+            stderr.trim()
+        )))
+    }
+}
 
 #[cfg(any(target_os = "linux", target_os = "android"))]
 fn command_exists(name: &str) -> bool {
@@ -700,18 +741,19 @@ fn set_kde_proxy(cmd: &str, proxy_type: &str, host: &str, port: &str) -> io::Res
     } else {
         format!("http://{host}:{port}")
     };
-    let _ = Command::new(cmd)
-        .args([
+    let key = format!("{proxy_type}Proxy");
+    run_command(
+        cmd,
+        &[
             "--file",
             "kioslaverc",
             "--group",
             "Proxy Settings",
             "--key",
-            &format!("{proxy_type}Proxy"),
+            &key,
             &url,
-        ])
-        .output()?;
-    Ok(())
+        ],
+    )
 }
 
 #[cfg(target_os = "linux")]
@@ -749,9 +791,7 @@ fn run_android_shell(use_rish: bool, rish_path: Option<String>, args: &[&str]) -
             cmdline.push(' ');
             cmdline.push_str(a);
         }
-        Command::new("sh")
-            .args([rish.as_str(), "-c", &cmdline])
-            .status()
+        Command::new(rish).args(["-c", &cmdline]).status()
     } else {
         Command::new("settings").args(args).status()
     }?;
@@ -759,10 +799,10 @@ fn run_android_shell(use_rish: bool, rish_path: Option<String>, args: &[&str]) -
     if status.success() {
         Ok(())
     } else {
-        Err(io::Error::new(
-            ErrorKind::Other,
-            format!("settings command failed: {:?}", status.code()),
-        ))
+        Err(io::Error::other(format!(
+            "settings command failed: {:?}",
+            status.code()
+        )))
     }
 }
 
@@ -775,7 +815,7 @@ impl SystemProxyManager {
         let rish = detect_rish();
         if !allow_direct && rish.is_none() {
             return Err(io::Error::new(
-                ErrorKind::PermissionDenied,
+                io::ErrorKind::PermissionDenied,
                 "root/system uid or rish required to set system proxy",
             ));
         }
@@ -791,7 +831,9 @@ impl SystemProxyManager {
             ],
         )?;
         if self.support_socks {
-            warn!("Android system proxy only configures http_proxy; SOCKS is not supported");
+            tracing::warn!(
+                "Android system proxy only configures http_proxy; SOCKS is not supported"
+            );
         }
         info!("System proxy set on Android -> 127.0.0.1:{}", self.port);
         Ok(())
@@ -804,7 +846,7 @@ impl SystemProxyManager {
         let rish = detect_rish();
         if !allow_direct && rish.is_none() {
             return Err(io::Error::new(
-                ErrorKind::PermissionDenied,
+                io::ErrorKind::PermissionDenied,
                 "root/system uid or rish required to clear system proxy",
             ));
         }
@@ -861,7 +903,7 @@ mod tests {
     #[test]
     fn unsupported_platform_error_is_explicit() {
         let error = SystemProxyManager::unsupported_platform_error("enable");
-        assert_eq!(error.kind(), ErrorKind::Unsupported);
+        assert_eq!(error.kind(), io::ErrorKind::Unsupported);
         assert!(
             error.to_string().contains("not supported"),
             "unsupported error should be explicit: {error}"

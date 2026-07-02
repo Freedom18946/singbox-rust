@@ -7346,7 +7346,6 @@ name = "sb-platform"
 version = "0.1.0"
 dependencies = [
  "futures",
- "jni 0.21.1",
  "libc",
  "libproc",
  "log",

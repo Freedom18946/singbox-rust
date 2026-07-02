@@ -30,7 +30,6 @@
 
 use std::io;
 use std::net::IpAddr;
-use std::sync::Arc;
 use thiserror::Error;
 
 /// TUN device configuration
@@ -160,19 +159,32 @@ pub trait TunDevice: Send + Sync + std::os::fd::AsRawFd {
 }
 
 #[cfg(not(unix))]
+/// TUN device trait providing platform-agnostic interface.
 pub trait TunDevice: Send + Sync {
     /// Create and configure a new TUN device
+    ///
+    /// # Errors
+    /// Returns error if device creation or configuration fails
     fn create(config: &TunConfig) -> Result<Self, TunError>
     where
         Self: Sized;
 
     /// Read data from the TUN device
+    ///
+    /// # Errors
+    /// Returns error if read operation fails
     fn read(&mut self, buf: &mut [u8]) -> Result<usize, TunError>;
 
     /// Write data to the TUN device
+    ///
+    /// # Errors
+    /// Returns error if write operation fails
     fn write(&mut self, buf: &[u8]) -> Result<usize, TunError>;
 
     /// Close the TUN device
+    ///
+    /// # Errors
+    /// Returns error if close operation fails
     fn close(&mut self) -> Result<(), TunError>;
 
     /// Get the device name
@@ -188,8 +200,6 @@ pub trait TunDevice: Send + Sync {
 /// Async TUN device wrapper for tokio integration
 pub struct AsyncTunDevice {
     inner: Box<dyn TunDevice>,
-    #[allow(dead_code)]
-    runtime_handle: Arc<tokio::runtime::Handle>,
 }
 
 impl AsyncTunDevice {
@@ -199,12 +209,8 @@ impl AsyncTunDevice {
     /// Returns error if device creation fails
     pub fn new(config: &TunConfig) -> Result<Self, TunError> {
         let inner = create_platform_device(config)?;
-        let runtime_handle = Arc::new(tokio::runtime::Handle::current());
 
-        Ok(Self {
-            inner,
-            runtime_handle,
-        })
+        Ok(Self { inner })
     }
 
     /// Read data asynchronously
@@ -281,7 +287,10 @@ pub fn create_platform_device(config: &TunConfig) -> Result<Box<dyn TunDevice>, 
     }
 
     #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    Err(TunError::UnsupportedPlatform)
+    {
+        let _ = config;
+        Err(TunError::UnsupportedPlatform)
+    }
 }
 
 /// TUN device manager for handling multiple devices

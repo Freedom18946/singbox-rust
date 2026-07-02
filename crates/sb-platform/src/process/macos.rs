@@ -37,7 +37,7 @@ impl MacOsProcessMatcher {
         // On macOS, we need to use system calls to find the process
         // This is a simplified implementation that would need proper system call bindings
 
-        // For now, we'll use lsof as a fallback approach
+        // Use lsof as the compatibility fallback when native libproc is not enabled.
         self.find_process_with_lsof(conn).await
     }
 

@@ -12,9 +12,9 @@
 //! ## 🎯 核心战略价值 (Core Strategic Value)
 //!
 //! 1.  **隔离系统复杂性 (Isolating System Complexity)**:
-//!     -   将 Linux (ioctl), macOS (System Configuration/libproc), Windows (Win32 API/COM)
+//!     -   将 Linux (ioctl), macOS (System Configuration/libproc), Windows (Win32 API/COM), Android (procfs/VpnService)
 //!         等异构的系统调用封装在内部，防止平台相关代码污染核心业务逻辑。
-//!     -   Encapsulates heterogeneous system calls (Linux ioctl, macOS libproc, Windows Win32 API)
+//!     -   Encapsulates heterogeneous system calls (Linux ioctl, macOS libproc, Windows Win32 API, Android procfs/VpnService)
 //!         internally, preventing platform-specific code from polluting core business logic.
 //!
 //! 2.  **赋能核心功能 (Enabling Core Features)**:
@@ -46,7 +46,7 @@
 //! use sb_platform::os::NAME;
 //!
 //! // Platform detection
-//! println!("Running on: {}", NAME);
+//! assert!(!NAME.is_empty());
 //!
 //! // Process matching (async)
 //! # async fn example() -> Result<(), Box<dyn std::error::Error>> {
@@ -60,7 +60,7 @@
 //! - `native-process-match` (default): Enable native OS APIs for process matching
 //! - `linux`: Linux-specific features
 //! - `macos`: macOS-specific features
-//! - `windows`: Windows-specific features
+//! - `windows`: Windows feature alias (`windows-sys` is kept as a compatibility no-op)
 //! - `tun`: TUN device support
 //! - `full`: Enable all platform features
 
@@ -105,6 +105,17 @@ pub mod os {
     #[cfg(target_os = "windows")]
     pub const NAME: &str = "windows";
 
-    #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
-    compile_error!("Unsupported platform: sb-platform only supports Linux, macOS, and Windows");
+    /// OS name detected at compile time
+    #[cfg(target_os = "android")]
+    pub const NAME: &str = "android";
+
+    #[cfg(not(any(
+        target_os = "linux",
+        target_os = "macos",
+        target_os = "windows",
+        target_os = "android"
+    )))]
+    compile_error!(
+        "Unsupported platform: sb-platform only supports Linux, macOS, Windows, and Android"
+    );
 }

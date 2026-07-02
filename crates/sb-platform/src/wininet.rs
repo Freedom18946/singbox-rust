@@ -8,8 +8,7 @@
 //! use sb_platform::wininet::{detect_system_proxy, ProxyConfig};
 //!
 //! if let Some(config) = detect_system_proxy() {
-//!     println!("HTTP proxy: {:?}", config.http_proxy);
-//!     println!("HTTPS proxy: {:?}", config.https_proxy);
+//!     assert!(config.has_proxy());
 //! }
 //! ```
 
@@ -38,7 +37,9 @@ impl ProxyConfig {
         self.enabled
             && (self.http_proxy.is_some()
                 || self.https_proxy.is_some()
-                || self.socks_proxy.is_some())
+                || self.socks_proxy.is_some()
+                || self.auto_config_url.is_some()
+                || self.auto_detect)
     }
 
     /// Check if a host should bypass the proxy.
@@ -104,19 +105,43 @@ pub fn detect_env_proxy() -> Option<ProxyConfig> {
         .filter(|s| !s.is_empty())
         .collect();
 
-    let http = http_proxy.or_else(|| all_proxy.clone());
-    let https = https_proxy.or_else(|| all_proxy.clone());
+    let (fallback_http, fallback_https, socks_proxy) = all_proxy
+        .as_deref()
+        .map_or((None, None, None), classify_all_proxy);
+    let http = http_proxy.or(fallback_http);
+    let https = https_proxy.or(fallback_https);
 
-    if http.is_some() || https.is_some() {
+    if http.is_some() || https.is_some() || socks_proxy.is_some() {
         Some(ProxyConfig {
             http_proxy: http,
             https_proxy: https,
+            socks_proxy,
             no_proxy: no_proxy_list,
             enabled: true,
             ..Default::default()
         })
     } else {
         None
+    }
+}
+
+fn classify_all_proxy(proxy: &str) -> (Option<String>, Option<String>, Option<String>) {
+    let proxy = proxy.trim();
+    if proxy.is_empty() {
+        return (None, None, None);
+    }
+
+    let lower = proxy.to_ascii_lowercase();
+    if lower.starts_with("socks://")
+        || lower.starts_with("socks4://")
+        || lower.starts_with("socks4a://")
+        || lower.starts_with("socks5://")
+        || lower.starts_with("socks5h://")
+    {
+        (None, None, Some(proxy.to_string()))
+    } else {
+        let proxy = proxy.to_string();
+        (Some(proxy.clone()), Some(proxy), None)
     }
 }
 
@@ -222,12 +247,7 @@ pub fn set_system_proxy(config: &ProxyConfig) -> std::io::Result<()> {
     // Set proxy enable
     internet_settings.set_value("ProxyEnable", &(if config.enabled { 1u32 } else { 0u32 }))?;
 
-    // Set proxy server
-    if let Some(ref http) = config.http_proxy {
-        // Strip protocol prefix
-        let server = http
-            .trim_start_matches("http://")
-            .trim_start_matches("https://");
+    if let Some(server) = format_windows_proxy_server(config) {
         internet_settings.set_value("ProxyServer", &server)?;
     }
 
@@ -238,6 +258,37 @@ pub fn set_system_proxy(config: &ProxyConfig) -> std::io::Result<()> {
     }
 
     Ok(())
+}
+
+#[cfg(windows)]
+fn format_windows_proxy_server(config: &ProxyConfig) -> Option<String> {
+    let mut parts = Vec::new();
+    if let Some(ref http) = config.http_proxy {
+        parts.push(format!("http={}", strip_proxy_scheme(http)));
+    }
+    if let Some(ref https) = config.https_proxy {
+        parts.push(format!("https={}", strip_proxy_scheme(https)));
+    }
+    if let Some(ref socks) = config.socks_proxy {
+        parts.push(format!("socks={}", strip_proxy_scheme(socks)));
+    }
+    if parts.is_empty() {
+        None
+    } else {
+        Some(parts.join(";"))
+    }
+}
+
+#[cfg(windows)]
+fn strip_proxy_scheme(proxy: &str) -> &str {
+    proxy
+        .trim_start_matches("http://")
+        .trim_start_matches("https://")
+        .trim_start_matches("socks://")
+        .trim_start_matches("socks4://")
+        .trim_start_matches("socks4a://")
+        .trim_start_matches("socks5://")
+        .trim_start_matches("socks5h://")
 }
 
 /// Stub for non-Windows platforms.
@@ -279,5 +330,34 @@ mod tests {
     fn test_detect_env_proxy() {
         // This test depends on environment, so just verify it doesn't panic
         let _ = detect_env_proxy();
+    }
+
+    #[test]
+    fn test_has_proxy_counts_pac() {
+        let config = ProxyConfig {
+            enabled: true,
+            auto_config_url: Some("http://proxy.example/proxy.pac".to_string()),
+            ..Default::default()
+        };
+
+        assert!(config.has_proxy());
+    }
+
+    #[test]
+    fn test_classify_all_proxy_socks() {
+        let (http, https, socks) = classify_all_proxy("socks5://127.0.0.1:1080");
+
+        assert!(http.is_none());
+        assert!(https.is_none());
+        assert_eq!(socks.as_deref(), Some("socks5://127.0.0.1:1080"));
+    }
+
+    #[test]
+    fn test_classify_all_proxy_http() {
+        let (http, https, socks) = classify_all_proxy("http://127.0.0.1:8080");
+
+        assert_eq!(http.as_deref(), Some("http://127.0.0.1:8080"));
+        assert_eq!(https.as_deref(), Some("http://127.0.0.1:8080"));
+        assert!(socks.is_none());
     }
 }

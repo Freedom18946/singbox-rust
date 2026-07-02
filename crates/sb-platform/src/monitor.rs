@@ -88,7 +88,7 @@ impl NetworkMonitor {
     }
 
     /// Notify all registered callbacks of a network event.
-    #[cfg_attr(not(test), allow(dead_code))]
+    #[cfg(any(test, target_os = "linux"))]
     fn notify(&self, event: NetworkEvent) {
         let callbacks = self.callbacks.read();
         for callback in callbacks.iter() {
@@ -158,10 +158,12 @@ impl NetworkMonitor {
         Ok(handle)
     }
 
-    /// Start listening for network changes (stub for non-Linux platforms).
+    /// Start listening for network changes.
+    ///
+    /// Non-Linux platforms currently expose status probing but no change listener.
     #[cfg(not(target_os = "linux"))]
     pub fn start(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        tracing::info!("NetworkMonitor started (stub - no platform implementation)");
+        tracing::info!("NetworkMonitor change listener unavailable on this platform");
         Ok(())
     }
 
@@ -176,36 +178,46 @@ impl NetworkMonitor {
     /// Stop listening for network changes.
     #[cfg(not(target_os = "linux"))]
     pub fn stop(&self) {
-        tracing::info!("NetworkMonitor stopped (stub)");
+        tracing::info!("NetworkMonitor stopped");
     }
 
     /// Listen to Linux netlink socket for network events.
     #[cfg(all(target_os = "linux", feature = "linux"))]
     async fn listen_netlink(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        use futures::stream::StreamExt;
+        use futures::stream::TryStreamExt;
         use rtnetlink::new_connection;
         use std::sync::atomic::Ordering;
 
-        let (mut connection, handle, mut messages) = new_connection()?;
+        let (connection, handle, _messages) = new_connection()?;
 
         // Spawn the connection driver
         tokio::spawn(connection);
 
         tracing::debug!("NetworkMonitor: netlink connection established");
 
-        // Subscribe to link and address notifications
-        // Note: rtnetlink may not support subscription directly; this is a polling approach
+        let mut previous_snapshot = None;
         while self.running.load(Ordering::SeqCst) {
-            // Poll for link changes periodically
-            match handle.link().get().execute().try_next().await {
-                Ok(Some(_link)) => {
-                    // Link data received - could compare with previous state
-                }
-                Ok(None) => {}
-                Err(e) => {
-                    tracing::warn!(error = %e, "NetworkMonitor: netlink poll error");
+            let mut links = handle.link().get().execute();
+            let mut link_count = 0;
+
+            loop {
+                match links.try_next().await {
+                    Ok(Some(_link)) => {
+                        link_count += 1;
+                    }
+                    Ok(None) => break,
+                    Err(e) => {
+                        tracing::warn!(error = %e, "NetworkMonitor: netlink poll error");
+                        break;
+                    }
                 }
             }
+
+            let current_snapshot = NetworkSnapshot { link_count };
+            if let Some(event) = network_snapshot_event(previous_snapshot, current_snapshot) {
+                self.notify(event);
+            }
+            previous_snapshot = Some(current_snapshot);
 
             // Small delay between polls
             tokio::time::sleep(tokio::time::Duration::from_secs(5)).await;
@@ -214,11 +226,29 @@ impl NetworkMonitor {
         Ok(())
     }
 
-    /// Listen to Linux netlink socket (stub when linux feature disabled).
+    /// Listen to Linux netlink socket when netlink support is disabled.
     #[cfg(all(target_os = "linux", not(feature = "linux")))]
     async fn listen_netlink(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         tracing::warn!("NetworkMonitor: netlink support disabled (linux feature not enabled)");
         Ok(())
+    }
+}
+
+#[cfg(any(test, target_os = "linux"))]
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+struct NetworkSnapshot {
+    link_count: usize,
+}
+
+#[cfg(any(test, target_os = "linux"))]
+fn network_snapshot_event(
+    previous: Option<NetworkSnapshot>,
+    current: NetworkSnapshot,
+) -> Option<NetworkEvent> {
+    match previous {
+        None => None,
+        Some(previous) if previous == current => None,
+        Some(_) => Some(NetworkEvent::Changed),
     }
 }
 
@@ -287,6 +317,8 @@ fn get_network_type_windows() -> &'static str {
 
     loop {
         buffer = vec![0u8; buffer_size as usize];
+        // SAFETY: buffer points to writable storage of buffer_size bytes, and
+        // buffer_size remains valid for GetAdaptersAddresses to update.
         let result = unsafe {
             GetAdaptersAddresses(
                 AF_UNSPEC.0 as u32,
@@ -296,7 +328,7 @@ fn get_network_type_windows() -> &'static str {
                 &mut buffer_size,
             )
         };
-        match result.0 {
+        match result {
             0 => break,
             111 => continue,
             _ => return "unknown",
@@ -308,6 +340,8 @@ fn get_network_type_windows() -> &'static str {
     let mut saw_cellular = false;
 
     let mut adapter_ptr = buffer.as_ptr() as *const IP_ADAPTER_ADDRESSES_LH;
+    // SAFETY: We iterate a valid linked list returned by GetAdaptersAddresses.
+    // The backing buffer is kept alive for the whole traversal.
     unsafe {
         while !adapter_ptr.is_null() {
             let adapter = &*adapter_ptr;
@@ -374,5 +408,18 @@ mod tests {
             assert!(!monitor.is_expensive());
         }
         assert!(!monitor.is_constrained());
+    }
+
+    #[test]
+    fn test_network_snapshot_event() {
+        let first = NetworkSnapshot { link_count: 1 };
+        let changed = NetworkSnapshot { link_count: 2 };
+
+        assert!(network_snapshot_event(None, first).is_none());
+        assert!(network_snapshot_event(Some(first), first).is_none());
+        assert!(matches!(
+            network_snapshot_event(Some(first), changed),
+            Some(NetworkEvent::Changed)
+        ));
     }
 }

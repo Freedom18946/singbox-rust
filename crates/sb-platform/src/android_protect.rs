@@ -5,13 +5,13 @@
 //!
 //! # Usage
 //! ```ignore
-//! use sb_platform::android_protect::{protect_socket, set_protect_fd_handler};
+//! use sb_platform::android_protect::{protect_socket, set_protect_handler};
 //!
 //! // Set the protect handler (from Android VpnService.protect callback)
-//! set_protect_fd_handler(|fd| {
+//! set_protect_handler(Box::new(|fd| {
 //!     // Call Android VpnService.protect(fd)
 //!     vpn_service.protect(fd)
-//! });
+//! }));
 //!
 //! // When creating outbound sockets:
 //! let socket = TcpSocket::new_v4()?;
@@ -87,7 +87,7 @@ pub fn protect_socket(fd: i32) -> io::Result<()> {
     }
 }
 
-/// Protect a raw socket (Windows stub).
+/// No-op on platforms without Unix file descriptors.
 #[cfg(not(unix))]
 pub fn protect_socket(_fd: i32) -> io::Result<()> {
     Ok(())
@@ -107,20 +107,20 @@ pub fn protect_udp_socket(socket: &tokio::net::UdpSocket) -> io::Result<()> {
     protect_socket(socket.as_raw_fd())
 }
 
-/// Protect a TcpSocket (Windows stub).
+/// No-op on platforms without Unix file descriptors.
 #[cfg(not(unix))]
 pub fn protect_tcp_socket(_socket: &tokio::net::TcpSocket) -> io::Result<()> {
     Ok(())
 }
 
-/// Protect a UdpSocket (Windows stub).
+/// No-op on platforms without Unix file descriptors.
 #[cfg(not(unix))]
 pub fn protect_udp_socket(_socket: &tokio::net::UdpSocket) -> io::Result<()> {
     Ok(())
 }
 
 /// Android-specific VPN configuration.
-#[derive(Debug, Clone, Default)]
+#[derive(Debug, Clone)]
 pub struct AndroidVpnConfig {
     /// Package name of the app.
     pub package_name: Option<String>,
@@ -136,6 +136,19 @@ pub struct AndroidVpnConfig {
     pub session_name: Option<String>,
 }
 
+impl Default for AndroidVpnConfig {
+    fn default() -> Self {
+        Self {
+            package_name: None,
+            allowed_apps: Vec::new(),
+            disallowed_apps: Vec::new(),
+            include_all: true,
+            mtu: 1500,
+            session_name: None,
+        }
+    }
+}
+
 impl AndroidVpnConfig {
     /// Check if an app should go through VPN.
     pub fn should_route_app(&self, package: &str) -> bool {
@@ -149,7 +162,7 @@ impl AndroidVpnConfig {
             return self.allowed_apps.iter().any(|p| p == package);
         }
 
-        // Default: route all
+        // Default: route according to include_all.
         self.include_all
     }
 }
@@ -190,6 +203,18 @@ impl AndroidVpnConfigBuilder {
         self
     }
 
+    /// Set whether apps not covered by allow/deny lists should use the VPN.
+    pub fn include_all(mut self, include_all: bool) -> Self {
+        self.config.include_all = include_all;
+        self
+    }
+
+    /// Set VpnService session name.
+    pub fn session_name(mut self, session_name: impl Into<String>) -> Self {
+        self.config.session_name = Some(session_name.into());
+        self
+    }
+
     /// Build the config.
     pub fn build(self) -> AndroidVpnConfig {
         self.config
@@ -218,13 +243,26 @@ mod tests {
 
     #[test]
     fn test_android_vpn_config_blacklist() {
-        let mut config = AndroidVpnConfig::default();
-        config
-            .disallowed_apps
-            .push("com.android.chrome".to_string());
-        config.include_all = true;
+        let config = AndroidVpnConfigBuilder::new()
+            .disallow_app("com.android.chrome")
+            .build();
 
         assert!(!config.should_route_app("com.android.chrome"));
         assert!(config.should_route_app("com.example.other"));
+    }
+
+    #[test]
+    fn test_android_vpn_builder_sets_session_fields() {
+        let config = AndroidVpnConfigBuilder::new()
+            .package_name("io.nekohasekai.sfa")
+            .session_name("sing-box")
+            .mtu(1280)
+            .include_all(false)
+            .build();
+
+        assert_eq!(config.package_name.as_deref(), Some("io.nekohasekai.sfa"));
+        assert_eq!(config.session_name.as_deref(), Some("sing-box"));
+        assert_eq!(config.mtu, 1280);
+        assert!(!config.should_route_app("com.example.other"));
     }
 }

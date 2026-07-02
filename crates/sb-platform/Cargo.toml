@@ -13,8 +13,6 @@ log = "0.4"
 parking_lot = "0.12"
 once_cell = "1.21"
 
-
-
 # macOS native process matching
 [target.'cfg(target_os = "macos")'.dependencies]
 libproc = { version = "0.14", optional = true }
@@ -28,8 +26,9 @@ windows = { version = "0.58", features = [
     "Win32_System_ProcessStatus",
     "Win32_System_Threading",
     "Win32_Networking_WinInet",
-    "Win32_Networking_WinInet",
-], optional = true }
+    "Win32_Networking_WinSock",
+    "Win32_NetworkManagement_Ndis",
+] }
 
 # Linux netlink for network monitoring
 [target.'cfg(target_os = "linux")'.dependencies]
@@ -37,18 +36,16 @@ rtnetlink = { version = "0.14", optional = true }
 netlink-packet-route = { version = "0.19", optional = true }
 futures = { version = "0.3", optional = true }
 
-[target.'cfg(target_os = "android")'.dependencies]
-jni = "0.21"
-
 [dev-dependencies]
 futures = "0.3"
 
 [features]
 linux = ["dep:rtnetlink", "dep:netlink-packet-route", "dep:futures"]
 macos = []
+windows = ["windows-sys"]
 windows-sys = []
 tun = []
-native-process-match = ["dep:libproc", "dep:windows"]  # Enable native process matching API (macOS + Windows)
+native-process-match = ["dep:libproc"]  # Enable native process matching API (macOS + Windows)
 integration_tests = []
-full = ["linux","macos","windows-sys","tun"]
+full = ["linux","macos","windows","tun"]
 default = ["native-process-match"]
