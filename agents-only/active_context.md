@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-03) - app prefetch audit cleanup
+
+- **`app` prefetch CLI audit cleanup DONE locally**: prefetch stats/watch output now includes
+  total fetched bytes and session duration instead of collecting those counters silently.
+- **Test coverage tightened**: focused prefetch tests now assert byte/duration totals in both
+  JSON and text output builders, and the prior all-feature `app` dead-code warning is gone.
+- **App strict gate unblocked**: `app --all-features` strict clippy exposed a SOCKS UDP helper
+  argument-list lint in the adapter dependency; the reverse-relay inputs are now wrapped in an
+  internal task struct with focused SOCKS UDP checks passing.
+- **Verification PASS**: app fmt/check, focused prefetch tests, strict app clippy, sb-adapters
+  fmt/check, focused SOCKS UDP tests, residual scan, and `git diff --check`.
+- **Scope note**: app CLI/audit hygiene plus app-gate adapter lint only. No REALITY closure,
+  dual-kernel BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - sb-types audit cleanup
 
 - **`crates/sb-types` audit cleanup DONE locally**: crate metadata now inherits the workspace
@@ -215,23 +229,6 @@
 - **Scope note**: documentation hygiene only. No product behavior, release packaging
   completion, REALITY closure, dual-kernel BHV/parity movement, or workflow automation
   is claimed.
-
-## Resume (2026-07-01) - deployments release hygiene
-
-- **`deployments/` release hygiene DONE locally**: compose, Docker, Helm, Kubernetes, and
-  sample config surfaces were cleaned for reproducible defaults and current config
-  validation. Example proxy secrets now use env-backed credentials with `.invalid`
-  sample hosts; compose/Kubernetes/Helm image defaults use explicit app-version tags;
-  Docker build context now includes all workspace members needed by the root manifest;
-  Helm serviceAccount values are wired into rendered pods.
-- **Verification PASS**: strict `app check` for deployment config samples, JSON parse,
-  non-template YAML parse, both Docker Compose config expansions, residual placeholder/
-  `latest` scans, serviceAccount wiring scan, and `git diff --check`.
-- **Unavailable local gates**: Helm rendering was not run because `helm` is not installed;
-  Docker build/manifest probes were blocked by the local Docker/registry environment;
-  Kubernetes client dry-run was blocked by the absent local API server.
-- **Scope note**: deployment-template hygiene only. No release packaging completion,
-  REALITY closure, dual-kernel BHV/parity movement, or workflow automation is claimed.
 
 ## Strategic State
 

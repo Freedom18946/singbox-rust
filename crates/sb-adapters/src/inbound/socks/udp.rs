@@ -266,7 +266,7 @@ async fn recv_from_nat_upstream(
     }
 }
 
-fn spawn_reverse_relay(
+struct ReverseRelayTask {
     listen: Arc<UdpSocket>,
     key: UdpNatKey,
     map: Arc<UdpNatMap>,
@@ -276,7 +276,21 @@ fn spawn_reverse_relay(
     idle_timeout: Duration,
     traffic: Option<Arc<dyn TrafficRecorder>>,
     cancel: tokio_util::sync::CancellationToken,
-) {
+}
+
+fn spawn_reverse_relay(task: ReverseRelayTask) {
+    let ReverseRelayTask {
+        listen,
+        key,
+        map,
+        upstream,
+        original_dst,
+        route_options,
+        idle_timeout,
+        traffic,
+        cancel,
+    } = task;
+
     tokio::spawn(async move {
         let mut rbuf = vec![0u8; 64 * 1024];
         loop {
@@ -1919,17 +1933,21 @@ pub async fn serve_udp_datagrams_with_runtime(
                 map.upsert_upstream_with_meta(key.clone(), upstream.clone(), Some(meta))
                     .await;
 
-                spawn_reverse_relay(
-                    Arc::clone(&sock),
-                    key.clone(),
-                    map.clone(),
-                    upstream.clone(),
-                    dst.clone(),
-                    route_decision.route_options.clone(),
-                    effective_udp_timeout(&dst, timeout, &route_decision.route_options),
-                    Some(wiring.traffic.clone()),
-                    wiring.cancel.clone(),
-                );
+                spawn_reverse_relay(ReverseRelayTask {
+                    listen: Arc::clone(&sock),
+                    key: key.clone(),
+                    map: map.clone(),
+                    upstream: upstream.clone(),
+                    original_dst: dst.clone(),
+                    route_options: route_decision.route_options.clone(),
+                    idle_timeout: effective_udp_timeout(
+                        &dst,
+                        timeout,
+                        &route_decision.route_options,
+                    ),
+                    traffic: Some(wiring.traffic.clone()),
+                    cancel: wiring.cancel.clone(),
+                });
                 #[cfg(feature = "metrics")]
                 {
                     let size = map.len().await as f64;

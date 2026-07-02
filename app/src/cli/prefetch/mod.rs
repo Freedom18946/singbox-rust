@@ -208,33 +208,58 @@ fn collect_prefetch_cli_stats(
     }
 }
 
+#[cfg(feature = "admin_debug")]
+fn prefetch_stats_json(stats: &PrefetchCliStats) -> serde_json::Value {
+    serde_json::json!({
+        "depth": stats.depth,
+        "high_watermark": stats.high,
+        "enq": stats.enq,
+        "drop": stats.drop,
+        "done": stats.done,
+        "fail": stats.fail,
+        "retry": stats.retry,
+        "bytes": stats.bytes,
+        "duration_ms": stats.duration_ms,
+    })
+}
+
+#[cfg(feature = "admin_debug")]
+fn prefetch_stats_text(stats: &PrefetchCliStats) -> String {
+    format!(
+        "\
+sb_prefetch_queue_depth             {depth}
+sb_prefetch_queue_high_watermark    {high}
+sb_prefetch_jobs_total{{event=enq}} {enq}
+sb_prefetch_jobs_total{{event=drop}} {drop}
+sb_prefetch_jobs_total{{event=done}} {done}
+sb_prefetch_jobs_total{{event=fail}} {fail}
+sb_prefetch_jobs_total{{event=retry}} {retry}
+sb_prefetch_total_bytes             {bytes}
+sb_prefetch_session_duration_ms     {duration_ms}",
+        depth = stats.depth,
+        high = stats.high,
+        enq = stats.enq,
+        drop = stats.drop,
+        done = stats.done,
+        fail = stats.fail,
+        retry = stats.retry,
+        bytes = stats.bytes,
+        duration_ms = stats.duration_ms,
+    )
+}
+
 fn stats(_json: bool, _format: String) -> anyhow::Result<()> {
     // admin_debug 下导出指标；否则提示开启特性
     #[cfg(feature = "admin_debug")]
     {
         let runtime_deps = build_prefetch_runtime_deps();
         let stats = collect_prefetch_cli_stats(&runtime_deps.metrics);
-        let depth = stats.depth;
-        let high = stats.high;
-        let enq = stats.enq;
-        let drop = stats.drop;
-        let done = stats.done;
-        let fail = stats.fail;
-        let retry = stats.retry;
 
         let use_json = _json || _format == "json";
         let use_envelope = _format == "json";
 
         if use_json {
-            let stats_data = serde_json::json!({
-                "depth": depth,
-                "high_watermark": high,
-                "enq": enq,
-                "drop": drop,
-                "done": done,
-                "fail": fail,
-                "retry": retry
-            });
+            let stats_data = prefetch_stats_json(&stats);
 
             if use_envelope {
                 #[cfg(feature = "admin_envelope")]
@@ -253,13 +278,7 @@ fn stats(_json: bool, _format: String) -> anyhow::Result<()> {
             }
         } else {
             // 输出文本格式
-            println!("sb_prefetch_queue_depth             {depth}");
-            println!("sb_prefetch_queue_high_watermark    {high}");
-            println!("sb_prefetch_jobs_total{{event=enq}} {enq}");
-            println!("sb_prefetch_jobs_total{{event=drop}} {drop}");
-            println!("sb_prefetch_jobs_total{{event=done}} {done}");
-            println!("sb_prefetch_jobs_total{{event=fail}} {fail}");
-            println!("sb_prefetch_jobs_total{{event=retry}} {retry}");
+            println!("{}", prefetch_stats_text(&stats));
         }
         Ok(())
     }
@@ -410,6 +429,8 @@ fn watch(
             let done = stats.done;
             let fail = stats.fail;
             let retry = stats.retry;
+            let bytes = stats.bytes;
+            let duration_ms = stats.duration_ms;
 
             series.push(depth);
             while series.len() > 60 {
@@ -419,6 +440,7 @@ fn watch(
                 let line = serde_json::json!({
                     "depth": depth, "high": high, "enq": enq, "drop": drop,
                     "done": done, "fail": fail, "retry": retry,
+                    "bytes": bytes, "duration_ms": duration_ms,
                     "ts_ms": (std::time::Instant::now().elapsed().as_millis() as u64)
                 });
                 println!("{line}");
@@ -426,12 +448,12 @@ fn watch(
                 print!("\r\x1b[2K"); // clear line
                 let spark = sparkline(&series);
                 print!(
-                    "depth {depth:>5}  high {high:>5}  enq {enq:>8}  drop {drop:>6}  done {done:>8}  fail {fail:>6} | {spark}"
+                    "depth {depth:>5}  high {high:>5}  enq {enq:>8}  drop {drop:>6}  done {done:>8}  fail {fail:>6}  bytes {bytes:>8}  dur_ms {duration_ms:>6} | {spark}"
                 );
                 std::io::Write::flush(&mut std::io::stdout())?;
             } else {
                 println!(
-                    "depth={depth} high={high} enq={enq} drop={drop} done={done} fail={fail} retry={retry}"
+                    "depth={depth} high={high} enq={enq} drop={drop} done={done} fail={fail} retry={retry} bytes={bytes} duration_ms={duration_ms}"
                 );
             }
             if let Some(t) = deadline {
@@ -601,7 +623,7 @@ fn cli_prefetch_env_usize(key: &str, default: usize) -> usize {
 #[cfg(test)]
 #[cfg(feature = "admin_tests")]
 mod tests {
-    use super::collect_prefetch_cli_stats;
+    use super::{collect_prefetch_cli_stats, prefetch_stats_json, prefetch_stats_text};
 
     #[test]
     fn collect_prefetch_cli_stats_uses_explicit_metrics_owner() {
@@ -620,5 +642,29 @@ mod tests {
         assert_eq!(stats.done, 1);
         assert_eq!(stats.retry, 1);
         assert_eq!(stats.bytes, 128);
+        assert_eq!(stats.duration_ms, 0);
+    }
+
+    #[test]
+    fn prefetch_stats_output_includes_byte_and_duration_totals() {
+        let stats = super::PrefetchCliStats {
+            depth: 4,
+            high: 7,
+            enq: 1,
+            drop: 2,
+            done: 3,
+            fail: 4,
+            retry: 5,
+            bytes: 128,
+            duration_ms: 42,
+        };
+
+        let json = prefetch_stats_json(&stats);
+        assert_eq!(json["bytes"], 128);
+        assert_eq!(json["duration_ms"], 42);
+
+        let text = prefetch_stats_text(&stats);
+        assert!(text.contains("sb_prefetch_total_bytes             128"));
+        assert!(text.contains("sb_prefetch_session_duration_ms     42"));
     }
 }
