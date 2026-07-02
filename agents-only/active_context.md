@@ -10,6 +10,18 @@
 
 ---
 
+## Resume (2026-07-03) - app tools synctime audit cleanup
+
+- **`app/src/cli/tools.rs` audit cleanup DONE locally**: `tools synctime` now computes local
+  NTP time through a fallible helper, so a pre-UNIX system clock returns a structured error
+  instead of panicking through `duration_since(...).unwrap()`.
+- **Test coverage tightened**: focused NTP tests cover normal NTP epoch conversion, pre-epoch
+  clock rejection, and existing offset calculation behavior.
+- **Verification PASS**: app fmt, focused NTP tests, app all-target/all-feature check, strict
+  app clippy, residual scan, and `git diff --check`.
+- **Scope note**: app tools CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app sb-handshake slice audit cleanup
 
 - **`app/src/bin/handshake.rs` audit cleanup DONE locally**: `sb-handshake slice` now writes
@@ -138,19 +150,6 @@
   `git diff --check`, and app all-target/all-feature check (existing prefetch warnings only).
 - **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - sb-runtime audit cleanup
-
-- **`crates/sb-runtime` audit cleanup DONE locally**: offline Trojan/VMess alpha handshakes
-  now encode host length as `u16le` with bounded host bytes, avoiding previous `u8`
-  truncation for hosts longer than 255 bytes.
-- **Test/runtime hygiene DONE locally**: JSONL streaming skips blank lines without fake
-  zero-length frames while returning parse failures; replay files use isolated `tempfile`
-  directories; golden/debug/placeholder/dead-code remnants were removed or clarified.
-- **Verification PASS**: sb-runtime fmt, no-default/all-features checks, all-target tests,
-  doctests, strict clippy, residual debug/placeholder scan, and `git diff --check`.
-- **Scope note**: sb-runtime audit/test hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
 
 ## Resume (2026-07-02) - sb-platform audit cleanup
 

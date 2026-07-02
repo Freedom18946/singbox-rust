@@ -340,7 +340,7 @@ async fn synctime(server: String, timeout: u64) -> Result<()> {
         anyhow::bail!("short NTP packet");
     }
 
-    let t0 = ntp_now_seconds();
+    let t0 = ntp_now_seconds()?;
     let offset = compute_ntp_offset(t0, &buf);
     println!("ntp_server={server} offset_seconds={offset:.6}");
     Ok(())
@@ -485,12 +485,16 @@ fn file_url_to_path(url: &str) -> Option<PathBuf> {
 }
 
 // Return current time in NTP seconds (seconds since 1900-01-01 with fractional part)
-fn ntp_now_seconds() -> f64 {
+fn ntp_now_seconds() -> Result<f64> {
+    ntp_seconds_from_system_time(std::time::SystemTime::now())
+}
+
+fn ntp_seconds_from_system_time(time: std::time::SystemTime) -> Result<f64> {
     const NTP_UNIX_DELTA: u64 = 2_208_988_800; // seconds between 1900 and 1970
-    let now = std::time::SystemTime::now()
+    let now = time
         .duration_since(std::time::UNIX_EPOCH)
-        .unwrap();
-    (now.as_secs() + NTP_UNIX_DELTA) as f64 + f64::from(now.subsec_nanos()) / 1e9
+        .context("system clock is before UNIX_EPOCH")?;
+    Ok((now.as_secs() + NTP_UNIX_DELTA) as f64 + f64::from(now.subsec_nanos()) / 1e9)
 }
 
 // Compute NTP offset using a simplified approach when originate timestamp is unavailable in request
@@ -660,5 +664,24 @@ mod ntp_tests {
         let off = compute_ntp_offset(t0, &pkt);
         // With t1≈0, offset ≈ ((t2-0)+(t3-t0))/2 = (base+0.2 + (base+0.2 - base))/2 = ~0.2
         assert!(off > 0.19 && off < 0.21, "off={off}");
+    }
+
+    #[test]
+    fn ntp_seconds_rejects_pre_unix_clock() {
+        let time = std::time::UNIX_EPOCH - std::time::Duration::from_secs(1);
+
+        let err = ntp_seconds_from_system_time(time).expect_err("pre-epoch clock should fail");
+
+        assert!(err.to_string().contains("UNIX_EPOCH"));
+    }
+
+    #[test]
+    fn ntp_seconds_adds_ntp_epoch_delta() -> Result<()> {
+        let time = std::time::UNIX_EPOCH + std::time::Duration::from_millis(250);
+
+        let seconds = ntp_seconds_from_system_time(time)?;
+
+        assert!(seconds > 2_208_988_800.24 && seconds < 2_208_988_800.26);
+        Ok(())
     }
 }
