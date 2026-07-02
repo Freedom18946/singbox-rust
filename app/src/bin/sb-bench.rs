@@ -12,6 +12,8 @@ use std::net::SocketAddr;
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "bench")]
+use anyhow::{Context, Result};
+#[cfg(feature = "bench")]
 use hdrhistogram::Histogram;
 #[cfg(feature = "bench")]
 use hickory_proto::op::{Message, MessageType, OpCode, Query};
@@ -26,10 +28,10 @@ use tokio::time::timeout;
 
 #[cfg(feature = "bench")]
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     if std::env::var("SB_BENCH").ok().as_deref() != Some("1") {
         tracing::warn!(target: "app::bench", "SB_BENCH!=1, exit");
-        return;
+        return Ok(());
     }
 
     let runs = std::env::var("SB_BENCH_N")
@@ -51,9 +53,9 @@ async fn main() {
     let dns_name =
         std::env::var("SB_BENCH_DNS_NAME").unwrap_or_else(|_| "example.com.".to_string());
 
-    let tcp = bench_tcp(&tcp_target, runs).await;
-    let udp = bench_udp(&udp_target, runs).await;
-    let dns = bench_dns(&dns_target, &dns_name, runs).await;
+    let tcp = bench_tcp(&tcp_target, runs).await?;
+    let udp = bench_udp(&udp_target, runs).await?;
+    let dns = bench_dns(&dns_target, &dns_name, runs).await?;
 
     let report = json!({
         "tcp_connect_ms": tcp,
@@ -61,13 +63,16 @@ async fn main() {
         "dns_rtt_ms": dns,
     });
 
-    println!("{}", serde_json::to_string_pretty(&report).unwrap());
+    println!("{}", serde_json::to_string_pretty(&report)?);
+    Ok(())
 }
 
 #[cfg(feature = "bench")]
-async fn bench_tcp(addr: &str, runs: usize) -> serde_json::Value {
-    let target: SocketAddr = addr.parse().expect("invalid SB_BENCH_TCP address");
-    let mut hist = histogram();
+async fn bench_tcp(addr: &str, runs: usize) -> Result<serde_json::Value> {
+    let target: SocketAddr = addr
+        .parse()
+        .with_context(|| format!("invalid SB_BENCH_TCP address '{addr}'"))?;
+    let mut hist = histogram()?;
 
     let par: usize = bench_env_usize("SB_BENCH_PAR", 1);
 
@@ -106,16 +111,18 @@ async fn bench_tcp(addr: &str, runs: usize) -> serde_json::Value {
         );
         let _ = std::fs::write(format!("{}_tcp", path), csv_content);
     }
-    json
+    Ok(json)
 }
 
 #[cfg(feature = "bench")]
-async fn bench_udp(addr: &str, runs: usize) -> serde_json::Value {
-    let target: SocketAddr = addr.parse().expect("invalid SB_BENCH_UDP address");
+async fn bench_udp(addr: &str, runs: usize) -> Result<serde_json::Value> {
+    let target: SocketAddr = addr
+        .parse()
+        .with_context(|| format!("invalid SB_BENCH_UDP address '{addr}'"))?;
     let _sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
         .await
-        .expect("failed to bind UDP probe socket");
-    let mut hist = histogram();
+        .context("failed to bind UDP probe socket")?;
+    let mut hist = histogram()?;
 
     let par: usize = bench_env_usize("SB_BENCH_PAR", 1);
     let payload_size: usize = bench_env_usize("SB_BENCH_PAYLOAD", 32);
@@ -129,19 +136,19 @@ async fn bench_udp(addr: &str, runs: usize) -> serde_json::Value {
             }
             // Create a new socket for each parallel task
             futs.push(tokio::spawn(async move {
-                let sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
-                    .await
-                    .expect("failed to bind socket");
+                let Ok(sock) = tokio::net::UdpSocket::bind("0.0.0.0:0").await else {
+                    return None;
+                };
                 let msg = vec![(i % 256) as u8; payload_size];
                 let started = Instant::now();
                 let _ = sock.send_to(&msg, target).await;
                 let mut buf = [0u8; 2048];
                 let _ = timeout(Duration::from_millis(500), sock.recv_from(&mut buf)).await;
-                started.elapsed().as_millis() as u64
+                Some(started.elapsed().as_millis() as u64)
             }));
         }
         for f in futs {
-            if let Ok(ms) = f.await {
+            if let Ok(Some(ms)) = f.await {
                 let _ = hist.record(ms);
             }
         }
@@ -161,14 +168,17 @@ async fn bench_udp(addr: &str, runs: usize) -> serde_json::Value {
         );
         let _ = std::fs::write(path, csv_content);
     }
-    json
+    Ok(json)
 }
 
 #[cfg(feature = "bench")]
-async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
-    let target: SocketAddr = addr.parse().expect("invalid SB_BENCH_DNS address");
-    let name = Name::from_ascii(qname).expect("invalid SB_BENCH_DNS_NAME");
-    let mut hist = histogram();
+async fn bench_dns(addr: &str, qname: &str, runs: usize) -> Result<serde_json::Value> {
+    let target: SocketAddr = addr
+        .parse()
+        .with_context(|| format!("invalid SB_BENCH_DNS address '{addr}'"))?;
+    let name =
+        Name::from_ascii(qname).with_context(|| format!("invalid SB_BENCH_DNS_NAME '{qname}'"))?;
+    let mut hist = histogram()?;
 
     let par: usize = bench_env_usize("SB_BENCH_PAR", 1);
 
@@ -181,25 +191,26 @@ async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
             }
             let name = name.clone();
             futs.push(tokio::spawn(async move {
-                let sock = tokio::net::UdpSocket::bind("0.0.0.0:0")
-                    .await
-                    .expect("failed to bind DNS socket");
+                let Ok(sock) = tokio::net::UdpSocket::bind("0.0.0.0:0").await else {
+                    return None;
+                };
                 let mut msg = Message::new((i & 0xffff) as u16, MessageType::Query, OpCode::Query);
                 msg.metadata.recursion_desired = true;
                 msg.add_query(Query::query(name, RecordType::A));
                 let mut data = Vec::with_capacity(64);
-                msg.emit(&mut BinEncoder::new(&mut data))
-                    .expect("failed to encode DNS query");
+                if msg.emit(&mut BinEncoder::new(&mut data)).is_err() {
+                    return None;
+                }
 
                 let started = Instant::now();
                 let _ = sock.send_to(&data, target).await;
                 let mut buf = [0u8; 512];
                 let _ = timeout(Duration::from_secs(1), sock.recv_from(&mut buf)).await;
-                started.elapsed().as_millis() as u64
+                Some(started.elapsed().as_millis() as u64)
             }));
         }
         for f in futs {
-            if let Ok(ms) = f.await {
+            if let Ok(Some(ms)) = f.await {
                 let _ = hist.record(ms);
             }
         }
@@ -219,12 +230,12 @@ async fn bench_dns(addr: &str, qname: &str, runs: usize) -> serde_json::Value {
         );
         let _ = std::fs::write(format!("{}_dns", path), csv_content);
     }
-    json
+    Ok(json)
 }
 
 #[cfg(feature = "bench")]
-fn histogram() -> Histogram<u64> {
-    Histogram::new_with_bounds(1, 60_000, 3).expect("failed to create histogram")
+fn histogram() -> Result<Histogram<u64>> {
+    Histogram::new_with_bounds(1, 60_000, 3).context("failed to create histogram")
 }
 
 #[cfg(feature = "bench")]
@@ -251,5 +262,38 @@ fn bench_env_usize(key: &str, default: usize) -> usize {
             tracing::warn!("env '{key}' value '{t}' is not a valid usize; silent parse fallback is disabled; using default {default}: {e}");
             default
         }
+    }
+}
+
+#[cfg(all(test, feature = "bench"))]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn bench_tcp_rejects_invalid_target() {
+        let err = bench_tcp("not-an-address", 1).await.unwrap_err();
+        assert!(err.to_string().contains("SB_BENCH_TCP"));
+    }
+
+    #[tokio::test]
+    async fn bench_udp_rejects_invalid_target() {
+        let err = bench_udp("not-an-address", 1).await.unwrap_err();
+        assert!(err.to_string().contains("SB_BENCH_UDP"));
+    }
+
+    #[tokio::test]
+    async fn bench_dns_rejects_invalid_target() {
+        let err = bench_dns("not-an-address", "example.com.", 1)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("SB_BENCH_DNS"));
+    }
+
+    #[tokio::test]
+    async fn bench_dns_rejects_invalid_name() {
+        let err = bench_dns("127.0.0.1:53", "not a dns name", 1)
+            .await
+            .unwrap_err();
+        assert!(err.to_string().contains("SB_BENCH_DNS_NAME"));
     }
 }

@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-03) - app sb-bench input audit cleanup
+
+- **`app/src/bin/sb-bench.rs` audit cleanup DONE locally**: invalid `SB_BENCH_TCP`,
+  `SB_BENCH_UDP`, `SB_BENCH_DNS`, and `SB_BENCH_DNS_NAME` inputs now return structured errors
+  instead of panicking through `expect`.
+- **Bench runtime hygiene tightened**: benchmark helpers now propagate setup errors, JSON
+  serialization and histogram creation use `Result`, and per-sample UDP/DNS socket/encoding
+  failures no longer crash spawned tasks.
+- **Test coverage tightened**: focused `sb-bench` binary tests cover all invalid target/name
+  input paths; a real CLI run with invalid `SB_BENCH_TCP` exits non-zero with an actionable
+  error and no panic.
+- **Verification PASS**: app fmt, focused `sb-bench` tests, app all-target/all-feature check,
+  strict app clippy, real invalid-env CLI check, residual scan, and `git diff --check`.
+- **Scope note**: app benchmark CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app generate TLS keypair audit cleanup
 
 - **`app generate tls-keypair --days` audit cleanup DONE locally**: the CLI now builds explicit
@@ -80,21 +96,6 @@
   `git diff --check`, and app all-target/all-feature check (existing prefetch warnings only).
 - **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - sb-tls audit cleanup
-
-- **`crates/sb-tls` audit cleanup DONE locally**: feature-gated REALITY/uTLS examples now
-  declare `required-features`, so no-default all-target builds no longer compile
-  unavailable example surfaces.
-- **ECH keygen bounds tightened**: ECHConfig/keygen helpers now return structured errors
-  instead of silently truncating u8/u16 length-prefixed fields; regression tests cover
-  invalid public-key length and oversized public names.
-- **Docs calibrated**: duplicate REALITY connector docs, stale ECH integration wording,
-  old task labels, and drift-prone all-green status text were removed or made stable.
-- **Verification PASS**: sb-tls fmt, no-default/all-features checks, all-target tests,
-  doctests, strict clippy, residual audit scan, and `git diff --check`.
-- **Scope note**: sb-tls audit/test hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
 
 ## Resume (2026-07-02) - sb-test-utils audit cleanup
 
