@@ -1,19 +1,14 @@
 #![cfg(feature = "rule_coverage")]
 #![cfg_attr(feature = "strict_warnings", deny(warnings))]
+use anyhow::{Context, Result};
 use hyper::{Body, Request, Response, StatusCode};
 
 #[tokio::main]
-async fn main() {
-    let addr: std::net::SocketAddr = match std::env::var("SB_COV_ADDR")
+async fn main() -> Result<()> {
+    let addr = std::env::var("SB_COV_ADDR")
         .unwrap_or_else(|_| "127.0.0.1:18090".into())
-        .parse()
-    {
-        Ok(a) => a,
-        Err(e) => {
-            eprintln!("invalid SB_COV_ADDR: {e}");
-            return;
-        }
-    };
+        .parse::<std::net::SocketAddr>()
+        .context("invalid SB_COV_ADDR")?;
     tracing::info!(target: "app::coverage-http", %addr, "listen");
     let svc = hyper::service::make_service_fn(move |_| async move {
         Ok::<_, hyper::Error>(hyper::service::service_fn(
@@ -43,7 +38,8 @@ async fn main() {
             },
         ))
     });
-    if let Err(e) = hyper::Server::bind(&addr).serve(svc).await {
-        eprintln!("server error: {e}");
-    }
+    hyper::Server::bind(&addr)
+        .serve(svc)
+        .await
+        .context("coverage HTTP server failed")
 }

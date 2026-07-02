@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-03) - app coverage-http CLI audit cleanup
+
+- **`app/src/bin/coverage-http.rs` audit cleanup DONE locally**: invalid `SB_COV_ADDR` now
+  returns an error from `main` and exits non-zero instead of printing to stderr and returning
+  success.
+- **Server startup diagnostics tightened**: the coverage HTTP server now propagates bind/serve
+  failures through a structured `coverage HTTP server failed` context instead of only printing
+  and falling through.
+- **Test coverage tightened**: a real `coverage-http` binary test covers invalid listen-address
+  failure output and non-zero exit behavior.
+- **Verification PASS**: app fmt, focused `coverage-http` feature test, coverage-http feature
+  check, app all-target/all-feature check, strict app clippy, real invalid-address CLI smoke,
+  consistency, and `git diff --check`.
+- **Scope note**: app rule-coverage helper CLI hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app prom CLI audit cleanup
 
 - **`app prom` audit cleanup DONE locally**: the Prometheus CLI now awaits async scrape/hist
@@ -213,19 +229,6 @@
   `git diff --check`, and `verify-consistency.sh`.
 - **Scope note**: sb-core audit/test hygiene only. No REALITY closure, dual-kernel
   BHV/parity movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - grafana release hygiene
-
-- **`grafana/` release hygiene DONE locally**: Grafana README/provisioning/docs now
-  point at the current admin `ADMIN_LISTEN=:19090` + `/metricsz` scrape path, keep
-  standalone `/metrics` on a separate developer exporter port, and no longer suggest
-  mutable `latest` image tags.
-- **Verification PASS**: Grafana metadata verifier checks dashboard datasource
-  variables, unique dashboard UIDs, alert expressions, source-backed metric names, and
-  stale scrape-token regressions.
-- **Scope note**: Grafana monitoring asset hygiene only. No product behavior, release
-  packaging completion, REALITY closure, dual-kernel BHV/parity movement, or workflow
-  automation is claimed.
 
 ## Strategic State
 
