@@ -1,5 +1,6 @@
 #![cfg(feature = "explain")]
 #![cfg_attr(feature = "strict_warnings", deny(warnings))]
+use anyhow::{Context, Result};
 use app::http_util;
 use hyper::{Body, Request, Response, StatusCode};
 use sb_core::router::explain as ex;
@@ -40,6 +41,20 @@ fn to_dot(res: &ExplainResult) -> String {
     }
     s.push('}');
     s
+}
+
+fn parse_debug_addr(raw: &str) -> Result<SocketAddr> {
+    raw.parse()
+        .with_context(|| format!("invalid SB_DEBUG_ADDR '{raw}'"))
+}
+
+fn configured_debug_addr() -> Result<SocketAddr> {
+    let raw = std::env::var("SB_DEBUG_ADDR").unwrap_or_else(|_| "127.0.0.1:18089".into());
+    parse_debug_addr(&raw)
+}
+
+fn parse_query_port(raw: &str) -> std::result::Result<u16, &'static str> {
+    raw.parse::<u16>().map_err(|_| "invalid port")
 }
 
 async fn handle(
@@ -163,7 +178,10 @@ async fn handle(
                 }
             }
             "port" => {
-                port = v.parse().unwrap_or(0);
+                port = match parse_query_port(&v) {
+                    Ok(port) => port,
+                    Err(message) => return Ok(http_util::bad_request(message)),
+                };
             }
             "proto" => {
                 if v == "tcp" || v == "udp" {
@@ -226,10 +244,7 @@ async fn handle(
         }
         "dot" => {
             let body = to_dot(&res);
-            Ok(Response::builder()
-                .header("content-type", "text/vnd.graphviz")
-                .body(Body::from(body))
-                .unwrap())
+            Ok(http_util::ok_octet("text/vnd.graphviz", body.into_bytes()))
         }
         _ => {
             // This should not happen given validation above, but handle gracefully
@@ -239,15 +254,12 @@ async fn handle(
 }
 
 #[tokio::main]
-async fn main() {
+async fn main() -> Result<()> {
     #[cfg(feature = "panic_log")]
     app::panic::install();
     #[cfg(feature = "hardening")]
     app::hardening::apply();
-    let addr: SocketAddr = std::env::var("SB_DEBUG_ADDR")
-        .unwrap_or_else(|_| "127.0.0.1:18089".into())
-        .parse()
-        .expect("SB_DEBUG_ADDR");
+    let addr = configured_debug_addr()?;
     eprintln!("[explaind] listen http://{}", addr);
     let router = std::sync::Arc::new(sb_core::router::engine::RouterHandle::from_env());
     #[cfg(feature = "explain")]
@@ -262,5 +274,42 @@ async fn main() {
             }))
         }
     });
-    hyper::Server::bind(&addr).serve(svc).await.unwrap();
+    hyper::Server::bind(&addr)
+        .serve(svc)
+        .await
+        .context("sb-explaind server failed")
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn debug_addr_accepts_socket_addr() -> Result<()> {
+        let addr = parse_debug_addr("127.0.0.1:18089")?;
+
+        assert_eq!(addr.port(), 18089);
+        Ok(())
+    }
+
+    #[test]
+    fn debug_addr_rejects_invalid_value() {
+        let result = parse_debug_addr("not-an-address");
+
+        assert!(matches!(
+            result.as_ref().map_err(|err| err.to_string()),
+            Err(message) if message.contains("SB_DEBUG_ADDR")
+        ));
+    }
+
+    #[test]
+    fn query_port_accepts_u16() {
+        assert_eq!(parse_query_port("443"), Ok(443));
+    }
+
+    #[test]
+    fn query_port_rejects_invalid_or_out_of_range_values() {
+        assert_eq!(parse_query_port("not-a-port"), Err("invalid port"));
+        assert_eq!(parse_query_port("70000"), Err("invalid port"));
+    }
 }

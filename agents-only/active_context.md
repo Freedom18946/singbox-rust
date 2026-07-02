@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-03) - app sb-explaind input audit cleanup
+
+- **`app/src/bin/sb-explaind.rs` audit cleanup DONE locally**: invalid `SB_DEBUG_ADDR` now
+  returns an actionable startup error instead of panicking through `expect`.
+- **Debug explain request contract tightened**: `/debug/explain?port=...` now rejects invalid
+  or out-of-range port values with a 400 response instead of silently treating them as port `0`;
+  dot-format responses no longer use a local `Response::builder().unwrap()`.
+- **Test coverage tightened**: focused `sb-explaind` binary tests cover valid/invalid debug
+  address parsing and valid/invalid query port parsing.
+- **Verification PASS**: app fmt, focused `sb-explaind` tests, app all-target/all-feature check,
+  strict app clippy, real invalid-env CLI check, residual scan, and `git diff --check`.
+- **Scope note**: app debug explain daemon hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app sb-bench input audit cleanup
 
 - **`app/src/bin/sb-bench.rs` audit cleanup DONE locally**: invalid `SB_BENCH_TCP`,
@@ -96,20 +110,6 @@
   `git diff --check`, and app all-target/all-feature check (existing prefetch warnings only).
 - **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - sb-test-utils audit cleanup
-
-- **`crates/sb-test-utils` audit cleanup DONE locally**: stale crate-level docs now match
-  the actual exported helpers, and the redundant `tokio/full` dev-dependency was removed.
-- **SOCKS5 mock hygiene tightened**: unsupported TCP request paths return protocol failure
-  replies, RSV is validated, background handshake errors no longer print noisy diagnostics,
-  and fixed 60-second association sleeps were replaced by connection EOF handling.
-- **Compatibility documented and tested**: legacy UDP relay reply shape is explicit and
-  covered by regression tests alongside unsupported-command and invalid-RSV cases.
-- **Verification PASS**: sb-test-utils fmt/check/tests/doctests/strict clippy, focused
-  sb-core SOCKS5/UDP caller tests, residual audit scan, and `git diff --check`.
-- **Scope note**: sb-test-utils audit/test hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
 
 ## Resume (2026-07-02) - sb-subscribe audit cleanup
 
