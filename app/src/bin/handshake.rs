@@ -26,6 +26,88 @@ mod real {
         }
     }
 
+    #[derive(Debug, Clone, Copy, PartialEq, Eq)]
+    struct SliceStats {
+        kept: usize,
+        skipped_bad_lines: usize,
+    }
+
+    fn parse_slice_dir(dir: &str) -> Result<Option<sb_runtime::loopback::FrameDir>> {
+        use sb_runtime::loopback::FrameDir;
+
+        match dir.to_ascii_lowercase().as_str() {
+            "tx" => Ok(Some(FrameDir::Tx)),
+            "rx" => Ok(Some(FrameDir::Rx)),
+            "all" | "" => Ok(None),
+            other => Err(anyhow!("invalid --dir {other}")),
+        }
+    }
+
+    fn slice_jsonl(
+        from: &std::path::Path,
+        out: &std::path::Path,
+        dir: &str,
+        limit: usize,
+        head8_prefix: Option<&str>,
+    ) -> Result<SliceStats> {
+        use sb_runtime::loopback::Frame;
+        use std::io::{BufRead, BufReader, Write};
+
+        let f = std::fs::File::open(from)
+            .map_err(|e| anyhow!("open {} failed: {e}", from.display()))?;
+        let mut rdr = BufReader::new(f);
+        let mut w = std::fs::OpenOptions::new()
+            .create(true)
+            .truncate(true)
+            .write(true)
+            .open(out)
+            .map_err(|e| anyhow!("open {} failed: {e}", out.display()))?;
+        let want_dir = parse_slice_dir(dir)?;
+        let prefix = head8_prefix.map(|s| s.to_ascii_lowercase());
+        let mut buf = String::new();
+        let mut kept = 0usize;
+        let mut skipped_bad_lines = 0usize;
+        loop {
+            buf.clear();
+            let n = rdr.read_line(&mut buf)?;
+            if n == 0 {
+                break;
+            }
+            let line = buf.trim();
+            if line.is_empty() {
+                continue;
+            }
+            let f: Frame = match serde_json::from_str(line) {
+                Ok(x) => x,
+                Err(_) => {
+                    skipped_bad_lines += 1;
+                    continue;
+                }
+            };
+            if let Some(ref d) = want_dir {
+                if f.dir != *d {
+                    continue;
+                }
+            }
+            if let Some(p) = &prefix {
+                if !f.head8_hex.to_ascii_lowercase().starts_with(p) {
+                    continue;
+                }
+            }
+            let encoded = serde_json::to_string(&f)?;
+            writeln!(w, "{encoded}")?;
+            kept += 1;
+            if limit > 0 && kept >= limit {
+                break;
+            }
+        }
+
+        Ok(SliceStats {
+            kept,
+            skipped_bad_lines,
+        })
+    }
+
     #[derive(Parser, Debug)]
     #[command(
         name = "sb-handshake",
@@ -773,61 +855,13 @@ mod real {
                 limit,
                 head8_prefix,
             } => {
-                use sb_runtime::loopback::{Frame, FrameDir};
-                use std::io::{BufRead, BufReader, Write};
-                let f = std::fs::File::open(&from)
-                    .map_err(|e| anyhow!("open {} failed: {e}", from.display()))?;
-                let mut rdr = BufReader::new(f);
-                let mut w = std::fs::OpenOptions::new()
-                    .create(true)
-                    .truncate(true)
-                    .write(true)
-                    .open(&out)
-                    .map_err(|e| anyhow!("open {} failed: {e}", out.display()))?;
-                let want_dir = match dir.to_ascii_lowercase().as_str() {
-                    "tx" => Some(FrameDir::Tx),
-                    "rx" => Some(FrameDir::Rx),
-                    "all" | "" => None,
-                    other => return Err(anyhow!("invalid --dir {}", other)),
-                };
-                let prefix = head8_prefix.map(|s| s.to_ascii_lowercase());
-                let mut buf = String::new();
-                let mut kept = 0usize;
-                loop {
-                    buf.clear();
-                    let n = rdr.read_line(&mut buf)?;
-                    if n == 0 {
-                        break;
-                    }
-                    let line = buf.trim();
-                    if line.is_empty() {
-                        continue;
-                    }
-                    let f: Frame = match serde_json::from_str(line) {
-                        Ok(x) => x,
-                        Err(_) => continue, // 跳过坏行
-                    };
-                    if let Some(ref d) = want_dir {
-                        if f.dir != *d {
-                            continue;
-                        }
-                    }
-                    if let Some(p) = &prefix {
-                        if !f.head8_hex.to_ascii_lowercase().starts_with(p) {
-                            continue;
-                        }
-                    }
-                    writeln!(w, "{}", serde_json::to_string(&f).unwrap()).ok();
-                    kept += 1;
-                    if limit > 0 && kept >= limit {
-                        break;
-                    }
-                }
+                let stats = slice_jsonl(&from, &out, &dir, limit, head8_prefix.as_deref())?;
                 println!(
-                    "HS_OK: slice from='{}' out='{}' kept={}",
+                    "HS_OK: slice from='{}' out='{}' kept={} skipped_bad_lines={}",
                     from.display(),
                     out.display(),
-                    kept
+                    stats.kept,
+                    stats.skipped_bad_lines
                 );
             }
             #[cfg(all(feature = "handshake_alpha", feature = "io_local_alpha"))]
@@ -916,6 +950,51 @@ mod real {
             }
         }
         Ok(())
+    }
+
+    #[cfg(test)]
+    mod tests {
+        use super::*;
+        use sb_runtime::loopback::{Frame, FrameDir};
+
+        fn frame(dir: FrameDir, head8_hex: &str) -> Frame {
+            Frame {
+                ts_ms: 1,
+                dir,
+                len: 8,
+                head8_hex: head8_hex.to_string(),
+                tail8_hex: "0000000000000000".to_string(),
+            }
+        }
+
+        #[test]
+        fn slice_jsonl_counts_bad_lines_and_filters() -> Result<()> {
+            let temp = tempfile::tempdir()?;
+            let input = temp.path().join("frames.jsonl");
+            let output = temp.path().join("slice.jsonl");
+            let tx = serde_json::to_string(&frame(FrameDir::Tx, "aabbccdd"))?;
+            let rx = serde_json::to_string(&frame(FrameDir::Rx, "aabb0011"))?;
+            std::fs::write(&input, format!("{tx}\nnot-json\n{rx}\n"))?;
+
+            let stats = slice_jsonl(&input, &output, "tx", 10, Some("aa"))?;
+            let out = std::fs::read_to_string(&output)?;
+
+            assert_eq!(
+                stats,
+                SliceStats {
+                    kept: 1,
+                    skipped_bad_lines: 1,
+                }
+            );
+            assert_eq!(out.lines().count(), 1);
+            assert!(out.contains("\"dir\":\"tx\""));
+            Ok(())
+        }
+
+        #[test]
+        fn slice_jsonl_rejects_invalid_dir() {
+            assert!(parse_slice_dir("sideways").is_err());
+        }
     }
 }
 

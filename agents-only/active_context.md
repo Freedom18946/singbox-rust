@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-03) - app sb-handshake slice audit cleanup
+
+- **`app/src/bin/handshake.rs` audit cleanup DONE locally**: `sb-handshake slice` now writes
+  filtered JSONL through a `Result` path instead of `serde_json::to_string(...).unwrap()` and
+  ignored writer errors.
+- **Slice diagnostics tightened**: malformed non-empty JSONL input lines are counted and reported
+  as `skipped_bad_lines=...` in the success message instead of being fully silent.
+- **Test coverage tightened**: focused `handshake` binary tests cover bad-line counting, tx/rx
+  filtering, head8-prefix filtering, and invalid `--dir` rejection.
+- **Verification PASS**: app fmt, focused `handshake` tests, app all-target/all-feature check,
+  strict app clippy, real `sb-handshake slice` smoke run, residual scan, and `git diff --check`.
+- **Scope note**: app handshake alpha CLI hygiene only. No REALITY closure, dual-kernel
+  BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app metadata bin JSON audit cleanup
 
 - **`app` metadata binaries audit cleanup DONE locally**: `version`, `sb-version`, and
@@ -124,19 +138,6 @@
   `git diff --check`, and app all-target/all-feature check (existing prefetch warnings only).
 - **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
   movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-02) - sb-security audit cleanup
-
-- **`crates/sb-security` audit cleanup DONE locally**: token/credential redaction now
-  counts Unicode chars instead of bytes, fully masks very short tokens, and avoids the
-  prior short-Unicode leakage / emoji underflow panic class.
-- **Secret-source policy tightened**: env fallbacks are treated as development-only inline
-  configuration, rejected by the default secure loader, and marked insecure when explicitly
-  allowed; unsupported pattern validators now fail instead of silently accepting input.
-- **Verification PASS**: sb-security fmt, no-default/all-features checks, all-target tests,
-  doctests, strict clippy, residual audit scan, and `git diff --check`.
-- **Scope note**: sb-security audit/test hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
 
 ## Resume (2026-07-02) - sb-runtime audit cleanup
 
