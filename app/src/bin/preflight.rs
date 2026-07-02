@@ -13,10 +13,12 @@ struct Args {
     config: String,
 }
 
-fn main() {
+fn main() -> anyhow::Result<()> {
     let args = Args::parse();
-    let raw = fs::read(&args.config).unwrap_or_else(|_| b"{}".to_vec());
-    let val: serde_json::Value = serde_json::from_slice(&raw).unwrap_or(serde_json::json!({}));
+    let raw = fs::read(&args.config)
+        .map_err(|err| anyhow::anyhow!("failed to read config {}: {err}", args.config))?;
+    let val: serde_json::Value = serde_json::from_slice(&raw)
+        .map_err(|err| anyhow::anyhow!("failed to parse JSON config {}: {err}", args.config))?;
     let ir = to_ir_v1(&val);
     let eng = Engine::new(std::sync::Arc::new(ir.clone()));
     let br = build_bridge(&ir, eng, sb_core::context::Context::default());
@@ -40,5 +42,6 @@ fn main() {
         "selector_bound": selector_ok,
         "admin": { "enabled": admin_enabled, "token": token_present }
     });
-    println!("{}", serde_json::to_string_pretty(&obj).unwrap());
+    println!("{}", serde_json::to_string_pretty(&obj)?);
+    Ok(())
 }

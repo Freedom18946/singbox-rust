@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-07-03) - app preflight CLI audit cleanup
+
+- **`app/src/bin/preflight.rs` audit cleanup DONE locally**: preflight now fails explicitly on
+  missing config files and invalid JSON instead of silently substituting `{}` and reporting a
+  successful preflight contract.
+- **Test coverage tightened**: new `preflight_cli` integration tests cover valid output,
+  missing-file failure, and invalid-JSON failure; the test is registered behind the same
+  `router` feature gate as the preflight binary.
+- **Verification PASS**: app fmt, focused preflight CLI test, app all-target/all-feature check,
+  strict app clippy, residual scan, and `git diff --check`.
+- **Scope note**: app preflight CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app subs CLI audit cleanup
 
 - **`app/src/bin/subs.rs` audit cleanup DONE locally**: subscription merge/diff CLI now returns
@@ -212,20 +225,6 @@
   deterministic seed regeneration, invalid-target negative check, full seed replay,
   regression no-input path, consistency, and `git diff --check`.
 - **Scope note**: fuzz harness/release hygiene only. No product behavior, release
-  packaging completion, REALITY closure, dual-kernel BHV/parity movement, or workflow
-  automation is claimed.
-
-## Resume (2026-07-01) - examples release hygiene
-
-- **`examples/` release hygiene DONE locally**: runnable samples stay on current
-  `schema_version: 2`/`when`/`to` shapes, code examples build from their own manifest,
-  subscription node-list schema now matches the array fixtures, and legacy `misc/`
-  migration helpers have valid route actions.
-- **Verification PASS**: JSON/YAML parse, strict `app check` for `quick-start/` and
-  `configs/`, legacy `misc/` migration/current checks, negative config fixture failure,
-  route explain smoke, code-example build, subscription schema fixture test, fmt, and
-  `git diff --check`.
-- **Scope note**: examples/schema-fixture hygiene only. No product behavior, release
   packaging completion, REALITY closure, dual-kernel BHV/parity movement, or workflow
   automation is claimed.
 

@@ -497,6 +497,11 @@ path = "tests/subs_merge_diff.rs"
 required-features = ["router"]
 
 [[test]]
+name = "preflight_cli"
+path = "tests/preflight_cli.rs"
+required-features = ["router"]
+
+[[test]]
 name = "tor_outbound_test"
 path = "tests/tor_outbound_test.rs"
 required-features = ["adapter-tor"]
