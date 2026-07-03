@@ -52,6 +52,22 @@ impl MetricsExporterPlan {
     pub fn install(self, registry: sb_metrics::MetricsRegistryHandle) -> MetricsExporterHandle {
         MetricsExporterHandle::new(registry, self.addr)
     }
+
+    /// Bind and install the exporter, returning socket bind failures to the caller.
+    ///
+    /// # Errors
+    ///
+    /// Returns the listen socket bind error when the configured metrics address
+    /// cannot be used.
+    pub async fn install_checked(
+        self,
+        registry: sb_metrics::MetricsRegistryHandle,
+    ) -> Result<MetricsExporterHandle> {
+        let join = sb_metrics::spawn_http_exporter_checked(registry, self.addr)
+            .await
+            .map_err(|error| anyhow::anyhow!("metrics exporter bind failed: {error}"))?;
+        Ok(MetricsExporterHandle::from_join(join))
+    }
 }
 
 #[cfg(feature = "sb-metrics")]
@@ -66,6 +82,11 @@ impl MetricsExporterHandle {
         Self {
             join: sb_metrics::spawn_http_exporter(registry, addr),
         }
+    }
+
+    #[must_use]
+    const fn from_join(join: tokio::task::JoinHandle<()>) -> Self {
+        Self { join }
     }
 
     #[cfg(test)]
@@ -170,6 +191,22 @@ pub fn install_configured_metrics_exporter(
     Ok(MetricsExporterPlan::from_env()?.map(|plan| plan.install(registry)))
 }
 
+/// Bind and install the configured metrics exporter if `SB_METRICS_ADDR` is set.
+///
+/// # Errors
+///
+/// Returns an error when `SB_METRICS_ADDR` is invalid or when the configured
+/// listen socket cannot be bound.
+#[cfg(feature = "sb-metrics")]
+pub async fn install_configured_metrics_exporter_checked(
+    registry: sb_metrics::MetricsRegistryHandle,
+) -> Result<Option<MetricsExporterHandle>> {
+    match MetricsExporterPlan::from_env()? {
+        Some(plan) => Ok(Some(plan.install_checked(registry).await?)),
+        None => Ok(None),
+    }
+}
+
 /// Install metrics exporter for legacy compat callers and detach its task.
 ///
 /// # Errors
@@ -254,6 +291,7 @@ mod tests {
         assert!(source.contains("pub struct MetricsExporterPlan"));
         assert!(source.contains("pub fn install_metrics_exporter("));
         assert!(source.contains("pub fn install_configured_metrics_exporter("));
+        assert!(source.contains("pub async fn install_configured_metrics_exporter_checked("));
         assert!(source.contains("pub fn install_compat_metrics_exporter("));
         assert!(source.contains("pub struct MetricsExporterHandle"));
         assert!(source.contains("pub fn start_metrics_exporter("));

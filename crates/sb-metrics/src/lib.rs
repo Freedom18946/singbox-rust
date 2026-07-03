@@ -1036,7 +1036,6 @@ fn metrics_http_with_registry(
 #[must_use]
 pub fn spawn_http_exporter(registry: MetricsRegistryHandle, addr: SocketAddr) -> JoinHandle<()> {
     tokio::spawn(async move {
-        // 手工监听 + 逐连接 serve，避免不同 hyper 版本的 Server API 差异
         let listener = match TcpListener::bind(addr).await {
             Ok(l) => l,
             Err(e) => {
@@ -1044,46 +1043,67 @@ pub fn spawn_http_exporter(registry: MetricsRegistryHandle, addr: SocketAddr) ->
                 return;
             }
         };
-        info!(addr=?listener.local_addr().ok(), "metrics exporter listening");
-        let mut connections = JoinSet::new();
-        loop {
-            tokio::select! {
-                accept = listener.accept() => {
-                    let (stream, _peer) = match accept {
-                        Ok(x) => x,
-                        Err(e) => {
-                            ERROR_RATE_LIMITER.log_accept_error(&e);
-                            continue;
-                        }
-                    };
-                    let registry = registry.clone();
-                    connections.spawn(async move {
-                        if let Err(e) = Http::new()
-                            .serve_connection(
-                                stream,
-                                service_fn(move |req| {
-                                    let registry = registry.clone();
-                                    async move {
-                                        Ok::<_, Infallible>(metrics_http_with_registry(&registry, &req))
-                                    }
-                                }),
-                            )
-                            .await
-                        {
-                            ERROR_RATE_LIMITER.log_connection_error(&e);
-                        }
-                    });
-                }
-                joined = connections.join_next(), if !connections.is_empty() => {
-                    if let Some(Err(error)) = joined {
-                        if !error.is_cancelled() {
-                            warn!(%error, "metrics exporter connection task join failed");
-                        }
+        serve_http_exporter(registry, listener).await;
+    })
+}
+
+/// Bind and spawn the metrics HTTP exporter, returning bind failures to the caller.
+///
+/// This is intended for foreground binaries that must only report readiness
+/// after the exporter has actually acquired its listen socket.
+///
+/// # Errors
+///
+/// Returns the socket bind error when `addr` cannot be listened on.
+pub async fn spawn_http_exporter_checked(
+    registry: MetricsRegistryHandle,
+    addr: SocketAddr,
+) -> std::io::Result<JoinHandle<()>> {
+    let listener = TcpListener::bind(addr).await?;
+    Ok(tokio::spawn(serve_http_exporter(registry, listener)))
+}
+
+async fn serve_http_exporter(registry: MetricsRegistryHandle, listener: TcpListener) {
+    // 手工监听 + 逐连接 serve，避免不同 hyper 版本的 Server API 差异
+    info!(addr=?listener.local_addr().ok(), "metrics exporter listening");
+    let mut connections = JoinSet::new();
+    loop {
+        tokio::select! {
+            accept = listener.accept() => {
+                let (stream, _peer) = match accept {
+                    Ok(x) => x,
+                    Err(e) => {
+                        ERROR_RATE_LIMITER.log_accept_error(&e);
+                        continue;
+                    }
+                };
+                let registry = registry.clone();
+                connections.spawn(async move {
+                    if let Err(e) = Http::new()
+                        .serve_connection(
+                            stream,
+                            service_fn(move |req| {
+                                let registry = registry.clone();
+                                async move {
+                                    Ok::<_, Infallible>(metrics_http_with_registry(&registry, &req))
+                                }
+                            }),
+                        )
+                        .await
+                    {
+                        ERROR_RATE_LIMITER.log_connection_error(&e);
+                    }
+                });
+            }
+            joined = connections.join_next(), if !connections.is_empty() => {
+                if let Some(Err(error)) = joined {
+                    if !error.is_cancelled() {
+                        warn!(%error, "metrics exporter connection task join failed");
                     }
                 }
             }
         }
-    })
+    }
 }
 
 fn spawn_http_exporter_from_env_addr(

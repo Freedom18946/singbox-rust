@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-03) - app metrics-serve readiness audit cleanup
+
+- **`metrics-serve` readiness audit cleanup DONE locally**: the binary now binds the metrics
+  exporter before reporting `READY`, so an occupied `SB_METRICS_ADDR` returns a startup error
+  instead of appearing healthy while the exporter task exits.
+- **Exporter lifecycle tightened**: `sb-metrics` exposes a checked bind/spawn path and
+  `app::tracing_init` wires it for foreground startup while preserving the existing detached
+  compatibility path for background callers.
+- **Test coverage tightened**: a real `metrics-serve` binary test holds a localhost port,
+  asserts non-zero exit, and verifies `READY` is not printed after bind failure.
+- **Verification PASS**: app/sb-metrics fmt, focused `metrics_serve_cli` test, sb-metrics tests
+  and doctests, app all-target/all-feature check, strict app clippy, strict sb-metrics clippy,
+  and `git diff --check`.
+- **Scope note**: app metrics helper CLI readiness hygiene only. No REALITY closure,
+  dual-kernel BHV/parity movement, release packaging completion, or workflow automation is claimed.
+
 ## Resume (2026-07-03) - app merge inline-resource audit cleanup
 
 - **`app merge` inline-resource audit cleanup DONE locally**: missing TLS/SSH/ECH inline path
@@ -204,24 +220,6 @@
   fmt/check, focused SOCKS UDP tests, residual scan, and `git diff --check`.
 - **Scope note**: app CLI/audit hygiene plus app-gate adapter lint only. No REALITY closure,
   dual-kernel BHV/parity movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - sb-types audit cleanup
-
-- **`crates/sb-types` audit cleanup DONE locally**: crate metadata now inherits the workspace
-  license/repository, test-only `serde_json` moved to dev-dependencies, and crate docs no longer
-  claim zero dependencies while `serde`/`thiserror` remain intentional contract dependencies.
-- **Opaque stream contract tightened**: `BoxedStream` docs no longer describe a placeholder, and
-  the marker trait has a blanket `Send + Sync + 'static` impl with a regression test proving
-  opaque stream tokens can be boxed without adding runtime/async dependencies.
-- **HTTP response contract tightened**: `HttpResponse` now offers normalized response-header
-  construction/insertion, keeps case-insensitive direct-field compatibility, and the reqwest
-  app adapter uses that contract. sb-types test scan noise (`unwrap`/`panic`/dummy fixtures)
-  was removed.
-- **Verification PASS**: sb-types/app fmt, sb-types all-target/all-feature check, unit tests,
-  doctests, strict clippy, normal dependency-tree review, clean residual audit scan,
-  `git diff --check`, and app all-target/all-feature check (existing prefetch warnings only).
-- **Scope note**: sb-types contract hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
 
 ## Strategic State
 
