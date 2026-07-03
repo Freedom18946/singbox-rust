@@ -262,7 +262,7 @@ grep -rh "env::var\|std::env::var" crates app \
 
 ```
 ✅ app/src/env_dump.rs          - 10+ 环境变量
-✅ app/src/bootstrap.rs         - SB_PROXY_POOL_* 变量
+✅ app/src/bootstrap_runtime/proxy_registry.rs - SB_PROXY_POOL_* 变量
 ✅ app/src/admin_debug/reloadable.rs - SB_SUBS_* 变量
 ✅ crates/sb-core/src/dns/mod.rs     - SB_DNS_* 变量
 ✅ crates/sb-core/src/util/env.rs    - 环境变量工具函数

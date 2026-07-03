@@ -46,7 +46,6 @@ require|W4-03-switchboard-explicit-miss-diagnostics|crates/sb-core/src/runtime/s
 forbid|W4-04-no-outbound-manager-fallback-direct|crates/sb-core/src/outbound/manager.rs|ensure_fallback_direct|Outbound manager must not inject direct fallback connector
 forbid|W4-05-no-outbound-manager-fallback-source|crates/sb-core/src/outbound/manager.rs|source = \"fallback\"|Default outbound resolution must not report fallback source
 require|W4-06-resolve-default-explicit-error|crates/sb-core/src/outbound/manager.rs|no outbound connectors available; cannot resolve default outbound|Default resolution must fail explicitly when connector set is empty
-forbid|W4-07-no-bootstrap-fallback-direct-call|app/src/bootstrap.rs|ensure_fallback_direct|Bootstrap must not request direct fallback injection from outbound manager
 
 forbid|W4-08-no-run-engine-core-transport-target|app/src/run_engine_runtime/output.rs|target: \"sb_core::transport\"|run_engine transport planning logs must not use sb_core::transport target label
 require|W4-09-run-engine-sb-transport-target|app/src/run_engine_runtime/output.rs|target: \"sb_transport\"|run_engine transport planning logs should align to sb_transport ownership
@@ -466,9 +465,9 @@ require|W177-06-engine-dns-timeout-explicit-warn|crates/sb-core/src/router/engin
 require|W177-07-engine-geoip-enabled-helper|crates/sb-core/src/router/engine.rs|geoip_enabled_from_env\(\)|engine geoip enabled should parse through explicit helper
 require|W177-08-engine-geoip-enabled-explicit-warn|crates/sb-core/src/router/engine.rs|router env 'SB_GEOIP_ENABLE' value '.*' is not a recognized boolean; silent parse fallback is disabled|engine geoip enabled env should emit explicit diagnostics
 
-forbid|W178-01-no-bootstrap-rules-max-silent-parse|app/src/bootstrap_runtime/router_helpers.rs|\.ok\(\)\.unwrap_or\(|bootstrap SB_ROUTER_RULES_MAX must not silently swallow parse failures
-require|W178-02-bootstrap-rules-max-helper|app/src/bootstrap.rs|parse_env_usize\("SB_ROUTER_RULES_MAX"|bootstrap rules max should use explicit parse helper
-require|W178-03-bootstrap-rules-max-explicit-warn|app/src/bootstrap_runtime/router_helpers.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|bootstrap rules max env should emit explicit diagnostics
+forbid|W178-01-no-router-rules-max-silent-parse|app/src/bootstrap_runtime/router_helpers.rs|\.ok\(\)\.unwrap_or\(|router helper SB_ROUTER_RULES_MAX must not silently swallow parse failures
+require|W178-02-router-rules-max-helper|app/src/bootstrap_runtime/router_helpers.rs|parse_env_usize\("SB_ROUTER_RULES_MAX"|router helper rules max should use explicit parse helper
+require|W178-03-router-rules-max-explicit-warn|app/src/bootstrap_runtime/router_helpers.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|router helper rules max env should emit explicit diagnostics
 
 forbid|W179-01-no-logging-sample-silent-parse|app/src/logging.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|logging SB_LOG_SAMPLE must not silently swallow parse failures
 require|W179-02-logging-sample-explicit-warn|app/src/logging.rs|env 'SB_LOG_SAMPLE' value '.*' is not a valid u32; silent parse fallback is disabled|logging sample env should emit explicit diagnostics

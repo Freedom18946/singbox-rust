@@ -3,6 +3,7 @@
 //! Tests all DNS transports:
 //! - Fully supported: System, UDP, DoT, DoH, DoQ, DoH3, Hosts, FakeIP (8/12)
 //! - Partially supported: DHCP, Resolved, Tailscale (3/12)
+//! - Fallback supported: local via system resolver fallback (1/12)
 //! - Complete: All basic DNS transports implemented (12/12)
 
 use anyhow::Result;
@@ -50,8 +51,8 @@ fn test_dns_transports_are_documented() {
     println!("  ◐ systemd-resolved (via stub)");
     println!("  ◐ Tailscale (explicit addresses)");
     println!();
-    println!("Missing (1/12):");
-    println!("  ✅ local (LocalUpstream with system fallback)");
+    println!("Fallback Supported (1/12):");
+    println!("  ◐ local (LocalUpstream with system fallback)");
     println!("==============================\n");
 }
 

@@ -72,7 +72,8 @@ singbox-rust/
 
 - `app/src/bin/`：命令入口
 - `app/src/cli/`：命令实现与共享 CLI 逻辑
-- `app/src/bootstrap.rs`、`app/src/run_engine.rs`：运行装配/共享运行逻辑
+- `app/src/run_engine.rs`、`app/src/run_engine_runtime/`：当前运行装配/共享运行逻辑
+- `app/src/bootstrap_runtime/`：测试期 legacy owner helper（不再有 `app/src/bootstrap.rs` 生产入口）
 - `app/tests/`：app 级集成与 e2e 测试
 
 ### `docs/`

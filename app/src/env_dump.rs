@@ -1,9 +1,7 @@
 use std::sync::Once;
 
-#[allow(dead_code)]
 static ONCE: Once = Once::new();
 
-#[allow(dead_code)]
 pub fn print_once_if_enabled() {
     let enabled = matches!(
         std::env::var("SB_PRINT_ENV").ok().as_deref(),

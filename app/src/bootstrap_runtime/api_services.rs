@@ -476,19 +476,10 @@ mod tests {
     #[test]
     fn wp30an_pin_api_service_owner_lives_in_bootstrap_runtime() {
         let source = include_str!("api_services.rs");
-        let bootstrap = include_str!("../bootstrap.rs");
 
         assert!(source.contains("pub(crate) struct ServiceHandle"));
         assert!(source.contains(".with_conn_tracker(conn_tracker)"));
-        assert!(!bootstrap.contains("struct ServiceHandle {"));
-        assert!(!bootstrap.contains("fn start_clash_api_server("));
-        assert!(!bootstrap.contains("fn start_v2ray_api_server("));
-        assert!(
-            bootstrap.contains("crate::bootstrap_runtime::api_services::start_clash_api_server(")
-        );
-        assert!(bootstrap.contains("runtime_conn_tracker.clone()"));
-        assert!(
-            bootstrap.contains("crate::bootstrap_runtime::api_services::start_v2ray_api_server(")
-        );
+        assert!(source.contains("pub(crate) fn start_clash_api_server("));
+        assert!(source.contains("pub(crate) fn start_v2ray_api_server("));
     }
 }

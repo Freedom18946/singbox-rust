@@ -36,11 +36,10 @@
     {
       "name": "product_adapter_registration_entrypoints",
       "paths": [
-        "app/src/bootstrap.rs",
         "app/src/util.rs"
       ],
       "pattern": "sb_adapters::register_all\\(\\);",
-      "max": 2,
+      "max": 1,
       "severity": "fail"
     }
   ]

@@ -23,10 +23,15 @@ set -u
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/../../.." && pwd)"
 KERNEL="${KERNEL:-$REPO/target/debug/app}"
 WORK="${WORK:-/tmp/pf07}"
-MIXED_PORT=20122
-CLASH_PORT=20123
-ORIGIN_PORT=18080
-SECRET=pf07probe
+MIXED_PORT="${MIXED_PORT:-20122}"
+CLASH_PORT="${CLASH_PORT:-20123}"
+ORIGIN_PORT="${ORIGIN_PORT:-18080}"
+SECRET="${SECRET:-$(python3 - <<'PY'
+import secrets
+
+print("pf07-" + secrets.token_urlsafe(18))
+PY
+)}"
 PASS=0; FAIL=0
 ok(){ echo "  [PASS] $*"; PASS=$((PASS+1)); }
 no(){ echo "  [FAIL] $*"; FAIL=$((FAIL+1)); }

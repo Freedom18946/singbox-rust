@@ -20,7 +20,8 @@
 //!
 //! Exposes feature-gated runtime, CLI, telemetry, and admin modules for the
 //! binaries and integration tests. The active runtime entry is
-//! `run_engine::run_supervisor`; `bootstrap.rs` remains legacy.
+//! `run_engine::run_supervisor`; legacy bootstrap helpers are retired from
+//! production entrypoints and kept only as test-only owner modules where needed.
 
 #[cfg(feature = "admin_debug")]
 pub mod admin_debug;

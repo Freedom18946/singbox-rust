@@ -209,7 +209,6 @@ mod tests {
 
     #[test]
     fn wp30am_pin_first_pass_owner_lives_in_outbound_builder_tree() {
-        let bootstrap = include_str!("../bootstrap.rs");
         let source = include_str!("mod.rs");
 
         assert!(source.contains("pub(crate) fn build_first_pass_concrete_outbounds"));
@@ -217,23 +216,16 @@ mod tests {
         assert!(source.contains("mod quic;"));
         assert!(source.contains("mod shadowsocks;"));
         assert!(source.contains("mod v2ray;"));
-        assert!(!bootstrap.contains("fn resolve_host_port("));
-        assert!(!bootstrap.contains("fn parse_alpn_tokens("));
-        assert!(!bootstrap.contains("fn map_header_entries("));
     }
 
     #[test]
-    fn wp30am_pin_bootstrap_delegates_first_pass_owner() {
-        let bootstrap = include_str!("../bootstrap.rs");
+    fn wp30am_pin_first_pass_builder_remains_test_only_runtime_helper() {
+        let lib = include_str!("../lib.rs");
 
+        assert!(lib.contains("#[cfg(all(feature = \"router\", test))]\nmod outbound_builder;"));
         assert!(
-            bootstrap.contains("crate::outbound_builder::build_first_pass_concrete_outbounds(ir)")
+            !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bootstrap.rs"))
+                .exists()
         );
-        assert!(bootstrap
-            .contains("crate::outbound_builder::ensure_default_outbound_aliases(&mut map);"));
-        assert!(bootstrap.contains("crate::outbound_groups::bind_selector_outbound_groups("));
-        assert!(!bootstrap.contains("OutboundType::Hysteria2 =>"));
-        assert!(!bootstrap.contains("OutboundType::Shadowsocks =>"));
-        assert!(!bootstrap.contains("OutboundType::Vless =>"));
     }
 }

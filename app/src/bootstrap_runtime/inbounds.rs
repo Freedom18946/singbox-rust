@@ -102,12 +102,9 @@ mod tests {
     #[test]
     fn wp30an_pin_inbound_starter_owner_lives_in_bootstrap_runtime() {
         let source = include_str!("inbounds.rs");
-        let bootstrap = include_str!("../bootstrap.rs");
 
         assert!(source.contains("pub(crate) struct InboundRuntimeDeps"));
         assert!(source.contains("pub(crate) fn start_inbounds_from_ir("));
         assert!(source.contains("app::inbound_starter::start_inbounds_from_ir("));
-        assert!(!bootstrap.contains("fn start_inbounds_from_ir("));
-        assert!(bootstrap.contains("InboundRuntimeDeps::new("));
     }
 }

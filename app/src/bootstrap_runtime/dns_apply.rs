@@ -300,18 +300,11 @@ mod tests {
     #[test]
     fn wp30an_pin_dns_apply_owner_lives_in_bootstrap_runtime() {
         let source = include_str!("dns_apply.rs");
-        let bootstrap = include_str!("../bootstrap.rs");
 
         assert!(source.contains("struct DnsRuntimeEnv"));
         assert!(source.contains("pub(crate) fn apply_dns_from_config"));
         assert!(source.contains("pub(crate) fn push_dedup"));
         assert!(source.contains("pub(crate) fn server_to_token"));
         assert!(source.contains("pub(crate) fn normalize_addr"));
-        assert!(!bootstrap.contains("fn apply_dns_from_config("));
-        assert!(!bootstrap.contains("fn push_dedup("));
-        assert!(!bootstrap.contains("fn server_to_token("));
-        assert!(!bootstrap.contains("fn normalize_addr("));
-        assert!(bootstrap
-            .contains("crate::bootstrap_runtime::dns_apply::DnsRuntimeEnv::from_config(&cfg)"));
     }
 }

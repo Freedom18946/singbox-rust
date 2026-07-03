@@ -5,7 +5,7 @@
 > REALITY *historical-projection layer* — the read-only mapping of MT-REAL-02
 > historical round summaries onto the canonical external-observation field set.
 > Distilled from the A4.1–A4.3 spikes (read-only, adversarially verified) and adopted
-> as **Route C** in `agents-only/a43_projection_disposition.md`.
+> as **Route C** in `agents-only/archive/mt_real_02/a43_projection_disposition.md`.
 >
 > This document is a **contract, not a tool**. It does not ship, run, or wire any
 > adapter. The prototype it describes stays in `agents-only/`; the canonical schema and
@@ -18,7 +18,7 @@
 > validate_external_observation.py}`; the prototype + machine evidence =
 > `agents-only/a42_historical_projection_spike/` (`adapt_historical_round.py`,
 > `outputs/batch_inventory.json`); the disposition decision + full inventory =
-> `agents-only/a43_projection_disposition.md`; volatile parity/phase state =
+> `agents-only/archive/mt_real_02/a43_projection_disposition.md`; volatile parity/phase state =
 > `agents-only/active_context.md`.
 
 ---
@@ -112,7 +112,8 @@ A projection (or any future promoter/tool) MUST NOT:
   the per-node phase booleans on these rounds are already `DERIVED_HEURISTIC`, so an
   under-disclosure cannot cause a false promotion — but the disclosure is still owed.)
 - A future formal tool **must fix G3** so the disclosure covers the full real
-  multi-mode set recorded in `a43_projection_disposition.md` / `batch_inventory.json`
+  multi-mode set recorded in `archive/mt_real_02/a43_projection_disposition.md` /
+  `batch_inventory.json`
   (`bimodal_disclosure_audit`): the prototype warns on 2 rounds; the true multi-mode
   set is 7 (R54, R56, R57, R59b, R73, R78, R83).
 - The current prototype's G3 under-disclosure is a **known, registered, un-hardened
@@ -167,7 +168,7 @@ They are recorded so they are not forgotten; this contract does not implement th
 
 ## H. Disposition (frozen)
 
-- **Route C adopted** (`a43_projection_disposition.md`): freeze this contract; defer any
+- **Route C adopted** (`archive/mt_real_02/a43_projection_disposition.md`): freeze this contract; defer any
   formal tool.
 - The projection **prototype remains in `agents-only/a42_historical_projection_spike/`**
   (B-tier spike). It is **not** moved to `labs/interop-lab/`.

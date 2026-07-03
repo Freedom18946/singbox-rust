@@ -15,16 +15,22 @@ WORK="${WORK:-/tmp/pf18_wails_click_automation}"
 APP_SUPPORT="$HOME/Library/Application Support/GUI.for.SingBox"
 PROFILE_ID="pf18-local-direct"
 PROFILE_NAME="PF18 Local Direct"
-MIXED_PORT=20122
-CLASH_PORT=20123
-ORIGIN_PORT=18080
-SECRET="pf18probe"
+MIXED_PORT="${MIXED_PORT:-20122}"
+CLASH_PORT="${CLASH_PORT:-20123}"
+ORIGIN_PORT="${ORIGIN_PORT:-18080}"
+SECRET="${SECRET:-$(python3 - <<'PY'
+import secrets
+
+print("pf18-" + secrets.token_urlsafe(18))
+PY
+)}"
 ASSIST_WAIT_SECONDS="${PF18_ASSIST_WAIT_SECONDS:-120}"
 ALLOW_EXTERNAL_CLICK="${PF18_ALLOW_EXTERNAL_CLICK:-1}"
 EXTERNAL_DRIVE_LABEL="${PF18_EXTERNAL_DRIVE_LABEL:-computer_use_mcp}"
 SKIP_BUILD="${PF18_SKIP_BUILD:-0}"
 SKIP_WAILS_BUILD="${PF18_SKIP_WAILS_BUILD:-0}"
 STRICT_EXIT="${PF18_STRICT_EXIT:-0}"
+CONFIRM_APP_SUPPORT_OVERWRITE="${PF18_CONFIRM_APP_SUPPORT_OVERWRITE:-}"
 EXTERNAL_WINDOW_SEEN_FILE="$WORK/external_window_seen.txt"
 EXTERNAL_PROFILE_SEEN_FILE="$WORK/external_profile_seen.txt"
 
@@ -53,6 +59,24 @@ stage() { printf '%s=%s\n' "$1" "$2" >>"$STAGES"; }
 meta() { printf '%s=%s\n' "$1" "$2" >>"$META"; }
 artifact() { printf '%s=%s\n' "$1" "$2" >>"$ARTIFACTS"; }
 set_status() { echo "$1" >"$STATUS_FILE"; echo "$2" >"$MESSAGE_FILE"; }
+
+app_support_path_is_expected() {
+  [ "$APP_SUPPORT" = "$HOME/Library/Application Support/GUI.for.SingBox" ]
+}
+
+require_app_support_write_confirmation() {
+  if ! app_support_path_is_expected; then
+    stage "app_support_path" "unexpected"
+    set_status "BLOCKED_APP_SUPPORT_PATH" "refusing to write unexpected app support path: $APP_SUPPORT"
+    finish 0
+  fi
+  if [ "$CONFIRM_APP_SUPPORT_OVERWRITE" != "YES" ]; then
+    stage "app_support_confirmation" "missing"
+    set_status "BLOCKED_CONFIRMATION" "set PF18_CONFIRM_APP_SUPPORT_OVERWRITE=YES to allow replacing $APP_SUPPORT"
+    finish 0
+  fi
+  stage "app_support_confirmation" "explicit"
+}
 
 port_open() {
   nc -z 127.0.0.1 "$1" >/dev/null 2>&1
@@ -192,13 +216,17 @@ cleanup() {
   fi
 
   if [ -f "$APP_SUPPORT_EXISTED_FILE" ]; then
-    rm -rf "$APP_SUPPORT"
-    if grep -q '^yes$' "$APP_SUPPORT_EXISTED_FILE" && [ -d "$BACKUP_DIR" ]; then
-      mkdir -p "$(dirname "$APP_SUPPORT")"
-      ditto "$BACKUP_DIR" "$APP_SUPPORT" >/dev/null 2>&1 || cp -R "$BACKUP_DIR" "$APP_SUPPORT"
-      stage "cleanup_restore" "restored_app_support"
+    if ! app_support_path_is_expected; then
+      stage "cleanup_restore" "blocked_unexpected_app_support_path"
     else
-      stage "cleanup_restore" "removed_seeded_app_support"
+      rm -rf "$APP_SUPPORT"
+      if grep -q '^yes$' "$APP_SUPPORT_EXISTED_FILE" && [ -d "$BACKUP_DIR" ]; then
+        mkdir -p "$(dirname "$APP_SUPPORT")"
+        ditto "$BACKUP_DIR" "$APP_SUPPORT" >/dev/null 2>&1 || cp -R "$BACKUP_DIR" "$APP_SUPPORT"
+        stage "cleanup_restore" "restored_app_support"
+      else
+        stage "cleanup_restore" "removed_seeded_app_support"
+      fi
     fi
   else
     stage "cleanup_restore" "not_started"
@@ -660,6 +688,7 @@ build_phase() {
 }
 
 seed_app_support() {
+  require_app_support_write_confirmation
   stage "app_support_backup" "running"
   if [ -e "$APP_SUPPORT" ]; then
     echo "yes" >"$APP_SUPPORT_EXISTED_FILE"

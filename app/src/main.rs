@@ -1,8 +1,7 @@
 //! singbox-rust process entrypoint.
 //!
 //! Owns CLI parsing, global logging setup, process guards, and command dispatch.
-//! Runtime startup for `run` flows through `app::run_engine`; `bootstrap.rs`
-//! remains a legacy compatibility path.
+//! Runtime startup for `run` flows through `app::run_engine`.
 
 #[cfg(feature = "admin_debug")]
 mod admin_debug;
@@ -10,6 +9,7 @@ mod admin_debug;
 mod analyze;
 mod cli;
 mod config_loader;
+#[cfg(feature = "dev-cli")]
 mod env_dump;
 mod logging;
 mod redact;

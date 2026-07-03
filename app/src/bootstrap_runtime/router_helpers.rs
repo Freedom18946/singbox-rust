@@ -135,16 +135,10 @@ mod tests {
     #[test]
     fn wp30an_pin_router_helpers_owner_lives_in_bootstrap_runtime() {
         let source = include_str!("router_helpers.rs");
-        let bootstrap = include_str!("../bootstrap.rs");
 
         assert!(source.contains("pub(crate) struct RouterRuntime"));
         assert!(source.contains("pub(crate) fn create_router_handle()"));
         assert!(source.contains("fn build_router_index_from_config("));
         assert!(source.contains("pub(crate) fn parse_env_usize("));
-        assert!(!bootstrap.contains("fn create_router_handle()"));
-        assert!(!bootstrap.contains("fn parse_env_usize("));
-        assert!(bootstrap.contains("RouterRuntime::from_env()"));
-        assert!(bootstrap
-            .contains("crate::bootstrap_runtime::router_helpers::build_router_index_from_config("));
     }
 }

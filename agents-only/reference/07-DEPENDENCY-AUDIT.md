@@ -2,9 +2,9 @@
 
 > 说明：本文件描述当前仓库采用的边界门禁口径，不再保留旧“违规清单”叙事。  
 > 权威来源：`ARCHITECTURE-SPEC.md`、`agents-only/06-scripts/check-boundaries.sh`、`boundary-policy.json`。
-> ✅ **当前门禁状态（2026-06-06 起）**：`check-boundaries.sh`（严格）**exit 0**（V7 537 断言，0 违规）；
-> 此前登记的脚本陈旧目标漂移（`bootstrap.rs`/`run_engine.rs` 迁移提示、已拆分的
-> `validator/v2.rs`→`validator/v2/` 失配）已修复。预算桶定义仍有效。实时门禁状态见 `active_context.md`。
+> 实时门禁状态只见 `agents-only/active_context.md`。此前登记的脚本陈旧目标漂移
+> （已退役 `bootstrap.rs`/`run_engine.rs` 迁移提示、已拆分的 `validator/v2.rs`→`validator/v2/`
+> 失配）已修复。预算桶定义仍有效。
 
 ---
 

@@ -217,8 +217,9 @@ specifies its content.
 
 ## J. Persist this report?
 
-**Yes** — write `agents-only/a43_projection_disposition.md` (this file, B-tier) and
-**persist `a42_historical_projection_spike/outputs/batch_inventory.json`** as the
+**Yes** — write this disposition record (originally top-level B-tier, now archived at
+`agents-only/archive/mt_real_02/a43_projection_disposition.md`) and **persist
+`a42_historical_projection_spike/outputs/batch_inventory.json`** as the
 mechanical proof backstop (it answers the adversary's "doc-only loses the proof"
 objection; reproducible from the unmodified prototype; self-discloses G3 + the
 `bhv_52_56` seed). No other on-disk change.
@@ -228,7 +229,7 @@ objection; reproducible from the unmodified prototype; self-discloses G3 + the
 Minimal staging (exactly two new agents-only files):
 
 ```
-git add agents-only/a43_projection_disposition.md \
+git add agents-only/archive/mt_real_02/a43_projection_disposition.md \
         agents-only/a42_historical_projection_spike/outputs/batch_inventory.json
 ```
 

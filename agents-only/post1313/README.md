@@ -1,12 +1,12 @@
 <!-- tier: B -->
-# post1313 Planning Index
+# post1313 Status Index
 
-Purpose: planning-only work package set after refreshing the external references to
-Go `sing-box@v1.13.13` and GUI.for SingBox `v1.25.1`.
+Purpose: status index and historical package map after refreshing the external
+references to Go `sing-box@v1.13.13` and GUI.for SingBox `v1.25.1`.
 
 This directory does not reopen REALITY T3, does not resume Wails desktop automation, and
-does not claim implementation completion. It translates the current diff evidence into
-small executable packages for later implementation rounds.
+does not claim dual-kernel parity movement. It records the diff evidence, package closure
+state, and any remaining package-local limitations.
 
 ## Source Anchors
 
@@ -28,8 +28,8 @@ small executable packages for later implementation rounds.
 - GitHub Actions stay disabled; all future acceptance is local.
 - Do not treat Rust-only unit tests or accepted-limitation closure as dual-kernel parity
   movement.
-- Every future implementation package must add/adapt tests, verify locally, review, update
-  relevant `agents-only` docs, then commit and push.
+- Any reopened or future implementation package must add/adapt tests, verify locally,
+  review, update relevant `agents-only` docs, then commit and push.
 
 ## Files
 
@@ -48,7 +48,14 @@ small executable packages for later implementation rounds.
 - `p1313_11_service_regression_closeout.md`
 - `p1313_12_gui1251_low_priority_contract.md`
 
-## Recommended Order
+## Current Package Status
+
+The live/current package state is recorded in each package file and summarized in
+`package_index.md`. As of the latest local package notes, P1313-01..12 have local closure
+records; some entries retain explicitly documented accepted limitations. This index is not
+the source of volatile build, parity, or gate counts.
+
+## Historical Execution Order
 
 1. P1313-01 establishes current config fixtures and prevents schema drift while other
    packages move.

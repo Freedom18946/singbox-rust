@@ -349,22 +349,22 @@ mod tests {
     #[test]
     fn wp30al_pin_second_pass_owner_lives_in_outbound_groups_rs() {
         let source = include_str!("outbound_groups.rs");
-        let bootstrap = include_str!("bootstrap.rs");
 
         assert!(source.contains("pub(crate) fn bind_selector_outbound_groups"));
         assert!(source.contains("SelectorGroup::new_manual"));
         assert!(source.contains("SelectorGroup::new_urltest"));
         assert!(source.contains("fn to_adapter_connector("));
-        assert!(!bootstrap.contains("SelectorGroup::new_manual"));
-        assert!(!bootstrap.contains("SelectorGroup::new_urltest"));
     }
 
     #[test]
-    fn wp30al_pin_bootstrap_delegates_second_pass_owner() {
-        let bootstrap = include_str!("bootstrap.rs");
+    fn wp30al_pin_second_pass_owner_is_test_only_runtime_helper() {
+        let lib = include_str!("lib.rs");
 
-        assert!(bootstrap.contains("crate::outbound_groups::bind_selector_outbound_groups("));
-        assert!(!bootstrap.contains("fn to_adapter_connector("));
+        assert!(lib.contains("#[cfg(all(feature = \"router\", test))]\nmod outbound_groups;"));
+        assert!(
+            !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bootstrap.rs"))
+                .exists()
+        );
     }
 
     #[test]

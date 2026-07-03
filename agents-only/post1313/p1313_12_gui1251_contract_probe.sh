@@ -12,7 +12,12 @@ WORK="${WORK:-/tmp/p1313_12_gui1251}"
 MIXED_PORT="${MIXED_PORT:-20122}"
 CLASH_PORT="${CLASH_PORT:-20123}"
 ORIGIN_PORT="${ORIGIN_PORT:-18080}"
-SECRET="${SECRET:-p1313-12-secret}"
+SECRET="${SECRET:-$(python3 - <<'PY'
+import secrets
+
+print("p1313-12-" + secrets.token_urlsafe(18))
+PY
+)}"
 PASS=0
 FAIL=0
 
@@ -38,14 +43,26 @@ cleanup() {
 }
 trap cleanup EXIT
 
+reset_work_dir() {
+  case "$WORK" in
+    /tmp/p1313_12_gui1251|/tmp/p1313_12_gui1251/*|/tmp/p1313_12_gui1251_*) ;;
+    *)
+      echo "refusing to reset WORK outside /tmp/p1313_12_gui1251*: $WORK"
+      exit 2
+      ;;
+  esac
+
+  rm -rf "$WORK"
+  mkdir -p "$WORK/data/sing-box"
+}
+
 if [ ! -x "$KERNEL" ]; then
   echo "kernel not found/executable: $KERNEL"
   echo "build first: cargo build -p app --bin app --features gui_runtime"
   exit 2
 fi
 
-rm -rf "$WORK"
-mkdir -p "$WORK/data/sing-box"
+reset_work_dir
 
 python3 - "$REPO" >"$WORK/system_proxy_probe.json" <<'PY'
 import json

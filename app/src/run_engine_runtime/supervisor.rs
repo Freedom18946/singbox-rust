@@ -389,7 +389,7 @@ mod tests {
         let run_engine = include_str!("../run_engine.rs");
         let bin_run = include_str!("../bin/run.rs");
         let cli_run = include_str!("../cli/run.rs");
-        let bootstrap = include_str!("../bootstrap.rs");
+        let lib = include_str!("../lib.rs");
 
         assert!(source.contains("async fn run_supervisor("));
         assert!(source.contains("RuntimeContext::from_raw(&raw)?"));
@@ -400,9 +400,11 @@ mod tests {
         assert!(run_engine.contains("run_engine_runtime::supervisor::run_supervisor(opts).await"));
         assert!(bin_run.contains("app::run_engine::run_supervisor(opts).await"));
         assert!(cli_run.contains("app::run_engine::run_supervisor(opts).await"));
-        assert!(bootstrap.contains("Legacy compatibility entrypoint"));
-        assert!(!bootstrap.contains("crate::run_engine_runtime::supervisor::run_supervisor"));
-        assert!(!bootstrap.contains("RuntimeLifecycle::new("));
+        assert!(!lib.contains("mod bootstrap;"));
+        assert!(
+            !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bootstrap.rs"))
+                .exists()
+        );
         assert!(!run_engine.contains("struct CloseMonitor"));
         assert!(!run_engine.contains("Supervisor startup returned"));
     }

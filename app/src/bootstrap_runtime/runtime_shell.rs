@@ -107,12 +107,9 @@ mod tests {
     #[test]
     fn wp30an_pin_runtime_shell_owner_lives_in_bootstrap_runtime() {
         let source = include_str!("runtime_shell.rs");
-        let bootstrap = include_str!("../bootstrap.rs");
 
         assert!(source.contains("pub struct Runtime"));
         assert!(source.contains("pub fn new("));
-        assert!(!bootstrap.contains("pub struct Runtime {"));
-        assert!(bootstrap.contains("Runtime::new("));
-        assert!(bootstrap.contains("pub use crate::bootstrap_runtime::runtime_shell::Runtime;"));
+        assert!(source.contains("pub async fn shutdown("));
     }
 }

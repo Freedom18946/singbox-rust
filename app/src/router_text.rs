@@ -173,18 +173,19 @@ mod tests {
     #[test]
     fn wp30ak_pin_router_text_owner_is_router_text_rs() {
         let source = include_str!("router_text.rs");
-        let bootstrap = include_str!("bootstrap.rs");
 
         assert!(source.contains("pub(crate) fn ir_to_router_rules_text"));
-        assert!(!bootstrap.contains("fn ir_to_router_rules_text("));
+        assert!(
+            !std::path::Path::new(concat!(env!("CARGO_MANIFEST_DIR"), "/src/bootstrap.rs"))
+                .exists()
+        );
     }
 
     #[test]
-    fn wp30ak_pin_bootstrap_delegates_router_text_owner() {
-        let bootstrap = include_str!("bootstrap.rs");
+    fn wp30ak_pin_router_helpers_delegate_router_text_owner() {
+        let helpers = include_str!("bootstrap_runtime/router_helpers.rs");
 
-        assert!(bootstrap
-            .contains("crate::bootstrap_runtime::router_helpers::build_router_index_from_config("));
-        assert!(bootstrap.contains("crate::bootstrap_runtime::router_helpers::parse_env_usize("));
+        assert!(helpers.contains("crate::router_text::ir_to_router_rules_text(&cfg_ir)"));
+        assert!(helpers.contains("sb_core::router::router_build_index_from_str(&text, max_rules)"));
     }
 }

@@ -3,22 +3,22 @@
 
 ## Package Map
 
-| ID | Title | Priority | Primary PX | Depends on | Deliverable type |
-|---|---|---:|---|---|---|
-| P1313-01 | Config schema and GUI fixtures | P0 | PX-002 | none | schema/tests/fixtures |
-| P1313-02 | DNS transport manager | P0 | PX-004 | P1313-01 | core DNS |
-| P1313-03 | DNS rule actions and cache semantics | P0 | PX-003/PX-004/PX-013 | P1313-02 | core DNS + config |
-| P1313-04 | Route rule engine and network strategy | P1 | PX-003/PX-005 | P1313-01/P1313-03 | router |
-| P1313-05 | Lifecycle managers and start order | P0 | PX-006 | P1313-01 | core lifecycle |
-| P1313-06 | Adapter surface contracts | P1 | PX-007/PX-008/PX-009 | P1313-05 | cross-crate API |
-| P1313-07 | CacheFile persistence | P0 | PX-013 | P1313-03/P1313-06 | cache + migration |
-| P1313-08 | Clash API and GUI channel contract | P0 | PX-010 | P1313-05/P1313-07 | API/e2e |
-| P1313-09 | UDP NAT and packet dataplane | P1 | PX-005 | P1313-04/P1313-06 | dataplane |
-| P1313-10 | V2Ray stats and router tracker | P1 | PX-012 | P1313-06/P1313-09 | service/API |
-| P1313-11 | Service regression closeout | P1 | PX-011/PX-014/PX-015 | P1313-05/P1313-06 | service tests |
-| P1313-12 | GUI 1.25.1 low-priority contract | P2 | GUI diff | P1313-01/P1313-08 | fixtures/API probes |
+| ID | Title | Status | Priority | Primary PX | Depends on | Deliverable type |
+|---|---|---|---:|---|---|---|
+| P1313-01 | Config schema and GUI fixtures | DONE and verified locally | P0 | PX-002 | none | schema/tests/fixtures |
+| P1313-02 | DNS transport manager | DONE | P0 | PX-004 | P1313-01 | core DNS |
+| P1313-03 | DNS rule actions and cache semantics | DONE | P0 | PX-003/PX-004/PX-013 | P1313-02 | core DNS + config |
+| P1313-04 | Route rule engine and network strategy | DONE locally | P1 | PX-003/PX-005 | P1313-01/P1313-03 | router |
+| P1313-05 | Lifecycle managers and start order | DONE | P0 | PX-006 | P1313-01 | core lifecycle |
+| P1313-06 | Adapter surface contracts | DONE | P1 | PX-007/PX-008/PX-009 | P1313-05 | cross-crate API |
+| P1313-07 | CacheFile persistence | Closed locally | P0 | PX-013 | P1313-03/P1313-06 | cache + migration |
+| P1313-08 | Clash API and GUI channel contract | DONE | P0 | PX-010 | P1313-05/P1313-07 | API/e2e |
+| P1313-09 | UDP NAT and packet dataplane | Closed locally | P1 | PX-005 | P1313-04/P1313-06 | dataplane |
+| P1313-10 | V2Ray stats and router tracker | DONE locally | P1 | PX-012 | P1313-06/P1313-09 | service/API |
+| P1313-11 | Service regression closeout | DONE locally | P1 | PX-011/PX-014/PX-015 | P1313-05/P1313-06 | service tests |
+| P1313-12 | GUI 1.25.1 low-priority contract | DONE locally | P2 | GUI diff | P1313-01/P1313-08 | fixtures/API probes |
 
-## Execution Waves
+## Historical Execution Waves
 
 ### Wave A: Freeze The Shape
 
@@ -56,7 +56,7 @@
 - Reason: revalidate service edges and keep GUI 1.25.1 shape current without resuming Wails
   automation.
 
-## Common Definition Of Done For Future Implementation Packages
+## Common Definition Of Done For Reopened Or Future Implementation Packages
 
 - Add or adapt tests before claiming closure.
 - Run the narrow package tests plus the relevant broader gate.

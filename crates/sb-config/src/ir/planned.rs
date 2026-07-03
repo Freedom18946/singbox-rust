@@ -88,8 +88,8 @@
 //!   resolution
 //! - `normalize` / `minimize` / `present`: token canonicalization, minimization
 //!   policy, legacy projection
-//! - `app::bootstrap` / `app::run_engine`: runtime-side selector binding, router
-//!   text emission, DNS env bridging
+//! - `app::run_engine` and app runtime helper modules: runtime-side selector
+//!   binding, router text emission, DNS env bridging
 
 use std::collections::HashSet;
 

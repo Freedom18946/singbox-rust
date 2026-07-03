@@ -82,10 +82,9 @@
 - exit 0 才算 `PASS-STRICT`
 - `--report` 可作为预检，但不能代替严格门禁
 
-> ✅ **当前现状（2026-06-06 起）**：`check-boundaries.sh`（严格）**exit 0**（V7 537 断言，0 违规）；
-> 此前登记的脚本陈旧目标漂移（`app/src/bootstrap.rs` / `app/src/run_engine.rs` 迁移提示模式、
-> 已拆分文件 `crates/sb-config/src/validator/v2.rs`→`validator/v2/` 的 W87/W88 失配）已修复，
-> boundary 维度满足 `PASS-STRICT`。实时门禁状态以 `agents-only/active_context.md` 为准。
+> 实时门禁状态以 `agents-only/active_context.md` 为准。此前登记的脚本陈旧目标漂移
+> （已退役 `app/src/bootstrap.rs` / `app/src/run_engine.rs` 迁移提示模式、已拆分文件
+> `crates/sb-config/src/validator/v2.rs`→`validator/v2/` 的 W87/W88 失配）已修复。
 
 ### 2.2 当前架构归属规则
 

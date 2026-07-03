@@ -261,15 +261,10 @@ mod tests {
     #[test]
     fn wp30an_pin_proxy_registry_owner_lives_in_bootstrap_runtime() {
         let source = include_str!("proxy_registry.rs");
-        let bootstrap = include_str!("../bootstrap.rs");
 
         assert!(source.contains("struct ProxyRegistryPlan"));
         assert!(source.contains("pub(crate) fn init_proxy_registry_from_env()"));
         assert!(source.contains("pub(crate) fn load_pools_from_env()"));
         assert!(source.contains("pub(crate) fn parse_pool_json("));
-        assert!(!bootstrap.contains("fn init_proxy_registry_from_env()"));
-        assert!(!bootstrap.contains("fn load_pools_from_env("));
-        assert!(!bootstrap.contains("fn parse_pool_json("));
-        assert!(bootstrap.contains("ProxyRegistryPlan::from_env()"));
     }
 }
