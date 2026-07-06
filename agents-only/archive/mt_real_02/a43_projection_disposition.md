@@ -3,7 +3,7 @@
 
 Read-only governance card. Adjudicates the **final disposition of the REALITY
 historical-projection layer** (the A4.2A prototype
-`agents-only/a42_historical_projection_spike/`). Decision up front:
+`agents-only/archive/mt_real_02/a42_historical_projection_spike/`). Decision up front:
 
 > **Recommended route: C — distill a stable projection *contract* / provenance
 > convention now, and DEFER promoting any formal adapter/tool.** Unique
@@ -21,9 +21,9 @@ source / canonical schema / validator / CI / registry, and leaves
 
 ## A. Authoritative context read (in order)
 
-`CLAUDE.md` · `agents-only/active_context.md` · `agents-only/workflow_notes.md` ·
-`agents-only/a41_historical_mapping_spike.md` ·
-`agents-only/a42_historical_projection_spike/{README.md,report.md,historical_projection.schema.json,adapt_historical_round.py}`
+`CLAUDE.md` · `agents-only/active_context.md` · `agents-only/memory/workflow_notes.md` ·
+`agents-only/archive/mt_real_02/a41_historical_mapping_spike.md` ·
+`agents-only/archive/mt_real_02/a42_historical_projection_spike/{README.md,report.md,historical_projection.schema.json,adapt_historical_round.py}`
 · `labs/interop-lab/docs/dual_kernel_golden_spec.md` (S4 §A–§F) ·
 `labs/interop-lab/reality_external_observation/README.md` (+ schema) · `git log -12`
 (HEAD = `1c3c11f5`) · `git status` (only `a0_reality_spike/` untracked).
@@ -230,7 +230,7 @@ Minimal staging (exactly two new agents-only files):
 
 ```
 git add agents-only/archive/mt_real_02/a43_projection_disposition.md \
-        agents-only/a42_historical_projection_spike/outputs/batch_inventory.json
+        agents-only/archive/mt_real_02/a42_historical_projection_spike/outputs/batch_inventory.json
 ```
 
 Commit message:

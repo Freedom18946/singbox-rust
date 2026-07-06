@@ -41,10 +41,10 @@ or strictly `DERIVED_DETERMINISTIC`.
 ## Usage
 
 ```bash
-python3 agents-only/a42_historical_projection_spike/adapt_historical_round.py \
+python3 agents-only/archive/mt_real_02/a42_historical_projection_spike/adapt_historical_round.py \
     agents-only/mt_real_02_evidence/round82_fresh04_recheck_summary.json \
     [--rollup agents-only/mt_real_02_evidence/live_rollup.json] \
-    [--out agents-only/a42_historical_projection_spike/outputs/r82.projection.json]
+    [--out agents-only/archive/mt_real_02/a42_historical_projection_spike/outputs/r82.projection.json]
 ```
 
 - Input is read-only; output goes to stdout (or `--out`).

@@ -309,7 +309,7 @@ not let one substitute for another, and do not claim closure of one from another
 #### External Healthy-Cohort Observation Protocol
 
 Formalizes the **existing** MT-REAL-02 rules (extracted from
-`agents-only/mt_real_02_baseline.md`, `archive/mt_real_02/closure_report.md`,
+`agents-only/archive/mt_real_02/mt_real_02_baseline.md`, `archive/mt_real_02/closure_report.md`,
 `active_context.md`); no new N×M thresholds are invented. This tier is observational
 and never blocks a merge. The named tri-state (PASS/DEGRADED/INCONCLUSIVE) is the
 synthesis label set for this tier; it maps onto the pre-existing run-health labels.

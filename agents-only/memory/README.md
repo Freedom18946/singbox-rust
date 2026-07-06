@@ -10,6 +10,8 @@
 |------|------|---------|
 | [LEARNED-PATTERNS.md](./LEARNED-PATTERNS.md) | 代码模式、约定、最佳实践 | 发现有效模式时 |
 | [TROUBLESHOOTING.md](./TROUBLESHOOTING.md) | 报错及解决方案 | 解决问题后 |
+| [workflow_notes.md](./workflow_notes.md) | 多 agent / Workflow 编排踩坑 | 编排 agent 任务前查阅 |
+| implementation-history.md | C-tier 历史流水，**勿主动读** | 不再更新 |
 
 ---
 

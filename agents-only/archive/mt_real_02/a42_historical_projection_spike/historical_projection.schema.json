@@ -1,6 +1,6 @@
 {
   "$schema": "http://json-schema.org/draft-07/schema#",
-  "$id": "https://singbox-rust/agents-only/a42_historical_projection_spike/historical_projection.schema.json",
+  "$id": "https://singbox-rust/agents-only/archive/mt_real_02/a42_historical_projection_spike/historical_projection.schema.json",
   "title": "REALITY Historical Round -> External-Observation Projection (read-only spike)",
   "description": "A4.2A spike wrapper. Projects ONE MT-REAL-02 historical round summary onto a provenance-annotated, NON-canonical envelope. This is NOT an external observation record and is NEVER a merge gate. A projection only ever yields a canonical_candidate (still un-promoted) when every canonical required field is DIRECT or strictly DERIVED_DETERMINISTIC. Heuristic / synthesized / missing fields force PARTIAL or UNSUPPORTED with canonical_candidate=null. Canonical structural rules live in labs/interop-lab/reality_external_observation/ (NOT modified by this spike).",
   "type": "object",

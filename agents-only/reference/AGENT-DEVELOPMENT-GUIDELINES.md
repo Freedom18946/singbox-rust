@@ -16,7 +16,7 @@
 1. `AGENTS.md`
 2. `agents-only/active_context.md`
 3. `agents-only/workpackage_latest.md`
-4. `agents-only/mt_real_02_baseline.md`（REALITY 基线长报告，已封箱/历史参考）
+4. `agents-only/archive/mt_real_02/mt_real_02_baseline.md`（REALITY 基线长报告，已封箱/历史参考）
 5. 本文档
 6. `agents-only/reference/Rust_spec_v2.md`
 7. `agents-only/reference/ACCEPTANCE-CRITERIA.md`

@@ -134,6 +134,93 @@ else
     echo -e "${GREEN}✓ 无 DRP 恢复标记${NC}"
 fi
 
+# 6. S-tier 行数上限（hard）：CLAUDE.md / 文件头声明的纪律，超限即失败。
+#    修复方式：压缩最老的 Resume 段进 Closed Tracks / archive，不是调高上限。
+echo -e "\n检查 S-tier 行数上限..."
+
+AC_LINES=$(wc -l < "$ACTIVE_CONTEXT")
+WP_LINES=$(wc -l < "$WORKPACKAGE")
+if [[ $AC_LINES -gt 300 ]]; then
+    echo -e "${RED}❌ active_context.md 超限: $AC_LINES 行 (上限 300)${NC}"
+    echo -e "   修复: 压缩最老 Resume 段（同质段合并为一条，细节留 git 历史 + log.md）。"
+    ERRORS=$((ERRORS + 1))
+else
+    echo -e "${GREEN}✓ active_context.md $AC_LINES/300 行${NC}"
+fi
+if [[ $WP_LINES -gt 120 ]]; then
+    echo -e "${RED}❌ workpackage_latest.md 超限: $WP_LINES 行 (上限 120)${NC}"
+    echo -e "   修复: 已关闭 phase 压成一行；细节归档。"
+    ERRORS=$((ERRORS + 1))
+else
+    echo -e "${GREEN}✓ workpackage_latest.md $WP_LINES/120 行${NC}"
+fi
+
+# 7. agents-only 顶层白名单：
+#    文件 = hard（散文件是"关闭不归档"的主要违规形态）；
+#    目录 = advisory（新轨迹目录立项合法，但要登记进 README.md + 本清单）。
+echo -e "\n检查 agents-only 顶层白名单..."
+
+ALLOWED_FILES="active_context.md workpackage_latest.md init.md README.md log.md"
+ALLOWED_DIRS="06-scripts archive fable5审计报告 memory mig03 mt_real_01_evidence mt_real_02_evidence post1313 reference templates"
+
+TOPLEVEL_VIOLATION=0
+for entry in "$AGENTS_DIR"/*; do
+    name=$(basename "$entry")
+    if [[ -f "$entry" ]]; then
+        if ! grep -qw "$name" <<< "$ALLOWED_FILES"; then
+            echo -e "${RED}❌ 顶层散文件不在白名单: $name${NC}"
+            echo -e "   修复: git mv 进所属轨迹目录或 archive/{track}/（关闭即归档）。"
+            ERRORS=$((ERRORS + 1)); TOPLEVEL_VIOLATION=1
+        fi
+    elif [[ -d "$entry" ]]; then
+        if ! grep -qw "$name" <<< "$ALLOWED_DIRS"; then
+            echo -e "${YELLOW}⚠️  advisory: 顶层目录不在已知清单: $name/${NC}"
+            echo -e "   若为新活动轨迹: 登记进 agents-only/README.md 目录树 + 本脚本 ALLOWED_DIRS；"
+            echo -e "   若轨迹已关闭: git mv 进 archive/。"
+            TOPLEVEL_VIOLATION=1
+        fi
+    fi
+done
+if [[ $TOPLEVEL_VIOLATION -eq 0 ]]; then
+    echo -e "${GREEN}✓ 顶层无白名单外条目${NC}"
+fi
+
+# 8. 陈旧度 advisory：最老 Resume 段 >14 天提示压缩；log.md >10000 行提示滚动归档。
+echo -e "\n检查文档陈旧度（advisory）..."
+
+OLDEST_RESUME=$(grep -oE "^## Resume \([0-9]{4}-[0-9]{2}-[0-9]{2}\)" "$ACTIVE_CONTEXT" \
+    | grep -oE "[0-9]{4}-[0-9]{2}-[0-9]{2}" | sort | head -1 || echo "")
+if [[ -n "$OLDEST_RESUME" ]]; then
+    OLDEST_EPOCH=$(date -j -f "%Y-%m-%d" "$OLDEST_RESUME" +%s 2>/dev/null || echo 0)
+    if [[ "$OLDEST_EPOCH" -gt 0 ]]; then
+        RESUME_DAYS=$(( ($(date +%s) - OLDEST_EPOCH) / 86400 ))
+        if [[ $RESUME_DAYS -gt 14 ]]; then
+            echo -e "${YELLOW}⚠️  advisory: 最老 Resume 段 $OLDEST_RESUME ($RESUME_DAYS 天前) — 压缩进 Closed Tracks${NC}"
+        else
+            echo -e "${GREEN}✓ 最老 Resume 段 $OLDEST_RESUME ($RESUME_DAYS 天前)${NC}"
+        fi
+    fi
+else
+    echo -e "${GREEN}✓ 无 Resume 段日期可检${NC}"
+fi
+
+LOG_FILE="$AGENTS_DIR/log.md"
+if [[ -f "$LOG_FILE" ]]; then
+    LOG_LINES=$(wc -l < "$LOG_FILE")
+    if [[ $LOG_LINES -gt 10000 ]]; then
+        echo -e "${YELLOW}⚠️  advisory: log.md $LOG_LINES 行 — 旧段滚动归档进 archive/logs/（保留头部+最近条目）${NC}"
+    else
+        echo -e "${GREEN}✓ log.md $LOG_LINES/10000 行${NC}"
+    fi
+fi
+
+# tier 标记（advisory）：顶层 md 首行应有 <!-- tier: S/A/B/C -->
+for f in "$AGENTS_DIR"/*.md; do
+    if ! head -1 "$f" | grep -q "tier:"; then
+        echo -e "${YELLOW}⚠️  advisory: $(basename "$f") 首行缺 tier 标记${NC}"
+    fi
+done
+
 # 结果汇总
 echo -e "\n---"
 if [[ $ERRORS -eq 0 ]]; then

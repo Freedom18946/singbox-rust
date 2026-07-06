@@ -345,7 +345,7 @@ impl TrojanConnector {
         // resolved IPs, and an IPv6-only result will fail the IPv4-only
         // ATYP encoding below — both behaviors are pre-existing UDP relay
         // limitations and are recorded in
-        // `agents-only/mt_trojan_fresh_sample_intake.md` rather than
+        // `agents-only/archive/mt_real_02/mt_trojan_fresh_sample_intake.md` rather than
         // fixed silently in this round.
         let (server_host, server_port) = parse_server_endpoint(&config.server)?;
         let server_addr: std::net::SocketAddr =

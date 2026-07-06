@@ -31,7 +31,7 @@
 
 > **MT-REAL-02 实时状态（轮次/结论/下一步）一律见 `active_context.md`**。
 > REALITY 本地主线已封箱（T3-0..T3-2，2026-06-08）；当前状态与下一步一律以 `active_context.md` 为准。
-> 长报告：`mt_real_02_baseline.md`；证据：`mt_real_02_evidence/`。
+> 长报告：`archive/mt_real_02/mt_real_02_baseline.md`；证据：`mt_real_02_evidence/`（原地保留，脚本硬编码路径）。
 > dual-kernel BHV 数字以 `active_context.md` + golden_spec 为准（勿在此抄）。
 
 ### 维护/验收 close-out 清单（全部已完成，已归档）
@@ -62,7 +62,6 @@
 - **维护基线**：声明完成能力已逐项验收闭环；不再拆细维护卡，不重开旧 maintenance 线名。
 - **后续 agents 先看**：
   - `agents-only/active_context.md`（当前状态唯一权威）
-  - `agents-only/mt_real_02_baseline.md`
   - `labs/interop-lab/docs/dual_kernel_golden_spec.md`
   - `agents-only/reference/AGENT-DEVELOPMENT-GUIDELINES.md`
 

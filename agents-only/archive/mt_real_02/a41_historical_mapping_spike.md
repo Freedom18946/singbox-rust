@@ -13,7 +13,7 @@ adapter would face. A4.2A builds the read-only projection prototype on top of th
   `live_rollup.json`, the schema, and `validate_external_observation.py`.
 - A fan-out workflow was run; its **adversarial-verify layer failed** (10 workers
   used `agentType:"Explore"` + a forced `schema`, which is unreliable — see
-  `agents-only/workflow_notes.md`). The synthesizer (default agent type) produced a
+  `agents-only/memory/workflow_notes.md`). The synthesizer (default agent type) produced a
   usable draft. **All load-bearing claims below were re-verified by a deterministic
   local Python scan**, which corrected several epoch-boundary errors in the draft
   and found a DIRECT phase-probe source the draft missed.
@@ -131,7 +131,7 @@ Projection epochs used by A4.2A: `R41_R42_NO_RUNS`, `R44_R73_RUN_LABELS`,
   that makes the fabrication boundary explicit and never coerces unknown/mixed
   evidence into canonical booleans or invents matrix exit codes.
 - Implemented as the A4.2A read-only prototype:
-  `agents-only/a42_historical_projection_spike/` (R82 and R91 both project to
+  `agents-only/archive/mt_real_02/a42_historical_projection_spike/` (R82 and R91 both project to
   `PARTIAL`, `canonical_candidate=null`).
 - Recommended route: **keep the canonical live schema strict; historical evidence
   lives permanently at the projection layer.** No canonical v2 now. (See A4.2A

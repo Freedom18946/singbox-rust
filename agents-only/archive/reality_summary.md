@@ -2,7 +2,7 @@
 # REALITY Archive Summary
 
 Purpose: compact MT-REAL-01, archived MT-REAL-02 stage-2 notes, and release-cleanup REALITY-T3 records.
-Current REALITY state remains in `agents-only/active_context.md` and `agents-only/mt_real_02_baseline.md`.
+Current REALITY state remains in `agents-only/active_context.md` and `agents-only/archive/mt_real_02/mt_real_02_baseline.md`.
 
 ## MT-REAL-01
 
@@ -18,7 +18,7 @@ Current REALITY state remains in `agents-only/active_context.md` and `agents-onl
 ## Archived MT-REAL-02 Stage-2
 
 - Stage-2 closed the evidence framework layer: per-outbound rollup, planner latest-filter support, and classification discipline for live probes.
-- R45-R60 records preserve falsified hypotheses and evidence-framework shape; use `mt_real_02_baseline.md` for long-form history.
+- R45-R60 records preserve falsified hypotheses and evidence-framework shape; use `mt_real_02/mt_real_02_baseline.md` for long-form history.
 - R62/R63/R64 notes proposed abstraction/provider-service next steps; later work superseded their raw planning details.
 - Stage-2 was evidence-framework closure, not BHV ledger movement.
 
@@ -32,6 +32,6 @@ Current REALITY state remains in `agents-only/active_context.md` and `agents-onl
 ## Current Pointers
 
 - Live current state: `agents-only/active_context.md`.
-- Long report/history: `agents-only/mt_real_02_baseline.md`.
+- Long report/history: `agents-only/archive/mt_real_02/mt_real_02_baseline.md`.
 - Evidence working set: `agents-only/mt_real_02_evidence/`.
 - Dual-kernel ledger: `labs/interop-lab/docs/dual_kernel_golden_spec.md`.

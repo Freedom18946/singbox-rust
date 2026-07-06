@@ -16,7 +16,7 @@
 > S4 §A–§F; canonical record contract =
 > `labs/interop-lab/reality_external_observation/{external_observation.schema.json,
 > validate_external_observation.py}`; the prototype + machine evidence =
-> `agents-only/a42_historical_projection_spike/` (`adapt_historical_round.py`,
+> `agents-only/archive/mt_real_02/a42_historical_projection_spike/` (`adapt_historical_round.py`,
 > `outputs/batch_inventory.json`); the disposition decision + full inventory =
 > `agents-only/archive/mt_real_02/a43_projection_disposition.md`; volatile parity/phase state =
 > `agents-only/active_context.md`.
@@ -170,7 +170,7 @@ They are recorded so they are not forgotten; this contract does not implement th
 
 - **Route C adopted** (`archive/mt_real_02/a43_projection_disposition.md`): freeze this contract; defer any
   formal tool.
-- The projection **prototype remains in `agents-only/a42_historical_projection_spike/`**
+- The projection **prototype remains in `agents-only/archive/mt_real_02/a42_historical_projection_spike/`**
   (B-tier spike). It is **not** moved to `labs/interop-lab/`.
 - **No new formal adapter** is added now (no A4.2B, no CI wiring, no canonical-schema
   edit).

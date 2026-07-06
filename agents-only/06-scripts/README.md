@@ -12,7 +12,7 @@
 | [analyze-deps.sh](./analyze-deps.sh) | 分析依赖关系 | `./analyze-deps.sh` |
 | [find-violations.sh](./find-violations.sh) | 查找违规代码 | `./find-violations.sh` |
 | [check-boundaries.sh](./check-boundaries.sh) | 本地边界检查 | `./check-boundaries.sh` |
-| [verify-consistency.sh](./verify-consistency.sh) | active_context / workpackage 一致性检查 | `./verify-consistency.sh` |
+| [verify-consistency.sh](./verify-consistency.sh) | 一致性 + S-tier 行数上限 + 顶层白名单 + 陈旧度检查(记忆系统自动维护门) | `./verify-consistency.sh` |
 | [restore-context.sh](./restore-context.sh) | active_context 灾难恢复草案生成 | `./restore-context.sh` |
 
 ---

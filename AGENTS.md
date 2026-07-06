@@ -15,8 +15,10 @@ truth — do not assert a stale phase here).
 
 - **Live frontier state** (what's happening now, latest round, next step):
   `agents-only/active_context.md` — single source of truth for volatile state.
-- **MT-REAL-02 working set**: `agents-only/mt_real_02_baseline.md` +
-  `agents-only/mt_real_02_evidence/` + `scripts/tools/test_reality_probe_tools.py`.
+- **MT-REAL-02 boxed history** (only when a task touches REALITY):
+  `agents-only/archive/mt_real_02/` (long report + intakes) +
+  `agents-only/mt_real_02_evidence/` (kept in place — paths hard-coded in
+  `scripts/tools/test_reality_probe_tools.py` regression tests).
 - **Dual-kernel parity ledger** (closed-item accounting only): `labs/interop-lab/docs/dual_kernel_golden_spec.md`.
   This is authoritative for the parity *ledger*, NOT for the live MT-REAL-02 experiment.
 - **Phase map**: `agents-only/workpackage_latest.md`.

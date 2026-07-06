@@ -19,7 +19,7 @@
 
 | 属性 | 值 |
 |------|-----|
-| **目标** | 验证 active_context 与 workpackage 一致性 |
+| **目标** | active_context/workpackage 一致性 + S-tier 行数上限(hard) + 顶层白名单(hard) + 陈旧度/tier advisory |
 | **用法** | `./06-scripts/verify-consistency.sh` |
 | **输出** | 一致性检查报告（通过/失败） |
 | **使用场景** | init.md Step 2 验证战略一致性时 |

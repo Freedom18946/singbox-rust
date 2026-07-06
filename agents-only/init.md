@@ -14,12 +14,8 @@
 3. CLAUDE.md  +  AGENTS.md                 # 稳定约定 / 硬规则 / 单一真相源
 ```
 
-**REALITY 历史参考（本地主线已封箱，T3 收口）**：
-```
-agents-only/mt_real_02_baseline.md         # REALITY ClientHello 基线长报告
-agents-only/mt_real_02_evidence/           # 轮次证据
-scripts/tools/test_reality_probe_tools.py  # 探测工具链
-```
+> REALITY 已封箱：历史长报告/intake 在 `archive/mt_real_02/`，**不在启动必读路径**；
+> 只在做 REALITY 相关任务时按 `active_context.md` 的指针深挖。
 
 > ⚠️ **DRP（灾难恢复）**：若 `active_context.md` 为空/损坏：
 > `./agents-only/06-scripts/restore-context.sh`
@@ -73,10 +69,9 @@ agents-only/reference/SCRIPTS-MAP.md       # scripts/ 与 06-scripts/ 全景
 | 1️⃣ | `active_context.md` | 当前状态唯一权威 |
 | 2️⃣ | `workpackage_latest.md` | 阶段与全局位置 |
 | 3️⃣ | `CLAUDE.md` / `AGENTS.md` | 稳定约定 / 硬规则 |
-| 4️⃣ | `mt_real_02_baseline.md` | REALITY 基线长报告（已封箱，历史参考） |
-| 5️⃣ | `reference/AGENT-DEVELOPMENT-GUIDELINES.md` | 长期开发准则 |
-| 6️⃣ | `memory/*.md` | 经验积累 |
-| 7️⃣ | `log.md` | 历史流水（C-tier，按需） |
+| 4️⃣ | `reference/AGENT-DEVELOPMENT-GUIDELINES.md` | 长期开发准则 |
+| 5️⃣ | `memory/*.md` | 经验积累 |
+| 6️⃣ | `archive/` + `log.md` | 历史深挖（C-tier，仅明确需要时） |
 
 ---
 

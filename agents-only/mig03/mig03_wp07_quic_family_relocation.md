@@ -93,7 +93,7 @@ git diff --check
 - hysteria2 inbound 与 TLS 证书加载路径可能引用 sb-core 的 tls 影子模块
   （`sb-core/src/tls/`）——若有，此处**只改 import 到 sb-tls 等价物**，
   影子模块本体留给 WP12。
-- `agents-only/mt_trojan_fresh_sample_intake.md` 被 trojan.rs 源码引用的先例
+- `agents-only/archive/mt_real_02/mt_trojan_fresh_sample_intake.md` 被 trojan.rs 源码引用的先例
   说明协议文件里可能有指向 agents-only 文档的注释路径——搬家时检查注释内
   相对路径是否失效。
 - benches 不在默认测试跑道上，容易漏编译——显式 `cargo bench -p <crate> --no-run`。

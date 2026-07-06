@@ -10,230 +10,56 @@
 
 ---
 
+## Resume (2026-07-07) - agents-only doc compression + maintenance automation
+
+- **agents-only top level compressed**: boxed MT-REAL-02 docs (baseline long report, 3 fresh
+  intakes, a41/a42 spikes, mt_mixed_fresh_evidence) moved via `git mv` into
+  `archive/mt_real_02/`; workflow notes moved to `memory/workflow_notes.md`. All repo references updated
+  (incl. `trojan.rs` comment, golden spec, AGENTS.md). Nothing deleted.
+- **NOT moved (hard constraints)**: `mt_real_01_evidence/` + `mt_real_02_evidence/` (paths
+  hard-coded in `scripts/tools/*.py` regression tests); `fable5审计报告/` (2026-06-29 disposition:
+  stays put, anchored by root README / docs / capabilities generator); `mig03/`, `post1313/` (active).
+- **Maintenance automation upgraded**: `06-scripts/verify-consistency.sh` now enforces S-tier
+  line caps (active_context ≤300, workpackage ≤120) and a top-level file whitelist as hard
+  failures, plus stale-Resume / oversized-log advisories. `log.md` pre-2026-06 bulk rolled into
+  `archive/logs/`.
+- **Scope note**: documentation/process hygiene only. No code, parity/BHV, gate, or packaging
+  movement is claimed.
+
 ## Resume (2026-07-06) - MIG-03 architecture de-dup migration PLANNED
 
 - **MIG-03 planning complete, no code changed**: `agents-only/mig03/` now holds the full
   planning set (README index + overview + WP01-WP14, all `Status: PLANNED`) for the in-repo
   strangler-fig migration: trait unification, scaffold retirement, router-stack merge,
   control-plane/env convergence, feature slimming. User rejected the new-repo rewrite path.
-- Baseline metrics snapshot lives in `mig03_00_overview.md` §1/§6 (sb-core 108k LOC /
+- Baseline metrics snapshot lives in `mig03/mig03_00_overview.md` §1/§6 (sb-core 108k LOC /
   103 features / 161 SB_* env vars; register.rs 4,264 lines; ≥6 OutboundConnector defs).
 - All optional technical choices pre-decided by user delegation (2026-07-06): see
-  `mig03_01_decisions.md` D1-D18; user gates removed from packages (only D18 escalation
+  `mig03/mig03_01_decisions.md` D1-D18; user gates removed from packages (only D18 escalation
   remains). Entry points ready to claim: WP01 + WP04 (both doc-only); lane rules in README.
 - **Scope note**: planning artifacts only. No behavior, parity/BHV, gate, or packaging
   movement is claimed.
 
-## Resume (2026-07-03) - app metrics-serve readiness audit cleanup
+## Resume (2026-07-03) - app helper-CLI audit cleanup batch (15 rounds, all DONE locally)
 
-- **`metrics-serve` readiness audit cleanup DONE locally**: the binary now binds the metrics
-  exporter before reporting `READY`, so an occupied `SB_METRICS_ADDR` returns a startup error
-  instead of appearing healthy while the exporter task exits.
-- **Exporter lifecycle tightened**: `sb-metrics` exposes a checked bind/spawn path and
-  `app::tracing_init` wires it for foreground startup while preserving the existing detached
-  compatibility path for background callers.
-- **Test coverage tightened**: a real `metrics-serve` binary test holds a localhost port,
-  asserts non-zero exit, and verifies `READY` is not printed after bind failure.
-- **Verification PASS**: app/sb-metrics fmt, focused `metrics_serve_cli` test, sb-metrics tests
-  and doctests, app all-target/all-feature check, strict app clippy, strict sb-metrics clippy,
-  and `git diff --check`.
-- **Scope note**: app metrics helper CLI readiness hygiene only. No REALITY closure,
-  dual-kernel BHV/parity movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app merge inline-resource audit cleanup
-
-- **`app merge` inline-resource audit cleanup DONE locally**: missing TLS/SSH/ECH inline path
-  resources now return a structured read error instead of silently leaving unresolved `*_path`
-  fields in generated output.
-- **Write contract tightened**: merge now aborts before writing the output file when a requested
-  inline resource cannot be read.
-- **Test coverage tightened**: a real `merge` binary integration test covers missing
-  `certificate_path` failure output, non-zero exit behavior, and no output-file creation.
-- **Verification PASS**: app fmt, focused `merge_cli` test, merge binary check, app
-  all-target/all-feature check, strict app clippy, and `git diff --check`.
-- **Scope note**: app merge CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app sb-bench env/CSV audit cleanup
-
-- **`app/src/bin/sb-bench.rs` audit cleanup DONE locally**: `SB_BENCH_PAR=0` now falls back to
-  the default positive parallelism instead of reaching `runs.div_ceil(0)` and panicking.
-- **CSV output contract tightened**: `SB_BENCH_CSV` writes now propagate filesystem errors for
-  TCP/UDP/DNS summaries instead of silently ignoring failed report writes.
-- **Test coverage tightened**: focused `sb-bench` tests cover zero-parallelism fallback and CSV
-  write error reporting in addition to existing invalid target/name paths.
-- **Verification PASS**: app fmt, focused `sb-bench` tests, bench binary build, app all-target/
-  all-feature check, strict app clippy, real `SB_BENCH_PAR=0` CLI smoke, residual scan, and
-  `git diff --check`.
-- **Scope note**: app benchmark helper CLI hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app bench io input audit cleanup
-
-- **`app bench io` audit cleanup DONE locally**: zero `--requests` and zero `--concurrency`
-  now return structured input errors instead of producing a successful no-work benchmark result.
-- **HTTP method handling tightened**: the reqwest method conversion now reports invalid methods
-  explicitly instead of silently falling back to `GET` if called outside clap validation.
-- **Test coverage tightened**: focused bench unit tests cover zero requests/concurrency, and the
-  real bench CLI contract test covers `--concurrency 0` with a freshly rebuilt app binary.
-- **Verification PASS**: app fmt, focused bench unit/CLI tests, app all-target/all-feature check,
-  strict app clippy, real zero-concurrency CLI smoke, and `git diff --check`.
-- **Scope note**: app bench CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app coverage-http CLI audit cleanup
-
-- **`app/src/bin/coverage-http.rs` audit cleanup DONE locally**: invalid `SB_COV_ADDR` now
-  returns an error from `main` and exits non-zero instead of printing to stderr and returning
-  success.
-- **Server startup diagnostics tightened**: the coverage HTTP server now propagates bind/serve
-  failures through a structured `coverage HTTP server failed` context instead of only printing
-  and falling through.
-- **Test coverage tightened**: a real `coverage-http` binary test covers invalid listen-address
-  failure output and non-zero exit behavior.
-- **Verification PASS**: app fmt, focused `coverage-http` feature test, coverage-http feature
-  check, app all-target/all-feature check, strict app clippy, real invalid-address CLI smoke,
-  consistency, and `git diff --check`.
-- **Scope note**: app rule-coverage helper CLI hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app prom CLI audit cleanup
-
-- **`app prom` audit cleanup DONE locally**: the Prometheus CLI now awaits async scrape/hist
-  handlers from the top-level Tokio runtime instead of panicking through nested
-  `Handle::current().block_on(...)`.
-- **Filter input contract tightened**: `prom scrape --filter` now validates regex syntax before
-  any HTTP request and returns a structured `invalid --filter regex` error instead of silently
-  disabling the filter.
-- **Test coverage tightened**: focused prom unit tests cover valid/invalid filter compilation,
-  and a real `app prom scrape` integration test locks the no-panic invalid-filter path.
-- **Verification PASS**: app fmt, focused prom unit/integration tests, app all-target/all-feature
-  check, strict app clippy, real invalid-filter CLI smoke, and `git diff --check`.
-- **Scope note**: app Prometheus CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app tools synctime audit cleanup
-
-- **`app/src/cli/tools.rs` audit cleanup DONE locally**: `tools synctime` now computes local
-  NTP time through a fallible helper, so a pre-UNIX system clock returns a structured error
-  instead of panicking through `duration_since(...).unwrap()`.
-- **Test coverage tightened**: focused NTP tests cover normal NTP epoch conversion, pre-epoch
-  clock rejection, and existing offset calculation behavior.
-- **Verification PASS**: app fmt, focused NTP tests, app all-target/all-feature check, strict
-  app clippy, residual scan, and `git diff --check`.
-- **Scope note**: app tools CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app sb-handshake slice audit cleanup
-
-- **`app/src/bin/handshake.rs` audit cleanup DONE locally**: `sb-handshake slice` now writes
-  filtered JSONL through a `Result` path instead of `serde_json::to_string(...).unwrap()` and
-  ignored writer errors.
-- **Slice diagnostics tightened**: malformed non-empty JSONL input lines are counted and reported
-  as `skipped_bad_lines=...` in the success message instead of being fully silent.
-- **Test coverage tightened**: focused `handshake` binary tests cover bad-line counting, tx/rx
-  filtering, head8-prefix filtering, and invalid `--dir` rejection.
-- **Verification PASS**: app fmt, focused `handshake` tests, app all-target/all-feature check,
-  strict app clippy, real `sb-handshake slice` smoke run, residual scan, and `git diff --check`.
-- **Scope note**: app handshake alpha CLI hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app metadata bin JSON audit cleanup
-
-- **`app` metadata binaries audit cleanup DONE locally**: `version`, `sb-version`, and
-  `sb-rule-coverage` now return `Result` and propagate JSON serialization errors instead of
-  panicking through `unwrap`.
-- **Contract coverage tightened**: existing version/sb-version JSON tests still cover their
-  output shapes, and a new `sb_rule_coverage_bin` integration test locks the plain JSON array
-  snapshot shape without an ok/data envelope.
-- **Verification PASS**: app fmt, focused metadata-bin tests, app all-target/all-feature check,
-  strict app clippy, real bin smoke runs for all three commands, residual scan, and
-  `git diff --check`.
-- **Scope note**: app metadata CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app sb-explaind input audit cleanup
-
-- **`app/src/bin/sb-explaind.rs` audit cleanup DONE locally**: invalid `SB_DEBUG_ADDR` now
-  returns an actionable startup error instead of panicking through `expect`.
-- **Debug explain request contract tightened**: `/debug/explain?port=...` now rejects invalid
-  or out-of-range port values with a 400 response instead of silently treating them as port `0`;
-  dot-format responses no longer use a local `Response::builder().unwrap()`.
-- **Test coverage tightened**: focused `sb-explaind` binary tests cover valid/invalid debug
-  address parsing and valid/invalid query port parsing.
-- **Verification PASS**: app fmt, focused `sb-explaind` tests, app all-target/all-feature check,
-  strict app clippy, real invalid-env CLI check, residual scan, and `git diff --check`.
-- **Scope note**: app debug explain daemon hygiene only. No REALITY closure, dual-kernel
-  BHV/parity movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app sb-bench input audit cleanup
-
-- **`app/src/bin/sb-bench.rs` audit cleanup DONE locally**: invalid `SB_BENCH_TCP`,
-  `SB_BENCH_UDP`, `SB_BENCH_DNS`, and `SB_BENCH_DNS_NAME` inputs now return structured errors
-  instead of panicking through `expect`.
-- **Bench runtime hygiene tightened**: benchmark helpers now propagate setup errors, JSON
-  serialization and histogram creation use `Result`, and per-sample UDP/DNS socket/encoding
-  failures no longer crash spawned tasks.
-- **Test coverage tightened**: focused `sb-bench` binary tests cover all invalid target/name
-  input paths; a real CLI run with invalid `SB_BENCH_TCP` exits non-zero with an actionable
-  error and no panic.
-- **Verification PASS**: app fmt, focused `sb-bench` tests, app all-target/all-feature check,
-  strict app clippy, real invalid-env CLI check, residual scan, and `git diff --check`.
-- **Scope note**: app benchmark CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app generate TLS keypair audit cleanup
-
-- **`app generate tls-keypair --days` audit cleanup DONE locally**: the CLI now builds explicit
-  `rcgen::CertificateParams` so `--days` controls the self-signed certificate validity window
-  instead of being accepted and ignored.
-- **Input contract tightened**: `--days 0` is rejected with a structured error, and the app
-  dependency graph now treats `time` as a production dependency for certificate validity math.
-- **Test coverage tightened**: focused generate CLI tests cover the validity-window duration and
-  zero-day rejection path without adding new residual `expect`/`panic!` scan noise.
-- **Verification PASS**: app fmt, focused TLS keypair tests, app all-target/all-feature check,
-  strict app clippy, residual scan, and `git diff --check`.
-- **Scope note**: app key-generation CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app preflight CLI audit cleanup
-
-- **`app/src/bin/preflight.rs` audit cleanup DONE locally**: preflight now fails explicitly on
-  missing config files and invalid JSON instead of silently substituting `{}` and reporting a
-  successful preflight contract.
-- **Test coverage tightened**: new `preflight_cli` integration tests cover valid output,
-  missing-file failure, and invalid-JSON failure; the test is registered behind the same
-  `router` feature gate as the preflight binary.
-- **Verification PASS**: app fmt, focused preflight CLI test, app all-target/all-feature check,
-  strict app clippy, residual scan, and `git diff --check`.
-- **Scope note**: app preflight CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app subs CLI audit cleanup
-
-- **`app/src/bin/subs.rs` audit cleanup DONE locally**: subscription merge/diff CLI now returns
-  structured errors for read/parse/write failures instead of panicking through `expect`/`unwrap`.
-- **Test coverage tightened**: `subs_merge_diff` now covers invalid JSON failure output and
-  asserts the CLI reports a parse error without a panic; existing merge/diff success coverage
-  was converted to fallible assertions without path/string unwraps.
-- **Verification PASS**: app fmt, focused `subs_merge_diff` test, app all-target/all-feature
-  check, strict app clippy, residual scan, and `git diff --check`.
-- **Scope note**: app subscription CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed.
-
-## Resume (2026-07-03) - app prefetch audit cleanup
-
-- **`app` prefetch CLI audit cleanup DONE locally**: prefetch stats/watch output now includes
-  total fetched bytes and session duration instead of collecting those counters silently.
-- **Test coverage tightened**: focused prefetch tests now assert byte/duration totals in both
-  JSON and text output builders, and the prior all-feature `app` dead-code warning is gone.
-- **App strict gate unblocked**: `app --all-features` strict clippy exposed a SOCKS UDP helper
-  argument-list lint in the adapter dependency; the reverse-relay inputs are now wrapped in an
-  internal task struct with focused SOCKS UDP checks passing.
-- **Verification PASS**: app fmt/check, focused prefetch tests, strict app clippy, sb-adapters
-  fmt/check, focused SOCKS UDP tests, residual scan, and `git diff --check`.
-- **Scope note**: app CLI/audit hygiene plus app-gate adapter lint only. No REALITY closure,
-  dual-kernel BHV/parity movement, release packaging completion, or workflow automation is claimed.
+- **One batch, one pattern**: 15 consecutive audit-cleanup rounds hardened the `app` helper
+  CLIs — every round replaced panic paths (`unwrap`/`expect`/nested `block_on`) or silent
+  failure paths with structured errors, tightened the input/output contract, added focused
+  unit + real-binary integration tests, and passed the same verification set (app fmt, focused
+  tests, all-target/all-feature check, strict clippy, CLI smoke, `git diff --check`).
+- **Covered surfaces**: `metrics-serve` (bind-before-READY), `merge` (inline-resource read
+  errors, abort-before-write), `sb-bench` (invalid env targets; `SB_BENCH_PAR=0` fallback; CSV
+  write errors), `bench io` (zero requests/concurrency; HTTP method validation), `coverage-http`
+  (invalid `SB_COV_ADDR` non-zero exit), `prom` (async handlers off nested runtime; `--filter`
+  regex validation), `tools synctime` (pre-UNIX clock), `sb-handshake slice` (fallible JSONL
+  writes, `skipped_bad_lines`), metadata bins `version`/`sb-version`/`sb-rule-coverage` (JSON
+  `Result` paths), `sb-explaind` (invalid `SB_DEBUG_ADDR`, port-query 400), `generate
+  tls-keypair` (`--days` honored, `--days 0` rejected), `preflight` (missing/invalid config
+  fails), `subs` (structured read/parse/write errors), `prefetch` (byte/duration totals; SOCKS
+  UDP helper lint unblock in sb-adapters).
+- **Scope note**: app helper-CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
+  movement, release packaging completion, or workflow automation is claimed. Full per-round
+  details: git history 2026-07-03 (`029e48d8`, `71bb2026`, `5a97b46d`, …) + `log.md`.
 
 ## Strategic State
 
@@ -273,7 +99,8 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 - **A2 REALITY-gate wiring** DONE (`71e51669`+`e44c67d3`, 2026-06-06): L18 REALITY_LOCAL gate
   after ORACLE; A2.3 runtime status-JSON DEFERRED.
 - **MT-REAL-02 stage-2** closed (R45-R60): per-outbound rollup + planner --latest-* filters.
-  History (fresh13 per-rep R73/R90/R91; fresh09 broken R85/R88): mt_real_02_baseline.md.
+  History (fresh13 per-rep R73/R90/R91; fresh09 broken R85/R88):
+  `archive/mt_real_02/mt_real_02_baseline.md`.
 
 ## Still-Valid Constraints
 
@@ -293,7 +120,7 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 
 ## Historical Detail
 
-- R33-R60 + early ClientHello/Vision/REALITY: `mt_real_02_baseline.md`; L01-L25:
-  `archive/l01_l25_summary.md`; closed MT-* tracks: `archive/mt_summary.md`;
+- R33-R60 + early ClientHello/Vision/REALITY: `archive/mt_real_02/mt_real_02_baseline.md`;
+  L01-L25: `archive/l01_l25_summary.md`; closed MT-* tracks: `archive/mt_summary.md`;
   REALITY archive: `archive/reality_summary.md`; golden spec:
   `labs/interop-lab/docs/dual_kernel_golden_spec.md`.

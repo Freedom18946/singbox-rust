@@ -17,12 +17,12 @@
 
 ## Committed redacted artefacts
 
-- `agents-only/mt_mixed_fresh_evidence/triage.json`
-- `agents-only/mt_mixed_fresh_evidence/reality_intake.json`
-- `agents-only/mt_mixed_fresh_evidence/reality_intake.md`
-- `agents-only/mt_mixed_fresh_evidence/hysteria2_audit.json`
-- `agents-only/mt_mixed_fresh_evidence/ws_xhttp_audit.json`
-- `agents-only/mt_mixed_fresh_evidence/dry_run_plan.json`
+- `agents-only/archive/mt_real_02/mt_mixed_fresh_evidence/triage.json`
+- `agents-only/archive/mt_real_02/mt_mixed_fresh_evidence/reality_intake.json`
+- `agents-only/archive/mt_real_02/mt_mixed_fresh_evidence/reality_intake.md`
+- `agents-only/archive/mt_real_02/mt_mixed_fresh_evidence/hysteria2_audit.json`
+- `agents-only/archive/mt_real_02/mt_mixed_fresh_evidence/ws_xhttp_audit.json`
+- `agents-only/archive/mt_real_02/mt_mixed_fresh_evidence/dry_run_plan.json`
 
 All committed artefacts hash UUIDs, server addresses, public_keys,
 short_ids, server_names, tags, paths, and Host header values. Ports

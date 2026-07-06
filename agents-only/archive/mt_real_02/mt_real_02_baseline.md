@@ -6563,7 +6563,7 @@ R70 已正式关闭当前 committed `phase3_ip_direct.json` sample face。
 - 没有跑 `reality_vless_probe_batch.py --dry-run`。
 - 没有 live probe。
 
-新增 operator guide：`agents-only/mt_real_02_fresh_sample_intake.md`
+新增 operator guide：`agents-only/archive/mt_real_02/mt_real_02_fresh_sample_intake.md`
 （A-tier）。文档明确：
 
 - 候选 config 必须放在 `/tmp/...`，不能进 `agents-only/` 下。
@@ -6587,9 +6587,9 @@ R70 已正式关闭当前 committed `phase3_ip_direct.json` sample face。
 
 - `scripts/tools/reality_vless_sample_intake.py`（新增）
 - `scripts/tools/test_reality_probe_tools.py`（追加 7 用例 + 1 import）
-- `agents-only/mt_real_02_fresh_sample_intake.md`（新增 A-tier 文档）
+- `agents-only/archive/mt_real_02/mt_real_02_fresh_sample_intake.md`（新增 A-tier 文档）
 - `agents-only/active_context.md`（R71 状态、≤95 行）
-- `agents-only/mt_real_02_baseline.md`（追加本节）
+- `agents-only/archive/mt_real_02/mt_real_02_baseline.md`（追加本节）
 
 ---
 
@@ -6654,7 +6654,7 @@ Redacted summary counts 因输入被拒绝未产生：
 ### 改动文件
 
 - `agents-only/active_context.md`（R72 状态、≤95 行）
-- `agents-only/mt_real_02_baseline.md`（追加本节）
+- `agents-only/archive/mt_real_02/mt_real_02_baseline.md`（追加本节）
 
 ---
 
@@ -6709,7 +6709,7 @@ redacted summary：
 ### 改动文件
 
 - `agents-only/active_context.md`（R72b 状态、≤95 行）
-- `agents-only/mt_real_02_baseline.md`（追加本节）
+- `agents-only/archive/mt_real_02/mt_real_02_baseline.md`（追加本节）
 
 ---
 
@@ -6761,7 +6761,7 @@ MT-TROJAN-FRESH-02 follow-up: REALITY remains blocked; Trojan quality-line dry-r
 ### 改动文件
 
 - `agents-only/active_context.md`（R72c 状态、≤95 行）
-- `agents-only/mt_real_02_baseline.md`（追加本节）
+- `agents-only/archive/mt_real_02/mt_real_02_baseline.md`（追加本节）
 
 ---
 
@@ -6872,9 +6872,9 @@ divergence。
 - `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.json`
 - `agents-only/mt_real_02_evidence/round73_mixed_fresh_live_summary.md`
 - `agents-only/mt_real_02_evidence/live_rollup.json` / `live_rollup.md`
-- `agents-only/mt_mixed_fresh_intake.md`
+- `agents-only/archive/mt_real_02/mt_mixed_fresh_intake.md`
 - `agents-only/active_context.md`（≤95 行）
-- `agents-only/mt_real_02_baseline.md`（本节）
+- `agents-only/archive/mt_real_02/mt_real_02_baseline.md`（本节）
 
 ### 授权范围确认
 
@@ -6945,7 +6945,7 @@ R73 totals：
     run_same_failure / divergence_phase_labels (occurrences)` 4 列
   - 新增 fresh02 / fresh06 per-run facts 表
   - 把 classification block 改成 run-level 主语
-- `agents-only/mt_mixed_fresh_intake.md`、`agents-only/active_context.md`、
+- `agents-only/archive/mt_real_02/mt_mixed_fresh_intake.md`、`agents-only/active_context.md`、
   本文件 R73 节 — 同步纠偏
 
 ### 工具改动
