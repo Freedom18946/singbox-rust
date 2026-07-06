@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-06) - MIG-03 architecture de-dup migration PLANNED
+
+- **MIG-03 planning complete, no code changed**: `agents-only/mig03/` now holds the full
+  planning set (README index + overview + WP01-WP14, all `Status: PLANNED`) for the in-repo
+  strangler-fig migration: trait unification, scaffold retirement, router-stack merge,
+  control-plane/env convergence, feature slimming. User rejected the new-repo rewrite path.
+- Baseline metrics snapshot lives in `mig03_00_overview.md` §1/§6 (sb-core 108k LOC /
+  103 features / 161 SB_* env vars; register.rs 4,264 lines; ≥6 OutboundConnector defs).
+- All optional technical choices pre-decided by user delegation (2026-07-06): see
+  `mig03_01_decisions.md` D1-D18; user gates removed from packages (only D18 escalation
+  remains). Entry points ready to claim: WP01 + WP04 (both doc-only); lane rules in README.
+- **Scope note**: planning artifacts only. No behavior, parity/BHV, gate, or packaging
+  movement is claimed.
+
 ## Resume (2026-07-03) - app metrics-serve readiness audit cleanup
 
 - **`metrics-serve` readiness audit cleanup DONE locally**: the binary now binds the metrics
