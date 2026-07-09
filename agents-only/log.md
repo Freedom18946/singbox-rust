@@ -139,3 +139,22 @@
 - 全 repo 引用路径修复(含 trojan.rs 注释、golden_spec、AGENTS.md);未移动:mt_real_01/02_evidence(scripts/tools 硬编码)、fable5审计报告(2026-06-29 处置决定)
 **结果**: 成功;verify-consistency.sh exit 0;断链扫描零残留;cargo check -p sb-adapters PASS
 **备注**: 顶层白名单今后由 verify-consistency.sh 强制;新轨迹目录需登记 README + 脚本 ALLOWED_DIRS
+
+---
+
+## 2026-07-10 MIG-03 WP01 Trait Census + Canonical Contract ADR
+
+**任务**: 完成 MIG-03 WP01（Trait 契约全量盘点与正典契约 ADR）。
+
+**变更**:
+- 新增 `mig03_wp01_trait_census.md`：覆盖 outbound/inbound/UDP 主证据与补充接口，记录实现/调用证据、对象安全、UDP 能力差异和移交项。
+- 新增 `mig03_adr01_canonical_connector.md`：依 D1-D8 固化 `sb-types` 正典 outbound/inbound/packet 契约、错误映射、Session options、迁移删除表和 Go 对照。
+- 更新 WP01 包状态/验收清单与 `active_context.md`；不改生产代码。
+
+**验证**:
+- WP01 文档完整性检查（19 个相关 trait 定义、D1-D8、迁移表、无未决项）
+- `git diff --check`
+- `cargo check -p sb-core --quiet`
+- 复现并记录 `adapter-trojan,router` 独立 feature gate 失败（留给后续包，未在本包修复）
+
+**结果**: WP01 DONE。未声明 dual-kernel parity / BHV / REALITY 变化。

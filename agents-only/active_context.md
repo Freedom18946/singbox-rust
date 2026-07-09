@@ -10,6 +10,25 @@
 
 ---
 
+## Resume (2026-07-10) - MIG-03 WP01 trait census + canonical-contract ADR DONE
+
+- **WP01 is DONE (documentation only)**: the full trait/UDP/inbound
+  [census](agents-only/mig03/mig03_wp01_trait_census.md) and binding
+  exact-signature [ADR](agents-only/mig03/mig03_adr01_canonical_connector.md)
+  are complete.
+  It closes the D1–D8 precondition for WP02/WP03 without a D18 conflict.
+- The ADR specifies one `sb-types` outbound/inbound/packet contract, structured
+  error mapping, session-carried connection + finalized UDP route options,
+  Go-shaped group/selector control, direct cutover, and the deletion map for
+  every legacy trait. WP02 may now implement the adapters path; WP04 remains
+  independent and can run in parallel.
+- **Discovery handed forward, not fixed here**: isolated
+  `adapter-trojan,router` feature compilation exposes a missing `trojan`
+  feature gate; endpoint UDP facade and existing UDP timeout precedence are
+  explicitly captured for WP02/WP03.
+- **Scope note**: documentation/process work only. No production code, parity/BHV,
+  packaging, or REALITY movement is claimed.
+
 ## Resume (2026-07-07) - agents-only doc compression + maintenance automation
 
 - **agents-only top level compressed**: boxed MT-REAL-02 docs (baseline long report, 3 fresh
@@ -29,14 +48,16 @@
 ## Resume (2026-07-06) - MIG-03 architecture de-dup migration PLANNED
 
 - **MIG-03 planning complete, no code changed**: `agents-only/mig03/` now holds the full
-  planning set (README index + overview + WP01-WP14, all `Status: PLANNED`) for the in-repo
+  planning set (README index + overview + WP01-WP14; this initial snapshot predated WP01
+  execution) for the in-repo
   strangler-fig migration: trait unification, scaffold retirement, router-stack merge,
   control-plane/env convergence, feature slimming. User rejected the new-repo rewrite path.
 - Baseline metrics snapshot lives in `mig03/mig03_00_overview.md` §1/§6 (sb-core 108k LOC /
   103 features / 161 SB_* env vars; register.rs 4,264 lines; ≥6 OutboundConnector defs).
 - All optional technical choices pre-decided by user delegation (2026-07-06): see
   `mig03/mig03_01_decisions.md` D1-D18; user gates removed from packages (only D18 escalation
-  remains). Entry points ready to claim: WP01 + WP04 (both doc-only); lane rules in README.
+  remains). This planning snapshot initially exposed WP01 + WP04; live WP status is in each
+  package header and the current update above; lane rules are in the README.
 - **Scope note**: planning artifacts only. No behavior, parity/BHV, gate, or packaging
   movement is claimed.
 
