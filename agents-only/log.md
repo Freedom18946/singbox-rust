@@ -207,3 +207,28 @@
 - `cargo check -p app`
 
 **结果**: WP04 DONE。未声明 dual-kernel parity / BHV / REALITY / packaging 变化。
+
+---
+
+## 2026-07-11 MIG-03 WP05 adapters gap closure
+
+**任务**: 彻底实现并验收 WP05，关闭 WP04 矩阵两组 SOCKS GAP。
+
+**变更**:
+- SOCKS/mixed adapter接入既有 per-IP limiter；SOCKS driver实现 active TCP与兼容
+  associate/packet/active metrics。
+- `UdpUpstreamMap`/`UpSocksSession`/active proxy transport迁入 sb-adapters，复用 canonical
+  PacketConn并保持 D14 env、timeout alias、wire-size、错误与观测语义。
+- 产品 feature闭合 SOCKS UDP；core scaffold tests迁为 adapter/app active E2E，保留 WP12
+  generic balancer边界。
+- 修复 probe canonical-dial重构后的陈旧 Python源码锚点；更新 WP04 matrix、WP05包、
+  active context。
+
+**验证**:
+- sb-adapters default/all-features、sb-core regression、app acceptance/gui_runtime/parity、
+  isolated SOCKS/router feature全部通过。
+- workspace check/clippy、fmt、boundaries、diff-check、Python三套工具回归全部通过。
+- SOCKS TCP/UDP与mixed双核run两侧traffic success，errors为空。
+
+**结果**: WP05 DONE；实现提交 `de25101d`。无 D18、无 parity/BHV/REALITY/packaging
+移动；WP06已解锁，WP12边界未动。

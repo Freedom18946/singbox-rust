@@ -10,6 +10,23 @@
 
 ---
 
+## Resume (2026-07-11) - MIG-03 WP05 adapter gap closure DONE
+
+- **WP05 accepted:** `de25101d` moves active SOCKS UDP map/session/transport ownership into
+  sb-adapters, closes product feature reachability, and preserves D14 env/default/wire-size
+  behavior. SOCKS/mixed now share the legacy per-IP limiter; SOCKS reports active TCP and
+  compatible UDP associate/packet/active metrics.
+- WP04 matrix GAP count is now zero. Core SOCKS UDP scaffold tests moved to active adapter/product
+  tests; exact adapter references to the four core UDP scaffold symbols are zero. Selector/urltest
+  and generic balancer/group ownership remain WP12.
+- Acceptance: adapter default/all-feature and core regression suites, three app product profiles,
+  feature isolation, Python tool suites, global five gates, and SOCKS TCP/UDP + mixed dual-kernel
+  runs all pass. No D18 item or behavior-expansion decision appeared.
+- **Authorized transition:** WP06 is unblocked. Next step: remove bridge fallback/orphan scaffold
+  implementations and stale `ADAPTER_FORCE` surface exactly per WP04 §11/WP06.
+- **Scope note:** WP05 structural/compatibility closure only. No parity/BHV denominator,
+  packaging, REALITY, WP06 deletion, or WP12 ownership movement is claimed.
+
 ## Resume (2026-07-11) - MIG-03 WP04 semantic audit DONE
 
 - **WP04 accepted:** `mig03/mig03_wp04_coverage_matrix.md` corrects stale scaffold
@@ -102,12 +119,12 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 
 ## Current Build And Gate
 
-- check/build/clippy (all-features,all-targets): **PASS** locally on 2026-06-30.
-  Clippy exits 0 with existing warning-level lint reports (lint relaxed 2026-06-03:
-  warnings/dead_code deny→warn, safety kept deny).
-- cargo check --workspace --all-features: **PASS**. strict check-boundaries.sh: **exit 0**.
-- python3 unittest (reality_probe_tools / clienthello_family /
-  dual_kernel_verification): **PASS**. trojan_integration: **20 PASS, 0 ignored**.
+- 2026-07-11 WP05 final: workspace all-features check and all-target/all-feature clippy **PASS**;
+  fmt, boundaries, diff-check **PASS**.
+- sb-adapters default/all-features, sb-core regression, app acceptance/gui_runtime/parity profiles,
+  and isolated SOCKS/router feature **PASS**.
+- Python reality_probe_tools/clienthello_family/dual_kernel_verification **PASS**;
+  SOCKS TCP/UDP and mixed dual-kernel traffic success with empty error sets.
 
 ## T3 ClientHello Fingerprint Parity — T3-0…T3-2 DONE (2026-06-08)
 

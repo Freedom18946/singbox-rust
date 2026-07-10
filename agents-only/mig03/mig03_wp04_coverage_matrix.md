@@ -3,7 +3,8 @@
 
 Status: DONE
 Audit base: `acf3be4c` (`main`, 2026-07-11)
-Scope: 纯文档审计；未修改生产代码、feature、测试或运行时行为。
+WP05 closure: `de25101d` (`main`, 2026-07-11)
+Scope: WP04 审计基线保留；WP05 执行结果以各行 `de25101d` 锚点为准。
 
 ## 1. 判定口径
 
@@ -27,7 +28,7 @@ Scope: 纯文档审计；未修改生产代码、feature、测试或运行时行
 | `Bridge::new_from_config` | 活跃 legacy 公共入口；inbound 构造 SOCKS/TUN/direct，HTTP/mixed/redirect/tproxy 和其余类型为 unsupported；outbound 仅 block 为真实现 | `crates/sb-core/src/adapter/mod.rs:423-626`; caller `crates/sb-core/src/runtime/mod.rs:56-68` | WP06 必须删除/改写整条 legacy 构造路径，不能只改主 bridge |
 | `SwitchboardBuilder` | direct/block 构造 core canonical；HTTP/SOCKS/组等退化为 501 connector | `crates/sb-core/src/runtime/switchboard.rs:137-165,168-230` | D11 要求改为 registry direct/block；其余 degraded 路径需显式处置 |
 | `ADAPTER_FORCE` | 无运行时读取；仅注释、脚本、测试设置 | `crates/sb-core/src/adapter/bridge.rs:4`; `app/tests/adapter_bridge_scaffold.rs:61,120`; `scripts/ci/tasks/adapter-bridge.sh:23,46` | WP06 删除失效控制面和误导命名 |
-| 产品 feature 可达性 | `sb-adapters` 强制 `sb-core/router,scaffold,v2ray_transport`；app `socks`/`adapters` product feature及 dev profile 均未启用 `sb-adapters/socks-udp` | `crates/sb-adapters/Cargo.toml:61,109-111,176-178`; `app/Cargo.toml:114,145-160,440-442` | SOCKS UDP 是真实 WP05 GAP；scaffold feature 强制编译是 WP06 删除目标 |
+| 产品 feature 可达性 | WP05 前 app product/dev profile 未启用 `sb-adapters/socks-udp`；`sb-adapters` 仍强制 `sb-core/router,scaffold,v2ray_transport` | `de25101d`：`sb-adapters` 的 `socks -> socks-udp -> adapter-socks`，app `observe -> sb-adapters/metrics`；acceptance/gui_runtime/parity 均通过 | SOCKS UDP GAP 已闭；scaffold feature 强制编译仍是 WP06 删除目标 |
 | core `OutboundImpl` registry | 类型仍含 Direct/Block/Socks5/HttpProxy 与 inline dial helpers；主 bridge写入的却只有 canonical `Connector` | `crates/sb-core/src/outbound/mod.rs:235-247,295-423,842-930`; bridge mapping `adapter/bridge.rs:27-32`, legacy mapping `adapter/mod.rs:642-650` | 非主 bridge协议 fallback，但属于 WP06 必须普查的 legacy ownership；Socks5/HttpProxy 构造方当前仅测试 |
 
 ### 2.1 精确 match-arm 清单
@@ -59,37 +60,37 @@ Shadowsocks/其余 wildcard 分组写满八维，不把 vless/vmess/trojan/QUIC-
 
 | 方向 | 协议/路径 | 裁决 | 后续 owner |
 |---|---|---|---|
-| inbound | SOCKS | `GAP` | WP05：active TCP/兼容 metrics、per-IP limiter、core UDP 依赖迁移、Rust-only env 兼容 |
+| inbound | SOCKS | `ADAPTERS-COVERS` (`de25101d`) | WP06：删 legacy scaffold；adapter 已承接 limiter、active/兼容 metrics、UDP owner/env |
 | inbound | HTTP | `ADAPTERS-COVERS` | WP06：删 legacy unsupported arm 与孤立 scaffold 文件 |
 | inbound | mixed | `ADAPTERS-COVERS` | WP06：删 legacy unsupported arm 与孤立 scaffold 文件 |
 | inbound | direct | `ADAPTERS-COVERS`（共享 core 实现） | WP06：删 legacy constructor；实现归属后续去重 |
 | inbound | TUN | `ADAPTERS-COVERS` | WP06：删只用默认配置的 legacy constructor arm |
 | inbound | redirect/tproxy | `ADAPTERS-COVERS`（legacy 只有 unsupported） | WP06：删 sentinel；Linux registry 保留 |
-| outbound | SOCKS | `GAP` | WP05：默认 profile UDP、core UDP helper/type/test 迁移 |
+| outbound | SOCKS | `ADAPTERS-COVERS` (`de25101d`) | WP06：删 orphan core UDP scaffold；adapter product profile 与迁移测试已闭 |
 | outbound | HTTP | `ADAPTERS-COVERS` | WP06：删孤立 minimal connector 与 legacy sentinel |
 | outbound | direct | `ADAPTERS-COVERS` | WP06：D11 registry 正典化并删所有 core fallback ownership |
 | outbound | block | `ADAPTERS-COVERS` | WP06：D11 registry 正典化 |
 | outbound | selector/urltest | `ADAPTERS-COVERS`（adapter shim 共享 core group） | WP12：真正合并/迁移 group 实现 |
 | 双向 | DNS/SSH/Shadowsocks 及其他 registry-only 协议 | `ADAPTERS-COVERS`（无 scaffold 实现） | 无 WP05 语义补齐；WP06 只删 unsupported sentinel/陈旧文案 |
 
-`GAP` 共两组：SOCKS inbound、SOCKS outbound。未发现需要 D18 用户裁决的
-`SCAFFOLD-ONLY` 项；D9 与 D14 同时适用时，D14 的“本轨迹不废弃任何 SB_*”构成
-真实保留依据，变量语义迁移而非删除。
+WP05 后 `GAP` 为 0。SOCKS inbound/outbound 两组均由 `de25101d` 翻转为
+`ADAPTERS-COVERS`。未发现需要 D18 用户裁决的 `SCAFFOLD-ONLY` 项；D9 与 D14
+同时适用时，D14 的“本轨迹不废弃任何 SB_*”构成真实保留依据，变量语义已迁移而非删除。
 
 ## 4. Inbound 八维矩阵
 
-### 4.1 SOCKS inbound — `GAP`
+### 4.1 SOCKS inbound — `ADAPTERS-COVERS` (`de25101d`)
 
 | 维度 | scaffold/legacy | adapters | 裁决/施工锚点 |
 |---|---|---|---|
 | 配置 | legacy 只读 listen/port，固定构造 no-auth `Socks5::new` | builder 读取 listen、UDP timeout、domain strategy、sniff，但固定 `users: None` | 相对 scaffold 配置面无丢失：`crates/sb-core/src/adapter/mod.rs:432-439` ↔ `crates/sb-adapters/src/register/builders.rs:1462-1502`；Go users 属 parity 移交 |
 | 认证 | core 文件明确 no-auth，greeting 只接受 no-auth | adapter 协议层支持 users，但 registry builder 未映射 `basic_auth` | 当前两条构造路径均 no-auth；不是 MIG-03 GAP。证据 `crates/sb-core/src/inbound/socks5.rs:1,103,894-903` ↔ `crates/sb-adapters/src/inbound/socks/mod.rs:54-72,467-488`; builder `crates/sb-adapters/src/register/builders.rs:1491-1492` |
-| TCP | core SOCKS5 在 construction 时装入 per-IP limiter：`crates/sb-core/src/inbound/socks5.rs:746-763,808-814`；配置解析 `crates/sb-core/src/net/tcp_rate_limit.rs:41-55` | SOCKS4/4a/5、routing、conntrack、sniff、startup readiness；`crates/sb-adapters/src/inbound/socks/` 与 `mixed.rs` 无 `TcpRateLimiter` 消费 | adapter 功能总体更强，但 Rust-only limiter 缺失；`GAP` 交 WP05 |
-| UDP | core 有 UDP ASSOCIATE/packet counters；`udp_sessions_estimate` 返回从未更新的 `udp_count`，外部恒为 0；上游会话 helper 位于 core | adapter 有 NAT、router、proxy/balancer，但直接引用 core `UdpUpstreamMap`/`UpSocksSession`/`udp_socks5`；默认 driver estimate 为 `None`，admin 同样显示 0 | 统计显示等价；counter 名与结构依赖仍需迁移。证据 `crates/sb-core/src/inbound/socks5.rs:112,236,470,745,762,884-885` ↔ `crates/sb-adapters/src/inbound/socks/udp.rs:12,18`; `crates/sb-adapters/src/inbound/socks/udp_enhanced.rs:22` |
+| TCP | core SOCKS5 在 construction 时装入 per-IP limiter；配置解析仍由 `tcp_rate_limit` 共享 | SOCKS/mixed accept loop 均构造同一 `TcpRateLimiter::from_env()`，拒绝时发兼容 rate-limit metric；保留原默认值 | 已覆盖；测试 `limiter_rejects_second_peer_and_active_count_recovers`、`limiter_rejects_second_mixed_peer`；commit `de25101d` |
+| UDP | core 有 UDP ASSOCIATE/packet counters；`udp_sessions_estimate` 从未更新，外部恒为 0；上游会话 helper 位于 core | adapter 自有 `inbound/socks/upstream.rs` + `outbound/socks5_udp.rs`，enhanced path 改用 canonical `PacketConn`；不复制恒零 estimate | 已覆盖；无 adapter 对四个 core scaffold 符号的引用；真实 proxy roundtrip 与 wire-size 测试通过；commit `de25101d` |
 | 错误 | core 返回 `io::Error` 并记录 scaffold metrics | adapter 有协议 reply、结构化 routing/connect 错误与 startup readiness | adapter 覆盖；WP05 保持 UDP 失败用户可见语义，不移植 scaffold bug |
-| metrics | core 发 `inbound_active_connections`、SOCKS UDP associate/packet counters | adapter driver 未实现 `active_connections`，并使用不同 UDP metric 名 | `crates/sb-core/src/inbound/socks5.rs:112,236,470,819-884` ↔ `crates/sb-adapters/src/inbound/socks/mod.rs:1178-1222`; catalog/脚本消费 `inbound_socks_udp_packets_total` 与 `inbound_active_connections`，`GAP` |
-| `SB_*` | per-IP limiter 读 `SB_INBOUND_RATE_LIMIT_*`：`crates/sb-core/src/net/tcp_rate_limit.rs:41-55`；core UDP helper 读 `SB_SOCKS_UDP_UP_RECV_TASK/CH`：`crates/sb-core/src/outbound/socks5_udp.rs:58-70` | adapter UDP 已读大量 `SB_SOCKS_UDP_*`、`SB_UDP_PROXY_*`，但无上述两个 receive-task 开关 | D14 禁止本轨迹废弃变量；WP05 将剩余旧变量 freeze-at-construction 语义迁入 adapter，`GAP` |
-| sniff/route | legacy constructor 仅记录 sniff stage1 noop；core handler自持旧 routing | adapter builder 注入 router/outbounds/conntrack，支持 sniff override | adapter 路由语义覆盖；limiter/metrics/core UDP 依赖仍使总判定为 `GAP` |
+| metrics | core 发 `inbound_active_connections`、SOCKS UDP associate/packet counters | adapter driver 返回真实 active TCP，accept/drop 更新 gauge，并补发 associate 与双向 packet counter | 已覆盖；active recovery、associate exact increment、proxy packet metrics 测试通过；commit `de25101d` |
+| `SB_*` | limiter 与 UDP helper消费 D14 白名单变量 | `UpstreamRuntimeConfig::from_env()` 在 service construction 冻结 receive-task/channel、observation、capacity、timeouts 与 legacy proxy endpoint；旧 timeout alias保留 | 已覆盖；freeze/clamp/地址优先级测试与 `SB_UDP_PROXY_ADDR` 实流测试通过；commit `de25101d` |
+| sniff/route | legacy constructor 仅记录 sniff stage1 noop；core handler自持旧 routing | adapter builder 注入 router/outbounds/conntrack，支持 sniff override | adapter 路由语义覆盖；WP05 缺口已清零 |
 
 ### 4.2 HTTP inbound — `ADAPTERS-COVERS`
 
@@ -171,18 +172,18 @@ Shadowsocks/其余 wildcard 分组写满八维，不把 vless/vmess/trojan/QUIC-
 
 ## 5. Outbound 八维矩阵
 
-### 5.1 SOCKS outbound — `GAP`
+### 5.1 SOCKS outbound — `ADAPTERS-COVERS` (`de25101d`)
 
 | 维度 | scaffold/legacy | adapters | 裁决/施工锚点 |
 |---|---|---|---|
 | 配置 | `crates/sb-core/src/outbound/socks_upstream.rs:8-24` 仅 server/port/user/pass；legacy constructor `crates/sb-core/src/adapter/mod.rs:570-574` 已 unsupported | builder 映射 endpoint、credentials、TLS，固定 30s timeout | adapter TCP 配置覆盖，`crates/sb-adapters/src/register/builders.rs:549-599` |
 | 认证 | SOCKS5 username/password | SOCKS5 username/password；另有 socks4 registry alias | adapter 覆盖；Go SOCKS4/4a/5 细节属 parity 检查 |
 | TCP | minimal CONNECT，无 retry/bind/routing options | timeout、resolve mode/TLS、canonical error | adapter 更强，`crates/sb-core/src/outbound/socks_upstream.rs:26-170` ↔ `crates/sb-adapters/src/outbound/socks5.rs:355-407` |
-| UDP | minimal connector明确 unsupported：`crates/sb-core/src/outbound/socks_upstream.rs:160-169`；core 另有 `socks5_udp`/`udp_socks5` helper | connector 声明 TCP+UDP，但 `listen_packet` 仅 `socks-udp` feature 生效；app product/dev feature closure均未启用 | 产品可达性 `GAP`，`crates/sb-adapters/src/outbound/socks5.rs:369-405` ↔ `crates/sb-adapters/Cargo.toml:176-178`; `app/Cargo.toml:114,145-160,440-442` |
+| UDP | minimal connector明确 unsupported；core 另有 `socks5_udp`/`udp_socks5` helper | `socks` feature闭包启用 `socks-udp`；adapter owner复用 canonical `Socks5Connector::listen_packet` 并保持 control lifetime | 产品可达性已闭；isolated feature、app gui_runtime product E2E、adapter proxy E2E 均通过；commit `de25101d` |
 | 错误 | `io::Error` 字符串 | `CoreError` 分类 + timeout/context | adapter 覆盖 TCP；WP05 锁 UDP error mapping |
-| metrics | core telemetry 文案声明 connect/handshake | adapter feature-gated dial metrics | WP05 迁移 UDP legacy metrics/观测语义；TCP 不缺 |
-| `SB_*` | core UDP helper 读 `SB_UDP_PROXY_*`、`SB_SOCKS_UDP_UP_RECV_*`、`SB_OBS_UDP_IO`：`crates/sb-core/src/outbound/socks5_udp.rs:25-118`; `udp_socks5.rs:10-20` | inbound adapter 已部分读取，outbound connector feature 不承接全部旧语义 | D14：全部变量语义保留；WP05 迁入 adapter/config owner，`GAP` |
-| sniff/route | upstream helper无 sniff；由 caller 选路 | canonical Session + registry | TCP 覆盖；UDP helper 跨层依赖是 `GAP` |
+| metrics | core helper发 upstream assoc/packet/byte/error/map metrics | adapter owner保留同名 metrics 与 observation metadata；兼容 SOCKS inbound metrics另见 §4.1 | 已覆盖；wire-size metric/return semantics保持；commit `de25101d` |
+| `SB_*` | core UDP helper读取 legacy proxy/receive/observation变量 | adapter config owner承接全部 WP05 白名单变量；默认值、clamp、地址优先级不变 | D14 已执行；commit `de25101d` |
+| sniff/route | upstream helper无 sniff；由 caller 选路 | canonical Session + registry | TCP/UDP 均覆盖；跨层 scaffold 引用为 0 |
 
 ### 5.2 HTTP outbound — `ADAPTERS-COVERS`
 
@@ -297,10 +298,10 @@ Shadowsocks/其余 wildcard 分组写满八维，不把 vless/vmess/trojan/QUIC-
 
 | 旧能力/遗留物 | Go 1.13.13 | repo 消费/约束 | 裁决 |
 |---|---|---|---|
-| SOCKS/mixed per-IP rate limiter；`SB_INBOUND_RATE_LIMIT_PER_IP/WINDOW_SEC/QPS` | 未找到同等协议能力 | D14 明确 MIG-03 不废弃任何 `SB_*` | Rust-only extension；WP05 迁移/共享，WP11 上收解析；不得在 WP06 静默删除 |
-| `SB_SOCKS_UDP_UP_RECV_TASK/CH` background receive tuning | 未找到同等开关 | D14 保留全部变量语义；现有 core helper读取 | Rust-only extension；WP05 迁入 adapter UDP owner |
-| `SB_UDP_PROXY_MODE/ADDR`、`SB_UDP_SOCKS5_ADDR` | Go 无同等 env 控制 | `app/src/env_dump.rs:32-42`、adapter/core tests、examples、scenario scripts 消费 | Rust-only extension；功能迁入 adapters，默认行为不扩大 |
-| `inbound_socks_udp_associate_total`/`packets_total`、`inbound_active_connections` | Rust metrics surface | core 现有 emitter；catalog/脚本消费 packet/active：`docs/METRICS_CATALOG.md:64-76`、`scripts/dev/socks_ping.sh:22` | WP05 补发兼容指标；未更新的 assoc-estimate gauge 不伪装为有效会话统计 |
+| SOCKS/mixed per-IP rate limiter；`SB_INBOUND_RATE_LIMIT_PER_IP/WINDOW_SEC/QPS` | 未找到同等协议能力 | D14 明确 MIG-03 不废弃任何 `SB_*` | `de25101d` 已迁移/共享；WP11 上收解析；WP06 不得静默删除 |
+| `SB_SOCKS_UDP_UP_RECV_TASK/CH` background receive tuning | 未找到同等开关 | D14 保留全部变量语义；原 core helper读取 | `de25101d` 已迁入 adapter UDP owner并锁 construction-time freeze |
+| `SB_UDP_PROXY_MODE/ADDR`、`SB_UDP_SOCKS5_ADDR` | Go 无同等 env 控制 | `app/src/env_dump.rs:32-42`、tests/examples/scenario scripts 消费 | `de25101d` 已迁入 adapters，地址优先级与默认行为不变 |
+| `inbound_socks_udp_associate_total`/`packets_total`、`inbound_active_connections` | Rust metrics surface | catalog/脚本消费 packet/active：`docs/METRICS_CATALOG.md:64-76`、`scripts/dev/socks_ping.sh:22` | `de25101d` 已补发兼容指标；未更新的 assoc-estimate gauge未伪装为有效统计 |
 | `ADAPTER_FORCE` | 不适用 | 无运行时读取，只有注释/脚本/测试 | DROP stale control；WP06 删除并改测试/脚本命名 |
 | `socks_upstream.rs` / `http_upstream.rs` | adapters 已覆盖 | 已编译但 repo 无构造方 | DROP；测试保留但改为明确锁 adapter registry |
 | orphan `outbound/socks5.rs` / `http_proxy.rs` | adapters 已覆盖 | 未在 `outbound/mod.rs` 声明，零调用 | DROP |
@@ -312,11 +313,11 @@ Shadowsocks/其余 wildcard 分组写满八维，不把 vless/vmess/trojan/QUIC-
 
 | 依赖 | 当前证据 | 删除前解法 | owner |
 |---|---|---|---|
-| adapter SOCKS UDP 依赖 core `UdpUpstreamMap` | `crates/sb-adapters/src/inbound/socks/udp.rs:12` | 将 map/type 移入 sb-adapters SOCKS UDP 模块或通用非 core owner | WP05 |
-| adapter SOCKS UDP 依赖 core `UpSocksSession` | `crates/sb-adapters/src/inbound/socks/udp.rs:18,1004-1029` | 迁 session 与解析 helper；保持生命周期/错误/观测语义 | WP05 |
-| enhanced UDP 依赖 core `udp_socks5` | `crates/sb-adapters/src/inbound/socks/udp_enhanced.rs:22,304` | 改用 adapter outbound PacketConn/迁 helper | WP05 |
-| core `UdpUpstreamMap` 反向依赖 `UpSocksSession` | `crates/sb-core/src/net/udp_upstream_map.rs:3-77` | 与 session 同包迁移，避免留下反向依赖 | WP05 |
-| `udp_proxy_glue`/`udp_balancer` 依赖 `udp_socks5` | `crates/sb-core/src/outbound/udp_proxy_glue.rs:16`; `udp_balancer.rs:49` | 按实际 owner 拆：SOCKS transport 归 WP05；通用选择策略归 WP12 | WP05/WP12 |
+| adapter SOCKS UDP 依赖 core `UdpUpstreamMap` | 已解除；adapter owner `inbound/socks/upstream.rs` | `de25101d` 完成；exact scaffold-reference scan 为 0 | CLOSED WP05 |
+| adapter SOCKS UDP 依赖 core `UpSocksSession` | 已解除；adapter owner `outbound/socks5_udp.rs` | `de25101d` 完成；复用 canonical `PacketConn`，保留 wire-size/观测/错误语义 | CLOSED WP05 |
+| enhanced UDP 依赖 core `udp_socks5` | 已解除；`udp_enhanced.rs` 使用 adapter `Socks5Connector` | `de25101d` 完成 | CLOSED WP05 |
+| core `UdpUpstreamMap` 反向依赖 `UpSocksSession` | adapter 活路径不再经过该 core pair | adapter owner已闭；orphan core scaffold实体留 WP06 删除 | CLOSED WP05 / WP06 delete |
+| `udp_proxy_glue`/`udp_balancer` 依赖 `udp_socks5` | SOCKS transport测试已迁；core direct balancer测试仍保留 | adapter活路径已闭；orphan glue/scaffold清理归 WP06，通用 group/balancer owner归 WP12 | CLOSED WP05 / WP06 / WP12 |
 | selector/urltest shim 依赖 core group | `sb-adapters/src/outbound/selector.rs:5`; `urltest.rs:6-7` | WP06 保留共享实现；WP12 再迁/合并，禁止 WP05 顺手拆 | WP12 |
 | 主 bridge direct/block fallback | `adapter/bridge.rs:605-615` | registry hard requirement；构造失败显式报错 | WP06 |
 | switchboard direct/block ownership | `runtime/switchboard.rs:176-193` | 通过 registry/context 取得正典 adapter | WP06 |
@@ -328,12 +329,12 @@ Shadowsocks/其余 wildcard 分组写满八维，不把 vless/vmess/trojan/QUIC-
 
 | 测试/脚本 | 当前真实覆盖 | 处置 |
 |---|---|---|
-| `crates/sb-core/tests/socks5_udp_upstream.rs` | core `UpSocksSession` 解析 | 随实现迁至 sb-adapters，WP05 |
-| `crates/sb-core/tests/udp_socks5_e2e.rs` | core SOCKS5 UDP relay | 迁至 adapter outbound PacketConn，WP05 |
-| `crates/sb-core/tests/udp_proxy_glue_e2e.rs` | core proxy glue | 迁/改写到 adapter UDP owner，WP05 |
-| `crates/sb-core/tests/udp_balancer.rs` | direct/proxy helper策略 | SOCKS transport部分 WP05；通用策略如保留归 WP12 |
-| `crates/sb-adapters/tests/socks_udp*` | adapter UDP 数据面，但仍借 core helper | 保留并在 WP05 去除 core 依赖，作为迁移验收 |
-| `app/tests/socks_udp_direct_e2e.rs` | 产品组合路径 | 保留并作为 WP05 product-profile 验收 |
+| `crates/sb-core/tests/socks5_udp_upstream.rs` | 原 core `UpSocksSession` 解析 | 已迁为 `sb-adapters/tests/socks5_udp_upstream.rs`，并增加真实 session/wire-size 回环；`de25101d` |
+| `crates/sb-core/tests/udp_socks5_e2e.rs` | 原 core SOCKS5 UDP relay | 已并入 adapter canonical PacketConn/session E2E并删除 core 测试；`de25101d` |
+| `crates/sb-core/tests/udp_proxy_glue_e2e.rs` | 原 core proxy glue | 已改写为 adapter router→legacy env→proxy roundtrip并删除 core 测试；`de25101d` |
+| `crates/sb-core/tests/udp_balancer.rs` | direct/proxy helper策略 | SOCKS transport部分已迁出；仅保留 direct generic test，owner仍归 WP12；`de25101d` |
+| `crates/sb-adapters/tests/socks_udp*` | adapter UDP 数据面 | scaffold 引用为 0；canonical PacketConn、proxy roundtrip与兼容 metrics均为 active test；`de25101d` |
+| `app/tests/socks_udp_direct_e2e.rs` | 原 ignored core direct path | 已改为 active `gui_runtime` product-profile canonical SOCKS UDP roundtrip；`de25101d` |
 | `app/tests/adapter_bridge_scaffold.rs` | 实际调用 `build_bridge` registry；`ADAPTER_FORCE` 无效 | WP06 改名 `adapter_bridge_registry.rs`，锁“未注册 kind 硬失败、无 fallback” |
 | `app/tests/upstream_socks_http.rs` | 实际走 adapter registry | 保留；修正文案/测试名，锁 TCP registry 路径 |
 | `app/tests/upstream_auth.rs` | 实际走 adapter registry credentials | 保留；修正文案，锁 adapter auth 映射 |
@@ -352,18 +353,21 @@ Shadowsocks/其余 wildcard 分组写满八维，不把 vless/vmess/trojan/QUIC-
 | selector/urltest | Go 有 idle timeout、existing-connection interrupt、默认 interval/idle 约束：`protocol/group/selector.go:43-58,139`; `urltest.go:49-61,211-224,429` | Rust共享 group未完全覆盖 | WP12/后续 parity 包 |
 | redirect/tproxy feature closure | 非语义对照项 | Linux registry/builders 只 gate `router`，模块声明另 gate `redirect`/`tproxy`：`builders.rs:371-375,3536-3575`; `inbound/mod.rs:43-47` | WP13 feature matrix；不影响“无 scaffold 实现”裁决 |
 
-## 11. WP05 / WP06 唯一施工单
+## 11. WP05 验收记录 / WP06 唯一施工单
 
-WP05，只补两组 GAP：
+WP05 两组 GAP 已由 `de25101d` 关闭：
 
-1. SOCKS/mixed adapter 承接当前 Rust-only per-IP limiter 语义；不改变变量默认值。
-2. SOCKS inbound 实现 active TCP 统计，并补发兼容 UDP associate/packet 与 active metrics；
-   不把旧恒零 `udp_sessions_estimate` 当成需要复制的有效能力。
-3. 将 `UdpUpstreamMap`、`UpSocksSession`、`udp_socks5`/proxy glue 所需 SOCKS
-   transport 迁入 adapter owner，去掉 sb-adapters 对这些 core scaffold 符号的引用。
-4. 让产品使用的 adapter feature profile具备 SOCKS UDP；锁 TCP/UDP/error/metrics 测试。
-5. 保留 D14 涉及的 `SB_*` 语义；解析上收仍留 WP11，不在 WP05 扩大行为。
-6. 不拆 selector/urltest shared core group；不顺手补 parity 发现项。
+1. [x] SOCKS/mixed adapter 承接当前 Rust-only per-IP limiter 语义；变量默认值不变。
+2. [x] SOCKS inbound 实现 active TCP 统计，并补发兼容 UDP associate/packet 与 active
+   metrics；未复制旧恒零 `udp_sessions_estimate`。
+3. [x] `UdpUpstreamMap`、`UpSocksSession` 与 active proxy transport 迁入 adapter owner；
+   sb-adapters 对 `udp_upstream_map`/`socks5_udp`/`udp_socks5`/`udp_proxy_glue` scaffold
+   符号引用为 0。
+4. [x] 产品 adapter feature profile具备 SOCKS UDP；TCP/UDP/error/metrics 均有 active
+   test锚点。
+5. [x] D14 `SB_*` 语义、默认值、clamp、地址优先级与 timeout alias保留；解析上收仍留
+   WP11。
+6. [x] selector/urltest shared core group、WP12 balancer/group owner与 parity 发现项未改。
 
 WP06，待 WP05 全绿后：
 
@@ -386,7 +390,8 @@ rg -n "get_inbound|get_outbound|core_fallback_outbound|OutboundType::" \
 rg -n "register_inbound|register_outbound|users: None" \
   crates/sb-adapters/src/register/builders.rs
 
-rg -n "UdpUpstreamMap|UpSocksSession|udp_socks5" crates app
+rg -n "sb_core::(net::udp_upstream_map|outbound::socks5_udp|outbound::udp_socks5|outbound::udp_proxy_glue)" \
+  crates/sb-adapters -g '*.rs' # 目标：0
 
 rg -n "ADAPTER_FORCE|SB_SOCKS_UDP_UP_RECV|SB_UDP_PROXY_(MODE|ADDR)|SB_UDP_SOCKS5_ADDR" \
   crates app docs scripts labs
