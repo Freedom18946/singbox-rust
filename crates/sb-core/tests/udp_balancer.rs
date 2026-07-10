@@ -49,34 +49,3 @@ async fn balancer_direct_ok() -> anyhow::Result<()> {
     assert!(n >= payload.len());
     Ok(())
 }
-
-use sb_test_utils::socks5::start_mock_socks5;
-
-#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-async fn balancer_socks5_ok() -> anyhow::Result<()> {
-    let (proxy_tcp, _udp) = match start_mock_socks5().await {
-        Ok(res) => res,
-        Err(err) if is_permission_denied(&err) => {
-            eprintln!("skipping balancer_socks5_ok: {err}");
-            return Ok(());
-        }
-        Err(err) => return Err(err),
-    };
-    std::env::set_var("SB_UDP_BALANCER", "1");
-    std::env::set_var("SB_UDP_BALANCER_BACKENDS", "socks5:1");
-    std::env::set_var("SB_UDP_PROXY_MODE", "socks5");
-    std::env::set_var("SB_UDP_PROXY_ADDR", proxy_tcp.to_string());
-    // 目标地址随意（mock 直接回显）
-    let dst = UdpTargetAddr::Ip("1.2.3.4:7777".parse().unwrap());
-    let payload = b"balancer-socks5";
-    let n = match sb_core::outbound::udp_balancer::send_balanced(payload, &dst, "proxy").await {
-        Ok(n) => n,
-        Err(err) if is_permission_denied(&err) => {
-            eprintln!("skipping balancer_socks5_ok: {err}");
-            return Ok(());
-        }
-        Err(err) => return Err(err),
-    };
-    assert!(n >= payload.len());
-    Ok(())
-}

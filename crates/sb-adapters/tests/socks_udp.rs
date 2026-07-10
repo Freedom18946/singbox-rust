@@ -107,7 +107,7 @@ impl MockSocks5Server {
 async fn test_socks5_udp_associate() -> Result<()> {
     use sb_adapters::error::AdapterError;
     use sb_adapters::outbound::socks5::Socks5Connector;
-    use sb_types::{ConnectOptions, Session, TargetAddr};
+    use sb_types::{ConnectOptions, Outbound, Session, TargetAddr};
     use serial_test::serial;
     use std::sync::Arc;
 
@@ -152,7 +152,7 @@ async fn test_socks5_udp_associate() -> Result<()> {
         };
 
         let session = Session::outbound(target.clone()).with_connect(opts);
-        let udp_conn = match connector.dial_udp(&session).await {
+        let udp_conn = match connector.listen_packet(&session).await {
             Ok(c) => c,
             Err(e) if should_skip(&e) => {
                 eprintln!(
@@ -165,7 +165,7 @@ async fn test_socks5_udp_associate() -> Result<()> {
             Err(e) => {
                 tcp_task.abort();
                 udp_task.abort();
-                return Err(e);
+                return Err(AdapterError::Other(e.to_string()));
             }
         };
 
@@ -190,8 +190,8 @@ async fn test_socks5_udp_associate() -> Result<()> {
         assert_eq!(sent, test_data.len());
 
         let mut recv_buf = vec![0u8; 1024];
-        let received = match udp_conn.recv_from(&mut recv_buf).await {
-            Ok((n, _)) => n,
+        let (received, source) = match udp_conn.recv_from(&mut recv_buf).await {
+            Ok(packet) => packet,
             Err(e) if should_skip(&e) => {
                 eprintln!(
                     "skipping socks udp associate test: PermissionDenied receiving udp datagram"
@@ -207,9 +207,8 @@ async fn test_socks5_udp_associate() -> Result<()> {
             }
         };
 
-        // The mock server echoes back the SOCKS5 encapsulated packet
-        // We should get back our original data
-        assert!(received > 0);
+        assert_eq!(&recv_buf[..received], test_data);
+        assert_eq!(source, target);
 
         // Clean up
         tcp_task.abort();

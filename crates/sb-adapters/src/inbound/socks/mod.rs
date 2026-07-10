@@ -9,7 +9,10 @@
 use std::{
     io,
     net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr},
-    sync::{Arc, Mutex},
+    sync::{
+        atomic::{AtomicU64, Ordering},
+        Arc, Mutex,
+    },
     time::Duration,
 };
 
@@ -24,6 +27,8 @@ use tracing::{debug, info, warn};
 
 use once_cell::sync::OnceCell;
 use sb_core::adapter::{InboundReadySender, InboundTaskDriver};
+use sb_core::net::rate_limit_metrics;
+use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::health as ob_health;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
@@ -47,6 +52,7 @@ use metrics;
 
 pub mod tcp;
 pub mod udp;
+mod upstream;
 
 /// SOCKS5 inbound configuration
 /// SOCKS5 入站配置
@@ -99,7 +105,15 @@ pub async fn serve_socks(
     stop_rx: mpsc::Receiver<()>,
     ready_tx: Option<oneshot::Sender<io::Result<()>>>,
 ) -> io::Result<()> {
-    serve_socks_internal(cfg, stop_rx, ready_tx, None).await
+    serve_socks_internal(
+        cfg,
+        stop_rx,
+        ready_tx,
+        None,
+        Arc::new(AtomicU64::new(0)),
+        TcpRateLimiter::new(TcpRateLimitConfig::from_env()),
+    )
+    .await
 }
 
 async fn serve_socks_internal(
@@ -107,6 +121,8 @@ async fn serve_socks_internal(
     mut stop_rx: mpsc::Receiver<()>,
     ready_tx: Option<oneshot::Sender<io::Result<()>>>,
     udp_addr: Option<SocketAddr>,
+    active_connections: Arc<AtomicU64>,
+    rate_limiter: TcpRateLimiter,
 ) -> io::Result<()> {
     let listener = match TcpListener::bind(cfg.listen).await {
         Ok(listener) => listener,
@@ -126,7 +142,6 @@ async fn serve_socks_internal(
     // 可通过环境变量在测试时禁止 stop 打断（与 HTTP 入站一致）
     // Can disable stop interruption during testing via environment variable (consistent with HTTP inbound)
     let disable_stop = std::env::var("SB_SOCKS_DISABLE_STOP").as_deref() == Ok("1");
-
     loop {
         select! {
             _ = stop_rx.recv(), if !disable_stop => break,
@@ -140,8 +155,22 @@ async fn serve_socks_internal(
                         continue;
                     }
                 };
+                if !rate_limiter.allow_connection(peer.ip()) {
+                    warn!(%peer, "socks: connection rate limited");
+                    rate_limit_metrics::record_rate_limited("socks", "connection_limit");
+                    continue;
+                }
                 let cfg_clone = cfg.clone();
+                let active = active_connections.clone();
+                let current = active.fetch_add(1, Ordering::Relaxed).saturating_add(1);
+                sb_core::metrics::inbound::set_active_connections("socks", current);
                 tokio::spawn(async move {
+                    let _active_guard = scopeguard::guard(active, |active| {
+                        let remaining = active
+                            .fetch_sub(1, Ordering::Relaxed)
+                            .saturating_sub(1);
+                        sb_core::metrics::inbound::set_active_connections("socks", remaining);
+                    });
                     if let Err(e) = serve_conn(&mut cli, peer, &cfg_clone, udp_addr).await {
                         // 客户端在方法协商后立刻断开（脚本探活的典型场景），降级为 debug
                         // Client closed immediately after method negotiation (typical scenario for script probing), downgrade to debug
@@ -173,6 +202,15 @@ pub async fn run_with_ready(
     cfg: SocksInboundConfig,
     stop_rx: mpsc::Receiver<()>,
     ready_tx: Option<oneshot::Sender<io::Result<()>>>,
+) -> io::Result<()> {
+    run_with_ready_and_active(cfg, stop_rx, ready_tx, Arc::new(AtomicU64::new(0))).await
+}
+
+async fn run_with_ready_and_active(
+    cfg: SocksInboundConfig,
+    stop_rx: mpsc::Receiver<()>,
+    ready_tx: Option<oneshot::Sender<io::Result<()>>>,
+    active_connections: Arc<AtomicU64>,
 ) -> io::Result<()> {
     // Enable UDP Associate by default (Go parity); opt-out with SB_SOCKS_UDP_ENABLE=0
     let udp_enabled = std::env::var("SB_SOCKS_UDP_ENABLE")
@@ -217,7 +255,15 @@ pub async fn run_with_ready(
         None
     };
 
-    serve_socks_internal(cfg, stop_rx, ready_tx, udp_addr).await
+    serve_socks_internal(
+        cfg,
+        stop_rx,
+        ready_tx,
+        udp_addr,
+        active_connections,
+        TcpRateLimiter::new(TcpRateLimitConfig::from_env()),
+    )
+    .await
 }
 
 pub async fn run(cfg: SocksInboundConfig, stop_rx: mpsc::Receiver<()>) -> io::Result<()> {
@@ -235,7 +281,10 @@ mod readiness_tests {
     use super::*;
     use std::io::ErrorKind;
     use std::net::TcpListener as StdTcpListener;
-    use tokio::time::timeout;
+    #[cfg(feature = "metrics")]
+    use tokio::io::{duplex, AsyncReadExt, AsyncWriteExt};
+    use tokio::net::TcpStream;
+    use tokio::time::{sleep, timeout};
 
     fn test_cfg(listen: SocketAddr) -> SocksInboundConfig {
         SocksInboundConfig {
@@ -253,6 +302,27 @@ mod readiness_tests {
             sniff: false,
             sniff_override_destination: false,
         }
+    }
+
+    fn test_limiter(max_connections: usize) -> TcpRateLimiter {
+        TcpRateLimiter::new(TcpRateLimitConfig {
+            max_connections,
+            window: Duration::from_secs(60),
+            ..TcpRateLimitConfig::default()
+        })
+    }
+
+    async fn wait_for_active(active: &AtomicU64, expected: u64) {
+        timeout(Duration::from_secs(2), async {
+            loop {
+                if active.load(Ordering::Relaxed) == expected {
+                    return;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("active connection count did not converge");
     }
 
     #[tokio::test]
@@ -296,6 +366,113 @@ mod readiness_tests {
         assert_eq!(ready_err.kind(), ErrorKind::AddrInUse);
         assert_eq!(err.kind(), ErrorKind::AddrInUse);
         drop(holder);
+    }
+
+    #[tokio::test]
+    async fn limiter_rejects_second_peer_and_active_count_recovers() {
+        let holder = StdTcpListener::bind("127.0.0.1:0").expect("reserve socks port");
+        let addr = holder.local_addr().expect("reserved socks address");
+        drop(holder);
+
+        let active = Arc::new(AtomicU64::new(0));
+        let (stop_tx, stop_rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let task = tokio::spawn(serve_socks_internal(
+            test_cfg(addr),
+            stop_rx,
+            Some(ready_tx),
+            None,
+            active.clone(),
+            test_limiter(1),
+        ));
+        timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("socks ready timed out")
+            .expect("socks ready sender dropped")
+            .expect("socks bind failed");
+
+        let first = TcpStream::connect(addr).await.expect("first socks connect");
+        wait_for_active(&active, 1).await;
+
+        let rejected_before = sb_core::net::rate_limit_metrics::RATE_LIMITED_TOTAL
+            .with_label_values(&["socks", "connection_limit"])
+            .get();
+        let second = TcpStream::connect(addr)
+            .await
+            .expect("second socks connect");
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let rejected = sb_core::net::rate_limit_metrics::RATE_LIMITED_TOTAL
+                    .with_label_values(&["socks", "connection_limit"])
+                    .get();
+                if rejected > rejected_before {
+                    return;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("second SOCKS connection was not rate limited");
+        assert_eq!(active.load(Ordering::Relaxed), 1);
+
+        drop(second);
+        drop(first);
+        wait_for_active(&active, 0).await;
+        let _ = stop_tx.send(()).await;
+        task.await
+            .expect("socks task panicked")
+            .expect("socks stopped");
+    }
+
+    #[test]
+    fn adapter_reports_active_connections() {
+        let adapter = SocksInboundAdapter::new(test_cfg("127.0.0.1:0".parse().unwrap()));
+        assert_eq!(adapter.active_connections(), Some(0));
+    }
+
+    #[cfg(feature = "metrics")]
+    #[tokio::test]
+    async fn udp_associate_emits_compat_metric() {
+        fn metric_value(name: &str) -> f64 {
+            sb_metrics::export_prometheus()
+                .lines()
+                .find_map(|line| {
+                    line.strip_prefix(name)
+                        .and_then(|value| value.trim().parse::<f64>().ok())
+                })
+                .unwrap_or(0.0)
+        }
+
+        let before = metric_value("inbound_socks_udp_associate_total");
+        let (mut server, mut client) = duplex(1024);
+        let cfg = test_cfg("127.0.0.1:0".parse().unwrap());
+        let task = tokio::spawn(async move {
+            serve_conn(
+                &mut server,
+                "127.0.0.1:12345".parse().unwrap(),
+                &cfg,
+                Some("127.0.0.1:54321".parse().unwrap()),
+            )
+            .await
+        });
+
+        client.write_all(&[0x05, 0x01, 0x00]).await.unwrap();
+        let mut method = [0u8; 2];
+        client.read_exact(&mut method).await.unwrap();
+        assert_eq!(method, [0x05, 0x00]);
+        client
+            .write_all(&[0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0])
+            .await
+            .unwrap();
+        let mut reply = [0u8; 10];
+        client.read_exact(&mut reply).await.unwrap();
+        assert_eq!(reply[1], 0x00);
+        task.await.unwrap().unwrap();
+
+        assert_eq!(
+            metric_value("inbound_socks_udp_associate_total"),
+            before + 1.0
+        );
     }
 }
 
@@ -557,6 +734,8 @@ where
         }
         0x03 => {
             // UDP ASSOCIATE
+            #[cfg(feature = "metrics")]
+            sb_metrics::inc_socks_udp_assoc();
             // If we have a bound UDP address (from serve_socks_internal), use it.
             // Otherwise fall back to cfg.udp_bind or 0.0.0.0
             let bind_addr = udp_addr.or(cfg.udp_bind);
@@ -1164,6 +1343,7 @@ where
 pub struct SocksInboundAdapter {
     cfg: SocksInboundConfig,
     stop_tx: Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+    active_connections: Arc<AtomicU64>,
 }
 
 impl SocksInboundAdapter {
@@ -1171,6 +1351,7 @@ impl SocksInboundAdapter {
         Self {
             cfg,
             stop_tx: Mutex::new(None),
+            active_connections: Arc::new(AtomicU64::new(0)),
         }
     }
 }
@@ -1191,10 +1372,11 @@ impl InboundTaskDriver for SocksInboundAdapter {
             *guard = Some(tx);
         }
         let cfg = self.cfg.clone();
+        let active_connections = self.active_connections.clone();
         let res = if let Ok(handle) = tokio::runtime::Handle::try_current() {
             // Reuse existing runtime to avoid per-inbound runtime cold-start overhead.
             handle.block_on(async {
-                run_with_ready(cfg, rx, ready)
+                run_with_ready_and_active(cfg, rx, ready, active_connections)
                     .await
                     .map_err(io::Error::other)
             })
@@ -1204,7 +1386,7 @@ impl InboundTaskDriver for SocksInboundAdapter {
                 .build()
                 .map_err(io::Error::other)?;
             rt.block_on(async {
-                run_with_ready(cfg, rx, ready)
+                run_with_ready_and_active(cfg, rx, ready, active_connections)
                     .await
                     .map_err(io::Error::other)
             })
@@ -1218,6 +1400,10 @@ impl InboundTaskDriver for SocksInboundAdapter {
         if let Some(tx) = guard.take() {
             let _ = tx.try_send(());
         }
+    }
+
+    fn active_connections(&self) -> Option<u64> {
+        Some(self.active_connections.load(Ordering::Relaxed))
     }
 }
 

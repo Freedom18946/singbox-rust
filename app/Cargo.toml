@@ -66,7 +66,7 @@ jwt = ["jsonwebtoken", "p256", "pkcs8"]  # JWT 提供者启用时再打开
 
 ## 路由/运行期与观测能力
 router  = ["sb-core", "sb-core/router", "sb-core/legacy_protocols", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "sb-core/v2ray_transport", "out_ss", "sb-transport", "reqwest", "tokio-util"]
-observe = ["router", "sb-metrics", "sb-core/metrics"]
+observe = ["router", "sb-metrics", "sb-core/metrics", "sb-adapters/metrics"]
 out_ss = ["sb-core/out_ss"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth", "tokio-util"]
 ssh = ["sb-adapters/ssh"]
@@ -443,6 +443,7 @@ sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"
 async-trait = "0.1"
 sb-metrics = { path = "../crates/sb-metrics" }
+sb-test-utils = { path = "../crates/sb-test-utils" }
 futures.workspace = true
 
 [build-dependencies]

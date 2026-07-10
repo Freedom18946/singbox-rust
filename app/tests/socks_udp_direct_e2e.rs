@@ -1,180 +1,44 @@
-use sb_config::ir::{ConfigIR, InboundIR, InboundType};
-use sb_core::adapter::InboundTaskDriver;
-use sb_core::inbound::socks5::Socks5;
-use sb_core::routing::engine::Engine;
-use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};
-use std::thread;
+//! Product-profile SOCKS outbound UDP acceptance.
+
+use sb_adapters::outbound::socks5::Socks5Connector;
+use sb_test_utils::socks5::start_mock_socks5;
+use sb_types::{Outbound, Session, TargetAddr};
+use std::io;
 use std::time::Duration;
 
-fn start_udp_echo() -> Option<(SocketAddr, thread::JoinHandle<()>)> {
-    let sock = match UdpSocket::bind("127.0.0.1:0") {
-        Ok(sock) => sock,
-        Err(err) => {
-            if matches!(
-                err.kind(),
-                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
-            ) {
-                eprintln!("Skipping socks UDP e2e: cannot bind udp echo ({err})");
-                return None;
-            }
-            panic!("bind udp echo: {err}");
-        }
-    };
-    let addr = sock.local_addr().unwrap();
-    let h = thread::spawn(move || {
-        let mut buf = [0u8; 4096];
-        while let Ok((n, peer)) = sock.recv_from(&mut buf) {
-            let _ = sock.send_to(&buf[..n], peer);
-        }
-    });
-    Some((addr, h))
+fn permission_denied(error: &anyhow::Error) -> bool {
+    error.chain().any(|cause| {
+        cause
+            .downcast_ref::<io::Error>()
+            .is_some_and(|io_error| io_error.kind() == io::ErrorKind::PermissionDenied)
+    }) || error.to_string().contains("Operation not permitted")
 }
 
-fn socks_udp_associate(socks: SocketAddr) -> (TcpStream, SocketAddr) {
-    // Connect TCP control channel
-    let mut tcp = TcpStream::connect(socks).expect("connect socks");
-    tcp.set_read_timeout(Some(Duration::from_secs(3))).ok();
-    tcp.set_write_timeout(Some(Duration::from_secs(3))).ok();
-
-    // Greeting: VER=5, NMETHODS=1, METHODS=[0x00]
-    tcp.write_all(&[0x05, 0x01, 0x00]).expect("write greet");
-    let mut rep = [0u8; 2];
-    tcp.read_exact(&mut rep).expect("read greet");
-    assert_eq!(rep, [0x05, 0x00]);
-
-    // UDP ASSOCIATE request: VER=5, CMD=3, RSV=0, ATYP=IPv4, ADDR=0.0.0.0, PORT=0
-    let req = [0x05, 0x03, 0x00, 0x01, 0, 0, 0, 0, 0, 0];
-    tcp.write_all(&req).expect("write udp associate");
-    let mut resp = [0u8; 10];
-    tcp.read_exact(&mut resp).expect("read udp resp");
-    assert_eq!(resp[0], 0x05);
-    assert_eq!(resp[1], 0x00); // success
-                               // Parse bound address
-    assert_eq!(resp[3], 0x01); // IPv4
-    let mut ip = Ipv4Addr::new(resp[4], resp[5], resp[6], resp[7]);
-    let port = u16::from_be_bytes([resp[8], resp[9]]);
-    // Some implementations reply with 0.0.0.0 for UDP relay bind;
-    // RFC1928 allows this to mean "use the same address as the TCP connection".
-    if ip.is_unspecified() {
-        if let IpAddr::V4(v4) = socks.ip() {
-            ip = v4;
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn product_profile_socks_outbound_udp_roundtrip() -> anyhow::Result<()> {
+    let (proxy_tcp, _) = match start_mock_socks5().await {
+        Ok(addresses) => addresses,
+        Err(error) if permission_denied(&error) => {
+            eprintln!("skipping product SOCKS UDP e2e: {error}");
+            return Ok(());
         }
-    }
-    (tcp, SocketAddr::from((IpAddr::V4(ip), port)))
-}
-
-fn build_socks_udp_packet(dst: SocketAddr, payload: &[u8]) -> Vec<u8> {
-    let mut pkt = Vec::with_capacity(10 + payload.len());
-    // RSV RSV FRAG
-    pkt.extend_from_slice(&[0x00, 0x00, 0x00]);
-    match dst.ip() {
-        IpAddr::V4(v4) => {
-            pkt.push(0x01);
-            pkt.extend_from_slice(&v4.octets());
-        }
-        IpAddr::V6(v6) => {
-            pkt.push(0x04);
-            pkt.extend_from_slice(&v6.octets());
-        }
-    }
-    pkt.extend_from_slice(&dst.port().to_be_bytes());
-    pkt.extend_from_slice(payload);
-    pkt
-}
-
-fn parse_socks_udp_packet(buf: &[u8]) -> (&[u8], SocketAddr) {
-    assert!(buf.len() >= 10);
-    assert_eq!(&buf[0..3], &[0, 0, 0]);
-    let atyp = buf[3];
-    let mut i = 4usize;
-    let addr = match atyp {
-        0x01 => {
-            let v4 = Ipv4Addr::new(buf[i], buf[i + 1], buf[i + 2], buf[i + 3]);
-            i += 4;
-            let port = u16::from_be_bytes([buf[i], buf[i + 1]]);
-            i += 2;
-            SocketAddr::from((IpAddr::V4(v4), port))
-        }
-        0x04 => {
-            let mut seg = [0u8; 16];
-            seg.copy_from_slice(&buf[i..i + 16]);
-            i += 16;
-            let port = u16::from_be_bytes([buf[i], buf[i + 1]]);
-            i += 2;
-            SocketAddr::from((IpAddr::from(seg), port))
-        }
-        _ => panic!("unsupported atyp"),
-    };
-    (&buf[i..], addr)
-}
-
-#[test]
-#[ignore = "legacy core Socks5 direct UDP path; P1313-09 runtime coverage uses app/adapter bridge plus interop p1_rust_core_udp_via_socks"]
-fn socks_udp_via_direct_nat_echo() {
-    // Start UDP echo server
-    let Some((echo_addr, _echo_h)) = start_udp_echo() else {
-        return;
+        Err(error) => return Err(error),
     };
 
-    // Start SOCKS5 inbound
-    let l = match TcpListener::bind("127.0.0.1:0") {
-        Ok(listener) => listener,
-        Err(err) => {
-            if matches!(
-                err.kind(),
-                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
-            ) {
-                eprintln!("Skipping socks UDP e2e: cannot bind socks listener ({err})");
-                return;
-            }
-            panic!("bind socks: {err}");
-        }
-    };
-    let socks_addr = l.local_addr().unwrap();
-    drop(l);
-    let mut ir = ConfigIR::default();
-    ir.route.default = Some("direct".to_string());
-    ir.inbounds.push(InboundIR {
-        ty: InboundType::Socks,
-        listen: socks_addr.ip().to_string(),
-        port: socks_addr.port(),
-        udp: true, // Explicitly set to true, as Default::default() would set it to false
-        ..Default::default()
-    });
-    let eng = Engine::new(std::sync::Arc::new(ir));
-    thread::spawn(move || {
-        let srv = Socks5::new("127.0.0.1".into(), socks_addr.port()).with_engine(eng.clone());
-        let _ = srv.serve();
-    });
-    thread::sleep(Duration::from_millis(150));
+    let connector = Socks5Connector::no_auth(proxy_tcp.to_string());
+    let target = TargetAddr::ip("1.2.3.4".parse()?, 5353);
+    let mut session = Session::outbound(target.clone());
+    session.connect.connect_timeout = Duration::from_secs(3);
+    session.packet.idle_timeout = Duration::from_secs(3);
 
-    // Perform UDP ASSOCIATE
-    let (_tcp, relay_addr) = socks_udp_associate(socks_addr);
+    let packet = connector.listen_packet(&session).await?;
+    let payload = b"wp05-product-socks-udp";
+    assert_eq!(packet.send_to(payload, &target).await?, payload.len());
 
-    // Send a UDP packet through SOCKS relay
-    let cli = match UdpSocket::bind("127.0.0.1:0") {
-        Ok(client) => client,
-        Err(err) => {
-            if matches!(
-                err.kind(),
-                io::ErrorKind::PermissionDenied | io::ErrorKind::AddrNotAvailable
-            ) {
-                eprintln!("Skipping socks UDP e2e: cannot bind udp client ({err})");
-                return;
-            }
-            panic!("bind udp client: {err}");
-        }
-    };
-    cli.set_read_timeout(Some(Duration::from_secs(3))).ok();
-    let payload = b"hello-udp-through-socks";
-    let pkt = build_socks_udp_packet(echo_addr, payload);
-    let _ = cli.send_to(&pkt, relay_addr).expect("send to relay");
-
-    // Read response and parse
-    let mut buf = [0u8; 4096];
-    let (n, _src) = cli.recv_from(&mut buf).expect("recv from relay");
-    let (data, _addr) = parse_socks_udp_packet(&buf[..n]);
-    assert_eq!(data, payload);
+    let mut buffer = [0u8; 1500];
+    let (size, source) = packet.recv_from(&mut buffer).await?;
+    assert_eq!(&buffer[..size], payload);
+    assert_eq!(source, TargetAddr::ip("127.0.0.1".parse()?, source.port()));
+    packet.close().await?;
+    Ok(())
 }
-
-use std::io::{self, Read, Write};

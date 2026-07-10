@@ -2113,8 +2113,8 @@ class TrojanConfigNormalizeTests(unittest.TestCase):
         source = (repo / "app/src/bin/probe-outbound.rs").read_text(encoding="utf-8")
         validate_pos = source.index("if args.validate_config_only")
         self.assertLess(validate_pos, source.index('maybe_probe_vless_direct("pre_bridge"'))
-        self.assertLess(validate_pos, source.index("connector.connect(&host, port)"))
-        self.assertLess(validate_pos, source.index("connector.connect_io(&host, port)"))
+        self.assertLess(validate_pos, source.index("connector.dial(&session)"))
+        self.assertLess(validate_pos, source.index("TcpStream::connect((server.as_str(), server_port))"))
 
     def test_normalized_synthetic_fixture_passes_no_dial_preflight(self):
         repo = pathlib.Path(__file__).resolve().parents[2]

@@ -171,7 +171,8 @@ impl PacketState {
 #[cfg(any(
     feature = "adapter-shadowsocks",
     feature = "adapter-trojan",
-    feature = "adapter-vless"
+    feature = "adapter-vless",
+    feature = "socks-udp"
 ))]
 pub(crate) async fn with_packet_deadline<T>(
     deadline: Option<std::time::Instant>,
@@ -324,6 +325,8 @@ pub mod shadowtls;
 pub mod socks4;
 #[cfg(feature = "adapter-socks")]
 pub mod socks5;
+#[cfg(feature = "socks-udp")]
+pub mod socks5_udp;
 #[cfg(feature = "adapter-ssh")]
 pub mod ssh;
 #[cfg(feature = "legacy_tailscale_outbound")]

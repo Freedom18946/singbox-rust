@@ -125,7 +125,6 @@ fn encode_udp_datagram(dst: SocketAddr, payload: &[u8]) -> Vec<u8> {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-#[ignore = "unstable UDP proxy e2e; full roundtrip currently times out in default test env"]
 async fn socks5_udp_full_roundtrip_via_router_and_proxy() -> anyhow::Result<()> {
     // Mock SOCKS5 + UDP echo
     let mock = match Socks5Mock::new().await {
@@ -193,5 +192,17 @@ async fn socks5_udp_full_roundtrip_via_router_and_proxy() -> anyhow::Result<()> 
     };
     assert!(off <= n);
     assert_eq!(&buf[off..n], payload);
+
+    #[cfg(feature = "metrics")]
+    {
+        let metrics = sb_metrics::export_prometheus();
+        assert!(metrics.lines().any(|line| {
+            line.starts_with("inbound_socks_udp_packets_total{dir=\"out\"}")
+                && !line.ends_with(" 0")
+        }));
+        assert!(metrics.lines().any(|line| {
+            line.starts_with("inbound_socks_udp_packets_total{dir=\"in\"}") && !line.ends_with(" 0")
+        }));
+    }
     Ok(())
 }

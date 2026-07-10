@@ -19,9 +19,11 @@ use sb_core::net::datagram::UdpTargetAddr;
 use sb_core::net::udp_nat::{
     record_upstream_failure, update_flow_metrics, NatKey, NatMap, TargetAddr, UpstreamError,
 };
-use sb_core::outbound::udp_socks5;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
+use sb_types::{Outbound, Session, TargetAddr as CanonicalTargetAddr};
+
+use crate::outbound::socks5::Socks5Connector;
 
 #[cfg(feature = "metrics")]
 use metrics::{counter, gauge, histogram};
@@ -215,6 +217,15 @@ fn apply_routing_rules(target: &TargetAddr) -> (RDecision, Option<String>) {
 
 /// Enhanced SOCKS5 UDP service
 pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
+    let udp_proxy = std::env::var("SB_UDP_SOCKS5_ADDR")
+        .or_else(|_| std::env::var("SB_UDP_PROXY_ADDR"))
+        .ok()
+        .filter(|_| {
+            std::env::var("SB_UDP_PROXY_MODE")
+                .ok()
+                .is_some_and(|mode| mode.eq_ignore_ascii_case("socks5"))
+        })
+        .map(Socks5Connector::no_auth);
     if !socks_udp_enabled() {
         tracing::info!("SOCKS5 UDP service disabled via SB_SOCKS_UDP_ENABLE");
         return Ok(());
@@ -287,21 +298,21 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                 continue;
             }
             RDecision::Proxy(_) => {
-                // Proxy via upstream SOCKS5 if configured (SB_UDP_PROXY_MODE=socks5 and address provided)
-                if std::env::var("SB_UDP_PROXY_MODE")
-                    .ok()
-                    .map(|v| v.eq_ignore_ascii_case("socks5"))
-                    .unwrap_or(false)
-                {
+                // Legacy experiment now uses canonical adapter PacketConn rather than core scaffold.
+                if let Some(connector) = udp_proxy.as_ref() {
                     let udp_target = match &target {
-                        TargetAddr::Ip(sa) => UdpTargetAddr::Ip(*sa),
-                        TargetAddr::Domain { host, port } => UdpTargetAddr::Domain {
-                            host: host.clone(),
-                            port: *port,
-                        },
+                        TargetAddr::Ip(address) => CanonicalTargetAddr::Socket(*address),
+                        TargetAddr::Domain { host, port } => {
+                            CanonicalTargetAddr::domain(host.clone(), *port)
+                        }
                     };
                     let payload = &buffer[header_len..bytes_received];
-                    match udp_socks5::sendto_via_socks5(&socket, payload, &udp_target).await {
+                    let session = Session::outbound(udp_target.clone());
+                    let send_result = match connector.listen_packet(&session).await {
+                        Ok(packet) => packet.send_to(payload, &udp_target).await,
+                        Err(error) => Err(error),
+                    };
+                    match send_result {
                         Ok(_n) => {
                             #[cfg(feature = "metrics")]
                             {

@@ -119,7 +119,7 @@ legacy_shadowsocksr = ["adapter-shadowsocks"]
 # Tailscale outbound (Go has Tailscale endpoint only, no outbound)
 legacy_tailscale_outbound = ["adapter-tailscale"]
 http = []
-socks = ["dep:sb-transport"]
+socks = ["dep:sb-transport", "socks-udp"]
 mixed = ["http", "socks"]
 tun = ["dep:sb-platform"]
 # macOS transparent proxy support via tun2socks
@@ -150,7 +150,7 @@ naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http"]
 # TUIC inbound (QUIC-based server)
 tuic_server = ["dep:quinn", "dep:rustls", "dep:rustls-pemfile"]
 # 占位：便于在代码中 #[cfg(feature="metrics")]
-metrics = ["dep:metrics", "dep:sb-metrics"]
+metrics = ["dep:metrics", "dep:sb-metrics", "sb-core/metrics"]
 # CLI 支持
 clap = ["dep:clap"]
 bench = []

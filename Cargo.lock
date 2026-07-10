@@ -311,6 +311,7 @@ dependencies = [
  "sb-metrics",
  "sb-runtime",
  "sb-subscribe",
+ "sb-test-utils",
  "sb-tls",
  "sb-transport",
  "sb-types",

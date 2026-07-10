@@ -9,13 +9,11 @@ use std::fmt;
 use anyhow::{bail, Result};
 use once_cell::sync::OnceCell as SyncOnceCell;
 use sb_core::net::ratelimit::maybe_drop_udp;
-use sb_core::net::udp_upstream_map::{Key as UpstreamKey, UdpUpstreamMap};
 use sb_core::obs::access;
 use sb_core::outbound::endpoint::{ProxyEndpoint, ProxyKind};
 use sb_core::outbound::observe::with_pool_observation;
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
-use sb_core::outbound::socks5_udp::UpSocksSession;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -39,6 +37,9 @@ use sb_core::router::rules::{
 };
 use sb_core::router::{RouteCtx as RouterRouteCtx, RouterHandle, Transport};
 use sb_core::services::v2ray_api::StatsManager;
+
+use super::upstream::{Key as UpstreamKey, UdpUpstreamMap, UpstreamRuntimeConfig};
+use crate::outbound::socks5_udp::UpSocksSession;
 use sb_core::types::{Endpoint as TypesEndpoint, Host};
 use std::env;
 
@@ -69,6 +70,7 @@ fn upstream_ttl_from_env(default: Option<std::time::Duration>) -> std::time::Dur
 
 fn upstream_timeout_ms() -> u64 {
     std::env::var("SB_SOCKS_UDP_PROXY_TIMEOUT_MS")
+        .or_else(|_| std::env::var("SB_SOCKS5_CTRL_TIMEOUT_MS"))
         .ok()
         .and_then(|v| v.parse::<u64>().ok())
         .unwrap_or(800)
@@ -348,6 +350,7 @@ fn spawn_reverse_relay(task: ReverseRelayTask) {
             {
                 metrics::counter!("udp_pkts_in_total").increment(1);
                 metrics::counter!("udp_bytes_in_total").increment(rn as u64);
+                sb_metrics::inc_socks_udp_packet("in");
             }
             let reply_dst = reply_target_for_packet(&original_dst, from, &route_options);
             let out = encode_udp_datagram(&reply_dst, &rbuf[..rn]);
@@ -903,6 +906,7 @@ async fn forward_via_proxy(
     pool: Option<String>,
     timeout_ms: u64,
     traffic: Option<Arc<dyn TrafficRecorder>>,
+    upstream_config: Arc<UpstreamRuntimeConfig>,
 ) -> ProxyOutcome {
     let (ip, port) = match dst {
         UdpTargetAddr::Ip(sa) => (sa.ip(), sa.port()),
@@ -931,6 +935,7 @@ async fn forward_via_proxy(
         pool,
         timeout_ms,
         traffic.clone(),
+        upstream_config.clone(),
     )
     .await
     {
@@ -953,18 +958,11 @@ async fn forward_via_proxy(
     // This is intentionally lightweight; full bi-directional relaying is handled by higher-level services.
     // 在短时间内尽力接收少量回复，以支持简单的回显式流量。
     // 这是有意为之的轻量级实现；完整的双向中继由更高级别的服务处理。
-    let recv_iters = std::env::var("SB_SOCKS_UDP_UP_RECV_ITERS")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(2)
-        .min(8);
-    let per_iter_ms = std::env::var("SB_SOCKS_UDP_UP_RECV_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(200)
-        .min(2_000);
-    for _ in 0..recv_iters {
-        match session.recv_once(per_iter_ms).await {
+    for _ in 0..upstream_config.foreground_receive_iterations {
+        match session
+            .recv_once(upstream_config.foreground_receive_timeout_ms)
+            .await
+        {
             Ok(Some((reply_addr, ref reply_payload))) => {
                 let reply = encode_udp_datagram(&UdpTargetAddr::Ip(reply_addr), reply_payload);
                 if let Err(e) = listen.send_to(&reply, client).await {
@@ -973,6 +971,8 @@ async fn forward_via_proxy(
                     counter!("socks_udp_error_total", "class" => "return_fail").increment(1);
                     break;
                 }
+                #[cfg(feature = "metrics")]
+                sb_metrics::inc_socks_udp_packet("in");
                 if let Some(ref recorder) = traffic {
                     recorder.record_down(reply_payload.len() as u64);
                     recorder.record_down_packet(1);
@@ -1001,13 +1001,18 @@ async fn ensure_upstream_session(
     pool: Option<String>,
     timeout_ms: u64,
     traffic: Option<Arc<dyn TrafficRecorder>>,
+    upstream_config: Arc<UpstreamRuntimeConfig>,
 ) -> Option<Arc<UpSocksSession>> {
     if let Some(sess) = up_map.get(&key).await {
         return Some(sess);
     }
 
-    let (pool_name, idx, endpoint) = match select_endpoint_idx_for_udp(pool.clone(), client, target)
-    {
+    let (pool_name, idx, endpoint) = match select_endpoint_idx_for_udp(
+        pool.clone(),
+        client,
+        target,
+        upstream_config.legacy_default_endpoint.as_ref(),
+    ) {
         Some((name, i, ep)) => (name, i, ep),
         None => {
             #[cfg(feature = "metrics")]
@@ -1026,15 +1031,12 @@ async fn ensure_upstream_session(
     }
 
     match with_pool_observation(sticky_selector(), &pool_name, idx, || {
-        UpSocksSession::create(endpoint.clone(), timeout_ms)
+        UpSocksSession::create(endpoint.clone(), timeout_ms, &upstream_config.session)
     })
     .await
     {
         Ok(mut sess) => {
-            if std::env::var("SB_OBS_UDP_IO")
-                .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-                .unwrap_or(false)
-            {
+            if upstream_config.session.observe_io {
                 sess.bind_observation(pool_name.clone(), idx);
             }
             let arc = Arc::new(sess);
@@ -1047,18 +1049,16 @@ async fn ensure_upstream_session(
             let listen_sock = Arc::clone(&listen);
             let sess_clone = arc.clone();
             let traffic_clone = traffic.clone();
+            let per_ms = upstream_config.background_receive_timeout_ms;
             tokio::spawn(async move {
-                let per_ms = std::env::var("SB_SOCKS_UDP_UP_BG_RECV_MS")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(500)
-                    .min(10_000);
                 loop {
                     match sess_clone.recv_once(per_ms).await {
                         Ok(Some((reply_addr, payload))) => {
                             let reply =
                                 encode_udp_datagram(&UdpTargetAddr::Ip(reply_addr), &payload);
                             if listen_sock.send_to(&reply, client).await.is_ok() {
+                                #[cfg(feature = "metrics")]
+                                sb_metrics::inc_socks_udp_packet("in");
                                 if let Some(ref recorder) = traffic_clone {
                                     recorder.record_down(payload.len() as u64);
                                     recorder.record_down_packet(1);
@@ -1081,37 +1081,26 @@ async fn ensure_upstream_session(
     }
 }
 
-fn select_endpoint_for_udp(
-    pool: Option<String>,
-    client: SocketAddr,
-    target: &str,
-) -> Option<ProxyEndpoint> {
-    let reg = registry::global()?;
-    if let Some(name) = pool {
-        if let Some(_pool_def) = reg.pools.get(&name) {
-            let selector = sticky_selector();
-            selector.select(&name, client, target, &()).cloned()
-        } else {
-            None
-        }
-    } else {
-        reg.default.clone()
-    }
-}
-
 fn select_endpoint_idx_for_udp(
     pool: Option<String>,
     client: SocketAddr,
     target: &str,
+    legacy_default: Option<&ProxyEndpoint>,
 ) -> Option<(String, usize, ProxyEndpoint)> {
-    let reg = registry::global()?;
-    let name = pool?; // Only meaningful when proxy pool is specified
-    let _pool_def = reg.pools.get(&name)?;
-    let selector = sticky_selector();
-    // For now, just return index 0 with the selected endpoint
-    // 目前，只返回索引 0 和选定的端点
-    let endpoint = selector.select(&name, client, target, &())?.clone();
-    Some((name, 0, endpoint))
+    match pool {
+        Some(name) => {
+            let reg = registry::global()?;
+            reg.pools.get(&name)?;
+            let endpoint = sticky_selector()
+                .select(&name, client, target, &())?
+                .clone();
+            Some((name, 0, endpoint))
+        }
+        None => registry::global()
+            .and_then(|registry| registry.default.clone())
+            .or_else(|| legacy_default.cloned())
+            .map(|endpoint| ("default".to_string(), 0, endpoint)),
+    }
 }
 
 fn sticky_selector() -> &'static PoolSelector {
@@ -1361,6 +1350,7 @@ pub async fn serve_udp_datagrams_with_runtime(
     runtime: UdpDatagramRuntime,
 ) -> Result<()> {
     let upstream_timeout = upstream_timeout_ms();
+    let upstream_config = Arc::new(UpstreamRuntimeConfig::from_env());
     let ttl = runtime.nat_ttl.or(timeout).or_else(nat_ttl_from_env);
     let map = NAT_MAP
         .get_or_init(|| async { Arc::new(UdpNatMap::new(ttl)) })
@@ -1369,8 +1359,9 @@ pub async fn serve_udp_datagrams_with_runtime(
 
     let up_ttl = upstream_ttl_from_env(ttl);
     let up_ttl_copy = up_ttl;
+    let upstream_max = upstream_config.max_sessions;
     let upstream_map = UPSTREAM_MAP
-        .get_or_init(|| async move { Arc::new(UdpUpstreamMap::new(up_ttl_copy)) })
+        .get_or_init(|| async move { Arc::new(UdpUpstreamMap::new(up_ttl_copy, upstream_max)) })
         .await
         .clone();
 
@@ -1450,6 +1441,7 @@ pub async fn serve_udp_datagrams_with_runtime(
         {
             metrics::counter!("udp_pkts_in_total").increment(1);
             metrics::counter!("udp_bytes_in_total").increment(n as u64);
+            sb_metrics::inc_socks_udp_packet("out");
         }
         let pkt = &buf[..n];
 
@@ -1857,6 +1849,7 @@ pub async fn serve_udp_datagrams_with_runtime(
                 proxy_pool.clone(),
                 upstream_timeout,
                 proxy_traffic.clone(),
+                upstream_config.clone(),
             )
             .await
             {

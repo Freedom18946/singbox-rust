@@ -19,6 +19,8 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use sb_config::ir::Credentials;
+use sb_core::net::rate_limit_metrics;
+use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
 use sb_core::services::v2ray_api::StatsManager;
@@ -52,8 +54,23 @@ pub struct MixedInboundConfig {
 
 pub async fn serve_mixed(
     cfg: MixedInboundConfig,
+    stop_rx: mpsc::Receiver<()>,
+    ready_tx: Option<oneshot::Sender<io::Result<()>>>,
+) -> io::Result<()> {
+    serve_mixed_with_limiter(
+        cfg,
+        stop_rx,
+        ready_tx,
+        TcpRateLimiter::new(TcpRateLimitConfig::from_env()),
+    )
+    .await
+}
+
+async fn serve_mixed_with_limiter(
+    cfg: MixedInboundConfig,
     mut stop_rx: mpsc::Receiver<()>,
     ready_tx: Option<oneshot::Sender<io::Result<()>>>,
+    rate_limiter: TcpRateLimiter,
 ) -> io::Result<()> {
     let listener = match TcpListener::bind(cfg.listen).await {
         Ok(listener) => listener,
@@ -109,7 +126,6 @@ pub async fn serve_mixed(
 
     // Allow disabling stop signal for testing
     let disable_stop = std::env::var("SB_MIXED_DISABLE_STOP").as_deref() == Ok("1");
-
     loop {
         select! {
             _ = stop_rx.recv(), if !disable_stop => break,
@@ -123,6 +139,12 @@ pub async fn serve_mixed(
                         continue;
                     }
                 };
+
+                if !rate_limiter.allow_connection(peer.ip()) {
+                    warn!(%peer, "mixed: connection rate limited");
+                    rate_limit_metrics::record_rate_limited("mixed", "connection_limit");
+                    continue;
+                }
 
                 let cfg_clone = cfg.clone();
                 tokio::spawn(async move {
@@ -433,7 +455,8 @@ mod tests {
     use super::*;
     use std::io::ErrorKind;
     use std::net::TcpListener as StdTcpListener;
-    use tokio::time::timeout;
+    use tokio::net::TcpStream;
+    use tokio::time::{sleep, timeout};
 
     fn test_cfg(listen: SocketAddr) -> MixedInboundConfig {
         MixedInboundConfig {
@@ -453,6 +476,14 @@ mod tests {
             sniff: false,
             sniff_override_destination: false,
         }
+    }
+
+    fn test_limiter(max_connections: usize) -> TcpRateLimiter {
+        TcpRateLimiter::new(TcpRateLimitConfig {
+            max_connections,
+            window: Duration::from_secs(60),
+            ..TcpRateLimitConfig::default()
+        })
     }
 
     #[tokio::test]
@@ -496,6 +527,56 @@ mod tests {
         assert_eq!(ready_err.kind(), ErrorKind::AddrInUse);
         assert_eq!(err.kind(), ErrorKind::AddrInUse);
         drop(holder);
+    }
+
+    #[tokio::test]
+    async fn limiter_rejects_second_mixed_peer() {
+        let holder = StdTcpListener::bind("127.0.0.1:0").expect("reserve mixed port");
+        let addr = holder.local_addr().expect("reserved mixed address");
+        drop(holder);
+
+        let (stop_tx, stop_rx) = mpsc::channel(1);
+        let (ready_tx, ready_rx) = oneshot::channel();
+        let task = tokio::spawn(serve_mixed_with_limiter(
+            test_cfg(addr),
+            stop_rx,
+            Some(ready_tx),
+            test_limiter(1),
+        ));
+        timeout(Duration::from_secs(2), ready_rx)
+            .await
+            .expect("mixed ready timed out")
+            .expect("mixed ready sender dropped")
+            .expect("mixed bind failed");
+
+        let first = TcpStream::connect(addr).await.expect("first mixed connect");
+        sleep(Duration::from_millis(50)).await;
+        let rejected_before = sb_core::net::rate_limit_metrics::RATE_LIMITED_TOTAL
+            .with_label_values(&["mixed", "connection_limit"])
+            .get();
+        let second = TcpStream::connect(addr)
+            .await
+            .expect("second mixed connect");
+        timeout(Duration::from_secs(2), async {
+            loop {
+                let rejected = sb_core::net::rate_limit_metrics::RATE_LIMITED_TOTAL
+                    .with_label_values(&["mixed", "connection_limit"])
+                    .get();
+                if rejected > rejected_before {
+                    return;
+                }
+                sleep(Duration::from_millis(10)).await;
+            }
+        })
+        .await
+        .expect("second mixed connection was not rate limited");
+
+        drop(second);
+        drop(first);
+        let _ = stop_tx.send(()).await;
+        task.await
+            .expect("mixed task panicked")
+            .expect("mixed stopped");
     }
 
     #[test]
