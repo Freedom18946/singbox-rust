@@ -16,11 +16,50 @@
 
 use sb_adapters::register_all;
 use sb_config::validator::v2::to_ir_v1;
-use sb_core::adapter::{registry, OutboundConnector};
+use sb_core::adapter::registry;
 use sb_core::outbound::selector_group::{ProxyMember, SelectMode, SelectorGroup, UrlTestOptions};
+use sb_core::outbound::Outbound;
 use sb_core::routing::engine::Engine;
 use std::sync::Arc;
-use tokio::net::TcpStream;
+
+macro_rules! impl_mock_connector {
+    ($type:ty) => {
+        impl Outbound for $type {
+            fn r#type(&self) -> &str {
+                "mock"
+            }
+            fn tag(&self) -> sb_types::OutboundTag {
+                sb_types::OutboundTag::new("mock")
+            }
+            fn network(&self) -> &[sb_types::NetworkKind] {
+                &[sb_types::NetworkKind::Tcp]
+            }
+            fn dial<'a>(
+                &'a self,
+                _session: &'a sb_types::Session,
+            ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+                Box::pin(async {
+                    Err(sb_types::CoreError::connect(
+                        sb_types::ConnectErrorKind::Unsupported,
+                        "Mock connector for testing",
+                    ))
+                })
+            }
+            fn listen_packet<'a>(
+                &'a self,
+                _session: &'a sb_types::Session,
+            ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+            {
+                Box::pin(async {
+                    Err(sb_types::CoreError::connect(
+                        sb_types::ConnectErrorKind::Unsupported,
+                        "Mock packet connector for testing",
+                    ))
+                })
+            }
+        }
+    };
+}
 
 /// Test: Selector adapter is registered
 ///
@@ -395,20 +434,12 @@ async fn test_selectorgroup_manual_mode() {
         }
     }
 
-    #[async_trait::async_trait]
-    impl OutboundConnector for MockConnector {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<TcpStream> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "Mock connector for testing",
-            ))
-        }
-    }
+    impl_mock_connector!(MockConnector);
 
     let members = vec![
-        ProxyMember::new("proxy-1", Arc::new(MockConnector), None),
-        ProxyMember::new("proxy-2", Arc::new(MockConnector), None),
-        ProxyMember::new("proxy-3", Arc::new(MockConnector), None),
+        ProxyMember::new("proxy-1", Arc::new(MockConnector)),
+        ProxyMember::new("proxy-2", Arc::new(MockConnector)),
+        ProxyMember::new("proxy-3", Arc::new(MockConnector)),
     ];
 
     let selector = SelectorGroup::new_manual(
@@ -450,19 +481,11 @@ async fn test_selectorgroup_urltest_mode() {
         }
     }
 
-    #[async_trait::async_trait]
-    impl OutboundConnector for MockConnector {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<TcpStream> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "Mock connector for testing",
-            ))
-        }
-    }
+    impl_mock_connector!(MockConnector);
 
     let members = vec![
-        ProxyMember::new("fast-proxy", Arc::new(MockConnector), None),
-        ProxyMember::new("slow-proxy", Arc::new(MockConnector), None),
+        ProxyMember::new("fast-proxy", Arc::new(MockConnector)),
+        ProxyMember::new("slow-proxy", Arc::new(MockConnector)),
     ];
 
     let urltest = SelectorGroup::new_urltest(
@@ -500,20 +523,12 @@ async fn test_selectorgroup_loadbalancing_modes() {
         }
     }
 
-    #[async_trait::async_trait]
-    impl OutboundConnector for MockConnector {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<TcpStream> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "Mock connector for testing",
-            ))
-        }
-    }
+    impl_mock_connector!(MockConnector);
 
     let members = vec![
-        ProxyMember::new("lb-1", Arc::new(MockConnector), None),
-        ProxyMember::new("lb-2", Arc::new(MockConnector), None),
-        ProxyMember::new("lb-3", Arc::new(MockConnector), None),
+        ProxyMember::new("lb-1", Arc::new(MockConnector)),
+        ProxyMember::new("lb-2", Arc::new(MockConnector)),
+        ProxyMember::new("lb-3", Arc::new(MockConnector)),
     ];
 
     // Test round-robin mode

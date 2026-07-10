@@ -6,7 +6,7 @@
 
 use crate::errors::CoreError;
 use crate::ports::{BoxFuture, BoxedStream, DnsCacheStats};
-use crate::session::{InboundTag, OutboundTag, TargetAddr};
+use crate::session::{InboundTag, TargetAddr};
 use serde::{Deserialize, Serialize};
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
@@ -64,19 +64,6 @@ pub trait PacketHandlerPort: Send + Sync + 'static {
         metadata: RouteMetadata,
         packet_metadata: PacketMetadata,
     ) -> BoxFuture<'_, Result<Vec<u8>, CoreError>>;
-}
-
-/// Upstream connector visible to adapters.
-pub trait UpstreamConnectorPort: Send + Sync + std::fmt::Debug + 'static {
-    fn tag(&self) -> OutboundTag;
-    fn connect_stream(
-        &self,
-        target: TargetAddr,
-        metadata: RouteMetadata,
-    ) -> BoxFuture<'_, Result<BoxedStream, CoreError>>;
-    fn supports_udp(&self) -> bool {
-        false
-    }
 }
 
 /// Router pre-match result.

@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # MIG-03 WP02 — sb-adapters 直接实现正典契约，削平 register.rs 胶水
 
-Status: PLANNED
+Status: DONE (2026-07-10; combined WP02+WP03 cutover)
 Priority: P0
 Depends on: WP01（ADR 已批准）
 Blocks: WP05
@@ -60,15 +60,15 @@ register.rs 的 4,264 行中，绝大多数在做同一件事的 12 份拷贝：
 
 ## Acceptance
 
-- [ ] register.rs 中 `struct *Wrapper` / `struct *Adapter`（适配用途）计数 = 0
+- [x] register.rs 中 `struct *Wrapper` / `struct *Adapter`（适配用途）计数 = 0
       （`grep -c 'ConnectorWrapper\|InboundAdapter' register.rs`；
       正当的非适配结构如有保留，逐个在包内说明）。
-- [ ] register.rs 行数较基线 4,264 下降 ≥50%。
-- [ ] 全部 25 个 outbound 协议 + 现有 inbound 注册路径编译通过且 focused tests 全绿。
-- [ ] sb-core 内为过渡新增的适配 ≤1 个文件，且文件头注明"WP03/WP06 移除"。
-- [ ] `sb_types` 新契约有 rustdoc（每个方法说明语义、错误约定、取消安全性）。
-- [ ] 全局验收门禁五连（overview §4）全绿。
-- [ ] `app/src/util.rs:31` 的 `register_all()` 调用链行为不变
+- [x] register.rs 行数较基线 4,264 下降 ≥50%。
+- [x] 全部 outbound feature + 现有 inbound 注册路径编译通过且 focused tests 全绿。
+- [x] sb-core 内过渡适配仅 `adapter/inbound_transition.rs`，文件头注明 WP06 移除。
+- [x] `sb_types` 新契约有 rustdoc（方法语义、错误约定、取消安全性）。
+- [x] 全局验收门禁五连（overview §4）全绿。
+- [x] `app/src/util.rs:31` 的 `register_all()` 调用链行为不变
       （`cargo run -p app --features gui_runtime -- check -c <现有样例配置>` 冒烟通过）。
 
 ## 验证命令
@@ -97,4 +97,38 @@ cargo test -p app --test adapter_bridge_scaffold --features scaffold
 
 ## 发现移交
 
-（执行时填写。）
+- **D18 scope conflict resolved (2026-07-10):** the
+  required registry cutover cannot preserve behavior while honouring this package's
+  explicit non-goal of leaving sb-core's legacy adapter traits untouched.  The
+  canonical `Outbound::dial(&Session) -> BoxedStream` deliberately erases the
+  concrete socket, whereas the current bridge's registry consumers still require
+  `sb_core::adapter::OutboundConnector::connect(&str, u16) -> TcpStream`:
+  `inbound/socks5.rs:628`, `inbound/http_connect.rs:320`,
+  `adapter/handler.rs:113`, `health/mod.rs:44`, and
+  `runtime/supervisor.rs:2544`.  A generic centralized adapter can expose the
+  canonical stream only through `connect_io`; it cannot soundly recover a
+  `TcpStream` for these live paths.  Returning an error would be a user-visible
+  regression, while adding per-protocol recovery adapters recreates the wrappers
+  this package must delete.  The necessary consumer/holder conversion is WP03
+  scope and conflicts with the WP02 non-goal.  The user authorized a combined
+  WP02 + WP03 cutover, so the required core consumer/holder migration is now
+  in scope and must preserve the affected behavior.
+- **Feature-matrix defect repaired:**
+  `cargo check -p sb-adapters --no-default-features --features adapter-trojan,router`
+  and `cargo test -p sb-adapters --no-default-features --features
+  adapter-trojan,router --lib` now pass because `adapter-trojan` enables the
+  `trojan` inbound gate used by `register.rs`.
+
+## Acceptance record (2026-07-10)
+
+- `register.rs`: 4,264 → 7 LOC. Registration module including protocol builders:
+  3,626 LOC. Named façade metric passes; aggregate recorded to prevent split-file
+  concealment. Recursive wrapper-definition scan: 0.
+- Legacy adapter connector/request/datagram traits absent. VMess/DNS no longer
+  advertise packet associations they do not implement.
+- Packet associations snapshot finalized idle timeout and route UDP controls.
+  Explicit deadlines override idle timeout; timeout errors report effective duration.
+- Sole inbound lifecycle transition: `sb-core/src/adapter/inbound_transition.rs`.
+  WP06 removes it with scaffold fallback.
+- Evidence: workspace all-feature check/clippy; sb-types/sb-adapters tests;
+  PacketConn deadline/capability tests; scaffold smoke; boundaries; diff check.

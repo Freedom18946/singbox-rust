@@ -150,7 +150,7 @@ impl HysteriaInbound {
     }
 }
 
-impl sb_core::adapter::InboundService for HysteriaInbound {
+impl sb_core::adapter::InboundTaskDriver for HysteriaInbound {
     fn serve(&self) -> std::io::Result<()> {
         #[cfg(not(feature = "adapter-hysteria"))]
         {

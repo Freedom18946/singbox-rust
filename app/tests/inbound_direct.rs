@@ -1,5 +1,5 @@
 #![allow(clippy::while_let_loop)]
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 use std::net::{SocketAddr, TcpListener};
 use std::thread;
 use std::time::Duration;

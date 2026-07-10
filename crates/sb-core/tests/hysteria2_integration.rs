@@ -13,8 +13,6 @@ use sb_core::outbound::hysteria2::{
     BandwidthLimiter, BrutalConfig, CongestionControl, Hysteria2Config, Hysteria2Outbound,
 };
 #[cfg(feature = "out_hysteria2")]
-use sb_core::outbound::types::OutboundTcp;
-#[cfg(feature = "out_hysteria2")]
 use std::time::{Duration, Instant};
 
 #[cfg(feature = "out_hysteria2")]

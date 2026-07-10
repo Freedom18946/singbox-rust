@@ -12,7 +12,6 @@ members = [
   "crates/sb-security",
   "crates/sb-test-utils",
   "crates/sb-types",
-  "crates/sb-proto",
   "crates/sb-runtime",
   "crates/sb-platform",
   "crates/sb-transport",

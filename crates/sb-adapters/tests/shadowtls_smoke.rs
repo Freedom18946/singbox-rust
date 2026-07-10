@@ -2,13 +2,12 @@
 #![allow(clippy::unwrap_used, clippy::expect_used)]
 
 use sb_adapters::outbound::shadowtls::{ShadowTlsAdapterConfig, ShadowTlsConnector};
-use sb_adapters::traits::{DialOpts, OutboundConnector, Target};
+use sb_adapters::traits::Outbound;
 
 #[tokio::test]
-async fn shadowtls_standalone_leaf_dial_is_rejected() {
-    // ShadowTLS is intentionally blocked as a standalone leaf until it is
-    // reintroduced with transport-wrapper semantics.
+async fn shadowtls_canonical_contract_is_stream_only() {
     let cfg = ShadowTlsAdapterConfig {
+        tag: None,
         server: "127.0.0.1".to_string(),
         port: 1, // typically closed
         version: 1,
@@ -19,13 +18,18 @@ async fn shadowtls_standalone_leaf_dial_is_rejected() {
         utls_fingerprint: None,
     };
     let conn = ShadowTlsConnector::new(cfg);
-    let target = Target::tcp("example.com", 443);
-    let res = conn.dial(target, DialOpts::default()).await;
-    let err = match res {
-        Ok(_) => panic!("shadowtls standalone leaf dial should fail"),
-        Err(err) => err,
-    };
-    assert!(err
-        .to_string()
-        .contains("standalone leaf dialing is disabled"));
+    assert_eq!(conn.network(), &[sb_types::NetworkKind::Tcp]);
+
+    let session = sb_types::Session::outbound(sb_types::TargetAddr::domain("example.com", 443));
+    let err = conn
+        .listen_packet(&session)
+        .await
+        .expect_err("shadowtls must reject packet associations");
+    assert!(matches!(
+        err,
+        sb_types::CoreError::Connect {
+            kind: sb_types::ConnectErrorKind::Unsupported,
+            ..
+        }
+    ));
 }

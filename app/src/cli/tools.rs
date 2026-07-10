@@ -184,10 +184,17 @@ async fn connect_tcp(
     };
 
     // Dial
+    use tokio_util::compat::FuturesAsyncReadCompatExt;
+    let session = sb_types::Session::new(
+        0,
+        sb_types::InboundTag::new("tools-connect"),
+        sb_types::TargetAddr::domain(host, port),
+    );
     let stream = connector
-        .connect(&host, port)
+        .dial(&session)
         .await
-        .context("connect failed")?;
+        .context("connect failed")?
+        .compat();
 
     // Pipe stdin -> stream, stream -> stdout
     let (mut ro, mut wo) = tokio::io::split(stream);
@@ -221,8 +228,8 @@ async fn connect_udp(
 ) -> Result<()> {
     let (host, port) = parse_addr(&addr).context("invalid address, expected host:port")?;
 
-    // Try to use an outbound UDP factory when available
-    let factory = if let Some(name) = outbound.as_deref() {
+    // Resolve the canonical outbound when requested.
+    let connector = if let Some(name) = outbound.as_deref() {
         let ir = cfg.ir().clone();
 
         // Register adapters before building bridge
@@ -242,14 +249,22 @@ async fn connect_udp(
         let bridge =
             sb_core::adapter::bridge::build_bridge(&ir, (), sb_core::context::Context::default());
 
-        bridge.find_udp_factory(name)
+        bridge.get_member(name)
     } else {
         None
     };
 
-    if let Some(f) = factory {
-        // Use adapter-provided UDP session
-        let sess = f.open_session().await.context("open udp session")?;
+    if let Some(connector) = connector {
+        let canonical_session = sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new("tools-connect"),
+            sb_types::TargetAddr::domain(host.clone(), port),
+        );
+        let sess = connector
+            .listen_packet(&canonical_session)
+            .await
+            .map_err(anyhow::Error::from)?;
+        let sess = std::sync::Arc::<dyn sb_types::PacketConn>::from(sess);
         // stdin -> udp
         let host_c = host.clone();
         let sess_clone = sess.clone();
@@ -260,7 +275,8 @@ async fn connect_udp(
                 match tokio::io::AsyncReadExt::read(&mut stdin, &mut buf).await {
                     Ok(0) => break,
                     Ok(n) => {
-                        if sess_clone.send_to(&buf[..n], &host_c, port).await.is_err() {
+                        let destination = sb_types::TargetAddr::domain(host_c.clone(), port);
+                        if sess_clone.send_to(&buf[..n], &destination).await.is_err() {
                             break;
                         }
                     }
@@ -271,8 +287,9 @@ async fn connect_udp(
         // udp -> stdout
         let s2 = tokio::spawn(async move {
             let mut stdout = tokio::io::stdout();
-            while let Ok((data, _src)) = sess.recv_from().await {
-                if tokio::io::AsyncWriteExt::write_all(&mut stdout, &data)
+            let mut data = vec![0u8; 65_535];
+            while let Ok((size, _src)) = sess.recv_from(&mut data).await {
+                if tokio::io::AsyncWriteExt::write_all(&mut stdout, &data[..size])
                     .await
                     .is_err()
                 {
@@ -285,7 +302,7 @@ async fn connect_udp(
         return Ok(());
     }
 
-    anyhow::bail!("udp outbound factory not found; direct UDP fallback is disabled");
+    anyhow::bail!("canonical UDP outbound not found; direct fallback is disabled");
 }
 
 async fn fetch(url: String, output: Option<PathBuf>) -> Result<()> {

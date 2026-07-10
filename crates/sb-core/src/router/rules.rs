@@ -126,10 +126,9 @@ impl Decision {
     fn from_rule_ir(ir: &sb_config::ir::RuleIR) -> Result<Self, String> {
         use sb_config::ir::RuleAction;
         if ir.action == RuleAction::Reject {
-            let method = ir.method.as_deref().unwrap_or("default");
-            return match method {
-                "" | "default" | "reply" => Ok(Decision::Reject),
-                "drop" => {
+            return match ir.method.as_deref() {
+                None | Some("") | Some("default") | Some("reply") => Ok(Decision::Reject),
+                Some("drop") => {
                     if ir.no_drop.unwrap_or(false) {
                         Err(
                             "route reject action cannot combine method=drop with no_drop=true"
@@ -139,7 +138,7 @@ impl Decision {
                         Ok(Decision::RejectDrop)
                     }
                 }
-                other => Err(format!("unknown route reject method: {other}")),
+                Some(other) => Err(format!("unknown route reject method: {other}")),
             };
         }
         Ok(Self::from_rule_action(

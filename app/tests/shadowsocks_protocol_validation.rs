@@ -19,9 +19,8 @@ use tokio::sync::mpsc;
 
 use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 
 // Helper: Start TCP echo server
 async fn start_echo_server() -> Option<SocketAddr> {
@@ -129,14 +128,10 @@ async fn test_ss_aes256gcm_encryption() {
     })
     .expect("Failed to create connector");
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let mut stream = connector
-        .dial(target, DialOpts::default())
+        .dial(&Session::outbound(target))
         .await
         .expect("Failed to connect");
 
@@ -174,14 +169,10 @@ async fn test_ss_aes128gcm_encryption() {
     })
     .expect("Failed to create connector");
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let mut stream = connector
-        .dial(target, DialOpts::default())
+        .dial(&Session::outbound(target))
         .await
         .expect("Failed to connect");
 
@@ -220,14 +211,10 @@ async fn test_ss_chacha20poly1305_encryption() {
     })
     .expect("Failed to create connector");
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let mut stream = connector
-        .dial(target, DialOpts::default())
+        .dial(&Session::outbound(target))
         .await
         .expect("Failed to connect");
 
@@ -290,13 +277,9 @@ async fn test_ss_multi_user_concurrent() {
             })
             .expect("Failed to create connector");
 
-            let target = Target {
-                host: echo_addr.ip().to_string(),
-                port: echo_addr.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            match connector.dial(target, DialOpts::default()).await {
+            match connector.dial(&Session::outbound(target)).await {
                 Ok(mut stream) => {
                     let test_data = format!("User {} data", i + 1);
                     if stream.write_all(test_data.as_bytes()).await.is_ok() {
@@ -381,13 +364,9 @@ async fn test_ss_high_concurrency() {
         let success_count = success_count.clone();
 
         handles.push(tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr.ip().to_string(),
-                port: echo_addr.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            if let Ok(mut stream) = connector.dial(target, DialOpts::default()).await {
+            if let Ok(mut stream) = connector.dial(&Session::outbound(target)).await {
                 let test_data = format!("test{}", i);
                 if stream.write_all(test_data.as_bytes()).await.is_ok() {
                     let mut buf = vec![0u8; test_data.len()];
@@ -438,14 +417,10 @@ async fn test_ss_large_payload() {
     })
     .expect("Failed to create connector");
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let mut stream = connector
-        .dial(target, DialOpts::default())
+        .dial(&Session::outbound(target))
         .await
         .expect("Failed to connect");
 
@@ -496,15 +471,11 @@ async fn test_ss_wrong_password() {
     })
     .expect("Failed to create connector");
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     // Connection might succeed but data transfer should fail or return garbage
     let result = tokio::time::timeout(Duration::from_secs(3), async {
-        if let Ok(mut stream) = connector.dial(target, DialOpts::default()).await {
+        if let Ok(mut stream) = connector.dial(&Session::outbound(target)).await {
             let test_data = b"test";
             if stream.write_all(test_data).await.is_ok() {
                 let mut buf = vec![0u8; test_data.len()];

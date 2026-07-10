@@ -1,5 +1,5 @@
 use sb_adapters::outbound::vless::{FlowControl, VlessConfig, VlessConnector};
-use sb_adapters::traits::{from_transport_stream, DialOpts, OutboundConnector, Target};
+use sb_adapters::traits::{from_transport_stream, TargetAddr};
 use sb_adapters::transport_config::TransportConfig;
 use sb_tls::{ensure_crypto_provider, RealityClientConfig, RealityConnector, TlsConnector};
 use serde::Serialize;
@@ -176,13 +176,13 @@ async fn probe_transport_reality(
 
 async fn probe_vless_dial(
     connector: &VlessConnector,
-    target: &Target,
+    target: &TargetAddr,
     timeout_ms: u64,
 ) -> PhaseResult {
     let started_at = Instant::now();
     match tokio::time::timeout(
         std::time::Duration::from_millis(timeout_ms),
-        connector.dial(target.clone(), DialOpts::new()),
+        connector.dial(&sb_types::Session::outbound(target.clone())),
     )
     .await
     {
@@ -194,12 +194,14 @@ async fn probe_vless_dial(
 
 async fn probe_vless_probe_io(
     connector: &VlessConnector,
-    target: &Target,
+    target: &TargetAddr,
     timeout_ms: u64,
 ) -> PhaseResult {
     let started_at = Instant::now();
     let result = tokio::time::timeout(std::time::Duration::from_millis(timeout_ms), async {
-        let mut stream = connector.dial(target.clone(), DialOpts::new()).await?;
+        let mut stream = connector
+            .dial(&sb_types::Session::outbound(target.clone()))
+            .await?;
         stream
             .write_all(b"HEAD / HTTP/1.1\r\nHost: example.com\r\nConnection: close\r\n\r\n")
             .await
@@ -275,6 +277,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     };
 
     let config = VlessConfig {
+        tag: None,
         server: server.clone(),
         port,
         uuid,
@@ -292,7 +295,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ech: None,
     };
     let connector = VlessConnector::new(config.clone());
-    let target = Target::tcp(&target_host, target_port);
+    let target = TargetAddr::from_host_port(&target_host, target_port);
 
     let output = ProbeOutput {
         server,
@@ -301,7 +304,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         alpn,
         transport_type: format!("{:?}", connector.transport_type()),
         uses_transport_dialer: connector.uses_transport_dialer(),
-        target: format!("{}:{}", target.host, target.port),
+        target: target.to_string(),
         phase_timeout_ms,
         probe_io_timeout_ms,
         direct_reality: probe_direct_reality(

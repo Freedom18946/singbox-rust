@@ -42,9 +42,8 @@ fn test_direct_outbound_registration() {
     let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "Direct outbound should be buildable");
 
-    let (_connector, udp_factory) = result.unwrap();
-    // Connector is already Arc<dyn OutboundConnector>, not Option
-    assert!(udp_factory.is_some(), "Direct outbound should support UDP");
+    let connector = result.unwrap();
+    assert!(connector.network().contains(&sb_types::NetworkKind::Udp));
 }
 
 #[test]
@@ -77,12 +76,8 @@ fn test_block_outbound_registration() {
     let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "Block outbound should be buildable");
 
-    let (_connector, udp_factory) = result.unwrap();
-    // Connector is already Arc<dyn OutboundConnector>, not Option
-    assert!(
-        udp_factory.is_none(),
-        "Block outbound should not support UDP"
-    );
+    let connector = result.unwrap();
+    assert!(!connector.network().contains(&sb_types::NetworkKind::Udp));
 }
 
 #[tokio::test]
@@ -112,13 +107,17 @@ async fn test_direct_outbound_connect() {
     let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some());
 
-    let (connector, _) = result.unwrap();
-    // Connector is already Arc<dyn OutboundConnector>, ready to use
+    let connector = result.unwrap();
+    // Connector is already Arc<dyn Outbound>, ready to use
 
     // Try to connect to a public DNS server (should succeed or timeout)
     let result = tokio::time::timeout(
         std::time::Duration::from_secs(3),
-        connector.connect("1.1.1.1", 53),
+        connector.dial(&sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new("test"),
+            sb_types::TargetAddr::domain("1.1.1.1", 53),
+        )),
     )
     .await;
 
@@ -164,11 +163,17 @@ async fn test_block_outbound_always_fails() {
     let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some());
 
-    let (connector, _) = result.unwrap();
-    // Connector is already Arc<dyn OutboundConnector>, ready to use
+    let connector = result.unwrap();
+    // Connector is already Arc<dyn Outbound>, ready to use
 
     // Try to connect - should always fail
-    let result = connector.connect("1.1.1.1", 53).await;
+    let result = connector
+        .dial(&sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new("test"),
+            sb_types::TargetAddr::domain("1.1.1.1", 53),
+        ))
+        .await;
     assert!(
         result.is_err(),
         "Block outbound should always fail to connect"

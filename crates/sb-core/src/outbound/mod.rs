@@ -19,21 +19,9 @@
 //! Data structures and external interfaces remain compatible: No changes needed for Router/Inbound side.
 //! 数据结构与对外接口保持不变：Router/Inbound 端无需改动。
 
-#[cfg(any(
-    feature = "out_socks",
-    feature = "out_http",
-    feature = "out_hysteria",
-    feature = "out_hysteria2",
-    feature = "out_naive",
-))]
-pub mod block_connector;
 #[cfg(feature = "router")]
 pub mod chain;
 pub mod direct_connector;
-#[cfg(feature = "out_http")]
-// direct_simple currently used by http connector specifically? Check usage. Assuming general utility for non-complex outbounds.
-#[cfg(any(feature = "out_socks", feature = "out_http"))]
-pub mod direct_simple;
 pub mod endpoint;
 pub mod health;
 #[cfg(feature = "out_http")]
@@ -47,7 +35,6 @@ pub mod socks5_udp;
 #[cfg(feature = "out_socks")]
 pub mod socks_upstream;
 pub mod tcp;
-pub mod traits;
 pub mod types;
 pub mod udp;
 pub mod udp_balancer;
@@ -100,7 +87,7 @@ use std::{
 // Re-export the standard traits and implementations
 pub use direct_connector::{DirectConnector, DirectUdpTransport};
 pub use manager::OutboundManager;
-pub use traits::{OutboundConnector, UdpTransport};
+pub use sb_types::{Outbound, PacketConn};
 
 use tokio::{
     io::{AsyncReadExt, AsyncWriteExt},
@@ -126,10 +113,8 @@ pub async fn connect(host: &str, port: u16) -> std::io::Result<TcpStream> {
 use socket2::{SockRef, TcpKeepalive};
 
 use base64::Engine; // 关键：引入 trait，启用 .encode()
-                    // Adapter-level connector trait (for SelectorGroup and generic wrappers)
-use crate::adapter::OutboundConnector as AdapterConnector;
-// metrics 通过 telemetry helpers 间接使用，无需直接导入
-// 预埋：握手错误维度统计（不改变现有总量计数语义）
+                    // metrics 通过 telemetry helpers 间接使用，无需直接导入
+                    // 预埋：握手错误维度统计（不改变现有总量计数语义）
 #[cfg(feature = "metrics")]
 const _HANDSHAKE_ERR_METRIC_HINT: &str = "sb_outbound_handshake_error_total";
 
@@ -172,6 +157,45 @@ async fn connect_with_keepalive(
             "tcp connect timeout",
         )),
     }
+}
+
+async fn dial_canonical_outbound(
+    outbound: &dyn sb_types::Outbound,
+    endpoint: Endpoint,
+) -> io::Result<sb_transport::IoStream> {
+    use tokio_util::compat::FuturesAsyncReadCompatExt;
+
+    let session = canonical_session(endpoint);
+    let stream = outbound.dial(&session).await.map_err(core_error_to_io)?;
+    Ok(Box::new(stream.compat()))
+}
+
+fn canonical_session(endpoint: Endpoint) -> sb_types::Session {
+    let target = match endpoint {
+        Endpoint::Ip(address) => sb_types::TargetAddr::Socket(address),
+        Endpoint::Domain(host, port) => sb_types::TargetAddr::domain(host, port),
+    };
+    sb_types::Session::new(
+        0,
+        sb_types::InboundTag::new("core-outbound-registry"),
+        target,
+    )
+}
+
+fn core_error_to_io(error: sb_types::CoreError) -> io::Error {
+    let kind = match &error {
+        sb_types::CoreError::Connect { kind, .. } => match kind {
+            sb_types::ConnectErrorKind::Refused => io::ErrorKind::ConnectionRefused,
+            sb_types::ConnectErrorKind::Reset => io::ErrorKind::ConnectionReset,
+            sb_types::ConnectErrorKind::Unreachable => io::ErrorKind::NotConnected,
+            sb_types::ConnectErrorKind::Unsupported => io::ErrorKind::Unsupported,
+            sb_types::ConnectErrorKind::InvalidConfig => io::ErrorKind::InvalidInput,
+        },
+        sb_types::CoreError::Timeout { .. } => io::ErrorKind::TimedOut,
+        sb_types::CoreError::Policy { .. } => io::ErrorKind::PermissionDenied,
+        _ => io::ErrorKind::Other,
+    };
+    io::Error::new(kind, error)
 }
 
 #[derive(Clone, Debug, PartialEq, Eq, Default)]
@@ -219,7 +243,7 @@ pub enum OutboundImpl {
     #[cfg(feature = "out_hysteria2")]
     Hysteria2(hysteria2::Hysteria2Config),
     /// Generic trait-based connector (e.g., `SelectorGroup`)
-    Connector(Arc<dyn AdapterConnector>),
+    Connector(Arc<dyn sb_types::Outbound>),
 }
 
 #[derive(Clone, Debug, Default)]
@@ -244,13 +268,11 @@ impl OutboundRegistry {
 #[derive(Clone, Debug)]
 pub struct OutboundRegistryHandle {
     inner: Arc<RwLock<OutboundRegistry>>,
-    udp_factories: Arc<RwLock<HashMap<String, Arc<dyn crate::adapter::UdpOutboundFactory>>>>,
 }
 impl Default for OutboundRegistryHandle {
     fn default() -> Self {
         Self {
             inner: Arc::new(RwLock::new(OutboundRegistry::default())),
-            udp_factories: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 }
@@ -258,56 +280,16 @@ impl OutboundRegistryHandle {
     pub fn new(reg: OutboundRegistry) -> Self {
         Self {
             inner: Arc::new(RwLock::new(reg)),
-            udp_factories: Arc::new(RwLock::new(HashMap::new())),
-        }
-    }
-    pub fn new_with_udp_factories(
-        reg: OutboundRegistry,
-        udp_factories: HashMap<String, Arc<dyn crate::adapter::UdpOutboundFactory>>,
-    ) -> Self {
-        Self {
-            inner: Arc::new(RwLock::new(reg)),
-            udp_factories: Arc::new(RwLock::new(udp_factories)),
         }
     }
     pub fn replace(&self, reg: OutboundRegistry) {
         *self.inner.write() = reg;
-        self.udp_factories.write().clear();
-    }
-    pub fn replace_with_udp_factories(
-        &self,
-        reg: OutboundRegistry,
-        udp_factories: HashMap<String, Arc<dyn crate::adapter::UdpOutboundFactory>>,
-    ) {
-        *self.inner.write() = reg;
-        *self.udp_factories.write() = udp_factories;
     }
     pub fn read(&self) -> parking_lot::RwLockReadGuard<'_, OutboundRegistry> {
         self.inner.read()
     }
     pub fn resolve(&self, name: &str) -> Option<OutboundImpl> {
         self.inner.read().get(name).cloned()
-    }
-    pub fn resolve_udp_factory(
-        &self,
-        name: &str,
-    ) -> Option<Arc<dyn crate::adapter::UdpOutboundFactory>> {
-        self.udp_factories.read().get(name).cloned()
-    }
-
-    async fn connect_udp_factory(
-        &self,
-        name: &str,
-    ) -> io::Result<Box<dyn crate::outbound::traits::UdpTransport>> {
-        let factory = self.resolve_udp_factory(name).ok_or_else(|| {
-            io::Error::new(
-                io::ErrorKind::Unsupported,
-                format!("outbound '{name}' does not support UDP associate"),
-            )
-        })?;
-        let session = factory.open_session().await?;
-        Ok(Box::new(UdpFactoryTransport { session })
-            as Box<dyn crate::outbound::traits::UdpTransport>)
     }
 
     pub async fn connect_tcp(&self, target: &RouteTarget, ep: Endpoint) -> io::Result<TcpStream> {
@@ -322,11 +304,11 @@ impl OutboundRegistryHandle {
                 Some(OutboundImpl::Socks5(cfg)) => socks5_connect(&cfg, ep).await,
                 Some(OutboundImpl::HttpProxy(cfg)) => http_connect(&cfg, ep).await,
                 Some(OutboundImpl::Connector(conn)) => {
-                    let (host, port) = match ep {
-                        Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
-                        Endpoint::Domain(h, p) => (h, p),
-                    };
-                    conn.connect(&host, port).await
+                    let _ = conn;
+                    Err(io::Error::new(
+                        io::ErrorKind::Unsupported,
+                        "canonical outbound requires connect_tcp_stream",
+                    ))
                 }
                 #[cfg(feature = "out_naive")]
                 Some(OutboundImpl::Naive(cfg)) => naive_connect(&cfg, ep).await,
@@ -351,25 +333,15 @@ impl OutboundRegistryHandle {
     pub async fn connect_udp(
         &self,
         target: &RouteTarget,
-        ep: Endpoint,
-    ) -> io::Result<Box<dyn crate::outbound::traits::UdpTransport>> {
+        session: sb_types::Session,
+    ) -> io::Result<sb_types::BoxedPacketConn> {
         use crate::outbound::direct_connector::DirectConnector;
-        use crate::outbound::traits::OutboundConnector;
-        use crate::types::{ConnCtx, Endpoint as TypesEndpoint, Host, Network};
-
-        // Bridge the routing-layer Endpoint into the typed ConnCtx the connector expects.
-        let dst: TypesEndpoint = match ep {
-            Endpoint::Ip(sa) => TypesEndpoint::from(sa),
-            Endpoint::Domain(host, port) => TypesEndpoint::new(Host::parse(&host), port),
-        };
-        let src = SocketAddr::from(([0u8, 0, 0, 0], 0));
-        let ctx = ConnCtx::new(0, Network::Udp, src, dst);
 
         let connect_direct = || async {
             DirectConnector::new()
-                .connect_udp(&ctx)
+                .listen_packet(&session)
                 .await
-                .map_err(|e| io::Error::other(format!("direct udp connect failed: {e}")))
+                .map_err(core_error_to_io)
         };
 
         match target {
@@ -388,7 +360,10 @@ impl OutboundRegistryHandle {
                     io::ErrorKind::PermissionDenied,
                     "blocked by rule",
                 )),
-                Some(OutboundImpl::Connector(_)) => self.connect_udp_factory(name).await,
+                Some(OutboundImpl::Connector(connector)) => connector
+                    .listen_packet(&session)
+                    .await
+                    .map_err(core_error_to_io),
                 Some(_) => Err(io::Error::new(
                     io::ErrorKind::Unsupported,
                     format!("outbound '{name}' does not support UDP associate"),
@@ -409,7 +384,7 @@ impl OutboundRegistryHandle {
     /// uses each outbound's CONNECT-aware path. This is what the TUN datapath uses so
     /// that TUN traffic can egress through HTTP/SOCKS/adapter outbounds, not only
     /// `direct`. `Connector` outbounds (the adapter registry, e.g. the GUI's HTTP/SOCKS
-    /// outbounds) are dialed via `connect_io`, which performs the real proxy handshake.
+    /// outbounds) are dialed through the canonical boxed-stream contract.
     pub async fn connect_tcp_stream(
         &self,
         target: &RouteTarget,
@@ -433,22 +408,7 @@ impl OutboundRegistryHandle {
                 Some(OutboundImpl::Socks5(cfg)) => Ok(boxed(socks5_connect(&cfg, ep).await?)),
                 Some(OutboundImpl::HttpProxy(cfg)) => Ok(boxed(http_connect(&cfg, ep).await?)),
                 Some(OutboundImpl::Connector(conn)) => {
-                    let (host, port) = match ep {
-                        Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
-                        Endpoint::Domain(h, p) => (h, p),
-                    };
-                    // connect_io performs the CONNECT-aware proxy handshake and returns
-                    // a boxed stream (e.g. HTTP proxy tunnel, SOCKS, layered transports).
-                    // It only exists with v2ray_transport (always on in adapter/app builds);
-                    // without it, fall back to raw connect (works for direct-style connectors).
-                    #[cfg(feature = "v2ray_transport")]
-                    {
-                        conn.connect_io(&host, port).await
-                    }
-                    #[cfg(not(feature = "v2ray_transport"))]
-                    {
-                        Ok(boxed(conn.connect(&host, port).await?))
-                    }
+                    dial_canonical_outbound(conn.as_ref(), ep).await
                 }
                 #[cfg(feature = "out_naive")]
                 Some(OutboundImpl::Naive(cfg)) => Ok(boxed(naive_connect(&cfg, ep).await?)),
@@ -462,161 +422,13 @@ impl OutboundRegistryHandle {
         }
     }
 
-    /// Establish a generic AsyncRead/AsyncWrite stream to the endpoint.
-    ///
-    /// When available (feature `v2ray_transport`), protocols like VMess may
-    /// return a layered transport (e.g., TCP->TLS->WebSocket) as a boxed stream.
-    /// For other outbounds, falls back to plain TcpStream boxed.
-    #[cfg(feature = "v2ray_transport")]
-    pub async fn connect_io(
-        &self,
-        target: &RouteTarget,
-        ep: Endpoint,
-    ) -> io::Result<sb_transport::IoStream> {
-        match target {
-            RouteTarget::Kind(k) => {
-                // Fallback: build TcpStream and box it
-                let s = connect_tcp_builtin(k, ep).await?;
-                let boxed: sb_transport::IoStream = Box::new(s);
-                Ok(boxed)
-            }
-            RouteTarget::Named(name) => match self.resolve(name) {
-                Some(OutboundImpl::Direct) => {
-                    let s = direct_connect(ep).await?;
-                    let boxed: sb_transport::IoStream = Box::new(s);
-                    Ok(boxed)
-                }
-                Some(OutboundImpl::Block) => Err(io::Error::new(
-                    io::ErrorKind::PermissionDenied,
-                    "blocked by rule",
-                )),
-                Some(OutboundImpl::Socks5(cfg)) => {
-                    let s = socks5_connect(&cfg, ep).await?;
-                    let boxed: sb_transport::IoStream = Box::new(s);
-                    Ok(boxed)
-                }
-                Some(OutboundImpl::HttpProxy(cfg)) => {
-                    let s = http_connect(&cfg, ep).await?;
-                    let boxed: sb_transport::IoStream = Box::new(s);
-                    Ok(boxed)
-                }
-                Some(OutboundImpl::Connector(conn)) => {
-                    let (host, port) = match ep {
-                        Endpoint::Ip(sa) => (sa.ip().to_string(), sa.port()),
-                        Endpoint::Domain(h, p) => (h, p),
-                    };
-                    conn.connect_io(&host, port).await
-                }
-                #[cfg(feature = "out_naive")]
-                Some(OutboundImpl::Naive(cfg)) => {
-                    use crate::outbound::naive_h2::NaiveH2Outbound;
-                    use crate::outbound::types::{HostPort, OutboundTcp};
-
-                    let hp = match ep {
-                        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-                        Endpoint::Domain(host, port) => HostPort::new(host, port),
-                    };
-
-                    let outbound = NaiveH2Outbound::new(cfg.clone())
-                        .map_err(|e| io::Error::other(format!("Naive setup failed: {}", e)))?;
-                    let stream = OutboundTcp::connect(&outbound, &hp).await?;
-                    Ok(Box::new(stream))
-                }
-                #[cfg(feature = "out_hysteria2")]
-                Some(OutboundImpl::Hysteria2(cfg)) => {
-                    use crate::outbound::hysteria2::Hysteria2Outbound;
-                    use crate::outbound::types::{HostPort, OutboundTcp};
-
-                    let hp = match ep {
-                        Endpoint::Ip(sa) => HostPort::new(sa.ip().to_string(), sa.port()),
-                        Endpoint::Domain(host, port) => HostPort::new(host, port),
-                    };
-
-                    let outbound = Hysteria2Outbound::new(cfg.clone())
-                        .map_err(|e| io::Error::other(format!("Hysteria2 setup failed: {}", e)))?;
-                    let stream = OutboundTcp::connect(&outbound, &hp).await?;
-                    Ok(Box::new(stream))
-                }
-                None => Err(io::Error::new(
-                    io::ErrorKind::NotFound,
-                    "outbound not found",
-                )),
-            },
-        }
-    }
-
-    /// Preferred connection helper (v2ray_transport).
-    /// Returns a boxed async IO stream via layered transports when enabled.
-    #[cfg(feature = "v2ray_transport")]
+    /// Preferred connection helper. Always uses canonical boxed-stream dialing.
     pub async fn connect_preferred(
         &self,
         target: &RouteTarget,
         ep: Endpoint,
     ) -> io::Result<sb_transport::IoStream> {
-        #[cfg(feature = "v2ray_transport")]
-        {
-            let use_v2ray = [
-                "SB_VMESS_TRANSPORT",
-                "SB_VLESS_TRANSPORT",
-                "SB_TROJAN_TRANSPORT",
-            ]
-            .iter()
-            .any(|k| std::env::var(k).map(|v| !v.is_empty()).unwrap_or(false));
-            if use_v2ray {
-                if let Ok(s) = self.connect_io(target, ep.clone()).await {
-                    return Ok(s);
-                }
-            }
-        }
-        let tcp = self.connect_tcp(target, ep).await?;
-        Ok(Box::new(tcp))
-    }
-
-    /// Preferred connection helper (fallback when `v2ray_transport` is disabled):
-    /// returns a plain `TcpStream`.
-    #[cfg(not(feature = "v2ray_transport"))]
-    pub async fn connect_preferred(
-        &self,
-        target: &RouteTarget,
-        ep: Endpoint,
-    ) -> io::Result<TcpStream> {
-        self.connect_tcp(target, ep).await
-    }
-}
-
-struct UdpFactoryTransport {
-    session: Arc<dyn crate::adapter::UdpOutboundSession>,
-}
-
-#[async_trait::async_trait]
-impl crate::outbound::traits::UdpTransport for UdpFactoryTransport {
-    async fn send_to(
-        &self,
-        buf: &[u8],
-        dst: &crate::types::Endpoint,
-    ) -> crate::error::SbResult<usize> {
-        self.session
-            .send_to(buf, &dst.host.to_string(), dst.port)
-            .await
-            .map_err(|e| {
-                crate::error::SbError::network(
-                    crate::error::ErrorClass::Connection,
-                    format!("UDP send failed: {e}"),
-                )
-            })?;
-        Ok(buf.len())
-    }
-
-    async fn recv_from(&self, buf: &mut [u8]) -> crate::error::SbResult<(usize, SocketAddr)> {
-        let (data, addr) = self.session.recv_from().await.map_err(|e| {
-            crate::error::SbError::network(
-                crate::error::ErrorClass::Connection,
-                format!("UDP recv failed: {e}"),
-            )
-        })?;
-        let n = data.len().min(buf.len());
-        buf[..n].copy_from_slice(&data[..n]);
-        Ok((n, addr))
+        self.connect_tcp_stream(target, ep).await
     }
 }
 
@@ -647,8 +459,6 @@ async fn connect_tcp_builtin(kind: &OutboundKind, ep: Endpoint) -> io::Result<Tc
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapter::{OutboundConnector as AdapterOutboundConnector, UdpOutboundFactory};
-    use crate::types::{Endpoint as TypesEndpoint, Host};
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
@@ -675,73 +485,119 @@ mod tests {
     }
 
     #[derive(Debug)]
-    struct DummyConnector;
-
-    #[async_trait::async_trait]
-    impl AdapterOutboundConnector for DummyConnector {
-        async fn connect(&self, _host: &str, _port: u16) -> io::Result<TcpStream> {
-            Err(io::Error::new(io::ErrorKind::Unsupported, "tcp unused"))
-        }
-    }
-
-    #[derive(Debug)]
-    struct MockUdpFactory {
+    struct DummyConnector {
         opened: Arc<AtomicUsize>,
     }
 
-    impl UdpOutboundFactory for MockUdpFactory {
-        fn open_session(&self) -> crate::adapter::UdpOutboundFuture {
+    impl sb_types::Outbound for DummyConnector {
+        fn r#type(&self) -> &str {
+            "dummy"
+        }
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new("dummy")
+        }
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+        }
+        fn dial<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "tcp unused",
+                ))
+            })
+        }
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
             let opened = self.opened.clone();
             Box::pin(async move {
                 opened.fetch_add(1, Ordering::SeqCst);
-                Ok(Arc::new(MockUdpSession) as Arc<dyn crate::adapter::UdpOutboundSession>)
+                Ok(Box::new(MockPacketConn) as sb_types::BoxedPacketConn)
             })
         }
     }
 
     #[derive(Debug)]
-    struct MockUdpSession;
+    struct MockPacketConn;
 
-    #[async_trait::async_trait]
-    impl crate::adapter::UdpOutboundSession for MockUdpSession {
-        async fn send_to(&self, _data: &[u8], _host: &str, _port: u16) -> io::Result<()> {
+    impl sb_types::PacketConn for MockPacketConn {
+        fn send_to<'a>(
+            &'a self,
+            data: &'a [u8],
+            _: &'a sb_types::TargetAddr,
+        ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+            Box::pin(async move { Ok(data.len()) })
+        }
+        fn recv_from<'a>(
+            &'a self,
+            buffer: &'a mut [u8],
+        ) -> sb_types::BoxFuture<'a, Result<(usize, sb_types::TargetAddr), sb_types::CoreError>>
+        {
+            Box::pin(async move {
+                buffer[..2].copy_from_slice(b"ok");
+                Ok((
+                    2,
+                    sb_types::TargetAddr::socket("127.0.0.1:53".parse().unwrap()),
+                ))
+            })
+        }
+        fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+            Box::pin(async { Ok(()) })
+        }
+        fn local_addr(&self) -> Option<sb_types::TargetAddr> {
+            None
+        }
+        fn set_deadline(&self, _: Option<std::time::Instant>) -> Result<(), sb_types::CoreError> {
             Ok(())
         }
-
-        async fn recv_from(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
-            Ok((b"ok".to_vec(), "127.0.0.1:53".parse().unwrap()))
+        fn set_read_deadline(
+            &self,
+            _: Option<std::time::Instant>,
+        ) -> Result<(), sb_types::CoreError> {
+            Ok(())
+        }
+        fn set_write_deadline(
+            &self,
+            _: Option<std::time::Instant>,
+        ) -> Result<(), sb_types::CoreError> {
+            Ok(())
         }
     }
 
     #[tokio::test]
-    async fn registry_connect_udp_uses_named_udp_factory_for_connector() {
+    async fn registry_connect_udp_uses_canonical_named_connector() {
         let opened = Arc::new(AtomicUsize::new(0));
         let mut registry = OutboundRegistry::default();
         registry.insert(
             "wg".to_string(),
-            OutboundImpl::Connector(Arc::new(DummyConnector)),
-        );
-        let mut factories = HashMap::new();
-        factories.insert(
-            "wg".to_string(),
-            Arc::new(MockUdpFactory {
+            OutboundImpl::Connector(Arc::new(DummyConnector {
                 opened: opened.clone(),
-            }) as Arc<dyn crate::adapter::UdpOutboundFactory>,
+            })),
         );
-        let handle = OutboundRegistryHandle::new_with_udp_factories(registry, factories);
+        let handle = OutboundRegistryHandle::new(registry);
 
         let transport = handle
             .connect_udp(
                 &RouteTarget::Named("wg".to_string()),
-                Endpoint::Ip("10.7.0.1:53".parse().unwrap()),
+                sb_types::Session::new(
+                    0,
+                    sb_types::InboundTag::new("test"),
+                    sb_types::TargetAddr::socket("10.7.0.1:53".parse().unwrap()),
+                ),
             )
             .await
-            .expect("named connector should use UDP factory");
+            .expect("named connector should use canonical PacketConn");
 
         let n = transport
             .send_to(
                 b"hello",
-                &TypesEndpoint::new(Host::ip("10.7.0.1".parse().unwrap()), 53),
+                &sb_types::TargetAddr::socket("10.7.0.1:53".parse().unwrap()),
             )
             .await
             .expect("factory transport send");
@@ -753,27 +609,11 @@ mod tests {
             .await
             .expect("factory transport recv");
         assert_eq!(&buf[..n], b"ok");
-        assert_eq!(src, "127.0.0.1:53".parse().unwrap());
+        assert_eq!(
+            src,
+            sb_types::TargetAddr::socket("127.0.0.1:53".parse().unwrap())
+        );
         assert_eq!(opened.load(Ordering::SeqCst), 1);
-    }
-
-    #[test]
-    fn registry_replace_clears_udp_factories() {
-        let opened = Arc::new(AtomicUsize::new(0));
-        let mut factories = HashMap::new();
-        factories.insert(
-            "wg".to_string(),
-            Arc::new(MockUdpFactory { opened }) as Arc<dyn crate::adapter::UdpOutboundFactory>,
-        );
-        let handle =
-            OutboundRegistryHandle::new_with_udp_factories(OutboundRegistry::default(), factories);
-
-        assert!(handle.resolve_udp_factory("wg").is_some());
-        handle.replace(OutboundRegistry::default());
-        assert!(
-            handle.resolve_udp_factory("wg").is_none(),
-            "plain replace must not leave stale UDP factory mappings"
-        );
     }
 }
 

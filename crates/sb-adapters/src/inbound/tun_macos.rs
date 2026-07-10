@@ -27,7 +27,6 @@ use tokio::{
 };
 
 use sb_core::net::metered::TrafficRecorder;
-use sb_core::outbound::{OutboundConnector, UdpTransport};
 use sb_core::services::v2ray_api::StatsManager;
 use sb_core::types::{ConnCtx, Endpoint, Host, Network};
 
@@ -56,7 +55,7 @@ impl TunMacosRuntime {
     #[allow(clippy::too_many_arguments)]
     pub async fn start(
         config: &ProcessAwareTunConfig,
-        outbound: Arc<dyn OutboundConnector>,
+        outbound: Arc<dyn sb_types::Outbound>,
         process_router: Option<Arc<ProcessRouter>>,
         process_matcher: Option<Arc<ProcessMatcher>>,
         stats: Arc<ProcessAwareTunStatistics>,
@@ -155,7 +154,7 @@ impl TunMacosRuntime {
 }
 
 struct SocksBridge {
-    outbound: Arc<dyn OutboundConnector>,
+    outbound: Arc<dyn sb_types::Outbound>,
     process_router: Option<Arc<ProcessRouter>>,
     process_matcher: Option<Arc<ProcessMatcher>>,
     stats: Arc<ProcessAwareTunStatistics>,
@@ -311,13 +310,20 @@ async fn handle_connect(
         ctx = ctx.with_process_info(core_proc);
     }
 
+    use tokio_util::compat::FuturesAsyncReadCompatExt;
+    let session = sb_types::Session::new(
+        ctx.id,
+        sb_types::InboundTag::new("tun-macos"),
+        target_to_canonical(&target),
+    );
     let mut outbound = bridge
         .outbound
-        .connect_tcp(&ctx)
+        .dial(&session)
         .await
-        .map_err(|e| io::Error::other(format!("outbound connect failed: {e}")))?;
+        .map_err(|e| io::Error::other(format!("outbound connect failed: {e}")))?
+        .compat();
 
-    reply(stream, 0x00, outbound.local_addr().unwrap_or(local_addr)).await?;
+    reply(stream, 0x00, local_addr).await?;
 
     info!(peer=?peer, dest=?target, decision=%decision_msg, "SOCKS CONNECT established");
 
@@ -521,7 +527,7 @@ struct UdpKey {
 }
 
 struct UdpChannel {
-    transport: Arc<dyn UdpTransport>,
+    transport: Arc<dyn sb_types::PacketConn>,
     #[allow(dead_code)]
     endpoint: Endpoint,
     traffic: Option<Arc<dyn TrafficRecorder>>,
@@ -529,7 +535,7 @@ struct UdpChannel {
 
 struct UdpSessionManager {
     socket: Arc<UdpSocket>,
-    outbound: Arc<dyn OutboundConnector>,
+    outbound: Arc<dyn sb_types::Outbound>,
     process_router: Option<Arc<ProcessRouter>>,
     process_matcher: Option<Arc<ProcessMatcher>>,
     stats: Arc<ProcessAwareTunStatistics>,
@@ -543,7 +549,7 @@ struct UdpSessionManager {
 impl UdpSessionManager {
     fn new(
         socket: Arc<UdpSocket>,
-        outbound: Arc<dyn OutboundConnector>,
+        outbound: Arc<dyn sb_types::Outbound>,
         process_router: Option<Arc<ProcessRouter>>,
         process_matcher: Option<Arc<ProcessMatcher>>,
         stats: Arc<ProcessAwareTunStatistics>,
@@ -671,7 +677,7 @@ impl UdpSessionManager {
 
         channel
             .transport
-            .send_to(payload, &endpoint)
+            .send_to(payload, &target_to_canonical(&endpoint))
             .await
             .map_err(|e| io::Error::other(format!("udp send failed: {e}")))?;
         if let Some(ref recorder) = channel.traffic {
@@ -718,12 +724,17 @@ impl UdpSessionManager {
             ctx
         };
 
+        let session = sb_types::Session::new(
+            ctx.id,
+            sb_types::InboundTag::new("tun-macos"),
+            target_to_canonical(endpoint),
+        );
         let transport = self
             .outbound
-            .connect_udp(&ctx)
+            .listen_packet(&session)
             .await
             .map_err(|e| io::Error::other(format!("udp connect failed: {e}")))?;
-        let transport: Arc<dyn UdpTransport> = transport.into();
+        let transport: Arc<dyn sb_types::PacketConn> = transport.into();
         let traffic = self.v2ray_stats.as_ref().and_then(|stats| {
             stats.traffic_recorder(self.inbound_tag.as_deref(), None, ctx.user.as_deref())
         });
@@ -756,7 +767,18 @@ impl UdpSessionManager {
             loop {
                 match transport_clone.recv_from(&mut buf).await {
                     Ok((size, addr)) => {
-                        let packet = build_udp_response(&endpoint_clone, addr, &buf[..size]);
+                        let source = match addr {
+                            sb_types::TargetAddr::Socket(address) => address,
+                            sb_types::TargetAddr::Domain(_, _) => {
+                                endpoint_clone.to_socket_addr().unwrap_or_else(|| {
+                                    SocketAddr::new(
+                                        IpAddr::V4(Ipv4Addr::UNSPECIFIED),
+                                        endpoint_clone.port,
+                                    )
+                                })
+                            }
+                        };
+                        let packet = build_udp_response(&endpoint_clone, source, &buf[..size]);
                         if socket.send_to(&packet, key_clone.client).await.is_err() {
                             break;
                         }
@@ -778,6 +800,13 @@ impl UdpSessionManager {
             endpoint: endpoint.clone(),
             traffic,
         }))
+    }
+}
+
+fn target_to_canonical(endpoint: &Endpoint) -> sb_types::TargetAddr {
+    match &endpoint.host {
+        Host::Ip(ip) => sb_types::TargetAddr::Socket(SocketAddr::new(*ip, endpoint.port)),
+        Host::Name(host) => sb_types::TargetAddr::domain(host.to_string(), endpoint.port),
     }
 }
 

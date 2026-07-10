@@ -38,14 +38,17 @@ pub mod errors;
 pub mod ports;
 
 // Re-export commonly used types at crate root.
-pub use errors::{CoreError, DnsError, ErrorClass, TransportError};
+pub use errors::{ConnectErrorKind, CoreError, DnsError, ErrorClass, TransportError};
 pub use ports::{
-    AdminPort, AsyncStream, BoxedStream, ConnSnapshot, Datagram, DnsCacheStats, DnsPort,
-    HttpClient, HttpMethod, HttpRequest, HttpResponse, InboundAcceptor, InboundHandler, Lifecycle,
-    LogLevel, MetricsPort, NoOpMetrics, OutboundConnector, Service, StartStage, Startable,
-    StatsPort, TrafficSnapshot,
+    AdminPort, AsyncStream, BoxFuture, BoxedPacketConn, BoxedStream, ConnSnapshot, DnsCacheStats,
+    DnsPort, HttpClient, HttpMethod, HttpRequest, HttpResponse, Inbound, Lifecycle, LogLevel,
+    MetricsPort, NetworkKind, NoOpMetrics, Outbound, OutboundGroup, PacketConn, SelectorControl,
+    Service, StartStage, Startable, StatsPort, TrafficSnapshot,
 };
-pub use session::{InboundTag, OutboundTag, Session, SessionId, SessionMeta, TargetAddr, UserId};
+pub use session::{
+    ConnectOptions, InboundTag, OutboundTag, PacketOptions, ResolveMode, RetryPolicy, Session,
+    SessionId, SessionMeta, TargetAddr, UserId,
+};
 
 // ============================================================================
 // Legacy issue codes (kept for backward compatibility)

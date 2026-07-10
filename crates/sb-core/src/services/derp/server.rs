@@ -1960,18 +1960,10 @@ impl DerpService {
                     } else {
                         crate::outbound::Endpoint::Domain(host, port)
                     };
-                    #[cfg(feature = "v2ray_transport")]
-                    {
-                        outbounds
-                            .connect_io(&target, ep)
-                            .await
-                            .map_err(DialError::from)
-                    }
-                    #[cfg(not(feature = "v2ray_transport"))]
-                    {
-                        let s = outbounds.connect_tcp(&target, ep).await?;
-                        Ok(Box::new(s) as IoStream)
-                    }
+                    outbounds
+                        .connect_tcp_stream(&target, ep)
+                        .await
+                        .map_err(DialError::from)
                 })
                     as std::pin::Pin<
                         Box<
@@ -5174,7 +5166,6 @@ mod tests {
 
     #[tokio::test]
     async fn test_verify_client_url_detour_uses_outbound_connector() {
-        use crate::adapter::OutboundConnector;
         use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 
         #[derive(Debug)]
@@ -5182,11 +5173,47 @@ mod tests {
             calls: Arc<tokio::sync::Mutex<Vec<(String, u16)>>>,
         }
 
-        #[async_trait::async_trait]
-        impl OutboundConnector for TestConnector {
-            async fn connect(&self, host: &str, port: u16) -> io::Result<tokio::net::TcpStream> {
-                self.calls.lock().await.push((host.to_string(), port));
-                tokio::net::TcpStream::connect((host, port)).await
+        impl sb_types::Outbound for TestConnector {
+            fn r#type(&self) -> &str {
+                "test"
+            }
+            fn tag(&self) -> sb_types::OutboundTag {
+                sb_types::OutboundTag::new("test")
+            }
+            fn network(&self) -> &[sb_types::NetworkKind] {
+                &[sb_types::NetworkKind::Tcp]
+            }
+            fn dial<'a>(
+                &'a self,
+                session: &'a sb_types::Session,
+            ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>>
+            {
+                Box::pin(async move {
+                    use tokio_util::compat::TokioAsyncReadCompatExt;
+                    let (host, port) = match &session.target {
+                        sb_types::TargetAddr::Socket(address) => {
+                            (address.ip().to_string(), address.port())
+                        }
+                        sb_types::TargetAddr::Domain(host, port) => (host.clone(), *port),
+                    };
+                    self.calls.lock().await.push((host.to_string(), port));
+                    let stream = tokio::net::TcpStream::connect((host.as_str(), port))
+                        .await
+                        .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+                    Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+                })
+            }
+            fn listen_packet<'a>(
+                &'a self,
+                _session: &'a sb_types::Session,
+            ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+            {
+                Box::pin(async {
+                    Err(sb_types::CoreError::connect(
+                        sb_types::ConnectErrorKind::Unsupported,
+                        "test",
+                    ))
+                })
             }
         }
 

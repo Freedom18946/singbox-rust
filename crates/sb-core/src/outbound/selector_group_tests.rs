@@ -2,15 +2,12 @@
 
 #[cfg(test)]
 mod tests {
-    use crate::adapter::OutboundConnector;
     use crate::outbound::selector_group::{
         parse_test_url, ProxyHealth, ProxyMember, SelectMode, SelectorGroup, UrlTestOptions,
     };
-    use std::io;
     use std::sync::atomic::{AtomicUsize, Ordering};
     use std::sync::Arc;
     use std::time::Duration;
-    use tokio::net::TcpStream;
 
     /// Mock connector for testing
     #[derive(Debug)]
@@ -43,24 +40,45 @@ mod tests {
         }
     }
 
-    #[async_trait::async_trait]
-    impl OutboundConnector for MockConnector {
-        async fn connect(&self, _host: &str, _port: u16) -> io::Result<TcpStream> {
-            tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
-
-            let count = self.fail_count.fetch_add(1, Ordering::SeqCst);
-            if count < self.max_fails {
-                return Err(io::Error::new(
-                    io::ErrorKind::ConnectionRefused,
-                    "mock failure",
-                ));
-            }
-
-            // Can't create a real TcpStream in tests, so return error
-            Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "mock connector (test only)",
-            ))
+    impl sb_types::Outbound for MockConnector {
+        fn r#type(&self) -> &str {
+            "mock"
+        }
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new(self.name.clone())
+        }
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp]
+        }
+        fn dial<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async move {
+                tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
+                let count = self.fail_count.fetch_add(1, Ordering::SeqCst);
+                let (kind, message) = if count < self.max_fails {
+                    (sb_types::ConnectErrorKind::Refused, "mock failure")
+                } else {
+                    (
+                        sb_types::ConnectErrorKind::Unsupported,
+                        "mock connector (test only)",
+                    )
+                };
+                Err(sb_types::CoreError::connect(kind, message))
+            })
+        }
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
+            Box::pin(async {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "mock",
+                ))
+            })
         }
     }
 
@@ -68,7 +86,6 @@ mod tests {
         ProxyMember {
             tag: tag.to_string(),
             connector: Arc::new(MockConnector::new(tag, delay_ms)),
-            udp_factory: None,
             health: Arc::new(ProxyHealth::default()),
         }
     }

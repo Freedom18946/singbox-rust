@@ -3,7 +3,7 @@ use anyhow::{Context, Result};
 #[cfg(any(feature = "router", feature = "adapters"))]
 use sb_config::ir::{InboundIR, InboundType};
 #[cfg(feature = "router")]
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 #[cfg(feature = "router")]
 use sb_core::outbound::OutboundRegistryHandle;
 #[cfg(feature = "adapters")]

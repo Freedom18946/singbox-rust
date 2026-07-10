@@ -1,6 +1,4 @@
-use crate::outbound::OutboundConnector;
 use anyhow::Result;
-use async_trait::async_trait;
 
 pub mod crypto;
 pub mod obfs;
@@ -9,6 +7,7 @@ pub mod stream;
 
 #[derive(Debug, Clone)]
 pub struct ShadowsocksROutboundConfig {
+    pub tag: Option<String>,
     pub server: String,
     pub port: u16,
     pub method: String,
@@ -42,12 +41,10 @@ impl ShadowsocksROutbound {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for ShadowsocksROutbound {
-    async fn dial(
+impl ShadowsocksROutbound {
+    pub async fn dial(
         &self,
-        _target: crate::traits::Target,
-        _opts: crate::traits::DialOpts,
+        _session: &sb_types::Session,
     ) -> crate::error::Result<crate::traits::BoxedStream> {
         // Connect to the SSR server
         let stream =
@@ -68,12 +65,24 @@ impl OutboundConnector for ShadowsocksROutbound {
     }
 }
 
+crate::impl_canonical_outbound!(
+    ShadowsocksROutbound,
+    "shadowsocksr",
+    |this: &ShadowsocksROutbound| this
+        .config
+        .tag
+        .clone()
+        .unwrap_or_else(|| "shadowsocksr".to_string()),
+    &[sb_types::NetworkKind::Tcp]
+);
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     fn base_config() -> ShadowsocksROutboundConfig {
         ShadowsocksROutboundConfig {
+            tag: None,
             server: "127.0.0.1".to_string(),
             port: 8388,
             method: "aes-256-cfb".to_string(),

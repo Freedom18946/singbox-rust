@@ -41,7 +41,12 @@ pub fn spawn_health_task(bridge: Arc<Bridge>) -> tokio::task::JoinHandle<()> {
         loop {
             for (name, _kind, conn) in &bridge.outbounds {
                 let t0 = Instant::now();
-                let ok = conn.connect(&host, port).await.is_ok();
+                let session = sb_types::Session::new(
+                    0,
+                    sb_types::InboundTag::new("health"),
+                    sb_types::TargetAddr::domain(host.clone(), port),
+                );
+                let ok = conn.dial(&session).await.is_ok();
                 let up = if ok { 1.0 } else { 0.0 };
                 // 指标：outbound_up{outbound}
                 sb_metrics::set_proxy_select_score(name.as_str(), up);

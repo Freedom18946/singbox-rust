@@ -7,6 +7,7 @@
 use serde::{Deserialize, Serialize};
 use std::fmt;
 use std::net::{IpAddr, SocketAddr};
+use std::time::Duration;
 
 /// Unique session identifier (monotonically increasing per process).
 pub type SessionId = u64;
@@ -84,6 +85,16 @@ impl TargetAddr {
         Self::Socket(SocketAddr::new(ip, port))
     }
 
+    /// Create socket target for an IP literal, otherwise preserve domain target.
+    #[inline]
+    pub fn from_host_port(host: impl Into<String>, port: u16) -> Self {
+        let host = host.into();
+        match host.parse::<IpAddr>() {
+            Ok(ip) => Self::ip(ip, port),
+            Err(_) => Self::domain(host, port),
+        }
+    }
+
     /// Get the port.
     #[inline]
     pub fn port(&self) -> u16 {
@@ -156,6 +167,183 @@ pub struct SessionMeta {
     pub mark: u32,
 }
 
+/// DNS resolution policy carried with an outbound connection request.
+#[derive(Clone, Debug, Default, PartialEq, Eq, Serialize, Deserialize)]
+pub enum ResolveMode {
+    /// Resolve names before connecting to the outbound.
+    Local,
+    /// Let the outbound resolve names itself.
+    #[default]
+    Remote,
+}
+
+/// Bounded retry policy for establishing an outbound stream.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct RetryPolicy {
+    /// Number of retries after the initial attempt.
+    pub max_retries: u32,
+    /// Initial retry delay in milliseconds.
+    pub base_delay_ms: u64,
+    /// Random delay range as a fraction of the base delay.
+    pub jitter: f32,
+    /// Maximum retry delay in milliseconds.
+    pub max_delay_ms: u64,
+}
+
+impl Default for RetryPolicy {
+    fn default() -> Self {
+        Self {
+            max_retries: 2,
+            base_delay_ms: 100,
+            jitter: 0.1,
+            max_delay_ms: 5_000,
+        }
+    }
+}
+
+impl RetryPolicy {
+    /// Construct default retry policy.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set retry count after initial attempt.
+    #[must_use]
+    pub fn with_max_retries(mut self, max_retries: u32) -> Self {
+        self.max_retries = max_retries;
+        self
+    }
+
+    /// Set exponential-backoff base delay in milliseconds.
+    #[must_use]
+    pub fn with_base_delay(mut self, base_delay_ms: u64) -> Self {
+        self.base_delay_ms = base_delay_ms;
+        self
+    }
+
+    /// Set jitter fraction, clamped to `0.0..=1.0`.
+    #[must_use]
+    pub fn with_jitter(mut self, jitter: f32) -> Self {
+        self.jitter = jitter.clamp(0.0, 1.0);
+        self
+    }
+
+    /// Set maximum retry delay in milliseconds.
+    #[must_use]
+    pub fn with_max_delay(mut self, max_delay_ms: u64) -> Self {
+        self.max_delay_ms = max_delay_ms;
+        self
+    }
+
+    /// Calculate randomized exponential-backoff delay for zero-based attempt.
+    #[must_use]
+    pub fn calculate_delay(&self, attempt: u32) -> Duration {
+        self.calculate_delay_with_sample(attempt, 0.5)
+    }
+
+    /// Calculate delay with caller-supplied jitter sample for deterministic tests.
+    #[must_use]
+    pub fn calculate_delay_with_sample(&self, attempt: u32, jitter_sample: f32) -> Duration {
+        if attempt == 0 {
+            return Duration::ZERO;
+        }
+        let exponent = attempt.saturating_sub(1).min(63);
+        let base = self.base_delay_ms.saturating_mul(1_u64 << exponent);
+        let jitter = self.jitter.clamp(0.0, 1.0);
+        let sample = jitter_sample.clamp(0.0, 1.0);
+        let factor = 1.0 + (sample - 0.5) * 2.0 * jitter;
+        let delayed = (base as f64 * f64::from(factor)) as u64;
+        Duration::from_millis(delayed.min(self.max_delay_ms))
+    }
+}
+
+/// Options that govern a single outbound stream connection.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct ConnectOptions {
+    /// Maximum time for the initial connection and handshake.
+    #[serde(with = "duration_serde")]
+    pub connect_timeout: Duration,
+    /// Maximum idle/read operation time requested by the caller.
+    #[serde(with = "duration_serde")]
+    pub read_timeout: Duration,
+    /// Retry policy applied by adapters that support retries.
+    pub retry_policy: RetryPolicy,
+    /// Where domain names are resolved.
+    pub resolve_mode: ResolveMode,
+}
+
+impl Default for ConnectOptions {
+    fn default() -> Self {
+        Self {
+            connect_timeout: Duration::from_secs(10),
+            read_timeout: Duration::from_secs(30),
+            retry_policy: RetryPolicy::default(),
+            resolve_mode: ResolveMode::Remote,
+        }
+    }
+}
+
+impl ConnectOptions {
+    /// Construct default connection options.
+    #[must_use]
+    pub fn new() -> Self {
+        Self::default()
+    }
+
+    /// Set connection establishment timeout.
+    #[must_use]
+    pub fn with_connect_timeout(mut self, timeout: Duration) -> Self {
+        self.connect_timeout = timeout;
+        self
+    }
+
+    /// Set read timeout.
+    #[must_use]
+    pub fn with_read_timeout(mut self, timeout: Duration) -> Self {
+        self.read_timeout = timeout;
+        self
+    }
+
+    /// Set retry policy.
+    #[must_use]
+    pub fn with_retry_policy(mut self, retry_policy: RetryPolicy) -> Self {
+        self.retry_policy = retry_policy;
+        self
+    }
+
+    /// Set DNS resolution policy.
+    #[must_use]
+    pub fn with_resolve_mode(mut self, resolve_mode: ResolveMode) -> Self {
+        self.resolve_mode = resolve_mode;
+        self
+    }
+}
+
+/// Final UDP route options captured when an outbound packet association opens.
+#[derive(Clone, Debug, Serialize, Deserialize)]
+pub struct PacketOptions {
+    /// Whether the outbound should create a connected UDP socket.
+    #[serde(default)]
+    pub udp_connect: bool,
+    /// Effective idle timeout after route/inbound/protocol precedence resolution.
+    #[serde(with = "duration_serde")]
+    pub idle_timeout: Duration,
+    /// Whether reverse domain mapping is disabled for this association.
+    #[serde(default)]
+    pub udp_disable_domain_unmapping: bool,
+}
+
+impl Default for PacketOptions {
+    fn default() -> Self {
+        Self {
+            udp_connect: false,
+            idle_timeout: Duration::from_secs(5 * 60),
+            udp_disable_domain_unmapping: false,
+        }
+    }
+}
+
 /// Unified session context for data plane.
 ///
 /// This is the core request context passed through inbound → router → outbound.
@@ -174,6 +362,12 @@ pub struct Session {
     /// Additional metadata.
     #[serde(default)]
     pub meta: SessionMeta,
+    /// Connection controls finalized by routing before `Outbound::dial`.
+    #[serde(default)]
+    pub connect: ConnectOptions,
+    /// Packet controls finalized by routing before `Outbound::listen_packet`.
+    #[serde(default)]
+    pub packet: PacketOptions,
 }
 
 impl Session {
@@ -186,7 +380,50 @@ impl Session {
             user: None,
             target,
             meta: SessionMeta::default(),
+            connect: ConnectOptions::default(),
+            packet: PacketOptions::default(),
         }
+    }
+
+    /// Create detached outbound session for direct adapter use and tests.
+    #[inline]
+    pub fn outbound(target: TargetAddr) -> Self {
+        Self::new(0, InboundTag::new("outbound"), target)
+    }
+
+    /// Replace connection controls.
+    #[must_use]
+    pub fn with_connect(mut self, connect: ConnectOptions) -> Self {
+        self.connect = connect;
+        self
+    }
+
+    /// Replace packet controls.
+    #[must_use]
+    pub fn with_packet(mut self, packet: PacketOptions) -> Self {
+        self.packet = packet;
+        self
+    }
+}
+
+/// Serde codec used by the canonical contract for duration values in milliseconds.
+pub mod duration_serde {
+    use serde::{Deserialize, Deserializer, Serialize, Serializer};
+    use std::time::Duration;
+
+    pub fn serialize<S>(duration: &Duration, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        duration.as_millis().serialize(serializer)
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Duration, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let millis = u64::deserialize(deserializer)?;
+        Ok(Duration::from_millis(millis))
     }
 }
 
@@ -214,6 +451,9 @@ mod tests {
         );
         let json = serde_json::to_string(&session)?;
         assert!(json.contains("google.com"));
+        let decoded: Session = serde_json::from_str(&json)?;
+        assert_eq!(decoded.connect.connect_timeout, Duration::from_secs(10));
+        assert_eq!(decoded.packet.idle_timeout, Duration::from_secs(5 * 60));
         Ok(())
     }
 }

@@ -143,6 +143,13 @@ fn types_endpoint_from_udp_target(dst: &UdpTargetAddr) -> TypesEndpoint {
     }
 }
 
+fn canonical_target_from_udp_target(dst: &UdpTargetAddr) -> sb_types::TargetAddr {
+    match dst {
+        UdpTargetAddr::Ip(address) => sb_types::TargetAddr::Socket(*address),
+        UdpTargetAddr::Domain { host, port } => sb_types::TargetAddr::domain(host.clone(), *port),
+    }
+}
+
 fn route_target_from_decision(decision: &RDecision) -> Option<RouteTarget> {
     match decision {
         RDecision::Direct => Some(RouteTarget::direct()),
@@ -210,10 +217,19 @@ async fn open_registry_upstream(
     outbounds: &OutboundRegistryHandle,
     target: &RouteTarget,
     dst: &UdpTargetAddr,
-) -> Result<Arc<dyn sb_core::outbound::UdpTransport>> {
-    let transport = outbounds
-        .connect_udp(target, outbound_endpoint_from_udp_target(dst))
-        .await?;
+    options: &RouteActionOptions,
+    idle_timeout: Duration,
+) -> Result<Arc<dyn sb_types::PacketConn>> {
+    let packet_target = match dst {
+        UdpTargetAddr::Ip(address) => sb_types::TargetAddr::Socket(*address),
+        UdpTargetAddr::Domain { host, port } => sb_types::TargetAddr::domain(host.clone(), *port),
+    };
+    let mut session =
+        sb_types::Session::new(0, sb_types::InboundTag::new("socks-udp"), packet_target);
+    session.packet.udp_connect = options.udp_connect;
+    session.packet.idle_timeout = idle_timeout;
+    session.packet.udp_disable_domain_unmapping = options.udp_disable_domain_unmapping;
+    let transport = outbounds.connect_udp(target, session).await?;
     Ok(Arc::from(transport))
 }
 
@@ -243,13 +259,10 @@ async fn send_to_nat_upstream(
                 direct_sendto(socket.as_ref(), dst, payload).await
             }
         }
-        UdpNatUpstream::Transport(transport) => {
-            let endpoint = types_endpoint_from_udp_target(dst);
-            transport
-                .send_to(payload, &endpoint)
-                .await
-                .map_err(|err| anyhow::anyhow!("{err}"))
-        }
+        UdpNatUpstream::Transport(transport) => transport
+            .send_to(payload, &canonical_target_from_udp_target(dst))
+            .await
+            .map_err(|err| anyhow::anyhow!("{err}")),
     }
 }
 
@@ -259,10 +272,24 @@ async fn recv_from_nat_upstream(
 ) -> Result<(usize, SocketAddr)> {
     match upstream {
         UdpNatUpstream::Socket(socket) => Ok(socket.recv_from(buf).await?),
-        UdpNatUpstream::Transport(transport) => transport
-            .recv_from(buf)
-            .await
-            .map_err(|err| anyhow::anyhow!("{err}")),
+        UdpNatUpstream::Transport(transport) => {
+            let (size, source) = transport
+                .recv_from(buf)
+                .await
+                .map_err(|err| anyhow::anyhow!("{err}"))?;
+            let source = match source {
+                sb_types::TargetAddr::Socket(address) => address,
+                sb_types::TargetAddr::Domain(host, port) => {
+                    tokio::net::lookup_host((host.as_str(), port))
+                        .await?
+                        .next()
+                        .ok_or_else(|| {
+                            anyhow::anyhow!("UDP reply domain had no resolved address")
+                        })?
+                }
+            };
+            Ok((size, source))
+        }
     }
 }
 
@@ -1862,7 +1889,17 @@ pub async fn serve_udp_datagrams_with_runtime(
                 let (upstream, conntrack_target) = if let (Some(outbounds), Some(route_target)) =
                     (runtime.outbounds.as_ref(), registry_target_for_packet)
                 {
-                    match open_registry_upstream(outbounds, route_target, &dst).await {
+                    let packet_idle_timeout =
+                        effective_udp_timeout(&dst, timeout, &route_decision.route_options);
+                    match open_registry_upstream(
+                        outbounds,
+                        route_target,
+                        &dst,
+                        &route_decision.route_options,
+                        packet_idle_timeout,
+                    )
+                    .await
+                    {
                         Ok(transport) => {
                             (UdpNatUpstream::Transport(transport), route_target.clone())
                         }

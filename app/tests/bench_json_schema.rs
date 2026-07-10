@@ -66,7 +66,8 @@ fn build_app(features: &str) -> PathBuf {
 fn bench_io_json_schema_fields_exist() {
     let bin = build_app("bench-cli,reqwest");
 
-    // requests=0 avoids real network I/O, still emits stats
+    // One request to a closed local endpoint exercises the failure accounting
+    // path without external network I/O and still emits the fixed schema.
     let out = Command::new(bin)
         .args([
             "bench",
@@ -74,7 +75,7 @@ fn bench_io_json_schema_fields_exist() {
             "--url",
             "http://127.0.0.1:0",
             "--requests",
-            "0",
+            "1",
             "--concurrency",
             "1",
             "--hist-buckets",

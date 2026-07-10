@@ -4,8 +4,6 @@
 //! through HTTP/2 streams with optional authentication.
 
 #[cfg(feature = "out_naive")]
-use async_trait::async_trait;
-#[cfg(feature = "out_naive")]
 use base64::Engine;
 #[cfg(feature = "out_naive")]
 use hyper::{Body, Request, StatusCode, Uri};
@@ -17,7 +15,7 @@ use std::sync::Arc;
 use tokio_rustls::{rustls::pki_types::ServerName, TlsConnector};
 
 #[cfg(feature = "out_naive")]
-use super::types::{HostPort, OutboundTcp};
+use super::types::HostPort;
 
 #[cfg(feature = "out_naive")]
 #[derive(Clone, Debug)]
@@ -63,11 +61,12 @@ impl NaiveH2Outbound {
 }
 
 #[cfg(feature = "out_naive")]
-#[async_trait]
-impl OutboundTcp for NaiveH2Outbound {
-    type IO = hyper::upgrade::Upgraded;
+impl NaiveH2Outbound {
+    pub const fn protocol_name(&self) -> &'static str {
+        "naive-h2"
+    }
 
-    async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
+    pub async fn connect_tunnel(&self, target: &HostPort) -> io::Result<hyper::upgrade::Upgraded> {
         use crate::metrics::labels::{record_connect_total, Proto, ResultTag};
         use crate::metrics::outbound::{record_connect_attempt, record_connect_success};
 
@@ -183,10 +182,6 @@ impl OutboundTcp for NaiveH2Outbound {
         }
 
         Ok(upgraded)
-    }
-
-    fn protocol_name(&self) -> &'static str {
-        "naive-h2"
     }
 }
 

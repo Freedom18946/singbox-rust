@@ -4,39 +4,23 @@
 //! different inbound handler instances with lifecycle support.
 //! 此模块提供 `InboundManager`，用于管理不同的入站处理程序实例，并支持生命周期管理。
 
-use crate::service::{Lifecycle, StartStage};
+use crate::service::StartStage;
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
 use tracing::{debug, warn};
 
-/// Inbound adapter trait for handlers with lifecycle and tag.
-/// 具有生命周期和标签的入站适配器 trait。
-pub trait InboundAdapter: Lifecycle {
-    /// Return the inbound tag/identifier.
-    /// 返回入站标签/标识符。
-    fn tag(&self) -> &str;
-
-    /// Return the inbound type (e.g., "http", "socks", "vmess").
-    /// 返回入站类型（例如 "http", "socks", "vmess"）。
-    fn inbound_type(&self) -> &str;
-}
-
-/// Type alias for an inbound handler (legacy compatibility).
-/// 入站处理程序的类型别名（传统兼容性）。
-pub type InboundHandler = Arc<dyn InboundAdapter>;
-
 /// Thread-safe manager for inbound handlers with lifecycle support.
 /// 具有生命周期支持的入站处理程序的线程安全管理器。
 #[derive(Clone)]
 pub struct InboundManager {
-    handlers: Arc<RwLock<HashMap<String, InboundHandler>>>,
+    handlers: Arc<RwLock<HashMap<String, Arc<dyn sb_types::Inbound>>>>,
 }
 
 impl std::fmt::Debug for InboundManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("InboundManager")
-            .field("handlers", &"<dyn InboundAdapter>")
+            .field("handlers", &"<dyn sb_types::Inbound>")
             .finish()
     }
 }
@@ -52,21 +36,21 @@ impl InboundManager {
 
     /// Add an inbound handler with the given tag.
     /// 添加具有给定标签的入站处理程序。
-    pub async fn add_handler(&self, tag: String, handler: InboundHandler) {
+    pub async fn add_handler(&self, tag: String, handler: Arc<dyn sb_types::Inbound>) {
         let mut handlers = self.handlers.write().await;
         handlers.insert(tag, handler);
     }
 
     /// Get an inbound handler by tag.
     /// 按标签获取入站处理程序。
-    pub async fn get(&self, tag: &str) -> Option<InboundHandler> {
+    pub async fn get(&self, tag: &str) -> Option<Arc<dyn sb_types::Inbound>> {
         let handlers = self.handlers.read().await;
         handlers.get(tag).cloned()
     }
 
     /// Remove an inbound handler by tag.
     /// 按标签移除入站处理程序。
-    pub async fn remove(&self, tag: &str) -> Option<InboundHandler> {
+    pub async fn remove(&self, tag: &str) -> Option<Arc<dyn sb_types::Inbound>> {
         let mut handlers = self.handlers.write().await;
         handlers.remove(tag)
     }
@@ -138,7 +122,10 @@ impl InboundManager {
 
     /// Remove with validation (Go parity: ErrInvalid if tag is empty).
     /// 带验证的移除（Go 对等：标签为空时返回 ErrInvalid）。
-    pub async fn remove_with_check(&self, tag: &str) -> Result<Option<InboundHandler>, String> {
+    pub async fn remove_with_check(
+        &self,
+        tag: &str,
+    ) -> Result<Option<Arc<dyn sb_types::Inbound>>, String> {
         if tag.is_empty() {
             return Err("empty tag invalid".to_string());
         }
@@ -147,7 +134,7 @@ impl InboundManager {
 
     /// Replace an inbound handler, closing the old one if present (Go parity: close-on-replace).
     /// 替换入站处理程序，如果存在则关闭旧的（Go 对等：替换时关闭）。
-    pub async fn replace(&self, tag: String, handler: InboundHandler) {
+    pub async fn replace(&self, tag: String, handler: Arc<dyn sb_types::Inbound>) {
         // Close old handler if exists
         if let Some(old) = self.get(&tag).await {
             debug!(tag = %tag, "inbound: closing old handler before replace");
@@ -172,27 +159,25 @@ impl Default for InboundManager {
 mod tests {
     use super::*;
 
+    #[derive(Debug)]
     struct MockInboundAdapter {
         tag: String,
     }
 
-    impl InboundAdapter for MockInboundAdapter {
-        fn tag(&self) -> &str {
-            &self.tag
-        }
-        fn inbound_type(&self) -> &str {
+    impl sb_types::Inbound for MockInboundAdapter {
+        fn r#type(&self) -> &str {
             "mock"
         }
-    }
 
-    impl Lifecycle for MockInboundAdapter {
-        fn start(
-            &self,
-            _stage: StartStage,
-        ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        fn tag(&self) -> sb_types::InboundTag {
+            sb_types::InboundTag::new(self.tag.clone())
+        }
+
+        fn start(&self, _stage: StartStage) -> Result<(), sb_types::CoreError> {
             Ok(())
         }
-        fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+
+        fn close(&self) -> Result<(), sb_types::CoreError> {
             Ok(())
         }
     }
@@ -204,7 +189,7 @@ mod tests {
         assert_eq!(manager.len().await, 0);
 
         // Add a handler
-        let handler: InboundHandler = Arc::new(MockInboundAdapter {
+        let handler: Arc<dyn sb_types::Inbound> = Arc::new(MockInboundAdapter {
             tag: "http".to_string(),
         });
         manager
@@ -235,10 +220,10 @@ mod tests {
     async fn test_inbound_manager_lifecycle() {
         let manager = InboundManager::new();
 
-        let handler1: InboundHandler = Arc::new(MockInboundAdapter {
+        let handler1: Arc<dyn sb_types::Inbound> = Arc::new(MockInboundAdapter {
             tag: "h1".to_string(),
         });
-        let handler2: InboundHandler = Arc::new(MockInboundAdapter {
+        let handler2: Arc<dyn sb_types::Inbound> = Arc::new(MockInboundAdapter {
             tag: "h2".to_string(),
         });
 

@@ -46,7 +46,7 @@ struct UdpSession {
 pub(super) struct UdpNatTable {
     sessions: DashMap<UdpFourTuple, UdpSession>,
     ttl: Duration,
-    /// Estimated session count (atomic for cheap reads from InboundService).
+    /// Estimated session count (atomic for cheap reads from InboundTaskDriver).
     session_count: AtomicU64,
 }
 

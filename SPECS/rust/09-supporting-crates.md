@@ -12,8 +12,7 @@ singbox-rust 包含多个辅助 crate，提供专门功能：
 | `sb-subscribe` | 订阅解析 |
 | `sb-runtime` | 运行时辅助 |
 | `sb-platform` | 平台适配 |
-| `sb-proto` | 协议定义 |
-| `sb-types` | 共享类型 |
+| `sb-types` | 共享类型与正典适配器契约 |
 | `sb-common` | 通用工具 |
 | `sb-security` | 安全工具 |
 | `sb-test-utils` | 测试工具 |

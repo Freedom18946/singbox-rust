@@ -2,7 +2,6 @@
 //! Trojan Multiplex configuration integration tests (compile-time validation)
 
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
-use sb_adapters::outbound::OutboundConnector;
 use sb_adapters::transport_config::TransportConfig;
 use sb_transport::multiplex::MultiplexConfig;
 

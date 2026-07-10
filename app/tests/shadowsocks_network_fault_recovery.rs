@@ -11,9 +11,8 @@ use tokio::task::JoinSet;
 
 use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 
 struct ShadowsocksServerHandle {
     stop_tx: mpsc::Sender<()>,
@@ -158,13 +157,9 @@ async fn dial_echo_once(
     echo_addr: SocketAddr,
     payload: &[u8],
 ) -> bool {
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    match connector.dial(target, DialOpts::default()).await {
+    match connector.dial(&Session::outbound(target)).await {
         Ok(mut stream) => {
             if stream.write_all(payload).await.is_err() {
                 return false;

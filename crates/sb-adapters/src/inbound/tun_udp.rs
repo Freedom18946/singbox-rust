@@ -22,8 +22,7 @@ use tokio::task::JoinHandle;
 use tokio::time::timeout;
 use tracing::debug;
 
-use sb_core::outbound::{Endpoint, OutboundRegistryHandle, RouteTarget, UdpTransport};
-use sb_core::types::{Endpoint as TypesEndpoint, Host};
+use sb_core::outbound::{OutboundRegistryHandle, RouteTarget};
 
 use crate::inbound::tun_session::{build_udp_response_packet, FourTuple, TunWriter};
 
@@ -31,7 +30,7 @@ use crate::inbound::tun_session::{build_udp_response_packet, FourTuple, TunWrite
 const MAX_NAT_ENTRIES: usize = 4096;
 
 struct UdpNatEntry {
-    transport: Arc<dyn UdpTransport>,
+    transport: Arc<dyn sb_types::PacketConn>,
     last_active: Mutex<Instant>,
     relay_task: JoinHandle<()>,
 }
@@ -90,7 +89,8 @@ impl EnhancedUdpNat {
         outbounds: &OutboundRegistryHandle,
         writer: Arc<dyn TunWriter + Send + Sync>,
     ) -> io::Result<()> {
-        let dst_endpoint = TypesEndpoint::new(Host::ip(tuple.dst_ip), tuple.dst_port);
+        let dst_endpoint =
+            sb_types::TargetAddr::Socket(SocketAddr::new(tuple.dst_ip, tuple.dst_port));
 
         // Fast path: existing flow. Clone the transport out and drop the DashMap guard
         // *before* awaiting so the shard lock is never held across `.await`.
@@ -112,9 +112,14 @@ impl EnhancedUdpNat {
         }
 
         // Slow path: establish a new outbound UDP association.
-        let routing_endpoint = Endpoint::Ip(SocketAddr::new(tuple.dst_ip, tuple.dst_port));
-        let transport: Arc<dyn UdpTransport> =
-            Arc::from(outbounds.connect_udp(target, routing_endpoint).await?);
+        let mut session = sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new("tun-udp"),
+            dst_endpoint.clone(),
+        );
+        session.packet.idle_timeout = self.ttl;
+        let transport: Arc<dyn sb_types::PacketConn> =
+            Arc::from(outbounds.connect_udp(target, session).await?);
 
         transport
             .send_to(payload, &dst_endpoint)
@@ -155,7 +160,7 @@ impl EnhancedUdpNat {
 /// platform `write` adds that). Ends on idle timeout, transport error, or writer close.
 fn spawn_udp_reverse_relay(
     tuple: FourTuple,
-    transport: Arc<dyn UdpTransport>,
+    transport: Arc<dyn sb_types::PacketConn>,
     writer: Arc<dyn TunWriter + Send + Sync>,
     ttl: Duration,
     mtu: usize,

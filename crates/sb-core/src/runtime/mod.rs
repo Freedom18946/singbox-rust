@@ -87,28 +87,9 @@ impl Runtime {
     /// 启动所有入站（bridge 中已构造）。
     pub fn start(mut self) -> Self {
         for ib in &self.bridge.inbounds {
-            // Late binding for TunInboundService
-            #[cfg(feature = "in_tun")]
-            if let Some(any) = ib.as_any() {
-                if let Some(tun) = any.downcast_ref::<crate::inbound::tun::TunInboundService>() {
-                    #[cfg(feature = "router")]
-                    {
-                        tun.set_router(self.engine.handle());
-                    }
-                    let stats = self
-                        .bridge
-                        .context
-                        .v2ray_server
-                        .as_ref()
-                        .and_then(|s| s.stats());
-                    tun.set_stats(stats);
-                    tun.set_outbound_manager(self.switchboard.clone());
-                }
-            }
-
             let i = ib.clone();
             let h = thread::spawn(move || {
-                let _ = i.serve();
+                let _ = i.start(sb_types::StartStage::Start);
             });
             self.workers.push(h);
         }

@@ -7,6 +7,7 @@
 
 use sb_adapters::outbound::prelude::*;
 use sb_adapters::outbound::socks5::Socks5Connector;
+use sb_types::{ConnectOptions, Session, TargetAddr};
 use std::io::ErrorKind;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -88,10 +89,10 @@ async fn test_socks5_no_auth_connect() {
 
     // Create connector and test
     let connector = Socks5Connector::no_auth(server_addr.to_string());
-    let target = Target::tcp("example.com", 80);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
+    let session = Session::outbound(TargetAddr::domain("example.com", 80))
+        .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5)));
 
-    let result = connector.dial(target, opts).await;
+    let result = connector.dial(&session).await;
     assert!(
         result.is_ok(),
         "SOCKS5 connection should succeed: {:?}",
@@ -181,10 +182,10 @@ async fn test_socks5_with_auth_connect() {
 
     // Create connector with auth and test
     let connector = Socks5Connector::with_auth(server_addr.to_string(), "testuser", "testpass");
-    let target = Target::tcp("example.com", 80);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
+    let session = Session::outbound(TargetAddr::domain("example.com", 80))
+        .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5)));
 
-    let result = connector.dial(target, opts).await;
+    let result = connector.dial(&session).await;
     assert!(
         result.is_ok(),
         "SOCKS5 auth connection should succeed: {:?}",
@@ -228,10 +229,10 @@ async fn test_socks5_connect_failure() {
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     let connector = Socks5Connector::no_auth(server_addr.to_string());
-    let target = Target::tcp("example.com", 80);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
+    let session = Session::outbound(TargetAddr::domain("example.com", 80))
+        .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5)));
 
-    let result = connector.dial(target, opts).await;
+    let result = connector.dial(&session).await;
     assert!(result.is_err(), "SOCKS5 connection should fail");
 
     if let Err(AdapterError::Protocol(msg)) = result {

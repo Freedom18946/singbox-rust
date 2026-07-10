@@ -4,7 +4,6 @@
 //! This test validates that Trojan outbound adapter correctly integrates with HTTPUpgrade transport.
 
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
-use sb_adapters::outbound::OutboundConnector;
 use sb_adapters::transport_config::{HttpUpgradeTransportConfig, TransportConfig};
 
 #[tokio::test]

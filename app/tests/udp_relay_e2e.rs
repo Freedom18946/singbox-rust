@@ -19,9 +19,9 @@ use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUse
 use sb_adapters::inbound::vless::VlessInboundConfig;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
-use sb_adapters::traits::{Target, TransportKind};
 use sb_adapters::transport_config::TransportConfig;
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 
 /// Helper: Start UDP echo server
 async fn start_udp_echo_server() -> Option<SocketAddr> {
@@ -175,29 +175,17 @@ async fn test_shadowsocks_udp_relay() {
         ShadowsocksConnector::new(config).expect("Failed to create Shadowsocks connector");
 
     // Create UDP relay
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Udp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let udp_socket = connector
-        .udp_relay_dial(target.clone())
+        .udp_relay_dial(&Session::outbound(target.clone()))
         .await
         .expect("Failed to create UDP relay");
-
-    // Set target for subsequent operations
-    if let Some(ss_udp) = udp_socket
-        .as_any()
-        .downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>(
-    ) {
-        ss_udp.set_target(target).await;
-    }
 
     // Send test data
     let test_data = b"Hello, Shadowsocks UDP!";
     let sent = udp_socket
-        .send_to(test_data)
+        .send_to(test_data, &target)
         .await
         .expect("Failed to send UDP data");
 
@@ -205,7 +193,7 @@ async fn test_shadowsocks_udp_relay() {
 
     // Receive response
     let mut recv_buf = vec![0u8; 4096];
-    let recv_len = udp_socket
+    let (recv_len, _) = udp_socket
         .recv_from(&mut recv_buf)
         .await
         .expect("Failed to receive UDP data");
@@ -229,6 +217,7 @@ async fn test_vless_udp_relay() {
 
     // Create VLESS connector
     let config = VlessConfig {
+        tag: None,
         server: vless_addr.ip().to_string(),
         port: vless_addr.port(),
         uuid: test_uuid,
@@ -246,29 +235,17 @@ async fn test_vless_udp_relay() {
     let connector = VlessConnector::new(config);
 
     // Create UDP relay
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Udp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let udp_socket = connector
-        .udp_relay_dial(target.clone())
+        .udp_relay_dial(&Session::outbound(target.clone()))
         .await
         .expect("Failed to create UDP relay");
-
-    // Set target for subsequent operations
-    if let Some(vless_udp) = udp_socket
-        .as_any()
-        .downcast_ref::<sb_adapters::outbound::vless::VlessUdpSocket>()
-    {
-        vless_udp.set_target(target).await;
-    }
 
     // Send test data
     let test_data = b"Hello, VLESS UDP!";
     let sent = udp_socket
-        .send_to(test_data)
+        .send_to(test_data, &target)
         .await
         .expect("Failed to send UDP data");
 
@@ -276,7 +253,7 @@ async fn test_vless_udp_relay() {
 
     // Receive response
     let mut recv_buf = vec![0u8; 4096];
-    let recv_len = udp_socket
+    let (recv_len, _) = udp_socket
         .recv_from(&mut recv_buf)
         .await
         .expect("Failed to receive UDP data");
@@ -311,28 +288,17 @@ async fn test_shadowsocks_udp_large_packet() {
         ShadowsocksConnector::new(config).expect("Failed to create Shadowsocks connector");
 
     // Create UDP relay
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Udp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let udp_socket = connector
-        .udp_relay_dial(target.clone())
+        .udp_relay_dial(&Session::outbound(target.clone()))
         .await
         .expect("Failed to create UDP relay");
-
-    if let Some(ss_udp) = udp_socket
-        .as_any()
-        .downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>(
-    ) {
-        ss_udp.set_target(target).await;
-    }
 
     // Test with large packet (1400 bytes, typical UDP MTU)
     let test_data = vec![0xAB_u8; 1400];
     let sent = udp_socket
-        .send_to(&test_data)
+        .send_to(&test_data, &target)
         .await
         .expect("Failed to send large UDP packet");
 
@@ -340,7 +306,7 @@ async fn test_shadowsocks_udp_large_packet() {
 
     // Receive response
     let mut recv_buf = vec![0u8; 4096];
-    let recv_len = udp_socket
+    let (recv_len, _) = udp_socket
         .recv_from(&mut recv_buf)
         .await
         .expect("Failed to receive large UDP packet");
@@ -375,34 +341,23 @@ async fn test_udp_relay_multiple_packets() {
         ShadowsocksConnector::new(config).expect("Failed to create Shadowsocks connector");
 
     // Create UDP relay
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Udp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let udp_socket = connector
-        .udp_relay_dial(target.clone())
+        .udp_relay_dial(&Session::outbound(target.clone()))
         .await
         .expect("Failed to create UDP relay");
-
-    if let Some(ss_udp) = udp_socket
-        .as_any()
-        .downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>(
-    ) {
-        ss_udp.set_target(target).await;
-    }
 
     // Send multiple packets
     for i in 0..10 {
         let test_data = format!("Packet {}", i);
         let _ = udp_socket
-            .send_to(test_data.as_bytes())
+            .send_to(test_data.as_bytes(), &target)
             .await
             .expect("Failed to send UDP packet");
 
         let mut recv_buf = vec![0u8; 4096];
-        let recv_len = udp_socket
+        let (recv_len, _) = udp_socket
             .recv_from(&mut recv_buf)
             .await
             .expect("Failed to receive UDP packet");
@@ -442,26 +397,24 @@ async fn test_udp_relay_concurrent_operations() {
 
             let connector = ShadowsocksConnector::new(config).unwrap();
 
-            let target = Target {
-                host: echo_addr_clone.ip().to_string(),
-                port: echo_addr_clone.port(),
-                kind: TransportKind::Udp,
-            };
+            let target = TargetAddr::from_host_port(
+                echo_addr_clone.ip().to_string(),
+                echo_addr_clone.port(),
+            );
 
-            let udp_socket = connector.udp_relay_dial(target.clone()).await.unwrap();
-
-            if let Some(ss_udp) = udp_socket
-                .as_any()
-                .downcast_ref::<sb_adapters::outbound::shadowsocks::ShadowsocksUdpSocket>(
-            ) {
-                ss_udp.set_target(target).await;
-            }
+            let udp_socket = connector
+                .udp_relay_dial(&Session::outbound(target.clone()))
+                .await
+                .unwrap();
 
             let test_data = format!("Concurrent {}", i);
-            udp_socket.send_to(test_data.as_bytes()).await.unwrap();
+            udp_socket
+                .send_to(test_data.as_bytes(), &target)
+                .await
+                .unwrap();
 
             let mut recv_buf = vec![0u8; 4096];
-            let recv_len = udp_socket.recv_from(&mut recv_buf).await.unwrap();
+            let (recv_len, _) = udp_socket.recv_from(&mut recv_buf).await.unwrap();
 
             assert_eq!(&recv_buf[..recv_len], test_data.as_bytes());
         });

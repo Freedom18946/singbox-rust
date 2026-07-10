@@ -15,7 +15,7 @@ use std::sync::{
 use serde::{Deserialize, Serialize};
 use tokio::sync::Mutex;
 
-use sb_core::outbound::OutboundConnector;
+use sb_core::outbound::Outbound;
 use sb_core::router::process_router::ProcessRouter;
 use sb_core::services::v2ray_api::StatsManager;
 
@@ -109,7 +109,7 @@ pub struct TunStatsSnapshot {
 /// macOS implementation of the process-aware inbound.
 pub struct ProcessAwareTunInbound {
     config: ProcessAwareTunConfig,
-    outbound: Arc<dyn OutboundConnector>,
+    outbound: Arc<dyn Outbound>,
     process_router: Option<Arc<ProcessRouter>>,
     process_matcher: Option<Arc<ProcessMatcher>>,
     conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
@@ -122,7 +122,7 @@ pub struct ProcessAwareTunInbound {
 impl ProcessAwareTunInbound {
     pub fn new(
         config: ProcessAwareTunConfig,
-        outbound: Arc<dyn OutboundConnector>,
+        outbound: Arc<dyn Outbound>,
         process_router: Option<ProcessRouter>,
     ) -> Result<Self, TunError> {
         Ok(Self {
@@ -184,26 +184,38 @@ mod tests {
     #[derive(Debug)]
     struct DummyOutboundConnector;
 
-    #[async_trait::async_trait]
-    impl sb_core::outbound::OutboundConnector for DummyOutboundConnector {
-        async fn connect_tcp(
-            &self,
-            _ctx: &sb_core::types::ConnCtx,
-        ) -> sb_core::error::SbResult<tokio::net::TcpStream> {
-            Err(sb_core::error::SbError::network(
-                sb_core::error::ErrorClass::Connection,
-                "dummy outbound connector",
-            ))
+    impl sb_core::outbound::Outbound for DummyOutboundConnector {
+        fn r#type(&self) -> &str {
+            "dummy"
         }
-
-        async fn connect_udp(
-            &self,
-            _ctx: &sb_core::types::ConnCtx,
-        ) -> sb_core::error::SbResult<Box<dyn sb_core::outbound::UdpTransport>> {
-            Err(sb_core::error::SbError::network(
-                sb_core::error::ErrorClass::Connection,
-                "dummy outbound connector",
-            ))
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new("dummy")
+        }
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp]
+        }
+        fn dial<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "dummy outbound connector",
+                ))
+            })
+        }
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
+            Box::pin(async {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "dummy outbound connector",
+                ))
+            })
         }
     }
 

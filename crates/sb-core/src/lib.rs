@@ -59,7 +59,6 @@ pub mod net;
 pub mod outbound; // <— 新增导出，供 bridge/scaffold 使用
 /// Pipeline utilities for adapters.
 /// 适配器的管道工具。
-pub mod pipeline; // <— 新增导出，供适配器使用
 #[cfg(feature = "router")]
 /// Routing engine and rule matching.
 /// 路由引擎和规则匹配。

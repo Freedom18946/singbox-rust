@@ -578,8 +578,7 @@ async fn test_shadowsocks_chain() {
     };
 
     use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-    use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
-    use sb_adapters::TransportKind;
+    use sb_types::{Session, TargetAddr};
 
     let (ss_addr, _stop_tx) = match start_ss_server("aes-256-gcm", "test-password").await {
         Ok(result) => result,
@@ -600,13 +599,9 @@ async fn test_shadowsocks_chain() {
     })
     .expect("create ss connector");
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    let mut stream = match connector.dial(target, DialOpts::default()).await {
+    let mut stream = match connector.dial(&Session::outbound(target)).await {
         Ok(s) => s,
         Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
             eprintln!("Skipping test due to constrained dial error: {}", e);
@@ -640,9 +635,8 @@ async fn test_vmess_chain() {
     use sb_adapters::outbound::vmess::{
         Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
     };
-    use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
     use sb_adapters::transport_config::TransportConfig;
-    use sb_adapters::TransportKind;
+    use sb_types::{Session, TargetAddr};
 
     let (vmess_addr, test_uuid, _stop_tx) = match start_vmess_server().await {
         Ok(result) => result,
@@ -653,6 +647,7 @@ async fn test_vmess_chain() {
     };
 
     let client_config = VmessConfig {
+        tag: None,
         server: vmess_addr.ip().to_string(),
         port: vmess_addr.port(),
         auth: VmessAuth {
@@ -671,13 +666,9 @@ async fn test_vmess_chain() {
     };
 
     let connector = VmessConnector::new(client_config);
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    let mut stream = match connector.dial(target, DialOpts::default()).await {
+    let mut stream = match connector.dial(&Session::outbound(target)).await {
         Ok(s) => s,
         Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
             eprintln!("Skipping test due to constrained dial error: {}", e);

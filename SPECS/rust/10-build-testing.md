@@ -20,8 +20,7 @@ members = [
     "crates/sb-metrics",      # 指标
     "crates/sb-security",     # 安全工具
     "crates/sb-test-utils",   # 测试工具
-    "crates/sb-types",        # 共享类型
-    "crates/sb-proto",        # 协议定义
+    "crates/sb-types",        # 共享类型与正典适配器契约
     "crates/sb-runtime",      # 运行时
     "crates/sb-platform",     # 平台适配
     "crates/sb-transport",    # 传输层

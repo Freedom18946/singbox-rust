@@ -596,7 +596,7 @@ pub fn parse_vmess_request(data: &[u8]) -> Result<(String, u16, u8)> {
 }
 
 use parking_lot::Mutex;
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 
 #[derive(Debug)]
 pub struct VmessInboundAdapter {
@@ -613,7 +613,7 @@ impl VmessInboundAdapter {
     }
 }
 
-impl InboundService for VmessInboundAdapter {
+impl InboundTaskDriver for VmessInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         let (tx, rx) = mpsc::channel(1);
         *self.stop_tx.lock() = Some(tx);

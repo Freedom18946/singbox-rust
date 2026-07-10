@@ -1,4 +1,4 @@
-use crate::adapter::InboundService;
+use crate::adapter::InboundTaskDriver;
 use std::io;
 use std::sync::atomic::{AtomicU64, Ordering};
 use tracing::error;
@@ -22,7 +22,7 @@ impl UnsupportedInbound {
 
 static ACTIVE: AtomicU64 = AtomicU64::new(0);
 
-impl InboundService for UnsupportedInbound {
+impl InboundTaskDriver for UnsupportedInbound {
     fn serve(&self) -> std::io::Result<()> {
         let plat = std::env::consts::OS;
         let arch = std::env::consts::ARCH;

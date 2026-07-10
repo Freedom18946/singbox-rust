@@ -16,10 +16,9 @@ use tokio::sync::oneshot;
 // Import Shadowsocks adapters
 use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
+use sb_types::{Session, TargetAddr};
 
 #[allow(dead_code)]
 fn is_perm(e: &std::io::Error) -> bool {
@@ -165,13 +164,9 @@ async fn test_shadowsocks_multiplex_single_stream() {
         ShadowsocksConnector::new(client_config).expect("Failed to create Shadowsocks connector");
 
     // Dial through Shadowsocks to echo server
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    let mut stream = match connector.dial(target, DialOpts::default()).await {
+    let mut stream = match connector.dial(&Session::outbound(target)).await {
         Ok(s) => s,
         Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
             eprintln!("Skipping multiplex shadowsocks tests: {}", e);
@@ -220,12 +215,8 @@ async fn test_shadowsocks_multiplex_concurrent_streams() {
 
     // Preflight a single stream to detect constrained sandbox environments before spawning tasks.
     {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
-        let mut s = match connector.dial(target, DialOpts::default()).await {
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+        let mut s = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex shadowsocks tests: {}", e);
@@ -246,14 +237,13 @@ async fn test_shadowsocks_multiplex_concurrent_streams() {
         let echo_addr_clone = echo_addr;
 
         let handle = tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr_clone.ip().to_string(),
-                port: echo_addr_clone.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(
+                echo_addr_clone.ip().to_string(),
+                echo_addr_clone.port(),
+            );
 
             let mut stream = connector_clone
-                .dial(target, DialOpts::default())
+                .dial(&Session::outbound(target))
                 .await
                 .expect("Failed to dial");
 
@@ -311,12 +301,8 @@ async fn test_shadowsocks_multiplex_data_integrity() {
 
     // Preflight to detect constrained environments.
     {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
-        let mut s = match connector.dial(target, DialOpts::default()).await {
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+        let mut s = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex shadowsocks tests: {}", e);
@@ -337,14 +323,13 @@ async fn test_shadowsocks_multiplex_data_integrity() {
         let echo_addr_clone = echo_addr;
 
         let handle = tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr_clone.ip().to_string(),
-                port: echo_addr_clone.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(
+                echo_addr_clone.ip().to_string(),
+                echo_addr_clone.port(),
+            );
 
             let mut stream = connector_clone
-                .dial(target, DialOpts::default())
+                .dial(&Session::outbound(target))
                 .await
                 .expect("Failed to dial");
 
@@ -401,13 +386,9 @@ async fn test_shadowsocks_multiplex_vs_non_multiplex() {
 
         let connector = ShadowsocksConnector::new(client_config).unwrap();
 
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-        let mut stream = match connector.dial(target, DialOpts::default()).await {
+        let mut stream = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex shadowsocks tests: {}", e);
@@ -439,13 +420,9 @@ async fn test_shadowsocks_multiplex_vs_non_multiplex() {
 
         let connector = ShadowsocksConnector::new(client_config).unwrap();
 
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-        let mut stream = match connector.dial(target, DialOpts::default()).await {
+        let mut stream = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex shadowsocks tests: {}", e);
@@ -491,12 +468,8 @@ async fn test_shadowsocks_multiplex_sequential_and_concurrent() {
 
     // Preflight to detect constrained environments.
     {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
-        let mut s = match connector.dial(target, DialOpts::default()).await {
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+        let mut s = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex shadowsocks tests: {}", e);
@@ -512,13 +485,9 @@ async fn test_shadowsocks_multiplex_sequential_and_concurrent() {
 
     // First: Sequential streams (one after another)
     for i in 0..3 {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-        let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
+        let mut stream = connector.dial(&Session::outbound(target)).await.unwrap();
 
         let test_data = format!("Sequential stream {}", i);
         stream.write_all(test_data.as_bytes()).await.unwrap();
@@ -536,14 +505,13 @@ async fn test_shadowsocks_multiplex_sequential_and_concurrent() {
         let echo_addr_clone = echo_addr;
 
         let handle = tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr_clone.ip().to_string(),
-                port: echo_addr_clone.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(
+                echo_addr_clone.ip().to_string(),
+                echo_addr_clone.port(),
+            );
 
             let mut stream = connector_clone
-                .dial(target, DialOpts::default())
+                .dial(&Session::outbound(target))
                 .await
                 .unwrap();
 

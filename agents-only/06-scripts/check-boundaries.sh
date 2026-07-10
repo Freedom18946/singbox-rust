@@ -245,7 +245,7 @@ echo "── V4: sb-adapters → sb-core 反向依赖 ──"
 if grep -q 'sb-core' crates/sb-adapters/Cargo.toml 2>/dev/null; then
     V4A_THRESHOLD="$(policy_value "v4.v4a_max")"
     # V4a: non-inbound (outbound/, register.rs, stubs) — actionable violations
-    V4A_USES=$(grep -rn "use sb_core" crates/sb-adapters/src/outbound/ crates/sb-adapters/src/register.rs crates/sb-adapters/src/service_stubs.rs crates/sb-adapters/src/endpoint_stubs.rs 2>/dev/null | wc -l | tr -d ' ')
+    V4A_USES=$(grep -rn "use sb_core" crates/sb-adapters/src/outbound/ crates/sb-adapters/src/register.rs crates/sb-adapters/src/register/builders.rs crates/sb-adapters/src/service_stubs.rs crates/sb-adapters/src/endpoint_stubs.rs 2>/dev/null | wc -l | tr -d ' ')
 
     # V4b: inbound + service + endpoint — legitimate architecture dependency
     V4B_USES=$(grep -rn "use sb_core" crates/sb-adapters/src/inbound/ crates/sb-adapters/src/service/ crates/sb-adapters/src/endpoint/ 2>/dev/null | wc -l | tr -d ' ')
@@ -641,6 +641,57 @@ else
     else
         echo "  PASS ($V7_CHECKS assertions)"
     fi
+fi
+
+# ─── V8: MIG-03 canonical contract cutover ─────────────────
+echo "── V8: MIG-03 canonical contract cutover ──"
+
+V8_FAILS=0
+if rg -n '\b(DialOpts|TransportKind|OutboundDatagram)\b|impl_canonical_from_legacy_dial|legacy_target|legacy_options' \
+    crates/sb-adapters/src --glob '*.rs' >/dev/null 2>&1; then
+    echo "  FAIL: sb-adapters production still exposes legacy outbound request/datagram surface"
+    V8_FAILS=$((V8_FAILS + 1))
+fi
+
+for removed in \
+    crates/sb-core/src/outbound/traits.rs \
+    crates/sb-core/src/pipeline.rs \
+    crates/sb-adapters/src/canonical.rs \
+    crates/sb-proto/Cargo.toml; do
+    if [ -e "$removed" ]; then
+        echo "  FAIL: removed MIG-03 surface still exists: $removed"
+        V8_FAILS=$((V8_FAILS + 1))
+    fi
+done
+
+if rg -n 'pub trait (OutboundConnector|OutboundConnectorIo|UdpOutboundFactory|UdpOutboundSession|OutboundDatagram)' \
+    crates app --glob '*.rs' >/dev/null 2>&1; then
+    echo "  FAIL: parallel outbound/UDP trait definition remains"
+    V8_FAILS=$((V8_FAILS + 1))
+fi
+
+REGISTER_LINES=$(wc -l < crates/sb-adapters/src/register.rs | tr -d ' ')
+REGISTER_MODULE_LINES=$(find crates/sb-adapters/src/register -type f -name '*.rs' -exec cat {} + | wc -l | tr -d ' ')
+REGISTER_MODULE_LINES=$((REGISTER_LINES + REGISTER_MODULE_LINES))
+if [ "$REGISTER_LINES" -gt 2132 ]; then
+    echo "  FAIL: register.rs has $REGISTER_LINES lines; WP02 ceiling is 2132"
+    V8_FAILS=$((V8_FAILS + 1))
+fi
+if rg -n 'struct[[:space:]]+[A-Za-z0-9_]*(ConnectorWrapper|InboundAdapter)\b' \
+    crates/sb-adapters/src/register.rs crates/sb-adapters/src/register --glob '*.rs' >/dev/null 2>&1; then
+    echo "  FAIL: registration module still contains per-protocol adapter wrappers"
+    V8_FAILS=$((V8_FAILS + 1))
+fi
+if ! rg -n 'WP06 removes scaffold fallbacks' \
+    crates/sb-core/src/adapter/inbound_transition.rs >/dev/null 2>&1; then
+    echo "  FAIL: sole inbound transition bridge lacks explicit WP06 removal schedule"
+    V8_FAILS=$((V8_FAILS + 1))
+fi
+
+if [ "$V8_FAILS" -gt 0 ]; then
+    fail
+else
+    echo "  PASS (register.rs=${REGISTER_LINES} lines; registration module=${REGISTER_MODULE_LINES} lines; wrappers absent; legacy traits absent)"
 fi
 
 # ─── 汇总 ─────────────────────────────────────────────

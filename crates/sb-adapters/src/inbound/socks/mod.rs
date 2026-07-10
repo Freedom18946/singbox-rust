@@ -23,7 +23,7 @@ use tokio::{
 use tracing::{debug, info, warn};
 
 use once_cell::sync::OnceCell;
-use sb_core::adapter::{InboundReadySender, InboundService};
+use sb_core::adapter::{InboundReadySender, InboundTaskDriver};
 use sb_core::outbound::health as ob_health;
 use sb_core::outbound::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
@@ -784,7 +784,7 @@ where
             };
             match cfg
                 .outbounds
-                .connect_io(&OutRouteTarget::Named(name.clone()), out_ep)
+                .connect_tcp_stream(&OutRouteTarget::Named(name.clone()), out_ep)
                 .await
             {
                 Ok(mut s) => {
@@ -861,7 +861,7 @@ where
                     tracing::warn!(
                         outbound = %name,
                         error = %e,
-                        "socks5 inbound: named outbound fast-path connect_io failed; falling back to registry path"
+                        "socks5 inbound: named outbound canonical dial failed; falling back to registry path"
                     );
                 }
             }
@@ -1175,7 +1175,7 @@ impl SocksInboundAdapter {
     }
 }
 
-impl InboundService for SocksInboundAdapter {
+impl InboundTaskDriver for SocksInboundAdapter {
     fn serve(&self) -> io::Result<()> {
         self.serve_with_ready(None)
     }

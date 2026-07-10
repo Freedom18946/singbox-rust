@@ -858,10 +858,19 @@ impl Endpoint for TailscaleEndpoint {
 
     fn listen_packet(
         &self,
-        destination: Socksaddr,
+        session: &sb_types::Session,
     ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = std::io::Result<Arc<UdpSocket>>> + Send + '_>,
+        Box<
+            dyn std::future::Future<Output = std::io::Result<sb_types::BoxedPacketConn>>
+                + Send
+                + '_,
+        >,
     > {
+        let destination = match &session.target {
+            sb_types::TargetAddr::Socket(address) => Socksaddr::from_socket_addr(*address),
+            sb_types::TargetAddr::Domain(host, port) => Socksaddr::from_fqdn(host, *port),
+        };
+        let idle_timeout = session.packet.idle_timeout;
         Box::pin(async move {
             if self.state() != TailscaleState::Running {
                 return Err(std::io::Error::new(
@@ -877,9 +886,14 @@ impl Endpoint for TailscaleEndpoint {
                 )
             })?;
 
-            cp.listen(Network::Udp, destination.port)
+            let socket = cp
+                .listen(Network::Udp, destination.port)
                 .await
-                .map_err(|e| std::io::Error::other(e.to_string()))
+                .map_err(|e| std::io::Error::other(e.to_string()))?;
+            Ok(Box::new(super::EndpointUdpSocketPacketConn::new(
+                socket,
+                idle_timeout,
+            )) as sb_types::BoxedPacketConn)
         })
     }
 

@@ -14,7 +14,7 @@ mod bench_impl {
     use criterion::{black_box, BenchmarkId, Criterion, Throughput};
     use sb_adapters::{
         outbound::{http::HttpProxyConnector, socks5::Socks5Connector},
-        traits::{DialOpts, OutboundConnector, ResolveMode, RetryPolicy, Target},
+        traits::{ConnectOptions, ResolveMode, RetryPolicy, TargetAddr},
         Result,
     };
     use std::sync::Arc;
@@ -113,8 +113,8 @@ mod bench_impl {
     /// Benchmark SOCKS5 CONNECT performance
     async fn bench_socks_connect(proxy_addr: &str, concurrency: usize) -> Result<()> {
         let connector = Socks5Connector::no_auth(proxy_addr.to_string());
-        let target = Target::tcp("example.com", 80);
-        let opts = DialOpts {
+        let target = TargetAddr::from_host_port("example.com", 80);
+        let opts = ConnectOptions {
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(5),
             retry_policy: RetryPolicy::new().with_max_retries(0), // No retries for clean benchmarks
@@ -123,7 +123,9 @@ mod bench_impl {
 
         if concurrency == 1 {
             // Sequential benchmark
-            let _stream = connector.dial(target, opts).await?;
+            let _stream = connector
+                .dial(&sb_types::Session::outbound(target).with_connect(opts))
+                .await?;
         } else {
             // Concurrent benchmark
             let mut handles = Vec::with_capacity(concurrency);
@@ -133,7 +135,11 @@ mod bench_impl {
                 let target = target.clone();
                 let opts = opts.clone();
 
-                let handle = tokio::spawn(async move { connector.dial(target, opts).await });
+                let handle = tokio::spawn(async move {
+                    connector
+                        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+                        .await
+                });
                 handles.push(handle);
             }
 
@@ -152,8 +158,8 @@ mod bench_impl {
     /// Benchmark HTTP CONNECT performance
     async fn bench_http_connect(proxy_addr: &str, concurrency: usize) -> Result<()> {
         let connector = HttpProxyConnector::no_auth(proxy_addr.to_string());
-        let target = Target::tcp("example.com", 80);
-        let opts = DialOpts {
+        let target = TargetAddr::from_host_port("example.com", 80);
+        let opts = ConnectOptions {
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(5),
             retry_policy: RetryPolicy::new().with_max_retries(0),
@@ -162,7 +168,9 @@ mod bench_impl {
 
         if concurrency == 1 {
             // Sequential benchmark
-            let _stream = connector.dial(target, opts).await?;
+            let _stream = connector
+                .dial(&sb_types::Session::outbound(target).with_connect(opts))
+                .await?;
         } else {
             // Concurrent benchmark
             let mut handles = Vec::with_capacity(concurrency);
@@ -172,7 +180,11 @@ mod bench_impl {
                 let target = target.clone();
                 let opts = opts.clone();
 
-                let handle = tokio::spawn(async move { connector.dial(target, opts).await });
+                let handle = tokio::spawn(async move {
+                    connector
+                        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+                        .await
+                });
                 handles.push(handle);
             }
 

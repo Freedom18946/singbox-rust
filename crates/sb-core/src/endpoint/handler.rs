@@ -1,12 +1,10 @@
-use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use std::time::Duration;
 
 use tokio::net::UdpSocket;
-use tracing::{debug, trace, warn};
+use tracing::{trace, warn};
 
-use crate::adapter::{UdpOutboundFactory, UdpOutboundSession};
 use crate::endpoint::{CloseHandler, ConnectionHandler, EndpointStream, InboundContext};
 use crate::net::metered::TrafficRecorder;
 use crate::outbound::{Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget};
@@ -19,7 +17,6 @@ const UDP_BUF_SIZE: usize = 64 * 1024;
 pub struct EndpointConnectionHandler {
     router: Arc<RouterHandle>,
     outbounds: Arc<OutboundRegistryHandle>,
-    udp_factories: Arc<HashMap<String, Arc<dyn UdpOutboundFactory>>>,
     stats: Option<Arc<StatsManager>>,
 }
 
@@ -27,13 +24,11 @@ impl EndpointConnectionHandler {
     pub fn new(
         router: Arc<RouterHandle>,
         outbounds: Arc<OutboundRegistryHandle>,
-        udp_factories: Arc<HashMap<String, Arc<dyn UdpOutboundFactory>>>,
         stats: Option<Arc<StatsManager>>,
     ) -> Self {
         Self {
             router,
             outbounds,
-            udp_factories,
             stats,
         }
     }
@@ -299,7 +294,7 @@ impl ConnectionHandler for EndpointConnectionHandler {
         let transport = Transport::Udp;
         let route_ctx = self.build_route_ctx(&metadata, &host, ip, port, transport);
         let decision = self.router.decide(&route_ctx);
-        let (_target, outbound_tag, allowed) = self.decision_to_target(decision);
+        let (target, outbound_tag, allowed) = self.decision_to_target(decision);
         if !allowed {
             if let Some(close) = on_close {
                 close();
@@ -310,40 +305,31 @@ impl ConnectionHandler for EndpointConnectionHandler {
         let traffic = self.traffic_recorder(Some(metadata.inbound.as_str()), Some(&outbound_tag));
         let client_addr = Self::extract_source_addr(&metadata);
 
-        if let Some(factory) = self.udp_factories.get(&outbound_tag) {
-            let session = match factory.open_session().await {
-                Ok(s) => s,
-                Err(e) => {
-                    warn!(
-                        inbound = %metadata.inbound,
-                        outbound = %outbound_tag,
-                        error = %e,
-                        "endpoint udp session open failed"
-                    );
-                    if let Some(close) = on_close {
-                        close();
-                    }
-                    return;
-                }
-            };
-
-            self.run_udp_session(socket, session, host, port, client_addr, traffic, on_close)
-                .await;
-            return;
-        }
-
-        debug!(
-            inbound = %metadata.inbound,
-            outbound = %outbound_tag,
-            "endpoint udp uses direct socket (no factory)"
+        let packet_target = ip
+            .map(|ip| sb_types::TargetAddr::Socket(SocketAddr::new(ip, port)))
+            .unwrap_or_else(|| sb_types::TargetAddr::domain(host.clone(), port));
+        let session = sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new(metadata.inbound.clone()),
+            packet_target,
         );
-
-        if let Err(e) = self
-            .run_udp_direct(socket, host, port, client_addr, traffic, on_close)
-            .await
-        {
-            warn!(error = %e, "endpoint udp direct failed");
-        }
+        let packet = match self.outbounds.connect_udp(&target, session).await {
+            Ok(packet) => Arc::<dyn sb_types::PacketConn>::from(packet),
+            Err(error) => {
+                warn!(
+                    inbound = %metadata.inbound,
+                    outbound = %outbound_tag,
+                    %error,
+                    "endpoint canonical UDP association open failed"
+                );
+                if let Some(close) = on_close {
+                    close();
+                }
+                return;
+            }
+        };
+        self.run_udp_session(socket, packet, host, port, client_addr, traffic, on_close)
+            .await;
     }
 }
 
@@ -352,7 +338,7 @@ impl EndpointConnectionHandler {
     async fn run_udp_session(
         &self,
         socket: Arc<UdpSocket>,
-        session: Arc<dyn UdpOutboundSession>,
+        session: Arc<dyn sb_types::PacketConn>,
         host: String,
         port: u16,
         client_addr: Option<SocketAddr>,
@@ -372,7 +358,8 @@ impl EndpointConnectionHandler {
                 match socket_up.recv_from(&mut buf).await {
                     Ok((n, addr)) if n > 0 => {
                         *last_client_up.lock().await = Some(addr);
-                        if let Err(e) = session_up.send_to(&buf[..n], &host_up, port).await {
+                        let destination = sb_types::TargetAddr::domain(host_up.clone(), port);
+                        if let Err(e) = session_up.send_to(&buf[..n], &destination).await {
                             trace!(error = %e, "endpoint udp send_to failed");
                             break;
                         }
@@ -397,15 +384,16 @@ impl EndpointConnectionHandler {
 
         let download = tokio::spawn(async move {
             loop {
-                match session_down.recv_from().await {
-                    Ok((data, _addr)) if !data.is_empty() => {
+                let mut data = vec![0u8; UDP_BUF_SIZE];
+                match session_down.recv_from(&mut data).await {
+                    Ok((size, _addr)) if size > 0 => {
                         let client = { *last_client_down.lock().await };
                         if let Some(client) = client {
-                            if socket_down.send_to(&data, client).await.is_err() {
+                            if socket_down.send_to(&data[..size], client).await.is_err() {
                                 break;
                             }
                             if let Some(ref recorder) = traffic_down {
-                                recorder.record_down(data.len() as u64);
+                                recorder.record_down(size as u64);
                                 recorder.record_down_packet(1);
                             }
                         }
@@ -423,86 +411,5 @@ impl EndpointConnectionHandler {
         if let Some(close) = on_close {
             close();
         }
-    }
-
-    async fn run_udp_direct(
-        &self,
-        socket: Arc<UdpSocket>,
-        host: String,
-        port: u16,
-        client_addr: Option<SocketAddr>,
-        traffic: Option<Arc<dyn TrafficRecorder>>,
-        on_close: Option<CloseHandler>,
-    ) -> std::io::Result<()> {
-        let remote = UdpSocket::bind("0.0.0.0:0").await?;
-        let remote = Arc::new(remote);
-        let last_client = Arc::new(tokio::sync::Mutex::new(client_addr));
-
-        let remote_up = remote.clone();
-        let socket_up = socket.clone();
-        let host_up = host.clone();
-        let traffic_up = traffic.clone();
-        let last_client_up = last_client.clone();
-
-        let upload = tokio::spawn(async move {
-            let mut buf = [0u8; UDP_BUF_SIZE];
-            loop {
-                match socket_up.recv_from(&mut buf).await {
-                    Ok((n, addr)) if n > 0 => {
-                        *last_client_up.lock().await = Some(addr);
-                        let addr = format!("{}:{}", host_up, port);
-                        if let Err(e) = remote_up.send_to(&buf[..n], &addr).await {
-                            trace!(error = %e, "endpoint udp direct send failed");
-                            break;
-                        }
-                        if let Some(ref recorder) = traffic_up {
-                            recorder.record_up(n as u64);
-                            recorder.record_up_packet(1);
-                        }
-                    }
-                    Ok(_) => break,
-                    Err(e) => {
-                        trace!(error = %e, "endpoint udp direct recv failed");
-                        break;
-                    }
-                }
-            }
-        });
-
-        let remote_down = remote.clone();
-        let socket_down = socket.clone();
-        let traffic_down = traffic.clone();
-        let last_client_down = last_client.clone();
-
-        let download = tokio::spawn(async move {
-            let mut buf = [0u8; UDP_BUF_SIZE];
-            loop {
-                match remote_down.recv_from(&mut buf).await {
-                    Ok((n, _addr)) if n > 0 => {
-                        let client = { *last_client_down.lock().await };
-                        if let Some(client) = client {
-                            if socket_down.send_to(&buf[..n], client).await.is_err() {
-                                break;
-                            }
-                            if let Some(ref recorder) = traffic_down {
-                                recorder.record_down(n as u64);
-                                recorder.record_down_packet(1);
-                            }
-                        }
-                    }
-                    Ok(_) => break,
-                    Err(e) => {
-                        trace!(error = %e, "endpoint udp direct recv failed");
-                        break;
-                    }
-                }
-            }
-        });
-
-        let _ = tokio::join!(upload, download);
-        if let Some(close) = on_close {
-            close();
-        }
-        Ok(())
     }
 }

@@ -10,9 +10,7 @@ use crate::outbound::prelude::*;
 #[allow(unused_imports)]
 use anyhow::Context;
 
-#[cfg(feature = "socks-udp")]
-use crate::traits::OutboundDatagram;
-use crate::traits::ResolveMode;
+use sb_types::{ConnectOptions, ResolveMode};
 
 use std::net::{IpAddr, SocketAddr};
 #[cfg(any(feature = "socks-udp", feature = "socks-tls"))]
@@ -43,6 +41,10 @@ pub struct Socks5Connector {
 }
 
 impl Socks5Connector {
+    pub const fn name(&self) -> &'static str {
+        "socks5"
+    }
+
     pub fn new(config: Socks5Config) -> Self {
         #[cfg(feature = "transport_ech")]
         let ech_config = config
@@ -181,23 +183,8 @@ impl Default for Socks5Connector {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for Socks5Connector {
-    fn name(&self) -> &'static str {
-        "socks5"
-    }
-
-    async fn start(&self) -> Result<()> {
-        #[cfg(not(feature = "adapter-socks"))]
-        return Err(AdapterError::NotImplemented {
-            what: "adapter-socks",
-        });
-
-        #[cfg(feature = "adapter-socks")]
-        Ok(())
-    }
-
-    async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
+impl Socks5Connector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-socks"))]
         return Err(AdapterError::NotImplemented {
             what: "adapter-socks",
@@ -205,12 +192,12 @@ impl OutboundConnector for Socks5Connector {
 
         #[cfg(feature = "adapter-socks")]
         {
-            let retry_policy = opts.retry_policy.clone();
+            let retry_policy = session.connect.retry_policy.clone();
 
             // We need to clone these for the closure
             let this = self.clone();
-            let target = target.clone();
-            let opts = opts.clone();
+            let target = session.target.clone();
+            let opts = session.connect.clone();
 
             crate::traits::with_adapter_retry(&retry_policy, "socks5", move || {
                 let this = this.clone();
@@ -224,16 +211,6 @@ impl OutboundConnector for Socks5Connector {
                     // 开始指标计时
                     #[cfg(feature = "metrics")]
                     let start_time = sb_metrics::start_adapter_timer();
-
-                    if target.kind != TransportKind::Tcp {
-                        #[cfg(not(feature = "socks-udp"))]
-                        return Err(AdapterError::NotImplemented { what: "socks-udp" });
-
-                        #[cfg(feature = "socks-udp")]
-                        return Err(AdapterError::Protocol(
-                            "Use dial_udp() for UDP connections".to_string(),
-                        ));
-                    }
 
                     let dial_result = async {
                         // Parse proxy server address
@@ -351,7 +328,7 @@ impl OutboundConnector for Socks5Connector {
                         Ok(stream) => {
                             tracing::debug!(
                                 server = %this.config.server,
-                                target = %format!("{}:{}", target.host, target.port),
+                                target = %target,
                                 has_auth = %this.config.username.is_some(),
                                 "SOCKS5 connection established"
                             );
@@ -360,7 +337,7 @@ impl OutboundConnector for Socks5Connector {
                         Err(e) => {
                             tracing::debug!(
                                 server = %this.config.server,
-                                target = %format!("{}:{}", target.host, target.port),
+                                target = %target,
                                 has_auth = %this.config.username.is_some(),
                                 error = %e,
                                 "SOCKS5 connection failed"
@@ -375,15 +352,67 @@ impl OutboundConnector for Socks5Connector {
     }
 }
 
+impl sb_types::Outbound for Socks5Connector {
+    fn r#type(&self) -> &str {
+        "socks"
+    }
+
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(
+            self.config
+                .tag
+                .clone()
+                .unwrap_or_else(|| "socks".to_string()),
+        )
+    }
+
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
+
+    fn dial<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+
+            let stream = Socks5Connector::dial(self, session)
+                .await
+                .map_err(|error| crate::outbound::core_error(error, session))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            #[cfg(feature = "socks-udp")]
+            {
+                self.dial_udp(session)
+                    .await
+                    .map_err(|error| crate::outbound::core_error(error, session))
+            }
+            #[cfg(not(feature = "socks-udp"))]
+            {
+                let _ = session;
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "SOCKS UDP support is not compiled",
+                ))
+            }
+        })
+    }
+}
+
 impl Socks5Connector {
     /// Create UDP datagram connection through SOCKS5 UDP ASSOCIATE
     /// 通过 SOCKS5 UDP ASSOCIATE 创建 UDP 数据报连接
     #[cfg(feature = "socks-udp")]
-    pub async fn dial_udp(
-        &self,
-        target: Target,
-        opts: DialOpts,
-    ) -> Result<Arc<dyn OutboundDatagram>> {
+    pub async fn dial_udp(&self, session: &Session) -> Result<sb_types::BoxedPacketConn> {
+        let opts = &session.connect;
         let proxy_addr: SocketAddr = self
             .config
             .server
@@ -451,21 +480,23 @@ impl Socks5Connector {
         // Create SOCKS UDP wrapper
         // 创建 SOCKS UDP 包装器
         let socks_udp = SocksUdp::new(
-            target,
             udp_socket,
             relay_addr,
             control_stream,
             opts.resolve_mode.clone(),
+            session.packet.idle_timeout,
         )
         .await?;
 
-        Ok(Arc::new(socks_udp))
+        Ok(Box::new(socks_udp))
     }
 
     /// Create BIND connection through SOCKS5 BIND (passive TCP connection)
     /// 通过 SOCKS5 BIND 创建 BIND 连接（被动 TCP 连接）
     #[cfg(feature = "socks-bind")]
-    pub async fn dial_bind(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
+    pub async fn dial_bind(&self, session: &Session) -> Result<BoxedStream> {
+        let target = &session.target;
+        let opts = &session.connect;
         // Parse proxy server address
         // 解析代理服务器地址
         let proxy_addr: SocketAddr = self
@@ -491,7 +522,7 @@ impl Socks5Connector {
 
         // Perform BIND and wait for incoming connection
         // 执行 BIND 并等待传入连接
-        self.socks5_bind(&mut stream, &target, &opts).await?;
+        self.socks5_bind(&mut stream, target, opts).await?;
 
         Ok(Box::new(stream) as BoxedStream)
     }
@@ -502,37 +533,59 @@ impl Socks5Connector {
 #[cfg(feature = "socks-udp")]
 #[derive(Debug)]
 pub struct SocksUdp {
-    target: Target,
     udp: UdpSocket,
     #[allow(dead_code)]
     relay_addr: SocketAddr,
     #[allow(dead_code)]
     control: Arc<Mutex<TcpStream>>,
     resolve_mode: ResolveMode,
+    idle_timeout: Duration,
+    deadlines: parking_lot::Mutex<PacketDeadlines>,
+    closed: std::sync::atomic::AtomicBool,
+}
+
+#[cfg(feature = "socks-udp")]
+#[derive(Debug, Default)]
+struct PacketDeadlines {
+    read: Option<std::time::Instant>,
+    write: Option<std::time::Instant>,
 }
 
 #[cfg(feature = "socks-udp")]
 impl SocksUdp {
     async fn new(
-        target: Target,
         udp: UdpSocket,
         relay_addr: SocketAddr,
         control: TcpStream,
         resolve_mode: ResolveMode,
+        idle_timeout: Duration,
     ) -> Result<Self> {
         Ok(Self {
-            target,
             udp,
             relay_addr,
             control: Arc::new(Mutex::new(control)),
             resolve_mode,
+            idle_timeout,
+            deadlines: parking_lot::Mutex::new(PacketDeadlines::default()),
+            closed: std::sync::atomic::AtomicBool::new(false),
         })
+    }
+
+    fn operation_deadline(&self, read: bool) -> std::time::Instant {
+        let deadlines = self.deadlines.lock();
+        let explicit = if read {
+            deadlines.read
+        } else {
+            deadlines.write
+        };
+        explicit.unwrap_or_else(|| std::time::Instant::now() + self.idle_timeout)
     }
 
     /// Encode payload with SOCKS5 UDP header
     /// 使用 SOCKS5 UDP 头部编码负载
-    fn encode_udp_packet(&self, payload: &[u8]) -> Result<Vec<u8>> {
+    fn encode_udp_packet(&self, payload: &[u8], destination: &TargetAddr) -> Result<Vec<u8>> {
         let mut packet = Vec::new();
+        let host = destination.host();
 
         // Reserved fields (2 bytes) + Fragment (1 byte)
         packet.extend_from_slice(&[0x00, 0x00, 0x00]);
@@ -541,7 +594,7 @@ impl SocksUdp {
         match self.resolve_mode {
             ResolveMode::Local => {
                 // Try to resolve to IP first
-                if let Ok(ip) = self.target.host.parse::<IpAddr>() {
+                if let Ok(ip) = host.parse::<IpAddr>() {
                     match ip {
                         IpAddr::V4(ipv4) => {
                             packet.push(0x01); // IPv4
@@ -555,17 +608,17 @@ impl SocksUdp {
                 } else {
                     // For Local mode, we should resolve the domain first
                     // For simplicity, falling back to sending domain name
-                    if self.target.host.len() > 255 {
+                    if host.len() > 255 {
                         return Err(AdapterError::InvalidConfig("Domain name too long"));
                     }
                     packet.push(0x03); // Domain name
-                    packet.push(self.target.host.len() as u8);
-                    packet.extend_from_slice(self.target.host.as_bytes());
+                    packet.push(host.len() as u8);
+                    packet.extend_from_slice(host.as_bytes());
                 }
             }
             ResolveMode::Remote => {
                 // Send domain name to proxy for remote resolution
-                if let Ok(ip) = self.target.host.parse::<IpAddr>() {
+                if let Ok(ip) = host.parse::<IpAddr>() {
                     match ip {
                         IpAddr::V4(ipv4) => {
                             packet.push(0x01); // IPv4
@@ -577,18 +630,18 @@ impl SocksUdp {
                         }
                     }
                 } else {
-                    if self.target.host.len() > 255 {
+                    if host.len() > 255 {
                         return Err(AdapterError::InvalidConfig("Domain name too long"));
                     }
                     packet.push(0x03); // Domain name
-                    packet.push(self.target.host.len() as u8);
-                    packet.extend_from_slice(self.target.host.as_bytes());
+                    packet.push(host.len() as u8);
+                    packet.extend_from_slice(host.as_bytes());
                 }
             }
         }
 
         // Port (2 bytes, big endian)
-        packet.extend_from_slice(&self.target.port.to_be_bytes());
+        packet.extend_from_slice(&destination.port().to_be_bytes());
 
         // Payload
         packet.extend_from_slice(payload);
@@ -598,7 +651,7 @@ impl SocksUdp {
 
     /// Decode SOCKS5 UDP packet and extract payload
     /// 解码 SOCKS5 UDP 数据包并提取负载
-    fn decode_udp_packet<'a>(&self, packet: &'a [u8]) -> Result<&'a [u8]> {
+    fn decode_udp_packet<'a>(&self, packet: &'a [u8]) -> Result<(&'a [u8], TargetAddr)> {
         if packet.len() < 10 {
             return Err(AdapterError::Protocol("UDP packet too short".to_string()));
         }
@@ -610,9 +663,29 @@ impl SocksUdp {
         let atyp = packet[offset];
         offset += 1;
 
-        let addr_len = match atyp {
-            0x01 => 4,  // IPv4
-            0x04 => 16, // IPv6
+        let source = match atyp {
+            0x01 => {
+                if offset + 4 > packet.len() {
+                    return Err(AdapterError::Protocol("truncated IPv4 address".to_string()));
+                }
+                let ip = std::net::Ipv4Addr::new(
+                    packet[offset],
+                    packet[offset + 1],
+                    packet[offset + 2],
+                    packet[offset + 3],
+                );
+                offset += 4;
+                sb_types::TargetAddr::ip(IpAddr::V4(ip), 0)
+            }
+            0x04 => {
+                if offset + 16 > packet.len() {
+                    return Err(AdapterError::Protocol("truncated IPv6 address".to_string()));
+                }
+                let mut octets = [0_u8; 16];
+                octets.copy_from_slice(&packet[offset..offset + 16]);
+                offset += 16;
+                sb_types::TargetAddr::ip(IpAddr::V6(std::net::Ipv6Addr::from(octets)), 0)
+            }
             0x03 => {
                 // Domain name
                 if offset >= packet.len() {
@@ -622,7 +695,16 @@ impl SocksUdp {
                 }
                 let len = packet[offset] as usize;
                 offset += 1;
-                len
+                if offset + len > packet.len() {
+                    return Err(AdapterError::Protocol(
+                        "truncated domain address".to_string(),
+                    ));
+                }
+                let domain = std::str::from_utf8(&packet[offset..offset + len])
+                    .map_err(|_| AdapterError::Protocol("invalid domain address".to_string()))?
+                    .to_string();
+                offset += len;
+                sb_types::TargetAddr::domain(domain, 0)
             }
             _ => {
                 return Err(AdapterError::Protocol(format!(
@@ -631,61 +713,113 @@ impl SocksUdp {
                 )))
             }
         };
-
-        // Skip address and port
-        offset += addr_len + 2;
-
-        if offset > packet.len() {
+        if offset + 2 > packet.len() {
             return Err(AdapterError::Protocol(
                 "UDP packet header too long".to_string(),
             ));
         }
-
-        Ok(&packet[offset..])
+        let port = u16::from_be_bytes([packet[offset], packet[offset + 1]]);
+        offset += 2;
+        let source = match source {
+            TargetAddr::Domain(host, _) => TargetAddr::domain(host, port),
+            TargetAddr::Socket(address) => TargetAddr::ip(address.ip(), port),
+        };
+        Ok((&packet[offset..], source))
     }
 }
 
 #[cfg(feature = "socks-udp")]
-#[async_trait]
-impl OutboundDatagram for SocksUdp {
-    async fn send_to(&self, payload: &[u8]) -> Result<usize> {
-        let packet = self.encode_udp_packet(payload)?;
-
-        match self.udp.send(&packet).await {
-            Ok(sent) => {
-                // Return original payload size, not the encapsulated packet size
-                if sent >= packet.len() {
-                    Ok(payload.len())
-                } else {
-                    Err(AdapterError::Io(std::io::Error::new(
-                        std::io::ErrorKind::WriteZero,
-                        "Partial packet sent",
-                    )))
-                }
+impl sb_types::PacketConn for SocksUdp {
+    fn send_to<'a>(
+        &'a self,
+        payload: &'a [u8],
+        destination: &'a TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move {
+            if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+                return Err(sb_types::CoreError::io("packet connection closed"));
             }
-            Err(e) => Err(AdapterError::Io(e)),
-        }
+            let packet = self
+                .encode_udp_packet(payload, destination)
+                .map_err(|error| {
+                    crate::outbound::core_error(error, &packet_session(destination))
+                })?;
+            let sent = crate::outbound::with_packet_deadline(
+                Some(self.operation_deadline(false)),
+                self.udp.send(&packet),
+            )
+            .await?;
+            if sent == packet.len() {
+                Ok(payload.len())
+            } else {
+                Err(sb_types::CoreError::io("partial SOCKS UDP packet sent"))
+            }
+        })
     }
 
-    async fn recv_from(&self, buf: &mut [u8]) -> Result<usize> {
-        let mut packet_buf = vec![0u8; buf.len() + 1024]; // Extra space for SOCKS header
-
-        match self.udp.recv(&mut packet_buf).await {
-            Ok(received) => {
-                let payload = self.decode_udp_packet(&packet_buf[..received])?;
-                let len = payload.len().min(buf.len());
-                buf[..len].copy_from_slice(&payload[..len]);
-                Ok(len)
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+                return Err(sb_types::CoreError::io("packet connection closed"));
             }
-            Err(e) => Err(AdapterError::Io(e)),
-        }
+            let mut packet_buf = vec![0u8; buffer.len() + 1024];
+            let received = crate::outbound::with_packet_deadline(
+                Some(self.operation_deadline(true)),
+                self.udp.recv(&mut packet_buf),
+            )
+            .await?;
+            let (payload, source) = self
+                .decode_udp_packet(&packet_buf[..received])
+                .map_err(|error| sb_types::CoreError::protocol(error.to_string()))?;
+            let len = payload.len().min(buffer.len());
+            buffer[..len].copy_from_slice(&payload[..len]);
+            Ok((len, source))
+        })
     }
 
-    async fn close(&self) -> Result<()> {
-        // Close UDP socket (automatically closed when dropped)
-        // Control connection is maintained by Arc<Mutex<TcpStream>>
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Release);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn local_addr(&self) -> Option<TargetAddr> {
+        self.udp.local_addr().ok().map(TargetAddr::socket)
+    }
+
+    fn set_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        let mut deadlines = self.deadlines.lock();
+        deadlines.read = deadline;
+        deadlines.write = deadline;
         Ok(())
     }
+
+    fn set_read_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.deadlines.lock().read = deadline;
+        Ok(())
+    }
+
+    fn set_write_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.deadlines.lock().write = deadline;
+        Ok(())
+    }
+}
+
+#[cfg(feature = "socks-udp")]
+fn packet_session(target: &TargetAddr) -> Session {
+    Session::new(0, sb_types::InboundTag::new("socks-udp"), target.clone())
 }
 
 #[cfg(feature = "adapter-socks")]
@@ -1016,8 +1150,8 @@ impl Socks5Connector {
     async fn socks5_connect(
         &self,
         stream: &mut TcpStream,
-        target: &Target,
-        opts: &DialOpts,
+        target: &TargetAddr,
+        opts: &ConnectOptions,
     ) -> Result<()> {
         self.socks5_connect_generic(stream, target, opts).await
     }
@@ -1025,8 +1159,8 @@ impl Socks5Connector {
     async fn socks5_connect_generic<S>(
         &self,
         stream: &mut S,
-        target: &Target,
-        opts: &DialOpts,
+        target: &TargetAddr,
+        opts: &ConnectOptions,
     ) -> Result<()>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + Sync + ?Sized,
@@ -1037,11 +1171,13 @@ impl Socks5Connector {
 
         // Add target address based on resolve mode
         // 根据解析模式添加目标地址
+        let host = target.host();
+        let port = target.port();
         match opts.resolve_mode {
             ResolveMode::Local => {
                 // Try to resolve locally first
                 // 尝试先本地解析
-                if let Ok(ip) = target.host.parse::<IpAddr>() {
+                if let Ok(ip) = host.parse::<IpAddr>() {
                     // Already an IP address
                     match ip {
                         IpAddr::V4(ipv4) => {
@@ -1056,7 +1192,7 @@ impl Socks5Connector {
                 } else {
                     // Domain name - resolve locally
                     // 域名 - 本地解析
-                    match tokio::net::lookup_host((target.host.clone(), target.port)).await {
+                    match tokio::net::lookup_host((host.clone(), port)).await {
                         Ok(mut addrs) => {
                             if let Some(addr) = addrs.next() {
                                 match addr.ip() {
@@ -1072,14 +1208,14 @@ impl Socks5Connector {
                             } else {
                                 return Err(AdapterError::Network(format!(
                                     "Failed to resolve {}",
-                                    target.host
+                                    host
                                 )));
                             }
                         }
                         Err(e) => {
                             return Err(AdapterError::Network(format!(
                                 "DNS resolution failed for {}: {}",
-                                target.host, e
+                                host, e
                             )));
                         }
                     }
@@ -1088,7 +1224,7 @@ impl Socks5Connector {
             ResolveMode::Remote => {
                 // Send to proxy for remote resolution
                 // 发送到代理进行远程解析
-                if let Ok(ip) = target.host.parse::<IpAddr>() {
+                if let Ok(ip) = host.parse::<IpAddr>() {
                     // Already an IP address
                     match ip {
                         IpAddr::V4(ipv4) => {
@@ -1103,19 +1239,19 @@ impl Socks5Connector {
                 } else {
                     // Domain name - send to proxy
                     // 域名 - 发送到代理
-                    if target.host.len() > 255 {
+                    if host.len() > 255 {
                         return Err(AdapterError::InvalidConfig("Domain name too long"));
                     }
                     request.push(0x03); // ATYP=DOMAINNAME
-                    request.push(target.host.len() as u8);
-                    request.extend_from_slice(target.host.as_bytes());
+                    request.push(host.len() as u8);
+                    request.extend_from_slice(host.as_bytes());
                 }
             }
         }
 
         // Add port
         // 添加端口
-        request.extend_from_slice(&target.port.to_be_bytes());
+        request.extend_from_slice(&port.to_be_bytes());
 
         // Send request
         // 发送请求
@@ -1211,8 +1347,8 @@ impl Socks5Connector {
     async fn socks5_bind(
         &self,
         stream: &mut TcpStream,
-        target: &Target,
-        opts: &DialOpts,
+        target: &TargetAddr,
+        opts: &ConnectOptions,
     ) -> Result<()> {
         use std::time::Duration;
         // Build BIND request
@@ -1220,9 +1356,11 @@ impl Socks5Connector {
         let mut request = vec![0x05, 0x02, 0x00]; // VER, CMD=BIND, RSV
                                                   // Address: allow remote resolution or send IP/domain based on ResolveMode
                                                   // 地址: 允许远程解析或根据 ResolveMode 发送 IP/域名
+        let host = target.host();
+        let port = target.port();
         match opts.resolve_mode {
             ResolveMode::Local => {
-                if let Ok(ip) = target.host.parse::<IpAddr>() {
+                if let Ok(ip) = host.parse::<IpAddr>() {
                     match ip {
                         IpAddr::V4(v4) => {
                             request.push(0x01);
@@ -1238,7 +1376,7 @@ impl Socks5Connector {
                     // 本地解析
                     let addrs = tokio::time::timeout(
                         opts.connect_timeout,
-                        tokio::net::lookup_host((&target.host[..], target.port)),
+                        tokio::net::lookup_host((host.as_str(), port)),
                     )
                     .await
                     .map_err(|_| AdapterError::Network("DNS timeout".to_string()))
@@ -1255,15 +1393,12 @@ impl Socks5Connector {
                             }
                         }
                     } else {
-                        return Err(AdapterError::Network(format!(
-                            "Failed to resolve {}",
-                            target.host
-                        )));
+                        return Err(AdapterError::Network(format!("Failed to resolve {}", host)));
                     }
                 }
             }
             ResolveMode::Remote => {
-                if let Ok(ip) = target.host.parse::<IpAddr>() {
+                if let Ok(ip) = host.parse::<IpAddr>() {
                     match ip {
                         IpAddr::V4(v4) => {
                             request.push(0x01);
@@ -1275,16 +1410,16 @@ impl Socks5Connector {
                         }
                     }
                 } else {
-                    if target.host.len() > 255 {
+                    if host.len() > 255 {
                         return Err(AdapterError::InvalidConfig("Domain name too long"));
                     }
                     request.push(0x03);
-                    request.push(target.host.len() as u8);
-                    request.extend_from_slice(target.host.as_bytes());
+                    request.push(host.len() as u8);
+                    request.extend_from_slice(host.as_bytes());
                 }
             }
         }
-        request.extend_from_slice(&target.port.to_be_bytes());
+        request.extend_from_slice(&port.to_be_bytes());
 
         // Send BIND request
         // 发送 BIND 请求
@@ -1404,5 +1539,89 @@ mod tests {
 
         let connector = Socks5Connector::new(config);
         assert_eq!(connector.name(), "socks5");
+    }
+
+    #[cfg(feature = "socks-udp")]
+    async fn test_socks_udp(idle_timeout: Duration) -> (SocksUdp, tokio::task::JoinHandle<()>) {
+        let control_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind control listener");
+        let control_address = control_listener.local_addr().expect("control address");
+        let control_peer = tokio::spawn(async move {
+            let (_stream, _) = control_listener.accept().await.expect("accept control");
+            std::future::pending::<()>().await;
+        });
+        let control = TcpStream::connect(control_address)
+            .await
+            .expect("connect control");
+
+        let relay = UdpSocket::bind("127.0.0.1:0").await.expect("bind relay");
+        let relay_address = relay.local_addr().expect("relay address");
+        let udp = UdpSocket::bind("127.0.0.1:0")
+            .await
+            .expect("bind udp client");
+        udp.connect(relay_address).await.expect("connect udp relay");
+
+        (
+            SocksUdp::new(
+                udp,
+                relay_address,
+                control,
+                ResolveMode::Remote,
+                idle_timeout,
+            )
+            .await
+            .expect("construct SOCKS packet connection"),
+            control_peer,
+        )
+    }
+
+    #[cfg(feature = "socks-udp")]
+    #[tokio::test]
+    async fn socks_udp_recv_uses_idle_timeout_by_default() {
+        let idle_timeout = Duration::from_millis(10);
+        let (socket, control_peer) = test_socks_udp(idle_timeout).await;
+        let mut buffer = [0_u8; 64];
+
+        let error = sb_types::PacketConn::recv_from(&socket, &mut buffer)
+            .await
+            .expect_err("idle receive must time out");
+        control_peer.abort();
+
+        match error {
+            sb_types::CoreError::Timeout { duration, .. } => {
+                assert!(duration <= idle_timeout);
+                assert!(!duration.is_zero());
+            }
+            other => panic!("expected packet timeout, got {other}"),
+        }
+    }
+
+    #[cfg(feature = "socks-udp")]
+    #[tokio::test]
+    async fn socks_udp_explicit_read_deadline_overrides_idle_timeout() {
+        let idle_timeout = Duration::from_secs(1);
+        let explicit_timeout = Duration::from_millis(10);
+        let (socket, control_peer) = test_socks_udp(idle_timeout).await;
+        sb_types::PacketConn::set_read_deadline(
+            &socket,
+            Some(std::time::Instant::now() + explicit_timeout),
+        )
+        .expect("set read deadline");
+        let mut buffer = [0_u8; 64];
+
+        let error = sb_types::PacketConn::recv_from(&socket, &mut buffer)
+            .await
+            .expect_err("explicit receive deadline must time out");
+        control_peer.abort();
+
+        match error {
+            sb_types::CoreError::Timeout { duration, .. } => {
+                assert!(duration <= explicit_timeout);
+                assert!(duration < idle_timeout);
+                assert!(!duration.is_zero());
+            }
+            other => panic!("expected packet timeout, got {other}"),
+        }
     }
 }

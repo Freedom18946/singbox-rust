@@ -158,3 +158,25 @@
 - 复现并记录 `adapter-trojan,router` 独立 feature gate 失败（留给后续包，未在本包修复）
 
 **结果**: WP01 DONE。未声明 dual-kernel parity / BHV / REALITY 变化。
+
+---
+
+## 2026-07-10 MIG-03 WP01-03 red-team acceptance + canonical cutover
+
+**任务**: 验收 WP01/WP02/WP03；补齐所有发现缺口并关闭 combined cutover。
+
+**变更**:
+- 修正 WP01 census/ADR 漏项与错误基线计数；删除遗漏死 factory。
+- 正典 outbound/inbound/PacketConn 全面落位；删 legacy traits、handler aliases、
+  manager compatibility spellings、`connect_io`、`sb-proto`。
+- register wrapper 清零；PacketConn finalized Session、deadline、idle timeout、close、
+  capability 声明一致；named stream routing 统一 canonical boxed dial。
+- 边界 V8 加递归 wrapper scan 与 registration aggregate LOC 报告；同步 SPECS、
+  structure、active context、WP 状态。
+
+**验证**:
+- global five gates；sb-types/sb-adapters/sb-core tests；PacketConn focused tests；
+  scaffold smoke；Trojan isolated feature；DERP no-default feature check。
+- dual-kernel `p1_rust_core_tcp_via_socks`、`p1_rust_core_udp_via_socks` run+diff clean。
+
+**结果**: WP01/WP02/WP03 DONE。Parity/BHV、packaging、REALITY 状态不变。

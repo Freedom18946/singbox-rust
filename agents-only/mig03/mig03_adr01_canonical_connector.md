@@ -384,6 +384,9 @@ unresolved.
 | `sb-adapters::traits::OutboundConnector` + `Target` + `DialOpts` (O2) | 16 implementation files / 17 direct protocol impls | Each adapter implements canonical `Outbound`; move options into `Session.connect`; delete trait/types. | WP02 | High |
 | `register.rs` connector bridge | 1 file / generic bridge plus 4 explicit adapter-dial bridges | Delete after callers use adapter canonical trait directly; do not introduce replacement wrappers. | WP02 | High |
 | `sb-core::adapter::OutboundConnector` (O3) | 33 direct implementation blocks (23 non-test) | Replace holders with `Arc<dyn sb_types::Outbound>`; delete concrete-TCP trait and `connect_io`. | WP03 | High |
+| `sb-core::adapter::OutboundGroup` (O15) | 1 implementation plus control-plane callers | Replace with canonical `OutboundGroup`; expose selection only through `SelectorControl`; delete legacy health/type hooks. | WP03 | Medium |
+| `sb-core::outbound::manager::OutboundAdapter` / `OutboundHandler` (O16) | Dynamic manager holder plus test implementation | Store canonical outbound objects directly; delete duplicate lifecycle connector supertrait and alias. | WP03 | Medium |
+| `sb-core::adapter::OutboundFactory` (O17) | 1 definition; 0 implementations/callers | Delete as dead error-erasing factory. | WP03 | Low |
 | `sb-core::outbound::traits::{OutboundConnector, OutboundConnectorIo, UdpTransport}` (O4/O5/O14) | 25 core/adapter/app source files | Fold into canonical `Outbound` + `PacketConn`; delete all three. | WP03 | High |
 | `runtime::switchboard::OutboundConnector` (O6) | 10 source files | Switchboard registry consumes canonical outbound; delete local trait and local target/options. | WP03 | High |
 | `pipeline::{Inbound, Outbound, DynOutbound}` (I4/O7) | 4 source files | Convert direct/block to canonical adapters, then delete pipeline traits/alias. | WP03 | Medium |
@@ -391,6 +394,8 @@ unresolved.
 | `outbound/crypto_types::{OutboundTcp, OutboundUdp}` (O12/O13) | 1 legacy file, no active impl | Compile-confirmed deletion. | WP03 | Low |
 | `sb-proto::connector::OutboundConnector` / `Target` / `ProtoError` (O9) | 6 source/test files | Move needed protocol helper into adapter-private code or sb-types, then delete sb-proto under D15. | WP03 | Medium |
 | `sb-types::{InboundHandler, InboundAcceptor}` (I1/I2) | 1 definition file, no adopters | Delete; builder internals own dispatch. | WP03 | Low |
+| `sb-core::adapter::InboundFactory` (I6) | 1 definition; 0 implementations/callers | Delete as dead error-erasing factory. | WP03 | Low |
+| `sb-core::InboundAdapter` (I7) | 1 test implementation; no production holder | Delete rather than promote its non-canonical lifecycle error boundary. | WP03 | Low |
 | `sb-core::adapter::InboundService` (I3) | 30 impls (19 adapter / 11 core) | Adapters/core inbounds implement canonical `Inbound`; preserve status hooks, remove blocking serve/downcast. | WP03 | High |
 | `sb-adapters` direct `InboundService` implementations | 19 adapter modules | Direct canonical `Inbound` implementation; no adapter bridge trait. | WP03 | High |
 | `UdpOutboundFactory` / `UdpOutboundSession` | 8 lexical factory + 8 session impls (5/4 production, including endpoint facade) | `Outbound::listen_packet` + `PacketConn`; delete both. | WP03 | High |

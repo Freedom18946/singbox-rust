@@ -1,9 +1,9 @@
 //! Async HTTP CONNECT upstream connector (scaffold). Optional Basic auth.
 //! Warning: this is a minimal implementation intended for CI paths.
 //! Production should come from sb-adapter.
-use crate::adapter::OutboundConnector;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::TcpStream;
+use tokio_util::compat::TokioAsyncReadCompatExt;
 
 #[derive(Debug)]
 pub struct HttpUp {
@@ -24,8 +24,7 @@ impl HttpUp {
     }
 }
 
-#[async_trait::async_trait]
-impl OutboundConnector for HttpUp {
+impl HttpUp {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
         let addr = format!("{}:{}", self.server, self.port);
         let mut stream = TcpStream::connect(&addr).await?;
@@ -74,5 +73,44 @@ impl OutboundConnector for HttpUp {
 
         // Return the stream
         Ok(stream)
+    }
+}
+
+impl sb_types::Outbound for HttpUp {
+    fn r#type(&self) -> &str {
+        "http"
+    }
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(format!("{}:{}", self.server, self.port))
+    }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp]
+    }
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            let (host, port) = match &session.target {
+                sb_types::TargetAddr::Socket(address) => (address.ip().to_string(), address.port()),
+                sb_types::TargetAddr::Domain(host, port) => (host.clone(), *port),
+            };
+            let stream = self
+                .connect(&host, port)
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                "HTTP CONNECT scaffold has no packet support",
+            ))
+        })
     }
 }

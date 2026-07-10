@@ -2,10 +2,9 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use sb_adapters::inbound::shadowsocks::ShadowsocksInboundConfig;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
-use sb_adapters::TransportKind;
 use sb_benches::{install_direct_rules_engine, setup_tracing};
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
 use std::sync::Arc;
@@ -140,12 +139,11 @@ fn bench_ss_e2e_throughput(c: &mut Criterion) {
 
                             let connect = || async {
                                 for _ in 0..10 {
-                                    let target = Target {
-                                        host: echo_addr.ip().to_string(),
-                                        port: echo_addr.port(),
-                                        kind: TransportKind::Tcp,
-                                    };
-                                    match connector.dial(target, DialOpts::default()).await {
+                                    let target = TargetAddr::from_host_port(
+                                        echo_addr.ip().to_string(),
+                                        echo_addr.port(),
+                                    );
+                                    match connector.dial(&Session::outbound(target)).await {
                                         Ok(stream) => return Some(stream),
                                         Err(_) => {
                                             tokio::time::sleep(Duration::from_millis(100)).await;

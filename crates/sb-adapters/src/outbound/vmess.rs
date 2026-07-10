@@ -106,6 +106,8 @@ impl Default for VmessTransport {
 /// VMess 配置
 #[derive(Debug, Clone)]
 pub struct VmessConfig {
+    /// Optional configured outbound tag.
+    pub tag: Option<String>,
     /// Server host
     /// 服务端主机
     pub server: String,
@@ -143,6 +145,7 @@ pub struct VmessConfig {
 impl Default for VmessConfig {
     fn default() -> Self {
         Self {
+            tag: None,
             server: "127.0.0.1".to_string(),
             port: 443,
             auth: VmessAuth {
@@ -205,8 +208,8 @@ impl std::fmt::Debug for VmessConnector {
 }
 
 impl VmessConnector {
-    fn server_endpoint(&self) -> String {
-        format!("{}:{}", self.config.server, self.config.port)
+    pub const fn name(&self) -> &'static str {
+        "vmess"
     }
 
     /// Create a new VMess connector with the given configuration
@@ -273,7 +276,8 @@ impl VmessConnector {
 
     /// Build VMess request header
     /// 构建 VMess 请求头
-    fn build_request_header(&self, target: &Target) -> VmessRequestHeader {
+    fn build_request_header(&self, target: &TargetAddr) -> VmessRequestHeader {
+        let host = target.host();
         let mut rng = rand::thread_rng();
 
         // Generate random IV and key
@@ -288,13 +292,13 @@ impl VmessConnector {
         rng.fill(&mut random_data);
 
         // Determine address type and encode address
-        let (address_type, address) = match target.host.parse::<std::net::IpAddr>() {
+        let (address_type, address) = match host.parse::<std::net::IpAddr>() {
             Ok(std::net::IpAddr::V4(ipv4)) => (1u8, ipv4.octets().to_vec()),
             Ok(std::net::IpAddr::V6(ipv6)) => (3u8, ipv6.octets().to_vec()),
             Err(_) => {
                 let mut addr_bytes = Vec::new();
-                addr_bytes.push(target.host.len() as u8);
-                addr_bytes.extend_from_slice(target.host.as_bytes());
+                addr_bytes.push(host.len() as u8);
+                addr_bytes.extend_from_slice(host.as_bytes());
                 (2u8, addr_bytes)
             }
         };
@@ -305,7 +309,7 @@ impl VmessConnector {
             key,
             response_auth,
             command: 1, // TCP
-            port: target.port,
+            port: target.port(),
             address_type,
             address,
             random: random_data,
@@ -349,7 +353,7 @@ impl VmessConnector {
 
     /// Perform VMess handshake
     /// 执行 VMess 握手
-    async fn handshake(&self, stream: &mut BoxedStream, target: &Target) -> Result<()> {
+    async fn handshake(&self, stream: &mut BoxedStream, target: &TargetAddr) -> Result<()> {
         // Generate authentication data
         let auth_data = self.generate_auth_data();
 
@@ -456,44 +460,32 @@ impl Default for VmessConnector {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for VmessConnector {
-    fn name(&self) -> &'static str {
-        "vmess"
-    }
-
-    async fn start(&self) -> Result<()> {
-        // Validate configuration
-        self.validate_config()?;
-
-        // Test connectivity (optional)
-        if let Err(e) =
-            tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port)).await
-        {
-            tracing::warn!("VMess server connectivity test failed: {}", e);
-        }
-
-        tracing::info!(
-            "VMess connector started - server: {}, security: {:?}, alter_id: {}",
-            self.server_endpoint(),
-            self.config.auth.security,
-            self.config.auth.alter_id
-        );
-
-        Ok(())
-    }
-
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
+impl VmessConnector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
+        let target = &session.target;
         tracing::debug!("VMess dialing target: {:?}", target);
+
+        self.validate_config()?;
 
         // Create connection to VMess server
         let mut stream = self.create_connection().await?;
 
         // Perform VMess handshake
-        self.handshake(&mut stream, &target).await?;
+        self.handshake(&mut stream, target).await?;
 
         tracing::debug!("VMess connection established to: {:?}", target);
 
         Ok(stream)
     }
 }
+
+crate::impl_canonical_outbound!(
+    VmessConnector,
+    "vmess",
+    |this: &VmessConnector| this
+        .config
+        .tag
+        .clone()
+        .unwrap_or_else(|| "vmess".to_string()),
+    crate::outbound::TCP
+);

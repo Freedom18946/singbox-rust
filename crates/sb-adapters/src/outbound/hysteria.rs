@@ -4,6 +4,7 @@ use crate::outbound::prelude::*;
 /// Hysteria v1 adapter configuration
 #[derive(Debug, Clone)]
 pub struct HysteriaAdapterConfig {
+    pub tag: Option<String>,
     pub server: String,
     pub port: u16,
     pub protocol: String,
@@ -21,6 +22,7 @@ pub struct HysteriaAdapterConfig {
 impl Default for HysteriaAdapterConfig {
     fn default() -> Self {
         Self {
+            tag: None,
             server: "127.0.0.1".to_string(),
             port: 443,
             protocol: "udp".to_string(),
@@ -44,29 +46,21 @@ pub struct HysteriaConnector {
 }
 
 impl HysteriaConnector {
+    pub const fn name(&self) -> &'static str {
+        "hysteria"
+    }
+
     pub fn new(cfg: HysteriaAdapterConfig) -> Self {
         Self { cfg }
     }
 }
 
-#[async_trait]
-impl OutboundConnector for HysteriaConnector {
-    fn name(&self) -> &'static str {
-        "hysteria"
-    }
-
-    async fn start(&self) -> Result<()> {
-        Ok(())
-    }
-
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        if target.kind != TransportKind::Tcp {
-            return Err(AdapterError::Protocol(
-                "Hysteria v1 outbound only supports TCP".to_string(),
-            ));
-        }
-
-        let _span = crate::outbound::span_dial("hysteria", &target);
+impl HysteriaConnector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
+        let target = &session.target;
+        let host = target.host();
+        let port = target.port();
+        let _span = crate::outbound::span_dial("hysteria", target);
 
         // Build QUIC config with ALPN and insecure settings
         let alpn_bytes: Vec<Vec<u8>> = if self.cfg.alpn.is_empty() {
@@ -102,17 +96,28 @@ impl OutboundConnector for HysteriaConnector {
 
         // Create TCP tunnel to the target
         tracing::debug!(
-            host = %target.host,
-            port = target.port,
+            host = %host,
+            port,
             "hysteria v1: creating TCP tunnel"
         );
-        let (send, recv) = create_tcp_tunnel(&connection, &target.host, target.port)
+        let (send, recv) = create_tcp_tunnel(&connection, &host, port)
             .await
             .map_err(AdapterError::Io)?;
 
         Ok(Box::new(super::quic_util::QuicBidiStream::new(send, recv)) as BoxedStream)
     }
 }
+
+crate::impl_canonical_outbound!(
+    HysteriaConnector,
+    "hysteria",
+    |this: &HysteriaConnector| this
+        .cfg
+        .tag
+        .clone()
+        .unwrap_or_else(|| "hysteria".to_string()),
+    &[sb_types::NetworkKind::Tcp]
+);
 
 /// Perform Hysteria v1 handshake over the given QUIC connection.
 ///

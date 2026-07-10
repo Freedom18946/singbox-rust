@@ -4,9 +4,7 @@
 //! future `sb-adapters`) can register inbound/outbound factories. The bridge
 //! consults this registry first and falls back to scaffold implementations.
 
-use super::{
-    Bridge, InboundParam, InboundService, OutboundConnector, OutboundParam, UdpOutboundFactory,
-};
+use super::{Bridge, InboundParam, OutboundParam};
 use crate::context::ContextRegistry;
 use crate::dns::dns_router::DnsRouter;
 use crate::outbound::OutboundRegistryHandle;
@@ -62,15 +60,12 @@ impl AdapterOutboundContext {
 }
 
 pub type InboundBuilder =
-    fn(&InboundParam, &AdapterInboundContext) -> Option<Arc<dyn InboundService>>;
+    fn(&InboundParam, &AdapterInboundContext) -> Option<Arc<dyn sb_types::Inbound>>;
 pub type OutboundBuilder = fn(
     &OutboundParam,
     &sb_config::ir::OutboundIR,
     &AdapterOutboundContext,
-) -> Option<(
-    Arc<dyn OutboundConnector>,
-    Option<Arc<dyn UdpOutboundFactory>>,
-)>;
+) -> Option<Arc<dyn sb_types::Outbound>>;
 
 #[derive(Clone, Default)]
 pub struct RegistrySnapshot {
@@ -110,15 +105,15 @@ pub struct RuntimeRegistrySnapshot {
 
 #[derive(Clone, Debug, Default)]
 pub struct InboundRegistryHandle {
-    inner: HashMap<String, Arc<dyn InboundService>>,
+    inner: HashMap<String, Arc<dyn sb_types::Inbound>>,
 }
 
 impl InboundRegistryHandle {
-    pub fn new(inner: HashMap<String, Arc<dyn InboundService>>) -> Self {
+    pub fn new(inner: HashMap<String, Arc<dyn sb_types::Inbound>>) -> Self {
         Self { inner }
     }
 
-    pub fn get(&self, tag: &str) -> Option<Arc<dyn InboundService>> {
+    pub fn get(&self, tag: &str) -> Option<Arc<dyn sb_types::Inbound>> {
         self.inner.get(tag).cloned()
     }
 }

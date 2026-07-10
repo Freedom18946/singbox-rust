@@ -10,7 +10,6 @@ use uuid::Uuid;
 use sb_adapters::outbound::vmess::{
     Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
 };
-use sb_adapters::outbound::OutboundConnector;
 use sb_adapters::transport_config::{TransportConfig, WebSocketTransportConfig};
 
 #[tokio::test]
@@ -29,6 +28,7 @@ async fn test_vmess_websocket_config_creation() {
     };
 
     let config = VmessConfig {
+        tag: None,
         server: server_addr.ip().to_string(),
         port: server_addr.port(),
         auth: VmessAuth {
@@ -59,6 +59,7 @@ async fn test_vmess_websocket_with_multiplex() {
     let server_addr = SocketAddr::from(([127, 0, 0, 1], 8443));
 
     let config = VmessConfig {
+        tag: None,
         server: server_addr.ip().to_string(),
         port: server_addr.port(),
         auth: VmessAuth {
@@ -93,6 +94,7 @@ async fn test_vmess_websocket_path_variants() {
 
     for path in paths {
         let config = VmessConfig {
+            tag: None,
             server: server_addr.ip().to_string(),
             port: server_addr.port(),
             auth: VmessAuth {
@@ -126,6 +128,7 @@ async fn test_vmess_tcp_vs_websocket() {
 
     // TCP configuration
     let tcp_config = VmessConfig {
+        tag: None,
         server: server_addr.ip().to_string(),
         port: server_addr.port(),
         auth: VmessAuth {
@@ -144,6 +147,7 @@ async fn test_vmess_tcp_vs_websocket() {
 
     // WebSocket configuration
     let ws_config = VmessConfig {
+        tag: None,
         server: server_addr.ip().to_string(),
         port: server_addr.port(),
         auth: VmessAuth {

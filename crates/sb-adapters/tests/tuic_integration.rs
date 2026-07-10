@@ -3,12 +3,12 @@
 //! TUIC outbound integration tests for the current adapter API.
 
 use sb_adapters::outbound::tuic::{TuicAdapterConfig, TuicConnector, TuicUdpRelayMode};
-use sb_adapters::traits::OutboundConnector;
 use uuid::Uuid;
 
 #[test]
 fn tuic_adapter_config_uses_current_fields() {
     let cfg = TuicAdapterConfig {
+        tag: None,
         server: "example.com".to_string(),
         port: 443,
         uuid: Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000").unwrap(),

@@ -19,10 +19,9 @@ use tokio::sync::mpsc;
 
 use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 
 fn init_crypto() {
     let _ = rustls::crypto::ring::default_provider().install_default();
@@ -167,13 +166,9 @@ async fn test_trojan_connection_pooling() {
         let connector = connector.clone();
 
         handles.push(tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr.ip().to_string(),
-                port: echo_addr.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            match connector.dial(target, DialOpts::default()).await {
+            match connector.dial(&Session::outbound(target)).await {
                 Ok(mut stream) => {
                     let test_data = format!("ping{}", i);
                     let _ = stream.write_all(test_data.as_bytes()).await;

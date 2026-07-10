@@ -418,7 +418,7 @@ async fn relay_h2_tcp(
     }
 }
 
-/// Naive inbound adapter that implements InboundService trait
+/// Naive inbound adapter that implements InboundTaskDriver trait
 #[derive(Debug)]
 pub struct NaiveInboundAdapter {
     config: NaiveInboundConfig,
@@ -432,12 +432,12 @@ impl NaiveInboundAdapter {
     /// * `param` - Inbound parameters containing listen address, TLS cert/key, and credentials.
     ///
     /// # Returns
-    /// A boxed InboundService or an error if parameters are invalid.
+    /// A boxed InboundTaskDriver or an error if parameters are invalid.
     pub fn create(
         param: &sb_core::adapter::InboundParam,
         router: Arc<router::RouterHandle>,
         outbounds: Arc<OutboundRegistryHandle>,
-    ) -> Result<Box<dyn sb_core::adapter::InboundService>> {
+    ) -> Result<Box<dyn sb_core::adapter::InboundTaskDriver>> {
         // Parse listen address
         let listen_str = format!("{}:{}", param.listen, param.port);
         let listen: SocketAddr = listen_str
@@ -506,7 +506,7 @@ impl NaiveInboundAdapter {
     }
 }
 
-impl sb_core::adapter::InboundService for NaiveInboundAdapter {
+impl sb_core::adapter::InboundTaskDriver for NaiveInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         let config = self.config.clone();
         let (stop_tx, stop_rx) = mpsc::channel(1);

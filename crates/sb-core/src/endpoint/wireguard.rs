@@ -9,6 +9,7 @@ use std::collections::HashMap;
 use std::future::Future;
 use std::io;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, OnceLock};
 use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
@@ -85,6 +86,34 @@ struct WireGuardEndpointUdpSession {
     socket_ready: watch::Sender<Option<usize>>,
     /// Idle timeout for per-peer sockets; `None` = never reap.
     udp_timeout: Option<Duration>,
+    deadlines: parking_lot::Mutex<(Option<Instant>, Option<Instant>)>,
+    closed: AtomicBool,
+}
+
+fn packet_operation_timeout(
+    idle_timeout: Duration,
+    explicit: Option<Instant>,
+) -> (Instant, Duration) {
+    let now = Instant::now();
+    let duration = explicit
+        .map(|deadline| deadline.saturating_duration_since(now))
+        .unwrap_or(idle_timeout);
+    (now + duration, duration)
+}
+
+fn ensure_packet_open(closed: &AtomicBool) -> Result<(), sb_types::CoreError> {
+    if closed.load(Ordering::Acquire) {
+        Err(sb_types::CoreError::connect(
+            sb_types::ConnectErrorKind::Reset,
+            "packet connection closed",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn close_packet(closed: &AtomicBool) {
+    closed.store(true, Ordering::Release);
 }
 
 impl std::fmt::Debug for WireGuardEndpointUdpSession {
@@ -109,7 +138,20 @@ impl WireGuardEndpointUdpSession {
             sockets: TokioMutex::new(HashMap::new()),
             socket_ready,
             udp_timeout,
+            deadlines: parking_lot::Mutex::new((None, None)),
+            closed: AtomicBool::new(false),
         }
+    }
+
+    fn operation_timeout(&self, read: bool) -> (Instant, Duration) {
+        let deadlines = self.deadlines.lock();
+        let explicit = if read { deadlines.0 } else { deadlines.1 };
+        let idle_timeout = self.udp_timeout.unwrap_or(Duration::ZERO);
+        packet_operation_timeout(idle_timeout, explicit)
+    }
+
+    fn ensure_open(&self) -> Result<(), sb_types::CoreError> {
+        ensure_packet_open(&self.closed)
     }
 
     async fn resolve_target(&self, host: &str, port: u16) -> io::Result<SocketAddr> {
@@ -197,41 +239,95 @@ impl WireGuardEndpointUdpSession {
     }
 }
 
-#[async_trait::async_trait]
-impl crate::adapter::UdpOutboundSession for WireGuardEndpointUdpSession {
-    async fn send_to(&self, data: &[u8], host: &str, port: u16) -> io::Result<()> {
-        let dst = self.resolve_target(host, port).await?;
-        let socket = self.socket_for(dst.ip()).await?;
-        socket.send_to(data, dst).await?;
+impl sb_types::PacketConn for WireGuardEndpointUdpSession {
+    fn send_to<'a>(
+        &'a self,
+        data: &'a [u8],
+        destination: &'a sb_types::TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.ensure_open()?;
+            let (host, port) = match destination {
+                sb_types::TargetAddr::Socket(address) => (address.ip().to_string(), address.port()),
+                sb_types::TargetAddr::Domain(host, port) => (host.clone(), *port),
+            };
+            let operation = async {
+                let dst = self.resolve_target(&host, port).await?;
+                let socket = self.socket_for(dst.ip()).await?;
+                socket.send_to(data, dst).await
+            };
+            let (deadline, duration) = self.operation_timeout(false);
+            let result =
+                tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), operation)
+                    .await
+                    .map_err(|_| sb_types::CoreError::timeout("packet-send", duration))?;
+            result.map_err(|error| sb_types::CoreError::io(error.to_string()))
+        })
+    }
+
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, sb_types::TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            self.ensure_open()?;
+            let operation = async {
+                // wait for at least one peer socket to be ready, then drain.
+                // `watch` avoids the check-then-await race: `changed().await` registers
+                // the waiter BEFORE observing the current value, so a `socket_for`
+                // `send()` between our check and our registration cannot be missed.
+                loop {
+                    {
+                        let mut sockets = self.sockets.lock().await;
+                        self.reap_idle(&mut sockets).await;
+                        if let Some(entry) = sockets.values().next().cloned() {
+                            drop(sockets);
+                            return entry.socket.recv_from(buffer).await;
+                        }
+                    }
+                    // No socket ready yet → wait for the next `socket_for` wakeup.
+                    let mut rx = self.socket_ready.subscribe();
+                    // If a socket became ready between our last check and subscribing,
+                    // `borrow_and_update` reflects it without blocking.
+                    if rx.borrow_and_update().is_some() {
+                        continue;
+                    }
+                    let _ = rx.changed().await;
+                }
+            };
+            let (deadline, duration) = self.operation_timeout(true);
+            let result =
+                tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), operation)
+                    .await
+                    .map_err(|_| sb_types::CoreError::timeout("packet-recv", duration))?;
+            result
+                .map(|(size, source)| (size, sb_types::TargetAddr::Socket(source)))
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))
+        })
+    }
+
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        close_packet(&self.closed);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn local_addr(&self) -> Option<sb_types::TargetAddr> {
+        None
+    }
+
+    fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        *self.deadlines.lock() = (deadline, deadline);
         Ok(())
     }
 
-    async fn recv_from(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
-        // wait for at least one peer socket to be ready, then drain.
-        // `watch` avoids the check-then-await race: `changed().await` registers
-        // the waiter BEFORE observing the current value, so a `socket_for`
-        // `send()` between our check and our registration cannot be missed.
-        loop {
-            {
-                let mut sockets = self.sockets.lock().await;
-                self.reap_idle(&mut sockets).await;
-                if let Some(entry) = sockets.values().next().cloned() {
-                    drop(sockets);
-                    let mut buf = vec![0u8; 65_535];
-                    let (n, src) = entry.socket.recv_from(&mut buf).await?;
-                    buf.truncate(n);
-                    return Ok((buf, src));
-                }
-            }
-            // No socket ready yet → wait for the next `socket_for` wakeup.
-            let mut rx = self.socket_ready.subscribe();
-            // If a socket became ready between our last check and subscribing,
-            // `borrow_and_update` reflects it without blocking.
-            if rx.borrow_and_update().is_some() {
-                continue;
-            }
-            let _ = rx.changed().await;
-        }
+    fn set_read_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        self.deadlines.lock().0 = deadline;
+        Ok(())
+    }
+
+    fn set_write_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        self.deadlines.lock().1 = deadline;
+        Ok(())
     }
 }
 
@@ -768,38 +864,11 @@ impl Endpoint for WireGuardEndpoint {
 
     fn listen_packet(
         &self,
-        destination: Socksaddr,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<Arc<UdpSocket>>> + Send + '_>>
-    {
-        Box::pin(async move {
-            info!(tag = %self.tag, "outbound UDP listen to {}", destination);
-
-            // NOTE: Userspace transport cannot provide an OS-backed UdpSocket; TUN-backed
-            // endpoints (wireguard-go) are required for UDP listen_packet support.
-            // Binding to 0.0.0.0 causes traffic leak (bypassing WG).
-            // Returning error is safer than leaking.
-            Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "WireGuard UDP listen_packet requires a TUN-backed endpoint; userspace transport not supported",
-            ))
-        })
-    }
-
-    fn supports_udp_outbound(&self) -> bool {
-        true
-    }
-
-    #[allow(clippy::type_complexity)]
-    fn open_udp_outbound_session(
-        &self,
+        session: &sb_types::Session,
     ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = io::Result<Arc<dyn crate::adapter::UdpOutboundSession>>,
-                > + Send
-                + '_,
-        >,
+        Box<dyn std::future::Future<Output = io::Result<sb_types::BoxedPacketConn>> + Send + '_>,
     > {
+        let idle_timeout = self.udp_timeout.unwrap_or(session.packet.idle_timeout);
         Box::pin(async move {
             self.ensure_started(false)
                 .map_err(|error| io::Error::other(error.to_string()))?;
@@ -812,12 +881,11 @@ impl Endpoint for WireGuardEndpoint {
                     "no WireGuard peer transport available",
                 ));
             }
-            Ok(Arc::new(WireGuardEndpointUdpSession::new(
+            Ok(Box::new(WireGuardEndpointUdpSession::new(
                 peers,
                 self.dns_resolver.clone(),
-                self.udp_timeout,
-            ))
-                as Arc<dyn crate::adapter::UdpOutboundSession>)
+                Some(idle_timeout),
+            )) as sb_types::BoxedPacketConn)
         })
     }
 
@@ -1029,6 +1097,32 @@ mod tests {
     use super::*;
     use tokio::io::{AsyncReadExt, AsyncWriteExt};
 
+    #[test]
+    fn packet_timeout_prefers_explicit_and_reports_remaining_duration() {
+        let idle = Duration::from_secs(30);
+        let (_, default_duration) = packet_operation_timeout(idle, None);
+        assert_eq!(default_duration, idle);
+
+        let (_, explicit_duration) =
+            packet_operation_timeout(idle, Some(Instant::now() + Duration::from_millis(20)));
+        assert!(explicit_duration <= Duration::from_millis(20));
+        assert!(explicit_duration < idle);
+    }
+
+    #[test]
+    fn packet_close_state_rejects_io() {
+        let closed = AtomicBool::new(false);
+        ensure_packet_open(&closed).unwrap();
+        close_packet(&closed);
+        assert!(matches!(
+            ensure_packet_open(&closed),
+            Err(sb_types::CoreError::Connect {
+                kind: sb_types::ConnectErrorKind::Reset,
+                ..
+            })
+        ));
+    }
+
     fn wireguard_endpoint_ir(addresses: Option<Vec<String>>) -> EndpointIR {
         EndpointIR {
             ty: EndpointType::Wireguard,
@@ -1077,13 +1171,16 @@ mod tests {
         )
         .expect("wireguard endpoint");
 
-        assert!(endpoint.supports_udp_outbound());
         let session = endpoint
-            .open_udp_outbound_session()
+            .listen_packet(&sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("test"),
+                sb_types::TargetAddr::domain("10.7.0.1", 53),
+            ))
             .await
             .expect("udp outbound session surface");
         let err = session
-            .send_to(b"hello", "10.7.0.1", 53)
+            .send_to(b"hello", &sb_types::TargetAddr::domain("10.7.0.1", 53))
             .await
             .expect_err("missing local WG address must loud-fail");
         assert!(
@@ -1179,12 +1276,23 @@ mod tests {
             None,
         )
         .expect("endpoint");
-        let session = ep.open_udp_outbound_session().await.expect("udp session");
+        let session = ep
+            .listen_packet(&sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("test"),
+                sb_types::TargetAddr::domain("10.0.0.1", 53),
+            ))
+            .await
+            .expect("udp session");
         // Both peers point at unreachable loopback:1/2 (no real handshake), but
         // connect_udp opens the WgUdpSocket regardless of peer liveness. The
         // send_to queues the datagram; it won't be delivered but won't error.
-        let r4 = session.send_to(b"v4", "10.0.0.1", 53).await;
-        let r6 = session.send_to(b"v6", "fd00::1", 53).await;
+        let r4 = session
+            .send_to(b"v4", &sb_types::TargetAddr::domain("10.0.0.1", 53))
+            .await;
+        let r6 = session
+            .send_to(b"v6", &sb_types::TargetAddr::domain("fd00::1", 53))
+            .await;
         // We accept either Ok (queued) or a transport-open error if the netstack
         // driver can't be constructed for the unreachable peer; the key is that
         // neither panics or deadlocks. In practice both queue successfully.
@@ -1208,14 +1316,22 @@ mod tests {
             None,
         )
         .expect("endpoint");
-        let session = ep.open_udp_outbound_session().await.expect("udp session");
+        let session = ep
+            .listen_packet(&sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("test"),
+                sb_types::TargetAddr::domain("10.7.0.1", 53),
+            ))
+            .await
+            .expect("udp session");
         // First send opens a socket (datagram queues, no real peer answers).
-        let _ = session.send_to(b"first", "10.7.0.1", 53).await;
+        let destination = sb_types::TargetAddr::domain("10.7.0.1", 53);
+        let _ = session.send_to(b"first", &destination).await;
         // Idle beyond the timeout.
         tokio::time::sleep(Duration::from_millis(350)).await;
         // Second send must reap the stale socket and open a fresh one; it
         // should succeed (not error with a stale/broken-pipe).
-        let r = session.send_to(b"second", "10.7.0.1", 53).await;
+        let r = session.send_to(b"second", &destination).await;
         assert!(r.is_ok(), "session usable after idle reap: {r:?}");
     }
 

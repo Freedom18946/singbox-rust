@@ -4,10 +4,9 @@
 //! incoming TCP stream and then hands the recovered raw stream to a detour
 //! inbound. The first supported consumer is Shadowsocks inbound.
 
-use crate::inbound::shadowsocks::ShadowsocksInboundAdapter;
 use anyhow::{anyhow, Context, Result};
 use hmac::{Hmac, Mac};
-use sb_core::adapter::{registry, InboundService};
+use sb_core::adapter::InboundTaskDriver;
 use sb_core::router;
 use sb_core::services::v2ray_api::StatsManager;
 use serde::Deserialize;
@@ -339,25 +338,7 @@ where
             "shadowtls: proxy decision without outbound tag is unsupported; implicit fallback is disabled; provide explicit outbound in routing"
         ));
     }
-    let runtime = registry::runtime_inbounds()
-        .ok_or_else(|| {
-            anyhow!(
-                "shadowtls: named proxy decision '{}' cannot be resolved because registry is unavailable; implicit fallback is disabled; use adapter bridge/supervisor path; implicit direct fallback is disabled",
-                tag
-            )
-        })?;
-    let service = runtime
-        .get(tag)
-        .ok_or_else(|| {
-            anyhow!(
-                "shadowtls: named proxy decision '{}' not found in registry; implicit fallback is disabled; use adapter bridge/supervisor path",
-                tag
-            )
-        })?;
-    if let Some(adapter) = service
-        .as_any()
-        .and_then(|any| any.downcast_ref::<ShadowsocksInboundAdapter>())
-    {
+    if let Some(adapter) = crate::inbound::shadowsocks::resolve_detour_inbound(tag) {
         adapter.accept_detour_stream(stream, peer).await
     } else {
         Err(anyhow!(
@@ -1133,7 +1114,7 @@ impl ShadowTlsInboundAdapter {
     }
 }
 
-impl InboundService for ShadowTlsInboundAdapter {
+impl InboundTaskDriver for ShadowTlsInboundAdapter {
     fn serve(&self) -> std_io::Result<()> {
         let (tx, rx) = mpsc::channel(1);
         *self.stop_tx.lock().unwrap() = Some(tx);

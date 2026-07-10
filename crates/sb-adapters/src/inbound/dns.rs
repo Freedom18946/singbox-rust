@@ -9,7 +9,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 use sb_core::dns::{DnsQueryContext, DnsRouter, ResolverHandle};
 use sb_core::net::metered::TrafficRecorder;
 use sb_core::services::v2ray_api::StatsManager;
@@ -134,11 +134,11 @@ impl DnsInboundAdapter {
     /// * `param` - Inbound parameters containing listen address and port
     ///
     /// # Returns
-    /// A boxed InboundService or an error if parameters are invalid
+    /// A boxed InboundTaskDriver or an error if parameters are invalid
     pub fn create(
         param: &sb_core::adapter::InboundParam,
         stats: Option<Arc<StatsManager>>,
-    ) -> std::io::Result<Box<dyn InboundService>> {
+    ) -> std::io::Result<Box<dyn InboundTaskDriver>> {
         let config = DnsInboundConfig {
             listen: param.listen.clone(),
             port: param.port,
@@ -620,7 +620,7 @@ impl DnsInboundAdapter {
     }
 }
 
-impl InboundService for DnsInboundAdapter {
+impl InboundTaskDriver for DnsInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         // Run in a blocking context to match the sync interface
         let rt = tokio::runtime::Handle::try_current()

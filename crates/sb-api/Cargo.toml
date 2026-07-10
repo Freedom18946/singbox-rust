@@ -13,6 +13,7 @@ axum = { version = "0.7", features = ["ws", "macros"] }
 tower = "0.4"
 tower-http = { version = "0.5", features = ["cors", "trace"] }
 tokio = { version = "1.35", features = ["full"] }
+tokio-util = { version = "0.7", features = ["compat"] }
 
 # Serialization and JSON handling
 serde = { version = "1.0", features = ["derive"] }
@@ -44,6 +45,8 @@ http = "1.0"
 sb-core = { path = "../sb-core", features = ["router"] }
 sb-common = { path = "../sb-common" }
 sb-config = { path = "../sb-config" }
+sb-types = { path = "../sb-types" }
+sb-transport = { path = "../sb-transport" }
 sb-subscribe = { path = "../sb-subscribe", features = ["subs_provider_parse", "subs_http"], optional = true }
 
 [features]

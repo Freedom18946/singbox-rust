@@ -23,11 +23,10 @@ use sb_adapters::inbound::vmess::VmessInboundConfig;
 use sb_adapters::outbound::vmess::{
     Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
 };
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
 use sb_transport::{StandardTlsConfig, TlsConfig, TlsVersion};
+use sb_types::{Session, TargetAddr};
 
 /// Helper: Start TCP echo server
 async fn start_echo_server() -> Option<SocketAddr> {
@@ -137,6 +136,7 @@ async fn test_vmess_standard_tls() {
 
     // Create VMess client with TLS
     let client_config = VmessConfig {
+        tag: None,
         server: vmess_addr.ip().to_string(),
         port: vmess_addr.port(),
         auth: VmessAuth {
@@ -157,14 +157,10 @@ async fn test_vmess_standard_tls() {
     let connector = VmessConnector::new(client_config);
 
     // Dial through VMess to echo server
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let mut stream = connector
-        .dial(target, DialOpts::default())
+        .dial(&Session::outbound(target))
         .await
         .expect("Failed to dial through VMess with TLS");
 
@@ -208,6 +204,7 @@ async fn test_vmess_tls_with_alpn() {
         };
 
         let client_config = VmessConfig {
+            tag: None,
             server: vmess_addr.ip().to_string(),
             port: vmess_addr.port(),
             auth: VmessAuth {
@@ -227,14 +224,10 @@ async fn test_vmess_tls_with_alpn() {
 
         let connector = VmessConnector::new(client_config);
 
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
         let mut stream = connector
-            .dial(target, DialOpts::default())
+            .dial(&Session::outbound(target))
             .await
             .unwrap_or_else(|_| panic!("Failed to dial with ALPN: {alpn:?}"));
 
@@ -277,6 +270,7 @@ async fn test_vmess_tls_versions() {
         };
 
         let client_config = VmessConfig {
+            tag: None,
             server: vmess_addr.ip().to_string(),
             port: vmess_addr.port(),
             auth: VmessAuth {
@@ -296,14 +290,10 @@ async fn test_vmess_tls_versions() {
 
         let connector = VmessConnector::new(client_config);
 
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
         let mut stream = connector
-            .dial(target, DialOpts::default())
+            .dial(&Session::outbound(target))
             .await
             .unwrap_or_else(|_| {
                 panic!("Failed to dial with TLS versions: {min_ver:?}-{max_ver:?}")
@@ -341,6 +331,7 @@ async fn test_vmess_tls_with_multiplex() {
     };
 
     let client_config = VmessConfig {
+        tag: None,
         server: vmess_addr.ip().to_string(),
         port: vmess_addr.port(),
         auth: VmessAuth {
@@ -372,14 +363,13 @@ async fn test_vmess_tls_with_multiplex() {
         let echo_addr_clone = echo_addr;
 
         let handle = tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr_clone.ip().to_string(),
-                port: echo_addr_clone.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(
+                echo_addr_clone.ip().to_string(),
+                echo_addr_clone.port(),
+            );
 
             let mut stream = connector_clone
-                .dial(target, DialOpts::default())
+                .dial(&Session::outbound(target))
                 .await
                 .expect("Failed to dial with TLS + Multiplex");
 
@@ -423,6 +413,7 @@ async fn test_vmess_reality_tls() {
     };
 
     let client_config = VmessConfig {
+        tag: None,
         server: vmess_addr.ip().to_string(),
         port: vmess_addr.port(),
         auth: VmessAuth {
@@ -442,15 +433,11 @@ async fn test_vmess_reality_tls() {
 
     let connector = VmessConnector::new(client_config);
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     // Note: This test may fail if REALITY server is not properly configured
     // It serves as a structural test for REALITY integration
-    let result = connector.dial(target, DialOpts::default()).await;
+    let result = connector.dial(&Session::outbound(target)).await;
 
     // We expect this might fail in test environment but structure should be correct
     match result {
@@ -493,6 +480,7 @@ async fn test_vmess_ech_tls() {
     };
 
     let client_config = VmessConfig {
+        tag: None,
         server: vmess_addr.ip().to_string(),
         port: vmess_addr.port(),
         auth: VmessAuth {
@@ -512,15 +500,11 @@ async fn test_vmess_ech_tls() {
 
     let connector = VmessConnector::new(client_config);
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     // Note: This test may fail if ECH is not properly configured
     // It serves as a structural test for ECH integration
-    let result = connector.dial(target, DialOpts::default()).await;
+    let result = connector.dial(&Session::outbound(target)).await;
 
     match result {
         Ok(mut stream) => {
@@ -560,6 +544,7 @@ async fn test_vmess_tls_data_integrity() {
     };
 
     let client_config = VmessConfig {
+        tag: None,
         server: vmess_addr.ip().to_string(),
         port: vmess_addr.port(),
         auth: VmessAuth {
@@ -579,14 +564,10 @@ async fn test_vmess_tls_data_integrity() {
 
     let connector = VmessConnector::new(client_config);
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let mut stream = connector
-        .dial(target, DialOpts::default())
+        .dial(&Session::outbound(target))
         .await
         .expect("Failed to dial with TLS");
 

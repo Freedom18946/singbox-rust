@@ -11,7 +11,6 @@ use tokio_util::sync::CancellationToken;
 
 use crate::conntrack::ConntrackGuard;
 use crate::net::metered::TrafficRecorder;
-use crate::outbound::traits::UdpTransport;
 
 /// 目标地址（避免强耦合上层 TargetAddr，保持最小依赖）
 #[derive(Debug, Clone, PartialEq, Eq, Hash)]
@@ -31,7 +30,7 @@ pub struct UdpNatKey {
 #[derive(Clone)]
 pub enum UdpNatUpstream {
     Socket(Arc<UdpSocket>),
-    Transport(Arc<dyn UdpTransport>),
+    Transport(Arc<dyn sb_types::PacketConn>),
 }
 
 impl std::fmt::Debug for UdpNatUpstream {

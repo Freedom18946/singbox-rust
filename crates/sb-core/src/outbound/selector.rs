@@ -4,7 +4,6 @@
 //! - Metrics: `proxy_select_total{outbound,member`} counter,
 //!   `proxy_select_score{outbound,member`} gauge (current score snapshot).
 use super::endpoint::ProxyEndpoint;
-use crate::adapter::OutboundConnector;
 use std::collections::HashMap;
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
@@ -12,7 +11,7 @@ use std::time::{Duration, Instant};
 #[derive(Clone, Debug)]
 pub struct Member {
     pub name: String,
-    pub conn: Arc<dyn OutboundConnector>,
+    pub conn: Arc<dyn sb_types::Outbound>,
 }
 
 #[derive(Clone, Debug)]
@@ -163,113 +162,99 @@ impl Selector {
     }
 }
 
-#[async_trait::async_trait]
-impl crate::adapter::OutboundConnector for Selector {
-    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        // 空池：返回可诊断错误（不崩溃）
-        if self.members.is_empty() {
-            tracing::warn!(target: "sb_core::selector", outbound=%self.name, "connect called with empty pool");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "selector has no members",
-            ));
-        }
-        // 冷启动：轮询几次采样
-        let sample_rounds = self.min_samples.min(self.members.len().max(1));
-        let mut last_err: Option<std::io::Error> = None;
-        for _ in 0..sample_rounds {
-            for m in &self.members {
-                let t0 = Instant::now();
-                match m.conn.connect(host, port).await {
-                    Ok(stream) => {
-                        let ms = t0.elapsed().as_millis();
-                        self.on_result(&m.name, ms, true);
-                        return Ok(stream);
-                    }
-                    Err(e) => {
-                        let ms = t0.elapsed().as_millis();
-                        self.on_result(&m.name, ms, false);
-                        last_err = Some(e);
-                    }
-                }
-            }
-        }
-        // 正常选择：根据分数选择最佳
-        let idx = self.choose();
-        let mem = &self.members[idx];
-        let t0 = Instant::now();
-        match mem.conn.connect(host, port).await {
-            Ok(s) => {
-                self.on_result(&mem.name, t0.elapsed().as_millis(), true);
-                Ok(s)
-            }
-            Err(e) => {
-                self.on_result(&mem.name, t0.elapsed().as_millis(), false);
-                Err(last_err.unwrap_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::ConnectionRefused,
-                        format!("all members failed, last: {e}"),
-                    )
-                }))
-            }
-        }
+impl sb_types::Outbound for Selector {
+    fn r#type(&self) -> &str {
+        "selector"
     }
 
-    #[cfg(feature = "v2ray_transport")]
-    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
-        if self.members.is_empty() {
-            tracing::warn!(target: "sb_core::selector", outbound=%self.name, "connect_io called with empty pool");
-            return Err(std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                "selector has no members",
-            ));
-        }
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(self.name.clone())
+    }
 
-        let sample_rounds = self.min_samples.min(self.members.len().max(1));
-        let mut last_err: Option<std::io::Error> = None;
-        for _ in 0..sample_rounds {
-            for m in &self.members {
-                let t0 = Instant::now();
-                match m.conn.connect_io(host, port).await {
-                    Ok(stream) => {
-                        let ms = t0.elapsed().as_millis();
-                        self.on_result(&m.name, ms, true);
-                        return Ok(stream);
-                    }
-                    Err(e) => {
-                        let ms = t0.elapsed().as_millis();
-                        self.on_result(&m.name, ms, false);
-                        last_err = Some(e);
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
+
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            // 空池：返回可诊断错误（不崩溃）
+            if self.members.is_empty() {
+                tracing::warn!(target: "sb_core::selector", outbound=%self.name, "connect called with empty pool");
+                return Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unreachable,
+                    "selector has no members",
+                ));
+            }
+            // 冷启动：轮询几次采样
+            let sample_rounds = self.min_samples.min(self.members.len().max(1));
+            let mut last_err: Option<sb_types::CoreError> = None;
+            for _ in 0..sample_rounds {
+                for m in &self.members {
+                    let t0 = Instant::now();
+                    match m.conn.dial(session).await {
+                        Ok(stream) => {
+                            let ms = t0.elapsed().as_millis();
+                            self.on_result(&m.name, ms, true);
+                            return Ok(stream);
+                        }
+                        Err(e) => {
+                            let ms = t0.elapsed().as_millis();
+                            self.on_result(&m.name, ms, false);
+                            last_err = Some(e);
+                        }
                     }
                 }
             }
-        }
+            // 正常选择：根据分数选择最佳
+            let idx = self.choose();
+            let mem = &self.members[idx];
+            let t0 = Instant::now();
+            match mem.conn.dial(session).await {
+                Ok(s) => {
+                    self.on_result(&mem.name, t0.elapsed().as_millis(), true);
+                    Ok(s)
+                }
+                Err(e) => {
+                    self.on_result(&mem.name, t0.elapsed().as_millis(), false);
+                    Err(last_err.unwrap_or_else(|| {
+                        sb_types::CoreError::connect(
+                            sb_types::ConnectErrorKind::Unreachable,
+                            format!("all selector members failed, last: {e}"),
+                        )
+                    }))
+                }
+            }
+        })
+    }
 
-        let idx = self.choose();
-        let mem = &self.members[idx];
-        let t0 = Instant::now();
-        match mem.conn.connect_io(host, port).await {
-            Ok(s) => {
-                self.on_result(&mem.name, t0.elapsed().as_millis(), true);
-                Ok(s)
-            }
-            Err(e) => {
-                self.on_result(&mem.name, t0.elapsed().as_millis(), false);
-                Err(last_err.unwrap_or_else(|| {
-                    std::io::Error::new(
-                        std::io::ErrorKind::ConnectionRefused,
-                        format!("all members failed, last: {e}"),
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            let index = self.choose();
+            self.members
+                .get(index)
+                .ok_or_else(|| {
+                    sb_types::CoreError::connect(
+                        sb_types::ConnectErrorKind::Unreachable,
+                        "selector has no members",
                     )
-                }))
-            }
-        }
+                })?
+                .conn
+                .listen_packet(session)
+                .await
+        })
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use std::io;
+    use sb_types::Outbound;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[derive(Debug)]
@@ -287,17 +272,41 @@ mod tests {
             }
         }
     }
-    #[async_trait::async_trait]
-    impl OutboundConnector for FakeConn {
-        async fn connect(&self, _h: &str, _p: u16) -> io::Result<tokio::net::TcpStream> {
-            tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
-            let c = self.count.fetch_add(1, Ordering::SeqCst);
-            if c < self.fail_n {
-                Err(io::Error::other("fail"))
-            } else {
-                // 本地 loopback 打洞不可行；返回错误模拟，但对于选择逻辑已足够
-                Err(io::Error::new(io::ErrorKind::ConnectionRefused, "stub"))
-            }
+    impl sb_types::Outbound for FakeConn {
+        fn r#type(&self) -> &str {
+            "fake"
+        }
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new("fake")
+        }
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp]
+        }
+        fn dial<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async move {
+                tokio::time::sleep(Duration::from_millis(self.delay_ms)).await;
+                let c = self.count.fetch_add(1, Ordering::SeqCst);
+                let message = if c < self.fail_n { "fail" } else { "stub" };
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Refused,
+                    message,
+                ))
+            })
+        }
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
+            Box::pin(async {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "fake",
+                ))
+            })
         }
     }
 
@@ -320,9 +329,23 @@ mod tests {
         );
         // 冷启动采样后，choose 应倾向 fast
         for _ in 0..3 {
-            let _ = s.connect("127.0.0.1", 9).await;
+            let session = sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("test"),
+                sb_types::TargetAddr::domain("127.0.0.1", 9),
+            );
+            let _ = s.dial(&session).await;
         }
         // 若运行到此，说明行为路径都覆盖了（断言逻辑依赖真实 socket 不可靠，留空）
+    }
+
+    #[test]
+    fn canonical_network_matches_packet_capability() {
+        let selector = Selector::new("sel".into(), Vec::new());
+        assert_eq!(
+            selector.network(),
+            &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+        );
     }
 }
 

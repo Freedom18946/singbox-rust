@@ -1,8 +1,6 @@
 use crate::error::Result;
-use crate::outbound::OutboundConnector;
 use arti_client::config::CfgPath;
 use arti_client::{TorClient, TorClientConfig};
-use async_trait::async_trait;
 use sb_config::ir::OutboundIR;
 use sb_core::context::Context;
 use std::sync::Arc;
@@ -45,6 +43,7 @@ use tracing::{debug, warn};
 pub struct TorOutbound {
     client: Arc<OnceCell<TorClient<PreferredRuntime>>>,
     config: TorClientConfig,
+    tag: sb_types::OutboundTag,
 }
 
 impl std::fmt::Debug for TorOutbound {
@@ -129,6 +128,7 @@ impl TorOutbound {
         Ok(Self {
             client: Arc::new(OnceCell::new()),
             config,
+            tag: sb_types::OutboundTag::new(ir.name.clone().unwrap_or_else(|| "tor".to_string())),
         })
     }
 
@@ -148,23 +148,22 @@ impl TorOutbound {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for TorOutbound {
-    async fn start(&self) -> Result<()> {
-        let _ = self.get_client().await?;
-        Ok(())
-    }
-
-    async fn dial(
-        &self,
-        target: crate::traits::Target,
-        _opts: crate::traits::DialOpts,
-    ) -> Result<crate::traits::BoxedStream> {
+impl TorOutbound {
+    pub async fn dial(&self, session: &sb_types::Session) -> Result<crate::traits::BoxedStream> {
+        let target = &session.target;
+        let host = target.host();
         let client = self.get_client().await?;
         let stream = client
-            .connect((target.host.as_str(), target.port))
+            .connect((host.as_str(), target.port()))
             .await
             .map_err(|e| crate::error::AdapterError::Other(e.to_string()))?;
         Ok(Box::new(stream))
     }
 }
+
+crate::impl_canonical_outbound!(
+    TorOutbound,
+    "tor",
+    |this: &TorOutbound| this.tag.as_str().to_string(),
+    &[sb_types::NetworkKind::Tcp]
+);

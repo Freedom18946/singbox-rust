@@ -63,7 +63,7 @@ mod t_scaffold {
         for ib in &br.inbounds {
             let i = ib.clone();
             thread::spawn(move || {
-                let _ = i.serve();
+                let _ = i.start(sb_types::StartStage::Start);
             });
         }
         std::thread::sleep(Duration::from_millis(80));

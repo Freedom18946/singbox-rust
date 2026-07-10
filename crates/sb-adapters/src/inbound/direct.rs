@@ -6,7 +6,7 @@
 use std::net::SocketAddr;
 use std::sync::Arc;
 
-use sb_core::adapter::{InboundParam, InboundService};
+use sb_core::adapter::{InboundParam, InboundTaskDriver};
 use sb_core::inbound::direct::DirectForward;
 use sb_core::services::v2ray_api::StatsManager;
 
@@ -23,11 +23,11 @@ impl DirectInboundAdapter {
     /// * `param` - Inbound parameters containing listen address, override host/port, and UDP flag.
     ///
     /// # Returns
-    /// A boxed InboundService or an error if parameters are invalid.
+    /// A boxed InboundTaskDriver or an error if parameters are invalid.
     pub fn create(
         param: &InboundParam,
         stats: Option<Arc<StatsManager>>,
-    ) -> std::io::Result<Box<dyn InboundService>> {
+    ) -> std::io::Result<Box<dyn InboundTaskDriver>> {
         // Parse listen address
         let listen_str = format!("{}:{}", param.listen, param.port);
         let listen: SocketAddr = listen_str.parse().map_err(|e| {
@@ -75,7 +75,7 @@ impl DirectInboundAdapter {
     }
 }
 
-impl InboundService for DirectInboundAdapter {
+impl InboundTaskDriver for DirectInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         self.inner.serve()
     }

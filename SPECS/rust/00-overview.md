@@ -74,8 +74,7 @@ singbox-rust 是 sing-box 代理平台的 Rust 实现版本，旨在提供与 Go
 | `sb-api` | 29 | Clash API、V2Ray API |
 | `sb-subscribe` | 24 | 订阅解析（Clash、SingBox 格式） |
 | `sb-platform` | 22 | 平台适配 |
-| `sb-proto` | 9 | 协议定义 |
-| `sb-types` | 2 | 共享类型 |
+| `sb-types` | 2 | 共享类型与正典适配器契约 |
 | `sb-common` | 10 | 通用工具 |
 | `sb-security` | 5 | 安全工具 |
 | `sb-test-utils` | 3 | 测试工具 |

@@ -94,11 +94,11 @@ pub trait CombinedHandler: ConnectionHandlerEx + PacketHandlerEx + HandlerLifecy
 /// Upstream wrapper that adapts an outbound connector to UpstreamHandler
 pub struct UpstreamWrapper {
     tag: String,
-    connector: Arc<dyn super::OutboundConnector>,
+    connector: Arc<dyn sb_types::Outbound>,
 }
 
 impl UpstreamWrapper {
-    pub fn new(tag: String, connector: Arc<dyn super::OutboundConnector>) -> Self {
+    pub fn new(tag: String, connector: Arc<dyn sb_types::Outbound>) -> Self {
         Self { tag, connector }
     }
 }
@@ -110,8 +110,19 @@ impl UpstreamHandler for UpstreamWrapper {
     }
 
     async fn connect(&self, host: &str, port: u16) -> Result<Box<dyn AsyncStream>> {
-        let stream = self.connector.connect(host, port).await?;
-        Ok(Box::new(stream))
+        use tokio_util::compat::FuturesAsyncReadCompatExt;
+
+        let session = sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new("upstream-handler"),
+            sb_types::TargetAddr::domain(host, port),
+        );
+        let stream = self
+            .connector
+            .dial(&session)
+            .await
+            .map_err(std::io::Error::other)?;
+        Ok(Box::new(stream.compat()))
     }
 }
 

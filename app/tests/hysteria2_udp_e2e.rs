@@ -12,9 +12,9 @@ use sb_core::outbound::hysteria2::inbound::{
     Hysteria2Inbound, Hysteria2ServerConfig, Hysteria2User,
 };
 
-use sb_core::adapter::UdpOutboundFactory;
 use sb_core::outbound::hysteria2::Hysteria2Config as OutCfg;
 use sb_core::outbound::hysteria2::Hysteria2Outbound as Out;
+use sb_types::Outbound;
 
 async fn start_udp_echo() -> Option<SocketAddr> {
     let sock = match UdpSocket::bind("127.0.0.1:0").await {
@@ -92,13 +92,22 @@ async fn hysteria2_udp_roundtrip() {
     };
     let out = Arc::new(Out::new(ob_cfg).expect("outbound"));
     let factory = out.clone();
-    let sess = factory.open_session().await.expect("open udp session");
+    let session = sb_types::Session::new(
+        0,
+        sb_types::InboundTag::new("hysteria2-udp-test"),
+        sb_types::TargetAddr::Socket(echo),
+    );
+    let sess = factory
+        .listen_packet(&session)
+        .await
+        .expect("open udp packet connection");
 
     // Send to echo server and wait reply
     let payload = b"hy2-udp-e2e";
-    sess.send_to(payload, &echo.ip().to_string(), echo.port())
+    sess.send_to(payload, &sb_types::TargetAddr::Socket(echo))
         .await
         .expect("send");
-    let (data, _src) = sess.recv_from().await.expect("recv");
-    assert_eq!(&data, payload);
+    let mut data = vec![0u8; 65_535];
+    let (size, _src) = sess.recv_from(&mut data).await.expect("recv");
+    assert_eq!(&data[..size], payload);
 }

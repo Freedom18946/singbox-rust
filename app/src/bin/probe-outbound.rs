@@ -8,8 +8,6 @@ use tokio::net::TcpStream;
 #[cfg(any(feature = "adapters", feature = "adapter-vless"))]
 use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
 #[cfg(any(feature = "adapters", feature = "adapter-vless"))]
-use sb_adapters::traits::{DialOpts, OutboundConnector as _, Target, TransportKind};
-#[cfg(any(feature = "adapters", feature = "adapter-vless"))]
 use sb_tls::TlsConnector as _;
 
 #[derive(Parser, Debug)]
@@ -148,29 +146,25 @@ impl ProbePhaseResult {
 }
 
 enum ProbeStream {
-    Raw(TcpStream),
     Layered(sb_transport::IoStream),
 }
 
 impl ProbeStream {
     async fn write_all(&mut self, buf: &[u8]) -> std::io::Result<()> {
         match self {
-            Self::Raw(stream) => stream.write_all(buf).await,
             Self::Layered(stream) => stream.write_all(buf).await,
         }
     }
 
     async fn read(&mut self, buf: &mut [u8]) -> std::io::Result<usize> {
         match self {
-            Self::Raw(stream) => stream.read(buf).await,
             Self::Layered(stream) => stream.read(buf).await,
         }
     }
 
     fn mode(&self) -> &'static str {
         match self {
-            Self::Raw(_) => "connect",
-            Self::Layered(_) => "connect_io",
+            Self::Layered(_) => "dial",
         }
     }
 }
@@ -277,104 +271,68 @@ async fn main() -> Result<()> {
 
     // Dial and send a basic HTTP GET to validate end-to-end
     let started = Instant::now();
-    let mut raw_connect_error = None;
-    let mut stream = match tokio::time::timeout(
-        Duration::from_secs(args.timeout),
-        connector.connect(&host, port),
-    )
-    .await
-    {
-        Ok(Ok(stream)) => ProbeStream::Raw(stream),
-        Err(_) => {
-            let connected_ms = started.elapsed().as_millis() as u64;
-            probe_output.bridge_probe = Some(BridgeProbeReport {
-                ok: false,
-                stream_mode: Some("connect"),
-                stage: Some("connect"),
-                class: Some("timeout".to_string()),
-                connect_time_ms: connected_ms,
-                response_bytes: None,
-                first_line: None,
-                raw_connect_error: None,
-                error: Some(format!("timeout after {}s", args.timeout)),
-            });
-            print_probe_error(
-                args.json,
-                "connect",
-                "connect",
-                "timeout",
-                connected_ms,
-                format!("timeout after {}s", args.timeout),
-            );
-            maybe_print_probe_json(args.json, &probe_output);
-            anyhow::bail!("connect timeout after {}s", args.timeout);
-        }
-        Ok(Err(connect_err)) => {
-            let raw_error = sanitize_probe_detail(&connect_err.to_string());
-            raw_connect_error = Some(raw_error.clone());
-            match tokio::time::timeout(
-                Duration::from_secs(args.timeout),
-                connector.connect_io(&host, port),
-            )
+    let raw_connect_error = None;
+    use tokio_util::compat::FuturesAsyncReadCompatExt;
+    let session = sb_types::Session::new(
+        0,
+        sb_types::InboundTag::new("probe-outbound"),
+        sb_types::TargetAddr::domain(host.clone(), port),
+    );
+    let mut stream =
+        match tokio::time::timeout(Duration::from_secs(args.timeout), connector.dial(&session))
             .await
-            {
-                Ok(Ok(stream)) => ProbeStream::Layered(stream),
-                Ok(Err(error)) => {
-                    let connected_ms = started.elapsed().as_millis() as u64;
-                    let detail = format!(
-                        "dial outbound via connect_io after connect error: {connect_err}: {error}"
-                    );
-                    probe_output.bridge_probe = Some(BridgeProbeReport {
-                        ok: false,
-                        stream_mode: Some("connect_io"),
-                        stage: Some("connect"),
-                        class: Some(classify_probe_error_text(&error.to_string()).to_string()),
-                        connect_time_ms: connected_ms,
-                        response_bytes: None,
-                        first_line: None,
-                        raw_connect_error,
-                        error: Some(sanitize_probe_detail(&detail)),
-                    });
-                    print_probe_error(
-                        args.json,
-                        "connect_io",
-                        "connect",
-                        classify_probe_error_text(&error.to_string()),
-                        connected_ms,
-                        &detail,
-                    );
-                    maybe_print_probe_json(args.json, &probe_output);
-                    return Err(error).with_context(|| {
-                        format!("dial outbound via connect_io after connect error: {connect_err}")
-                    });
-                }
-                Err(_) => {
-                    let connected_ms = started.elapsed().as_millis() as u64;
-                    probe_output.bridge_probe = Some(BridgeProbeReport {
-                        ok: false,
-                        stream_mode: Some("connect_io"),
-                        stage: Some("connect"),
-                        class: Some("timeout".to_string()),
-                        connect_time_ms: connected_ms,
-                        response_bytes: None,
-                        first_line: None,
-                        raw_connect_error,
-                        error: Some(format!("timeout after {}s", args.timeout)),
-                    });
-                    print_probe_error(
-                        args.json,
-                        "connect_io",
-                        "connect",
-                        "timeout",
-                        connected_ms,
-                        format!("timeout after {}s", args.timeout),
-                    );
-                    maybe_print_probe_json(args.json, &probe_output);
-                    anyhow::bail!("connect_io timeout after {}s", args.timeout);
-                }
+        {
+            Ok(Ok(stream)) => ProbeStream::Layered(Box::new(stream.compat())),
+            Err(_) => {
+                let connected_ms = started.elapsed().as_millis() as u64;
+                probe_output.bridge_probe = Some(BridgeProbeReport {
+                    ok: false,
+                    stream_mode: Some("connect"),
+                    stage: Some("connect"),
+                    class: Some("timeout".to_string()),
+                    connect_time_ms: connected_ms,
+                    response_bytes: None,
+                    first_line: None,
+                    raw_connect_error: None,
+                    error: Some(format!("timeout after {}s", args.timeout)),
+                });
+                print_probe_error(
+                    args.json,
+                    "connect",
+                    "connect",
+                    "timeout",
+                    connected_ms,
+                    format!("timeout after {}s", args.timeout),
+                );
+                maybe_print_probe_json(args.json, &probe_output);
+                anyhow::bail!("connect timeout after {}s", args.timeout);
             }
-        }
-    };
+            Ok(Err(error)) => {
+                let connected_ms = started.elapsed().as_millis() as u64;
+                let detail = format!("dial outbound failed: {error}");
+                probe_output.bridge_probe = Some(BridgeProbeReport {
+                    ok: false,
+                    stream_mode: Some("dial"),
+                    stage: Some("connect"),
+                    class: Some(classify_probe_error_text(&error.to_string()).to_string()),
+                    connect_time_ms: connected_ms,
+                    response_bytes: None,
+                    first_line: None,
+                    raw_connect_error,
+                    error: Some(sanitize_probe_detail(&detail)),
+                });
+                print_probe_error(
+                    args.json,
+                    "dial",
+                    "connect",
+                    classify_probe_error_text(&error.to_string()),
+                    connected_ms,
+                    &detail,
+                );
+                maybe_print_probe_json(args.json, &probe_output);
+                return Err(anyhow::Error::msg(error.to_string())).context("dial outbound");
+            }
+        };
     let connected_ms = started.elapsed().as_millis() as u64;
 
     // Write a GET request
@@ -804,16 +762,16 @@ async fn maybe_probe_vless_direct(
         vless_config.reality = reality;
     }
     let connector = VlessConnector::new(vless_config);
-    let target = Target {
-        host: host.to_string(),
-        port,
-        kind: TransportKind::Tcp,
-    };
+    let target = sb_types::Session::new(
+        0,
+        sb_types::InboundTag::new("probe-vless"),
+        sb_types::TargetAddr::domain(host, port),
+    );
 
     let started = Instant::now();
     let direct_vless_dial = match tokio::time::timeout(
         Duration::from_secs(timeout_secs),
-        connector.dial(target, DialOpts::new()),
+        sb_types::Outbound::dial(&connector, &target),
     )
     .await
     {
@@ -948,7 +906,7 @@ mod tests {
             post_bridge: None,
             bridge_probe: Some(BridgeProbeReport {
                 ok: false,
-                stream_mode: Some("connect_io"),
+                stream_mode: Some("canonical_dial"),
                 stage: Some("read"),
                 class: Some("post_dial_eof".to_string()),
                 connect_time_ms: 12,

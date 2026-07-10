@@ -64,9 +64,14 @@ async fn selector_selection_survives_reload_via_cache_file() {
             .find_outbound("S")
             .expect("selector outbound present");
         let group = connector.as_group().expect("selector group");
-        assert_eq!(group.now(), "A");
+        assert_eq!(group.now().as_str(), "A");
 
-        group.select_outbound("B").await.expect("select B");
+        group
+            .as_selector_control()
+            .expect("selector control")
+            .select("B")
+            .await
+            .expect("select B");
 
         let cache = guard
             .context
@@ -90,7 +95,7 @@ async fn selector_selection_survives_reload_via_cache_file() {
             .expect("selector outbound present after reload");
         let group = connector.as_group().expect("selector group after reload");
         assert_eq!(
-            group.now(),
+            group.now().as_str(),
             "B",
             "reload should restore selected outbound from cache file"
         );

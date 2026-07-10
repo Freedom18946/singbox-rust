@@ -18,10 +18,9 @@ use tokio::sync::mpsc;
 
 use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
-use sb_adapters::TransportKind;
 use sb_core::net::rate_limit_metrics;
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 
 // Helper: Start echo server
 async fn start_echo_server() -> std::io::Result<SocketAddr> {
@@ -225,15 +224,11 @@ async fn test_slowloris_slow_read_mitigation() {
     })
     .expect("Failed to create connector");
 
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     // Simulate slowloris: connect and read very slowly
     let result = tokio::time::timeout(Duration::from_secs(10), async {
-        let mut stream = connector.dial(target, DialOpts::default()).await?;
+        let mut stream = connector.dial(&Session::outbound(target)).await?;
 
         // Send data
         stream.write_all(b"test").await?;
@@ -295,13 +290,9 @@ async fn test_resource_exhaustion_memory() {
         let success_count = success_count.clone();
 
         handles.push(tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr.ip().to_string(),
-                port: echo_addr.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            if connector.dial(target, DialOpts::default()).await.is_ok() {
+            if connector.dial(&Session::outbound(target)).await.is_ok() {
                 success_count.fetch_add(1, Ordering::Relaxed);
                 // Keep connection alive for a bit
                 tokio::time::sleep(Duration::from_millis(100)).await;
@@ -370,13 +361,9 @@ async fn test_burst_traffic_handling() {
         let success_count = success_count.clone();
 
         handles.push(tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr.ip().to_string(),
-                port: echo_addr.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            if connector.dial(target, DialOpts::default()).await.is_ok() {
+            if connector.dial(&Session::outbound(target)).await.is_ok() {
                 success_count.fetch_add(1, Ordering::Relaxed);
             }
         }));
@@ -450,12 +437,8 @@ async fn test_recovery_after_flood() {
     // Phase 1: Flood attack
     println!("Phase 1: Simulating flood attack...");
     for _ in 0..50 {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
-        let _ = connector.dial(target, DialOpts::default()).await;
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+        let _ = connector.dial(&Session::outbound(target)).await;
     }
 
     // Phase 2: Wait for rate limit window to expire
@@ -464,13 +447,9 @@ async fn test_recovery_after_flood() {
 
     // Phase 3: Normal traffic should succeed
     println!("Phase 3: Testing normal traffic after attack...");
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    let result = connector.dial(target, DialOpts::default()).await;
+    let result = connector.dial(&Session::outbound(target)).await;
     if result.is_err() {
         eprintln!(
             "skipping recovery test: dial failed after flood (likely restricted environment)"

@@ -3,7 +3,6 @@
 //! Hysteria v1 is a QUIC-based proxy protocol with custom congestion control
 //! and UDP relay support.
 
-use async_trait::async_trait;
 use bytes::{BufMut, BytesMut};
 use quinn::{Connection, Endpoint, RecvStream, SendStream};
 use std::io;
@@ -14,7 +13,7 @@ use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::Mutex;
 
 use super::super::quic::common::{connect as quic_connect, QuicConfig};
-use super::super::types::{HostPort, OutboundTcp};
+use super::super::types::HostPort;
 
 /// Hysteria v1 configuration
 #[derive(Clone, Debug)]
@@ -233,11 +232,16 @@ impl HysteriaV1Outbound {
     }
 }
 
-#[async_trait]
-impl OutboundTcp for HysteriaV1Outbound {
-    type IO = HysteriaV1Stream;
+impl HysteriaV1Outbound {
+    pub const fn protocol_name(&self) -> &'static str {
+        "hysteria"
+    }
 
-    async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
+    pub async fn connect(&self, target: &HostPort) -> io::Result<HysteriaV1Stream> {
+        self.connect_tunnel(target).await
+    }
+
+    pub async fn connect_tunnel(&self, target: &HostPort) -> io::Result<HysteriaV1Stream> {
         let connection = self.get_connection().await?;
         let (send_stream, recv_stream) = self.create_tcp_tunnel(&connection, target).await?;
 
@@ -245,10 +249,6 @@ impl OutboundTcp for HysteriaV1Outbound {
             send: send_stream,
             recv: recv_stream,
         })
-    }
-
-    fn protocol_name(&self) -> &'static str {
-        "hysteria"
     }
 }
 

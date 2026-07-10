@@ -42,7 +42,6 @@ SEARCH_PATHS=(
     "crates/sb-config/src"
     "crates/sb-metrics/src"
     "crates/sb-platform/src"
-    "crates/sb-proto/src"
     "crates/sb-runtime/src"
     "crates/sb-subscribe/src"
     "crates/sb-transport/src"

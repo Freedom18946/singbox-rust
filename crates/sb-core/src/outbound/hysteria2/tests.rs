@@ -11,10 +11,38 @@
 #[cfg(feature = "out_hysteria2")]
 mod hysteria2_test_suite {
     use crate::outbound::hysteria2::{
-        BandwidthLimiter, BrutalConfig, CongestionControl, Hysteria2Config, Hysteria2Outbound,
+        close_packet, ensure_packet_open, packet_operation_timeout, BandwidthLimiter, BrutalConfig,
+        CongestionControl, Hysteria2Config, Hysteria2Outbound,
     };
-    use crate::outbound::types::OutboundTcp;
+    use std::sync::atomic::AtomicBool;
     use std::time::Duration;
+    use std::time::Instant;
+
+    #[test]
+    fn packet_timeout_prefers_explicit_and_reports_remaining_duration() {
+        let idle = Duration::from_secs(30);
+        let (_, default_duration) = packet_operation_timeout(idle, None);
+        assert_eq!(default_duration, idle);
+
+        let (_, explicit_duration) =
+            packet_operation_timeout(idle, Some(Instant::now() + Duration::from_millis(20)));
+        assert!(explicit_duration <= Duration::from_millis(20));
+        assert!(explicit_duration < idle);
+    }
+
+    #[test]
+    fn packet_close_state_rejects_io() {
+        let closed = AtomicBool::new(false);
+        ensure_packet_open(&closed).unwrap();
+        close_packet(&closed);
+        assert!(matches!(
+            ensure_packet_open(&closed),
+            Err(sb_types::CoreError::Connect {
+                kind: sb_types::ConnectErrorKind::Reset,
+                ..
+            })
+        ));
+    }
 
     #[test]
     fn test_hysteria2_config_creation() {
@@ -1114,7 +1142,6 @@ mod session_management_tests {
 mod integration_tests {
     use crate::outbound::hysteria2::{Hysteria2Config, Hysteria2Outbound};
     use crate::outbound::types::HostPort;
-    use crate::outbound::types::OutboundTcp;
     use tokio::time::{timeout, Duration};
 
     // These tests would require a real Hysteria2 server for full integration testing
@@ -1148,7 +1175,7 @@ mod integration_tests {
         };
 
         // This would test actual connection in a real environment
-        let _result = timeout(Duration::from_secs(10), outbound.connect(&target)).await;
+        let _result = timeout(Duration::from_secs(10), outbound.connect_tunnel(&target)).await;
         // In real test: assert!(result.is_ok());
     }
 
@@ -1159,11 +1186,11 @@ mod integration_tests {
         // This would require a real server that supports UDP relay
     }
 
-    // Contract (ignored): open a real UDP session via factory
+    // Contract (ignored): open a real canonical packet connection.
     #[tokio::test]
     #[ignore] // Requires external Hysteria2 server on 127.0.0.1:8443
     async fn ignored_hysteria2_udp_session_open() {
-        use crate::adapter::UdpOutboundFactory;
+        use sb_types::Outbound;
         let cfg = Hysteria2Config {
             server: "127.0.0.1".to_string(),
             port: 8443,
@@ -1182,7 +1209,13 @@ mod integration_tests {
             zero_rtt_handshake: false,
         };
         let outbound = Hysteria2Outbound::new(cfg).unwrap();
-        let res = outbound.open_session().await;
+        let res = outbound
+            .listen_packet(&sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("hysteria2-test"),
+                sb_types::TargetAddr::domain("127.0.0.1", 53),
+            ))
+            .await;
         assert!(res.is_ok());
     }
 

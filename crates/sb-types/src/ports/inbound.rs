@@ -1,68 +1,59 @@
-//! Inbound acceptor port.
+//! Canonical inbound lifecycle and stream contracts.
 
 use crate::errors::CoreError;
-use crate::ports::BoxFuture;
-use crate::session::{InboundTag, Session};
-use std::sync::Arc;
+use crate::ports::StartStage;
+use crate::session::InboundTag;
 
-/// Opaque boxed stream contract shared across adapter boundaries.
+/// Runtime-neutral asynchronous byte stream.
+///
+/// Implementations must remain usable after cancellation of the future that
+/// created them.  Ownership is transferred to the caller, which is responsible
+/// for shutdown.  Runtime adapters belong outside `sb-types`.
+pub trait AsyncStream:
+    futures::io::AsyncRead + futures::io::AsyncWrite + Unpin + Send + 'static
+{
+}
+
+impl<T> AsyncStream for T where
+    T: futures::io::AsyncRead + futures::io::AsyncWrite + Unpin + Send + 'static
+{
+}
+
+/// Erased canonical stream returned by an outbound dial.
 pub type BoxedStream = Box<dyn AsyncStream>;
 
-/// Async stream trait (Send + Sync wrapper).
-pub trait AsyncStream: Send + Sync + 'static {
-    // This is a marker trait; actual I/O methods are on the concrete type.
-    // We define this here to avoid depending on tokio in sb-types.
-}
-
-impl<T> AsyncStream for T where T: Send + Sync + 'static {}
-
-/// Datagram packet for UDP handling.
-#[derive(Debug, Clone)]
-pub struct Datagram {
-    pub data: Vec<u8>,
-    pub src: Option<std::net::SocketAddr>,
-}
-
-/// Handler that sb-core provides to process accepted connections.
+/// Canonical inbound lifecycle contract.
 ///
-/// Implementations of `InboundAcceptor` call these methods when connections arrive.
-pub trait InboundHandler: Send + Sync + 'static {
-    /// Called when a new TCP/stream connection is accepted.
-    fn on_stream(
-        &self,
-        session: Session,
-        stream: BoxedStream,
-    ) -> BoxFuture<'_, Result<(), CoreError>>;
+/// `start(StartStage::Start)` must not return success until the listener has
+/// bound and made its readiness state observable.  `close` requests shutdown
+/// and releases resources owned by the inbound.  Both methods return
+/// [`CoreError`] rather than implementation-specific errors; neither operation
+/// is cancellation-sensitive because both are synchronous lifecycle requests.
+pub trait Inbound: Send + Sync + std::fmt::Debug + 'static {
+    /// Stable protocol type (for example, `"socks"`).
+    fn r#type(&self) -> &str;
 
-    /// Called when a UDP packet is received.
-    fn on_datagram(
-        &self,
-        session: Session,
-        packet: Datagram,
-    ) -> BoxFuture<'_, Result<(), CoreError>>;
-}
-
-/// Inbound acceptor port.
-///
-/// Implementations listen on a socket and call the handler when connections arrive.
-/// The acceptor owns the listening socket; the handler is provided by sb-core.
-pub trait InboundAcceptor: Send + Sync + 'static {
-    /// Get the tag for this inbound.
+    /// Configured inbound tag.
     fn tag(&self) -> InboundTag;
 
-    /// Start accepting connections, calling handler for each.
-    fn accept_loop(&self, handler: Arc<dyn InboundHandler>)
-        -> BoxFuture<'_, Result<(), CoreError>>;
-}
+    /// Start this inbound at the requested supervisor lifecycle stage.
+    fn start(&self, stage: StartStage) -> Result<(), CoreError>;
 
-#[cfg(test)]
-mod tests {
-    use super::BoxedStream;
+    /// Request orderly shutdown and release listener resources.
+    fn close(&self) -> Result<(), CoreError>;
 
-    struct OpaqueStreamToken;
+    /// Whether this inbound publishes startup readiness.
+    fn supports_startup_readiness(&self) -> bool {
+        false
+    }
 
-    #[test]
-    fn boxed_stream_accepts_send_sync_opaque_tokens() {
-        let _stream: BoxedStream = Box::new(OpaqueStreamToken);
+    /// Current active stream count when the implementation can measure it.
+    fn active_connections(&self) -> Option<u64> {
+        None
+    }
+
+    /// Current UDP association estimate when the implementation can measure it.
+    fn udp_sessions_estimate(&self) -> Option<u64> {
+        None
     }
 }

@@ -6,9 +6,9 @@
 //! 本模块为出站连接提供 HTTP CONNECT 代理支持。它实现了 RFC 7231 第 4.3.6 节定义的 HTTP CONNECT 方法。
 
 use crate::outbound::prelude::*;
-use crate::traits::ResolveMode;
 use anyhow::Context;
 use base64::prelude::*;
+use sb_types::{ConnectOptions, ResolveMode};
 use std::net::{IpAddr, SocketAddr};
 #[cfg(feature = "http-tls")]
 use std::sync::Arc;
@@ -34,6 +34,14 @@ pub struct HttpProxyConnector {
 }
 
 impl HttpProxyConnector {
+    pub const fn name(&self) -> &'static str {
+        "http"
+    }
+
+    pub async fn start(&self) -> Result<()> {
+        Ok(())
+    }
+
     pub fn new(config: HttpProxyConfig) -> Self {
         #[cfg(feature = "transport_ech")]
         let ech_config = config
@@ -172,23 +180,8 @@ impl Default for HttpProxyConnector {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for HttpProxyConnector {
-    fn name(&self) -> &'static str {
-        "http"
-    }
-
-    async fn start(&self) -> Result<()> {
-        #[cfg(not(feature = "adapter-http"))]
-        return Err(AdapterError::NotImplemented {
-            what: "adapter-http",
-        });
-
-        #[cfg(feature = "adapter-http")]
-        Ok(())
-    }
-
-    async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
+impl HttpProxyConnector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-http"))]
         return Err(AdapterError::NotImplemented {
             what: "adapter-http",
@@ -196,17 +189,13 @@ impl OutboundConnector for HttpProxyConnector {
 
         #[cfg(feature = "adapter-http")]
         {
-            let _span = crate::outbound::span_dial("http", &target);
+            let target = &session.target;
+            let opts = &session.connect;
+            let _span = crate::outbound::span_dial("http", target);
 
             // Start metrics timing
             #[cfg(feature = "metrics")]
             let start_time = sb_metrics::start_adapter_timer();
-
-            if target.kind != TransportKind::Tcp {
-                return Err(AdapterError::Protocol(
-                    "HTTP proxy only supports TCP".to_string(),
-                ));
-            }
 
             let dial_result = async {
                 if self.use_tls {
@@ -284,7 +273,7 @@ impl OutboundConnector for HttpProxyConnector {
                         // Send HTTP CONNECT request over TLS
                         // 通过 TLS 发送 HTTP CONNECT 请求
                         let mut boxed_stream = Box::new(tls_stream) as BoxedStream;
-                        self.http_connect_generic(&mut boxed_stream, &target, &opts)
+                        self.http_connect_generic(&mut boxed_stream, target, opts)
                             .await?;
 
                         // Return the TLS stream
@@ -317,7 +306,7 @@ impl OutboundConnector for HttpProxyConnector {
 
                     // Send HTTP CONNECT request
                     // 发送 HTTP CONNECT 请求
-                    self.http_connect(&mut stream, &target, &opts).await?;
+                    self.http_connect(&mut stream, target, opts).await?;
 
                     // Return the connected stream
                     Ok(Box::new(stream) as BoxedStream)
@@ -341,7 +330,7 @@ impl OutboundConnector for HttpProxyConnector {
                 Ok(stream) => {
                     tracing::debug!(
                         server = %self.config.server,
-                        target = %format!("{}:{}", target.host, target.port),
+                        target = %target,
                         has_auth = %self.config.username.is_some(),
                         use_tls = %self.use_tls,
                         "HTTP connection established"
@@ -351,7 +340,7 @@ impl OutboundConnector for HttpProxyConnector {
                 Err(e) => {
                     tracing::debug!(
                         server = %self.config.server,
-                        target = %format!("{}:{}", target.host, target.port),
+                        target = %target,
                         has_auth = %self.config.username.is_some(),
                         use_tls = %self.use_tls,
                         error = %e,
@@ -364,6 +353,17 @@ impl OutboundConnector for HttpProxyConnector {
     }
 }
 
+crate::impl_canonical_outbound!(
+    HttpProxyConnector,
+    "http",
+    |this: &HttpProxyConnector| this
+        .config
+        .tag
+        .clone()
+        .unwrap_or_else(|| "http".to_string()),
+    &[sb_types::NetworkKind::Tcp]
+);
+
 #[cfg(feature = "adapter-http")]
 impl HttpProxyConnector {
     /// Send HTTP CONNECT request and parse response
@@ -371,37 +371,39 @@ impl HttpProxyConnector {
     async fn http_connect(
         &self,
         stream: &mut TcpStream,
-        target: &Target,
-        opts: &DialOpts,
+        target: &TargetAddr,
+        opts: &ConnectOptions,
     ) -> Result<()> {
         // Determine target address based on resolve mode
         // 根据解析模式确定目标地址
+        let host = target.host();
+        let port = target.port();
         let (connect_host, host_header) = match opts.resolve_mode {
             ResolveMode::Local => {
                 // Resolve locally first, but still send original hostname in Host header
                 // 先在本地解析，但在 Host 头部中仍发送原始主机名
-                if let Ok(ip) = target.host.parse::<IpAddr>() {
+                if let Ok(ip) = host.parse::<IpAddr>() {
                     // Already an IP address
                     // 已经是 IP 地址
-                    (ip.to_string(), target.host.clone())
+                    (ip.to_string(), host.clone())
                 } else {
                     // Domain name - resolve locally
                     // 域名 - 本地解析
-                    match tokio::net::lookup_host((target.host.clone(), target.port)).await {
+                    match tokio::net::lookup_host((host.clone(), port)).await {
                         Ok(mut addrs) => {
                             if let Some(addr) = addrs.next() {
-                                (addr.ip().to_string(), target.host.clone())
+                                (addr.ip().to_string(), host.clone())
                             } else {
                                 return Err(AdapterError::Network(format!(
                                     "Failed to resolve {}",
-                                    target.host
+                                    host
                                 )));
                             }
                         }
                         Err(e) => {
                             return Err(AdapterError::Network(format!(
                                 "DNS resolution failed for {}: {}",
-                                target.host, e
+                                host, e
                             )));
                         }
                     }
@@ -410,7 +412,7 @@ impl HttpProxyConnector {
             ResolveMode::Remote => {
                 // Send original hostname to proxy for remote resolution
                 // 发送原始主机名给代理进行远程解析
-                (target.host.clone(), target.host.clone())
+                (host.clone(), host.clone())
             }
         };
 
@@ -418,7 +420,7 @@ impl HttpProxyConnector {
         // 构建 HTTP CONNECT 请求
         let mut request = format!(
             "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n",
-            connect_host, target.port, host_header, target.port
+            connect_host, port, host_header, port
         );
 
         // Add Proxy-Authorization header if credentials are provided
@@ -503,33 +505,35 @@ impl HttpProxyConnector {
     async fn http_connect_generic(
         &self,
         stream: &mut BoxedStream,
-        target: &Target,
-        opts: &DialOpts,
+        target: &TargetAddr,
+        opts: &ConnectOptions,
     ) -> Result<()> {
         // Determine target address based on resolve mode
+        let host = target.host();
+        let port = target.port();
         let (connect_host, host_header) = match opts.resolve_mode {
             ResolveMode::Local => {
                 // Resolve locally first, but still send original hostname in Host header
-                if let Ok(ip) = target.host.parse::<IpAddr>() {
+                if let Ok(ip) = host.parse::<IpAddr>() {
                     // Already an IP address
-                    (ip.to_string(), target.host.clone())
+                    (ip.to_string(), host.clone())
                 } else {
                     // Domain name - resolve locally
-                    match tokio::net::lookup_host((target.host.clone(), target.port)).await {
+                    match tokio::net::lookup_host((host.clone(), port)).await {
                         Ok(mut addrs) => {
                             if let Some(addr) = addrs.next() {
-                                (addr.ip().to_string(), target.host.clone())
+                                (addr.ip().to_string(), host.clone())
                             } else {
                                 return Err(AdapterError::Network(format!(
                                     "Failed to resolve {}",
-                                    target.host
+                                    host
                                 )));
                             }
                         }
                         Err(e) => {
                             return Err(AdapterError::Network(format!(
                                 "DNS resolution failed for {}: {}",
-                                target.host, e
+                                host, e
                             )));
                         }
                     }
@@ -537,14 +541,14 @@ impl HttpProxyConnector {
             }
             ResolveMode::Remote => {
                 // Send original hostname to proxy for remote resolution
-                (target.host.clone(), target.host.clone())
+                (host.clone(), host.clone())
             }
         };
 
         // Build HTTP CONNECT request
         let mut request = format!(
             "CONNECT {}:{} HTTP/1.1\r\nHost: {}:{}\r\n",
-            connect_host, target.port, host_header, target.port
+            connect_host, port, host_header, port
         );
 
         // Add Proxy-Authorization header if credentials are provided

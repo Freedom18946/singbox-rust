@@ -21,10 +21,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use crate::outbound::prelude::*;
-use sb_core::{
-    adapter::OutboundConnector as CoreOutboundConnector,
-    services::tailscale::coordinator::Coordinator,
-};
+use sb_core::services::tailscale::coordinator::Coordinator;
 use tokio::net::TcpStream;
 use tokio::net::UdpSocket;
 use tokio::sync::Mutex;
@@ -163,7 +160,7 @@ impl TailscaleConfig {
 #[derive(Debug)]
 pub struct TailscaleConnector {
     /// Fallback direct connector.
-    direct: Arc<dyn CoreOutboundConnector>,
+    direct: Arc<dyn sb_types::Outbound>,
     /// Tailscale configuration.
     config: TailscaleConfig,
     /// Detected connection mode.
@@ -193,7 +190,7 @@ impl Clone for TailscaleConnector {
 
 impl TailscaleConnector {
     /// Create a new TailscaleConnector.
-    pub fn new(direct: Arc<dyn CoreOutboundConnector>, config: TailscaleConfig) -> Self {
+    pub fn new(direct: Arc<dyn sb_types::Outbound>, config: TailscaleConfig) -> Self {
         let tag = config.tag.as_deref().unwrap_or("tailscale");
         let mode = config.mode();
 
@@ -498,9 +495,8 @@ pub type MagicDnsSocketFactory = Arc<
         + Sync,
 >;
 
-#[async_trait::async_trait]
-impl CoreOutboundConnector for TailscaleConnector {
-    async fn connect(&self, host: &str, port: u16) -> io::Result<TcpStream> {
+impl TailscaleConnector {
+    async fn connect(&self, host: &str, port: u16) -> io::Result<sb_transport::IoStream> {
         let tag = self.config.tag.as_deref().unwrap_or("tailscale");
         let dest = format!("{}:{}", host, port);
 
@@ -536,7 +532,7 @@ impl CoreOutboundConnector for TailscaleConnector {
                 // Try tailnet address resolution
                 if let Some(addrs) = tailnet_addrs.as_ref() {
                     if let Some(stream) = Self::connect_first(addrs, port).await {
-                        return stream;
+                        return stream.map(|stream| Box::new(stream) as sb_transport::IoStream);
                     }
                 }
                 Err(io::Error::other(
@@ -560,15 +556,18 @@ impl CoreOutboundConnector for TailscaleConnector {
                                 .connect_via_socks5(socks5_addr, &addr.to_string(), port)
                                 .await
                             {
-                                return Ok(stream);
+                                return Ok(Box::new(stream) as sb_transport::IoStream);
                             }
                         }
                     }
-                    return self.connect_via_socks5(socks5_addr, host, port).await;
+                    return self
+                        .connect_via_socks5(socks5_addr, host, port)
+                        .await
+                        .map(|stream| Box::new(stream) as sb_transport::IoStream);
                 }
                 if let Some(addrs) = tailnet_addrs.as_ref() {
                     if let Some(stream) = Self::connect_first(addrs, port).await {
-                        return stream;
+                        return stream.map(|stream| Box::new(stream) as sb_transport::IoStream);
                     }
                 }
                 Err(io::Error::other(
@@ -585,10 +584,17 @@ impl CoreOutboundConnector for TailscaleConnector {
                 );
                 if let Some(addrs) = tailnet_addrs.as_ref() {
                     if let Some(stream) = Self::connect_first(addrs, port).await {
-                        return stream;
+                        return stream.map(|stream| Box::new(stream) as sb_transport::IoStream);
                     }
                 }
-                self.direct.connect(host, port).await
+                use tokio_util::compat::FuturesAsyncReadCompatExt;
+                let session = sb_types::Session::new(
+                    0,
+                    sb_types::InboundTag::new("tailscale"),
+                    sb_types::TargetAddr::domain(host, port),
+                );
+                let stream = self.direct.dial(&session).await.map_err(io::Error::other)?;
+                Ok(Box::new(stream.compat()))
             }
             TailscaleMode::Managed => {
                 debug!(
@@ -598,7 +604,7 @@ impl CoreOutboundConnector for TailscaleConnector {
                 );
                 if let Some(addrs) = tailnet_addrs.as_ref() {
                     if let Some(stream) = Self::connect_first(addrs, port).await {
-                        return stream;
+                        return stream.map(|stream| Box::new(stream) as sb_transport::IoStream);
                     }
                 }
                 Err(io::Error::other(
@@ -606,6 +612,52 @@ impl CoreOutboundConnector for TailscaleConnector {
                 ))
             }
         }
+    }
+}
+
+impl sb_types::Outbound for TailscaleConnector {
+    fn r#type(&self) -> &str {
+        "tailscale"
+    }
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(
+            self.config
+                .tag
+                .clone()
+                .unwrap_or_else(|| "tailscale".to_string()),
+        )
+    }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp]
+    }
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::ports::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+            let (host, port) = match &session.target {
+                sb_types::TargetAddr::Socket(address) => (address.ip().to_string(), address.port()),
+                sb_types::TargetAddr::Domain(host, port) => (host.clone(), *port),
+            };
+            let stream = self
+                .connect(&host, port)
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::ports::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+    {
+        Box::pin(async {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                "tailscale packet support is not migrated",
+            ))
+        })
     }
 }
 

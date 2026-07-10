@@ -8,10 +8,8 @@
 //! - Connector construction
 //! - Outbound dial mechanics
 
-use async_trait::async_trait;
 use sb_adapters::outbound::prelude::*;
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_core::adapter::OutboundConnector as CoreOutboundConnector;
 use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 use std::io::ErrorKind;
 use std::sync::Arc;
@@ -22,17 +20,42 @@ use tokio::net::TcpListener;
 #[derive(Debug)]
 struct MockIoConnector;
 
-#[async_trait]
-impl CoreOutboundConnector for MockIoConnector {
-    async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        Err(std::io::Error::other(
-            "connect() should not be used in detour test",
-        ))
+impl sb_types::Outbound for MockIoConnector {
+    fn r#type(&self) -> &str {
+        "mock"
     }
-
-    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
-        let stream = tokio::net::TcpStream::connect((host, port)).await?;
-        Ok(Box::new(stream))
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new("mock-detour")
+    }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp]
+    }
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+            let address = match &session.target {
+                sb_types::TargetAddr::Socket(addr) => addr.to_string(),
+                sb_types::TargetAddr::Domain(host, port) => format!("{host}:{port}"),
+            };
+            let stream = tokio::net::TcpStream::connect(address)
+                .await
+                .map_err(|err| sb_types::CoreError::io(err.to_string()))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                "udp unsupported",
+            ))
+        })
     }
 }
 
@@ -164,8 +187,8 @@ fn test_shadowsocks_connector_name() {
 
 #[test]
 fn test_shadowsocks_implements_outbound_connector() {
-    // Verify the connector implements OutboundConnector trait
-    fn assert_outbound_connector<T: OutboundConnector>() {}
+    // Verify the connector implements Outbound trait
+    fn assert_outbound_connector<T: Outbound>() {}
     assert_outbound_connector::<ShadowsocksConnector>();
 }
 
@@ -203,11 +226,13 @@ async fn test_shadowsocks_connection_timeout() {
     };
     let connector = ShadowsocksConnector::new(config).unwrap();
 
-    let target = Target::tcp("example.com", 80);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_millis(100));
+    let target = TargetAddr::from_host_port("example.com", 80);
+    let opts = ConnectOptions::new().with_connect_timeout(Duration::from_millis(100));
 
     let start = std::time::Instant::now();
-    let result = connector.dial(target, opts).await;
+    let result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
     let elapsed = start.elapsed();
 
     // Should fail due to timeout
@@ -286,10 +311,12 @@ async fn test_shadowsocks_connector_dial_mock() {
     let connector = ShadowsocksConnector::new(config).unwrap();
 
     // Dial
-    let target = Target::tcp("example.com", 80);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
+    let target = TargetAddr::from_host_port("example.com", 80);
+    let opts = ConnectOptions::new().with_connect_timeout(Duration::from_secs(5));
 
-    let dial_result = connector.dial(target, opts).await;
+    let dial_result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
 
     // Dial should succeed (connection established + handshake sent)
     assert!(
@@ -348,9 +375,11 @@ async fn test_shadowsocks_connector_dial_via_detour_mock() {
     };
     let connector = ShadowsocksConnector::new(config).unwrap();
 
-    let target = Target::tcp("example.com", 80);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
-    let dial_result = connector.dial(target, opts).await;
+    let target = TargetAddr::from_host_port("example.com", 80);
+    let opts = ConnectOptions::new().with_connect_timeout(Duration::from_secs(5));
+    let dial_result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
 
     assert!(
         dial_result.is_ok(),
@@ -379,7 +408,10 @@ async fn test_shadowsocks_detour_rejects_multiplex() {
     let connector = ShadowsocksConnector::new(config).unwrap();
 
     let err = match connector
-        .dial(Target::tcp("example.com", 80), DialOpts::new())
+        .dial(
+            &sb_types::Session::outbound(TargetAddr::from_host_port("example.com", 80))
+                .with_connect(ConnectOptions::new()),
+        )
         .await
     {
         Ok(_) => panic!("detour + multiplex should fail"),
@@ -389,13 +421,15 @@ async fn test_shadowsocks_detour_rejects_multiplex() {
 }
 
 #[tokio::test]
-async fn test_shadowsocks_dial_tcp_only() {
+async fn test_shadowsocks_dial_uses_session_target() {
     let connector = ShadowsocksConnector::default();
 
-    // Attempt UDP dial should fail (Shadowsocks outbound only supports TCP via dial)
-    let target = Target::udp("example.com", 53);
-    let opts = DialOpts::new();
+    // Stream dial consumes canonical session target; transport kind is not duplicated.
+    let target = TargetAddr::from_host_port("example.com", 53);
+    let opts = ConnectOptions::new();
 
-    let result = connector.dial(target, opts).await;
-    assert!(result.is_err(), "UDP target should fail for TCP-only dial");
+    let result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
+    assert!(result.is_err(), "fixture server is unavailable");
 }

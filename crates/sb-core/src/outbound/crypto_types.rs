@@ -1,7 +1,3 @@
-use async_trait::async_trait;
-use std::net::SocketAddr;
-use tokio::io::{AsyncRead, AsyncWrite};
-
 /// Simplified host:port target representation
 #[derive(Clone, Debug)]
 pub struct HostPort {
@@ -26,33 +22,6 @@ impl std::fmt::Display for HostPort {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         write!(f, "{}:{}", self.host, self.port)
     }
-}
-
-/// Unified TCP outbound interface for encrypted protocols
-#[async_trait]
-pub trait OutboundTcp: Send + Sync {
-    type IO: AsyncRead + AsyncWrite + Unpin + Send + 'static;
-
-    /// Connect to target through this outbound
-    async fn connect(&self, target: &HostPort) -> std::io::Result<Self::IO>;
-
-    /// Get protocol name for metrics/logging
-    fn protocol_name(&self) -> &'static str;
-}
-
-/// Unified UDP outbound interface
-#[async_trait]
-pub trait OutboundUdp: Send + Sync {
-    /// Bind UDP socket for outbound traffic
-    async fn bind(&self) -> std::io::Result<tokio::net::UdpSocket>;
-
-    /// Connect to specific peer (optional operation for some protocols)
-    async fn connect_addr(&self, _peer: &SocketAddr) -> std::io::Result<()> {
-        Ok(())
-    }
-
-    /// Get protocol name for metrics/logging
-    fn protocol_name(&self) -> &'static str;
 }
 
 /// Outbound kind enumeration supporting encrypted protocols

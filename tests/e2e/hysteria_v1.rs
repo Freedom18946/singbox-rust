@@ -8,7 +8,7 @@ mod tests {
         HysteriaV1Config, HysteriaV1Inbound, HysteriaV1Outbound, HysteriaV1ServerConfig,
         UdpSessionManager,
     };
-    use sb_core::outbound::types::{HostPort, OutboundTcp};
+    use sb_core::outbound::types::HostPort;
     use std::io;
     use std::net::SocketAddr;
     use std::sync::Arc;

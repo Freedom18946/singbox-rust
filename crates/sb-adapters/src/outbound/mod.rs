@@ -15,11 +15,14 @@ pub mod prelude {
     //! Common imports for all adapter implementations
     //! 所有适配器实现的通用导入
     pub use crate::error::{AdapterError, Result};
-    pub use crate::traits::{BoxedStream, DialOpts, OutboundConnector, Target, TransportKind};
+    pub use crate::traits::BoxedStream;
     pub use async_trait::async_trait;
+    pub use sb_types::{ConnectOptions, Outbound, ResolveMode, RetryPolicy, Session, TargetAddr};
     pub use std::fmt::Debug;
     pub use std::time::Duration;
 }
+
+pub(crate) const TCP: &[sb_types::NetworkKind] = &[sb_types::NetworkKind::Tcp];
 
 /// Block outbound adapter - rejects all connection attempts
 /// 阻断出站适配器 - 拒绝所有连接尝试
@@ -32,12 +35,271 @@ pub mod direct;
 // Helper functions for tracing
 // 用于追踪的辅助函数
 #[allow(dead_code)]
-pub(crate) fn span_dial(adapter: &'static str, target: &crate::traits::Target) -> tracing::Span {
+pub(crate) fn span_dial(adapter: &'static str, target: &impl std::fmt::Debug) -> tracing::Span {
     tracing::info_span!("dial",
         adapter = adapter,
-        dest = %format!("{}:{}", target.host, target.port),
-        kind = ?target.kind
+        dest = ?target,
+        kind = "tcp"
     )
+}
+
+/// Convert an adapter error at the canonical outbound boundary.
+pub(crate) fn core_error(
+    error: crate::error::AdapterError,
+    session: &sb_types::Session,
+) -> sb_types::CoreError {
+    use crate::error::AdapterError;
+    use sb_types::{ConnectErrorKind, CoreError};
+    use std::io::ErrorKind;
+
+    match error {
+        AdapterError::Io(error) => match error.kind() {
+            ErrorKind::TimedOut => {
+                CoreError::timeout("outbound-dial", session.connect.connect_timeout)
+            }
+            ErrorKind::ConnectionRefused => {
+                CoreError::connect(ConnectErrorKind::Refused, error.to_string())
+            }
+            ErrorKind::ConnectionReset | ErrorKind::ConnectionAborted => {
+                CoreError::connect(ConnectErrorKind::Reset, error.to_string())
+            }
+            ErrorKind::NotConnected
+            | ErrorKind::AddrNotAvailable
+            | ErrorKind::NetworkUnreachable => {
+                CoreError::connect(ConnectErrorKind::Unreachable, error.to_string())
+            }
+            _ => CoreError::io(error.to_string()),
+        },
+        AdapterError::Timeout(duration) => CoreError::timeout("outbound-dial", duration),
+        AdapterError::UnsupportedProtocol(message) => {
+            CoreError::connect(ConnectErrorKind::Unsupported, message)
+        }
+        AdapterError::NotImplemented { what } => {
+            CoreError::connect(ConnectErrorKind::Unsupported, what)
+        }
+        AdapterError::InvalidConfig(message) => {
+            CoreError::connect(ConnectErrorKind::InvalidConfig, message)
+        }
+        AdapterError::AuthenticationFailed => CoreError::auth("adapter authentication failed"),
+        AdapterError::Protocol(message) => CoreError::protocol(message),
+        AdapterError::Network(message) => CoreError::dns(message),
+        AdapterError::Other(message) => CoreError::io(message),
+    }
+}
+
+/// Shared state for canonical packet associations implemented by adapters.
+#[cfg(any(
+    feature = "adapter-shadowsocks",
+    feature = "adapter-trojan",
+    feature = "adapter-vless"
+))]
+#[derive(Debug)]
+pub(crate) struct PacketState {
+    target: parking_lot::RwLock<sb_types::TargetAddr>,
+    idle_timeout: std::time::Duration,
+    deadlines: parking_lot::Mutex<(Option<std::time::Instant>, Option<std::time::Instant>)>,
+    closed: std::sync::atomic::AtomicBool,
+}
+
+#[cfg(any(
+    feature = "adapter-shadowsocks",
+    feature = "adapter-trojan",
+    feature = "adapter-vless"
+))]
+impl PacketState {
+    pub(crate) fn new(target: sb_types::TargetAddr, idle_timeout: std::time::Duration) -> Self {
+        Self {
+            target: parking_lot::RwLock::new(target),
+            idle_timeout,
+            deadlines: parking_lot::Mutex::new((None, None)),
+            closed: std::sync::atomic::AtomicBool::new(false),
+        }
+    }
+
+    pub(crate) fn ensure_open(&self) -> Result<(), sb_types::CoreError> {
+        if self.closed.load(std::sync::atomic::Ordering::Acquire) {
+            Err(sb_types::CoreError::io("packet connection closed"))
+        } else {
+            Ok(())
+        }
+    }
+
+    pub(crate) fn target(&self) -> sb_types::TargetAddr {
+        self.target.read().clone()
+    }
+
+    pub(crate) fn set_target(&self, target: &sb_types::TargetAddr) {
+        *self.target.write() = target.clone();
+    }
+
+    pub(crate) fn close(&self) {
+        self.closed
+            .store(true, std::sync::atomic::Ordering::Release);
+    }
+
+    pub(crate) fn set_deadline(&self, deadline: Option<std::time::Instant>) {
+        *self.deadlines.lock() = (deadline, deadline);
+    }
+
+    pub(crate) fn set_read_deadline(&self, deadline: Option<std::time::Instant>) {
+        self.deadlines.lock().0 = deadline;
+    }
+
+    pub(crate) fn set_write_deadline(&self, deadline: Option<std::time::Instant>) {
+        self.deadlines.lock().1 = deadline;
+    }
+
+    pub(crate) fn read_deadline(&self) -> Option<std::time::Instant> {
+        Some(
+            self.deadlines
+                .lock()
+                .0
+                .unwrap_or_else(|| std::time::Instant::now() + self.idle_timeout),
+        )
+    }
+
+    pub(crate) fn write_deadline(&self) -> Option<std::time::Instant> {
+        Some(
+            self.deadlines
+                .lock()
+                .1
+                .unwrap_or_else(|| std::time::Instant::now() + self.idle_timeout),
+        )
+    }
+}
+
+#[cfg(any(
+    feature = "adapter-shadowsocks",
+    feature = "adapter-trojan",
+    feature = "adapter-vless"
+))]
+pub(crate) async fn with_packet_deadline<T>(
+    deadline: Option<std::time::Instant>,
+    operation: impl std::future::Future<Output = Result<T, std::io::Error>>,
+) -> Result<T, sb_types::CoreError> {
+    match deadline {
+        Some(deadline) => {
+            let timeout_duration = deadline.saturating_duration_since(std::time::Instant::now());
+            tokio::time::timeout(timeout_duration, operation)
+                .await
+                .map_err(|_| sb_types::CoreError::timeout("packet-io", timeout_duration))?
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))
+        }
+        None => operation
+            .await
+            .map_err(|error| sb_types::CoreError::io(error.to_string())),
+    }
+}
+
+#[cfg(all(
+    test,
+    any(
+        feature = "adapter-shadowsocks",
+        feature = "adapter-trojan",
+        feature = "adapter-vless"
+    )
+))]
+mod packet_state_tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn idle_timeout_applies_without_explicit_deadline() {
+        let idle_timeout = std::time::Duration::from_millis(10);
+        let state = PacketState::new(
+            sb_types::TargetAddr::domain("example.com", 53),
+            idle_timeout,
+        );
+
+        let error = with_packet_deadline(
+            state.read_deadline(),
+            std::future::pending::<Result<(), std::io::Error>>(),
+        )
+        .await
+        .expect_err("pending packet operation must time out");
+
+        match error {
+            sb_types::CoreError::Timeout { duration, .. } => {
+                assert!(duration <= idle_timeout);
+                assert!(!duration.is_zero());
+            }
+            other => panic!("expected packet timeout, got {other}"),
+        }
+    }
+
+    #[tokio::test]
+    async fn explicit_deadline_overrides_idle_timeout() {
+        let idle_timeout = std::time::Duration::from_secs(1);
+        let explicit_timeout = std::time::Duration::from_millis(10);
+        let state = PacketState::new(
+            sb_types::TargetAddr::domain("example.com", 53),
+            idle_timeout,
+        );
+        state.set_write_deadline(Some(std::time::Instant::now() + explicit_timeout));
+
+        let error = with_packet_deadline(
+            state.write_deadline(),
+            std::future::pending::<Result<(), std::io::Error>>(),
+        )
+        .await
+        .expect_err("pending packet operation must use explicit deadline");
+
+        match error {
+            sb_types::CoreError::Timeout { duration, .. } => {
+                assert!(duration <= explicit_timeout);
+                assert!(duration < idle_timeout);
+                assert!(!duration.is_zero());
+            }
+            other => panic!("expected packet timeout, got {other}"),
+        }
+    }
+}
+
+/// Implement canonical stream outbound for session-native protocol code.
+#[macro_export]
+macro_rules! impl_canonical_outbound {
+    ($type:ty, $protocol:literal, $tag:expr, $networks:expr) => {
+        impl sb_types::Outbound for $type {
+            fn r#type(&self) -> &str {
+                $protocol
+            }
+
+            fn tag(&self) -> sb_types::OutboundTag {
+                let tag = $tag;
+                sb_types::OutboundTag::new(tag(self))
+            }
+
+            fn network(&self) -> &[sb_types::NetworkKind] {
+                $networks
+            }
+
+            fn dial<'a>(
+                &'a self,
+                session: &'a sb_types::Session,
+            ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+                Box::pin(async move {
+                    use tokio_util::compat::TokioAsyncReadCompatExt;
+
+                    let stream = <$type>::dial(self, session)
+                        .await
+                        .map_err(|error| $crate::outbound::core_error(error, session))?;
+                    Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+                })
+            }
+
+            fn listen_packet<'a>(
+                &'a self,
+                _session: &'a sb_types::Session,
+            ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+            {
+                Box::pin(async {
+                    Err(sb_types::CoreError::connect(
+                        sb_types::ConnectErrorKind::Unsupported,
+                        concat!($protocol, " does not support packet associations"),
+                    ))
+                })
+            }
+        }
+    };
 }
 
 // Feature-gated adapter modules
@@ -265,6 +527,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowsocksr::ShadowsocksROutbound 
         let protocol = ir.protocol.clone().unwrap_or_default();
 
         let config = shadowsocksr::ShadowsocksROutboundConfig {
+            tag: ir.name.clone(),
             server,
             port,
             method,
@@ -366,6 +629,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for hysteria2::Hysteria2Connector {
             .clone();
 
         let cfg = crate::outbound::hysteria2::Hysteria2AdapterConfig {
+            tag: ir.name.clone(),
             server,
             port,
             password,
@@ -455,6 +719,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for shadowtls::ShadowTlsConnector {
         let cfg = crate::outbound::shadowtls::ShadowTlsAdapterConfig {
             server,
             port,
+            tag: ir.name.clone(),
             version: ir.version.unwrap_or(1),
             password,
             sni: ir
@@ -499,6 +764,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for ssh::SshConnector {
             ))?;
 
         let cfg = crate::outbound::ssh::SshAdapterConfig {
+            tag: ir.name.clone(),
             server,
             port,
             username,
@@ -514,5 +780,24 @@ impl TryFrom<&sb_config::ir::OutboundIR> for ssh::SshConnector {
         };
 
         Ok(Self::new(cfg))
+    }
+}
+
+#[cfg(test)]
+mod canonical_capability_tests {
+    use sb_types::{NetworkKind, Outbound};
+
+    #[cfg(feature = "adapter-vmess")]
+    #[test]
+    fn vmess_stream_only_contract_does_not_advertise_packet_associations() {
+        let outbound = super::vmess::VmessConnector::default();
+        assert_eq!(Outbound::network(&outbound), &[NetworkKind::Tcp]);
+    }
+
+    #[cfg(feature = "adapter-dns")]
+    #[test]
+    fn dns_stream_wrapper_does_not_advertise_packet_associations() {
+        let outbound = super::dns::DnsConnector::default();
+        assert_eq!(Outbound::network(&outbound), &[NetworkKind::Tcp]);
     }
 }

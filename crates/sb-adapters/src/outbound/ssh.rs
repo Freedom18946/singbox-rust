@@ -9,6 +9,7 @@ use crate::outbound::prelude::*;
 /// SSH adapter configuration
 #[derive(Debug, Clone)]
 pub struct SshAdapterConfig {
+    pub tag: Option<String>,
     pub server: String,
     pub port: u16,
     pub username: String,
@@ -26,6 +27,7 @@ pub struct SshAdapterConfig {
 impl Default for SshAdapterConfig {
     fn default() -> Self {
         Self {
+            tag: None,
             server: String::new(),
             port: 22,
             username: String::new(),
@@ -68,6 +70,24 @@ impl std::fmt::Debug for SshConnector {
 }
 
 impl SshConnector {
+    pub const fn name(&self) -> &'static str {
+        "ssh"
+    }
+
+    pub async fn start(&self) -> Result<()> {
+        if self.config.server.is_empty() || self.config.username.is_empty() {
+            return Err(AdapterError::InvalidConfig(
+                "ssh server and username are required",
+            ));
+        }
+        if self.config.password.is_none() && self.config.private_key.is_none() {
+            return Err(AdapterError::InvalidConfig(
+                "ssh authentication is required",
+            ));
+        }
+        Ok(())
+    }
+
     pub fn new(config: SshAdapterConfig) -> Self {
         #[cfg(feature = "adapter-ssh")]
         {
@@ -469,15 +489,10 @@ mod inner {
     }
 }
 
-// ── OutboundConnector impl ───────────────────────────────────────────
+// ── Outbound impl ───────────────────────────────────────────
 
-#[async_trait]
-impl OutboundConnector for SshConnector {
-    fn name(&self) -> &'static str {
-        "ssh"
-    }
-
-    async fn start(&self) -> Result<()> {
+impl SshConnector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-ssh"))]
         return Err(AdapterError::NotImplemented {
             what: "adapter-ssh",
@@ -485,53 +500,13 @@ impl OutboundConnector for SshConnector {
 
         #[cfg(feature = "adapter-ssh")]
         {
-            if self.config.server.is_empty() {
-                return Err(AdapterError::InvalidConfig(
-                    "SSH server address is required",
-                ));
-            }
-            if self.config.username.is_empty() {
-                return Err(AdapterError::InvalidConfig("SSH username is required"));
-            }
-            if self.config.password.is_none() && self.config.private_key.is_none() {
-                return Err(AdapterError::InvalidConfig(
-                    "Either SSH password or private key is required",
-                ));
-            }
-
-            tracing::info!(
-                server = %self.config.server,
-                port = self.config.port,
-                username = %self.config.username,
-                has_password = self.config.password.is_some(),
-                has_private_key = self.config.private_key.is_some(),
-                host_key_verification = self.config.host_key_verification,
-                pool_size = ?self.config.connection_pool_size,
-                "SSH outbound connector initialized"
-            );
-
-            Ok(())
-        }
-    }
-
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        #[cfg(not(feature = "adapter-ssh"))]
-        return Err(AdapterError::NotImplemented {
-            what: "adapter-ssh",
-        });
-
-        #[cfg(feature = "adapter-ssh")]
-        {
-            let _span = crate::outbound::span_dial("ssh", &target);
+            let target = &session.target;
+            let host = target.host();
+            let port = target.port();
+            let _span = crate::outbound::span_dial("ssh", target);
 
             #[cfg(feature = "metrics")]
             let start_time = sb_metrics::start_adapter_timer();
-
-            if target.kind != TransportKind::Tcp {
-                return Err(AdapterError::Protocol(
-                    "SSH only supports TCP connections".to_string(),
-                ));
-            }
 
             let dial_result = async {
                 let conn = self
@@ -540,7 +515,7 @@ impl OutboundConnector for SshConnector {
                     .map_err(|e| AdapterError::Network(format!("SSH connection failed: {}", e)))?;
 
                 let stream = conn
-                    .create_tunnel_tcp(&target.host, target.port, &self.bridge_tasks)
+                    .create_tunnel_tcp(&host, port, &self.bridge_tasks)
                     .await
                     .map_err(|e| AdapterError::Network(format!("SSH tunnel failed: {}", e)))?;
 
@@ -561,7 +536,7 @@ impl OutboundConnector for SshConnector {
                 Ok(stream) => {
                     tracing::debug!(
                         server = %self.config.server,
-                        target = %format!("{}:{}", target.host, target.port),
+                        target = %target,
                         "SSH tunnel established"
                     );
                     Ok(Box::new(stream) as BoxedStream)
@@ -569,7 +544,7 @@ impl OutboundConnector for SshConnector {
                 Err(e) => {
                     tracing::debug!(
                         server = %self.config.server,
-                        target = %format!("{}:{}", target.host, target.port),
+                        target = %target,
                         error = %e,
                         "SSH tunnel failed"
                     );
@@ -579,6 +554,13 @@ impl OutboundConnector for SshConnector {
         }
     }
 }
+
+crate::impl_canonical_outbound!(
+    SshConnector,
+    "ssh",
+    |this: &SshConnector| this.config.tag.clone().unwrap_or_else(|| "ssh".to_string()),
+    &[sb_types::NetworkKind::Tcp]
+);
 
 #[cfg(test)]
 mod tests {

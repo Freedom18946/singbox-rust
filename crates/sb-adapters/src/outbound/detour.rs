@@ -28,7 +28,7 @@ pub async fn connect_tcp_stream(
         let endpoint = endpoint_for(host, port);
         let stream = tokio::time::timeout(
             timeout,
-            handle.connect_io(&RouteTarget::Named(tag.to_string()), endpoint),
+            handle.connect_tcp_stream(&RouteTarget::Named(tag.to_string()), endpoint),
         )
         .await
         .map_err(|_| AdapterError::Timeout(timeout))?
@@ -53,29 +53,50 @@ pub async fn connect_tcp_stream(
 #[cfg(all(test, feature = "sb-transport"))]
 mod tests {
     use super::*;
-    use async_trait::async_trait;
-    use sb_core::adapter::OutboundConnector as CoreOutboundConnector;
     use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
+    use serial_test::serial;
     use tokio::net::TcpListener;
 
     #[derive(Debug)]
     struct MockIoConnector;
 
-    #[async_trait]
-    impl CoreOutboundConnector for MockIoConnector {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-            Err(std::io::Error::other(
-                "connect() should not be used in detour test",
-            ))
+    impl sb_types::Outbound for MockIoConnector {
+        fn r#type(&self) -> &str {
+            "mock"
         }
-
-        async fn connect_io(
-            &self,
-            host: &str,
-            port: u16,
-        ) -> std::io::Result<sb_transport::IoStream> {
-            let stream = TcpStream::connect((host, port)).await?;
-            Ok(Box::new(stream))
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new("mock-detour")
+        }
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp]
+        }
+        fn dial<'a>(
+            &'a self,
+            session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async move {
+                use tokio_util::compat::TokioAsyncReadCompatExt;
+                let address = match &session.target {
+                    sb_types::TargetAddr::Socket(addr) => addr.to_string(),
+                    sb_types::TargetAddr::Domain(host, port) => format!("{host}:{port}"),
+                };
+                let stream = TcpStream::connect(address)
+                    .await
+                    .map_err(|err| sb_types::CoreError::io(err.to_string()))?;
+                Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+            })
+        }
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
+            Box::pin(async {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "udp unsupported",
+                ))
+            })
         }
     }
 
@@ -91,6 +112,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn detour_connects_through_runtime_outbound_registry() {
         install_mock_runtime_outbounds();
 
@@ -116,6 +138,7 @@ mod tests {
     }
 
     #[tokio::test]
+    #[serial]
     async fn missing_runtime_detour_reports_explicit_error() {
         sb_core::adapter::registry::install_runtime_outbounds(std::sync::Arc::new(
             OutboundRegistryHandle::default(),

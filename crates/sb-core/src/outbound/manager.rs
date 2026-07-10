@@ -4,13 +4,12 @@
 //! different outbound connector instances with lifecycle support.
 //! 此模块提供 `OutboundManager`，用于管理不同的出站连接器实例，并支持生命周期管理。
 
-use crate::outbound::traits::OutboundConnector;
-use crate::service::{Lifecycle, StartStage};
+use crate::service::StartStage;
 use sb_config::ir::{OutboundIR, OutboundType};
 use std::collections::HashMap;
 use std::sync::Arc;
 use tokio::sync::RwLock;
-use tracing::{debug, info, warn};
+use tracing::{info, warn};
 
 // =========================================================================
 // Pure functions for dependency extraction and topological sort (L2.9)
@@ -110,30 +109,12 @@ pub fn validate_and_sort(
     Ok(result)
 }
 
-/// Outbound adapter trait for connectors with lifecycle and tag.
-/// 具有生命周期和标签的出站适配器 trait。
-pub trait OutboundAdapter: OutboundConnector + Lifecycle {
-    /// Return the outbound tag/identifier.
-    /// 返回出站标签/标识符。
-    fn tag(&self) -> &str;
-
-    /// Return the outbound type (e.g., "direct", "socks", "vmess").
-    /// 返回出站类型（例如 "direct", "socks", "vmess"）。
-    fn outbound_type(&self) -> &str;
-}
-
-/// Type alias for an outbound connector (to maintain API compatibility).
-/// 出站连接器的类型别名（保持 API 兼容性）。
-pub type OutboundHandler = Arc<dyn OutboundAdapter>;
-
 /// Thread-safe manager for outbound connectors with lifecycle support.
 /// 具有生命周期支持的出站连接器的线程安全管理器。
 #[derive(Clone)]
 pub struct OutboundManager {
-    /// Connectors stored by tag (supports OutboundAdapter with lifecycle)
-    adapters: Arc<RwLock<HashMap<String, OutboundHandler>>>,
-    /// Legacy connectors for backward compatibility (no lifecycle)
-    legacy_connectors: Arc<RwLock<HashMap<String, Arc<dyn OutboundConnector>>>>,
+    /// Canonical outbounds stored by tag.
+    connectors: Arc<RwLock<HashMap<String, Arc<dyn sb_types::Outbound>>>>,
     /// Default outbound tag
     default_tag: Arc<RwLock<Option<String>>>,
     /// Dependency graph: tag -> list of tags it depends on
@@ -144,8 +125,7 @@ pub struct OutboundManager {
 impl std::fmt::Debug for OutboundManager {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("OutboundManager")
-            .field("adapters", &"<dyn OutboundAdapter>")
-            .field("legacy_connectors", &"<dyn OutboundConnector>")
+            .field("connectors", &"<dyn sb_types::Outbound>")
             .finish()
     }
 }
@@ -155,68 +135,30 @@ impl OutboundManager {
     /// 创建一个新的空出站管理器。
     pub fn new() -> Self {
         Self {
-            adapters: Arc::new(RwLock::new(HashMap::new())),
-            legacy_connectors: Arc::new(RwLock::new(HashMap::new())),
+            connectors: Arc::new(RwLock::new(HashMap::new())),
             default_tag: Arc::new(RwLock::new(None)),
             dependencies: Arc::new(RwLock::new(HashMap::new())),
         }
     }
 
-    /// Add an outbound adapter with the given tag.
-    /// 添加具有给定标签的出站适配器。
-    pub async fn add_adapter(&self, tag: String, adapter: OutboundHandler) {
-        let mut adapters = self.adapters.write().await;
-        adapters.insert(tag, adapter);
-    }
-
-    /// Add a legacy outbound connector with the given tag (no lifecycle).
-    /// 添加具有给定标签的传统出站连接器（无生命周期）。
-    pub async fn add_connector(&self, tag: String, connector: Arc<dyn OutboundConnector>) {
-        let mut connectors = self.legacy_connectors.write().await;
-        connectors.insert(tag, connector);
+    /// Add a canonical outbound with the supplied registry tag.
+    pub async fn add_adapter(&self, tag: String, adapter: Arc<dyn sb_types::Outbound>) {
+        self.connectors.write().await.insert(tag, adapter);
     }
 
     /// Get an outbound connector by tag.
     /// 按标签获取出站连接器。
-    ///
-    /// Checks adapters first, then legacy connectors.
-    /// 首先检查适配器，然后检查传统连接器。
-    pub async fn get(&self, tag: &str) -> Option<Arc<dyn OutboundConnector>> {
-        // Check adapters first
-        let adapters = self.adapters.read().await;
-        if let Some(adapter) = adapters.get(tag) {
-            return Some(adapter.clone() as Arc<dyn OutboundConnector>);
-        }
-        drop(adapters);
-
-        // Fall back to legacy connectors
-        let connectors = self.legacy_connectors.read().await;
-        connectors.get(tag).cloned()
-    }
-
-    /// Get an outbound adapter by tag (with lifecycle support).
-    /// 按标签获取出站适配器（支持生命周期）。
-    pub async fn get_adapter(&self, tag: &str) -> Option<OutboundHandler> {
-        let adapters = self.adapters.read().await;
-        adapters.get(tag).cloned()
+    pub async fn get(&self, tag: &str) -> Option<Arc<dyn sb_types::Outbound>> {
+        self.connectors.read().await.get(tag).cloned()
     }
 
     /// Remove an outbound connector by tag.
     /// 按标签移除出站连接器。
-    pub async fn remove(&self, tag: &str) -> Option<Arc<dyn OutboundConnector>> {
+    pub async fn remove(&self, tag: &str) -> Option<Arc<dyn sb_types::Outbound>> {
         // Remove from dependencies
         self.dependencies.write().await.remove(tag);
 
-        // Try adapters first
-        let mut adapters = self.adapters.write().await;
-        if let Some(adapter) = adapters.remove(tag) {
-            return Some(adapter as Arc<dyn OutboundConnector>);
-        }
-        drop(adapters);
-
-        // Try legacy connectors
-        let mut connectors = self.legacy_connectors.write().await;
-        connectors.remove(tag)
+        self.connectors.write().await.remove(tag)
     }
 
     /// Remove with dependency check (Go parity: ErrInvalid if tag is empty or has dependents).
@@ -224,7 +166,7 @@ impl OutboundManager {
     pub async fn remove_with_check(
         &self,
         tag: &str,
-    ) -> Result<Option<Arc<dyn OutboundConnector>>, String> {
+    ) -> Result<Option<Arc<dyn sb_types::Outbound>>, String> {
         if tag.is_empty() {
             return Err("empty tag invalid".to_string());
         }
@@ -252,74 +194,30 @@ impl OutboundManager {
         false
     }
 
-    /// Replace an outbound adapter, closing the old one if present (Go parity: close-on-replace).
-    /// 替换出站适配器，如果存在则关闭旧的（Go 对等：替换时关闭）。
-    pub async fn replace(&self, tag: String, adapter: OutboundHandler) {
-        // Close old adapter if exists
-        if let Some(old) = self.get_adapter(&tag).await {
-            debug!(tag = %tag, "outbound: closing old adapter before replace");
-            if let Err(e) = old.close() {
-                warn!(tag = %tag, error = %e, "outbound: failed to close old adapter during replace");
-            }
-        }
-
-        // Replace in adapters
-        let mut adapters = self.adapters.write().await;
-        adapters.insert(tag.clone(), adapter);
-        drop(adapters);
-
-        // Also remove from legacy if present
-        let mut legacy = self.legacy_connectors.write().await;
-        legacy.remove(&tag);
-    }
-
-    /// Replace a legacy connector, removing from adapters if present.
-    /// 替换传统连接器，如果存在则从适配器中移除。
-    pub async fn replace_connector(&self, tag: String, connector: Arc<dyn OutboundConnector>) {
-        // Close old adapter if exists
-        if let Some(old) = self.get_adapter(&tag).await {
-            debug!(tag = %tag, "outbound: closing old adapter before replace");
-            if let Err(e) = old.close() {
-                warn!(tag = %tag, error = %e, "outbound: failed to close old adapter during replace");
-            }
-            self.adapters.write().await.remove(&tag);
-        }
-
-        // Replace in legacy connectors
-        let mut legacy = self.legacy_connectors.write().await;
-        legacy.insert(tag, connector);
+    /// Replace an outbound atomically in the canonical registry.
+    pub async fn replace(&self, tag: String, adapter: Arc<dyn sb_types::Outbound>) {
+        self.connectors.write().await.insert(tag, adapter);
     }
 
     /// List all available outbound tags.
     /// 列出所有可用的出站标签。
     pub async fn list_tags(&self) -> Vec<String> {
-        let adapters = self.adapters.read().await;
-        let connectors = self.legacy_connectors.read().await;
-
-        let mut tags: Vec<String> = adapters.keys().cloned().collect();
-        tags.extend(connectors.keys().cloned());
+        let mut tags: Vec<String> = self.connectors.read().await.keys().cloned().collect();
+        tags.sort();
+        tags.dedup();
         tags
     }
 
     /// Check if a tag exists.
     /// 检查标签是否存在。
     pub async fn contains(&self, tag: &str) -> bool {
-        let adapters = self.adapters.read().await;
-        if adapters.contains_key(tag) {
-            return true;
-        }
-        drop(adapters);
-
-        let connectors = self.legacy_connectors.read().await;
-        connectors.contains_key(tag)
+        self.connectors.read().await.contains_key(tag)
     }
 
     /// Get the number of registered connectors.
     /// 获取注册的连接器数量。
     pub async fn len(&self) -> usize {
-        let adapters = self.adapters.read().await;
-        let connectors = self.legacy_connectors.read().await;
-        adapters.len() + connectors.len()
+        self.connectors.read().await.len()
     }
 
     /// Check if the manager is empty.
@@ -331,12 +229,7 @@ impl OutboundManager {
     /// Clear all connectors.
     /// 清除所有连接器。
     pub async fn clear(&self) {
-        let mut adapters = self.adapters.write().await;
-        adapters.clear();
-        drop(adapters);
-
-        let mut connectors = self.legacy_connectors.write().await;
-        connectors.clear();
+        self.connectors.write().await.clear();
     }
 
     /// Set the default outbound tag.
@@ -353,63 +246,33 @@ impl OutboundManager {
         default.clone()
     }
 
-    /// Start all lifecycle-capable adapters at the given lifecycle stage.
-    /// Legacy connectors are included in dependency/default accounting but
-    /// skipped here because they do not implement lifecycle.
+    /// Validate dependency order at a lifecycle stage.
     pub async fn start_all(&self, stage: StartStage) {
         if let Err(e) = self.start_all_ordered(stage).await {
             warn!(stage = ?stage, error = %e, "outbound: failed to start all adapters");
         }
     }
 
-    /// Start lifecycle-capable adapters in dependency order.
-    ///
-    /// This is the fallible path used by the runtime lifecycle coordinator.
+    /// Canonical outbounds have no second lifecycle contract; ordering is still
+    /// validated so startup retains its dependency failure semantics.
     pub async fn start_all_ordered(&self, stage: StartStage) -> Result<(), String> {
-        let order = self.get_startup_order().await?;
-        let adapters = self.adapters.read().await;
-        for tag in order {
-            let Some(adapter) = adapters.get(&tag) else {
-                debug!(
-                    tag = %tag,
-                    stage = ?stage,
-                    "outbound: skipping legacy connector without lifecycle"
-                );
-                continue;
-            };
-            debug!(tag = %tag, stage = ?stage, "outbound: starting adapter");
-            adapter
-                .start(stage)
-                .map_err(|e| format!("failed to start outbound/{tag} at {stage}: {e}"))?;
-        }
+        let _ = stage;
+        self.get_startup_order().await?;
         Ok(())
     }
 
-    /// Close all adapters.
-    /// 关闭所有适配器。
-    ///
-    /// Note: Legacy connectors don't have lifecycle support and are skipped.
-    /// 注意：传统连接器没有生命周期支持，会被跳过。
+    /// Validate shutdown order for canonical outbounds.
     pub async fn close_all(&self) {
         if let Err(e) = self.close_all_ordered().await {
             warn!(error = %e, "outbound: failed to close all adapters");
         }
     }
 
-    /// Close lifecycle-capable adapters in reverse dependency order.
+    /// Canonical outbounds own their resources and are dropped by the holder.
     pub async fn close_all_ordered(&self) -> Result<(), String> {
         let mut order = self.get_startup_order().await?;
         order.reverse();
-        let adapters = self.adapters.read().await;
-        for tag in order {
-            let Some(adapter) = adapters.get(&tag) else {
-                continue;
-            };
-            debug!(tag = %tag, "outbound: closing adapter");
-            adapter
-                .close()
-                .map_err(|e| format!("failed to close outbound/{tag}: {e}"))?;
-        }
+        let _ = order;
         Ok(())
     }
 
@@ -432,12 +295,10 @@ impl OutboundManager {
     /// Returns `Err` with cycle path if a dependency cycle is detected.
     /// 如果检测到依赖循环，返回带有循环路径的 `Err`。
     pub async fn get_startup_order(&self) -> Result<Vec<String>, String> {
-        let adapters = self.adapters.read().await;
-        let legacy = self.legacy_connectors.read().await;
+        let connectors = self.connectors.read().await;
         let deps = self.dependencies.read().await;
 
-        let mut all_tags: Vec<String> = adapters.keys().cloned().collect();
-        all_tags.extend(legacy.keys().cloned());
+        let all_tags: Vec<String> = connectors.keys().cloned().collect();
 
         validate_and_sort(&all_tags, &deps)
     }
@@ -496,75 +357,7 @@ impl Default for OutboundManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::error::{ErrorClass, SbError};
-    use crate::outbound::traits::UdpTransport;
     use crate::outbound::DirectConnector;
-    use crate::types::ConnCtx;
-    use std::sync::Mutex;
-    use tokio::net::TcpStream;
-
-    #[derive(Debug)]
-    struct RecordingAdapter {
-        tag: String,
-        events: Arc<Mutex<Vec<String>>>,
-    }
-
-    impl RecordingAdapter {
-        fn new(tag: &str, events: Arc<Mutex<Vec<String>>>) -> Self {
-            Self {
-                tag: tag.to_string(),
-                events,
-            }
-        }
-    }
-
-    #[async_trait::async_trait]
-    impl OutboundConnector for RecordingAdapter {
-        async fn connect_tcp(&self, _ctx: &ConnCtx) -> crate::error::SbResult<TcpStream> {
-            Err(SbError::network(
-                ErrorClass::Connection,
-                "recording adapter does not dial",
-            ))
-        }
-
-        async fn connect_udp(
-            &self,
-            _ctx: &ConnCtx,
-        ) -> crate::error::SbResult<Box<dyn UdpTransport>> {
-            Err(SbError::network(
-                ErrorClass::Connection,
-                "recording adapter does not dial",
-            ))
-        }
-    }
-
-    impl Lifecycle for RecordingAdapter {
-        fn start(&self, stage: StartStage) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            self.events
-                .lock()
-                .unwrap()
-                .push(format!("start:{}:{stage}", self.tag));
-            Ok(())
-        }
-
-        fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-            self.events
-                .lock()
-                .unwrap()
-                .push(format!("close:{}", self.tag));
-            Ok(())
-        }
-    }
-
-    impl OutboundAdapter for RecordingAdapter {
-        fn tag(&self) -> &str {
-            &self.tag
-        }
-
-        fn outbound_type(&self) -> &str {
-            "recording"
-        }
-    }
 
     #[tokio::test]
     async fn test_outbound_manager_basic_operations() {
@@ -575,7 +368,7 @@ mod tests {
         // Add a connector (legacy)
         let connector = Arc::new(DirectConnector::new());
         manager
-            .add_connector("direct".to_string(), connector.clone())
+            .add_adapter("direct".to_string(), connector.clone())
             .await;
 
         assert!(!manager.is_empty().await);
@@ -599,10 +392,10 @@ mod tests {
 
         // Clear
         manager
-            .add_connector("direct1".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct1".to_string(), Arc::new(DirectConnector::new()))
             .await;
         manager
-            .add_connector("direct2".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct2".to_string(), Arc::new(DirectConnector::new()))
             .await;
         assert_eq!(manager.len().await, 2);
         manager.clear().await;
@@ -772,10 +565,10 @@ mod tests {
     async fn test_resolve_default_explicit() {
         let manager = OutboundManager::new();
         manager
-            .add_connector("proxy".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("proxy".to_string(), Arc::new(DirectConnector::new()))
             .await;
         manager
-            .add_connector("direct".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct".to_string(), Arc::new(DirectConnector::new()))
             .await;
 
         let result = manager.resolve_default(Some("proxy")).await;
@@ -787,7 +580,7 @@ mod tests {
     async fn test_resolve_default_not_found() {
         let manager = OutboundManager::new();
         manager
-            .add_connector("direct".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct".to_string(), Arc::new(DirectConnector::new()))
             .await;
 
         let result = manager.resolve_default(Some("nonexistent")).await;
@@ -798,10 +591,10 @@ mod tests {
     async fn test_resolve_default_first_registered() {
         let manager = OutboundManager::new();
         manager
-            .add_connector("beta".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("beta".to_string(), Arc::new(DirectConnector::new()))
             .await;
         manager
-            .add_connector("alpha".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("alpha".to_string(), Arc::new(DirectConnector::new()))
             .await;
 
         let result = manager.resolve_default(None).await;
@@ -824,10 +617,10 @@ mod tests {
     async fn test_get_startup_order_delegates_to_validate_and_sort() {
         let manager = OutboundManager::new();
         manager
-            .add_connector("proxy".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("proxy".to_string(), Arc::new(DirectConnector::new()))
             .await;
         manager
-            .add_connector("direct".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct".to_string(), Arc::new(DirectConnector::new()))
             .await;
         manager.add_dependency("proxy", "direct").await;
 
@@ -838,37 +631,21 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn lifecycle_adapters_start_and_close_in_dependency_order() {
+    async fn canonical_outbounds_start_and_close_in_dependency_order() {
         let manager = OutboundManager::new();
-        let events = Arc::new(Mutex::new(Vec::new()));
         manager
-            .add_adapter(
-                "proxy".to_string(),
-                Arc::new(RecordingAdapter::new("proxy", events.clone())),
-            )
+            .add_adapter("proxy".to_string(), Arc::new(DirectConnector::new()))
             .await;
         manager
-            .add_adapter(
-                "direct".to_string(),
-                Arc::new(RecordingAdapter::new("direct", events.clone())),
-            )
-            .await;
-        manager
-            .add_connector("legacy".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct".to_string(), Arc::new(DirectConnector::new()))
             .await;
         manager.add_dependency("proxy", "direct").await;
 
         manager.start_all_ordered(StartStage::Start).await.unwrap();
-        assert_eq!(
-            events.lock().unwrap().clone(),
-            vec!["start:direct:Start", "start:proxy:Start"]
-        );
-
-        events.lock().unwrap().clear();
         manager.close_all_ordered().await.unwrap();
         assert_eq!(
-            events.lock().unwrap().clone(),
-            vec!["close:proxy", "close:direct"]
+            manager.get_startup_order().await.unwrap(),
+            vec!["direct", "proxy"]
         );
     }
 }

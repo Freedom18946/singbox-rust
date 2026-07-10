@@ -11,6 +11,7 @@ use crate::outbound::prelude::*;
 /// Adapter configuration for TUIC outbound
 #[derive(Debug, Clone)]
 pub struct TuicAdapterConfig {
+    pub tag: Option<String>,
     pub server: String,
     pub port: u16,
     pub uuid: uuid::Uuid,
@@ -34,6 +35,7 @@ pub enum TuicUdpRelayMode {
 impl Default for TuicAdapterConfig {
     fn default() -> Self {
         Self {
+            tag: None,
             server: "127.0.0.1".to_string(),
             port: 443,
             uuid: uuid::Uuid::new_v4(),
@@ -425,26 +427,24 @@ impl TuicConnector {
 }
 
 // ---------------------------------------------------------------------------
-// OutboundConnector trait implementation
+// Outbound trait implementation
 // ---------------------------------------------------------------------------
 
-#[async_trait]
-impl OutboundConnector for TuicConnector {
-    fn name(&self) -> &'static str {
+impl TuicConnector {
+    pub const fn name(&self) -> &'static str {
         "tuic"
     }
 
-    async fn start(&self) -> Result<()> {
+    pub async fn start(&self) -> Result<()> {
         #[cfg(not(feature = "adapter-tuic"))]
         return Err(AdapterError::NotImplemented {
-            what: "adapter-tuic feature not enabled",
+            what: "adapter-tuic",
         });
-
         #[cfg(feature = "adapter-tuic")]
         Ok(())
     }
 
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-tuic"))]
         return Err(AdapterError::NotImplemented {
             what: "adapter-tuic feature not enabled",
@@ -452,14 +452,10 @@ impl OutboundConnector for TuicConnector {
 
         #[cfg(feature = "adapter-tuic")]
         {
-            if target.kind != TransportKind::Tcp {
-                return Err(AdapterError::Protocol(
-                    "TUIC outbound only supports TCP (UDP support via create_udp_transport)"
-                        .to_string(),
-                ));
-            }
-
-            let _span = crate::outbound::span_dial("tuic", &target);
+            let target = &session.target;
+            let host = target.host();
+            let port = target.port();
+            let _span = crate::outbound::span_dial("tuic", target);
 
             // 1. Get or create pooled QUIC connection
             let connection = self.get_connection().await.map_err(AdapterError::Io)?;
@@ -474,7 +470,7 @@ impl OutboundConnector for TuicConnector {
             let mut quic_stream = super::quic_util::QuicBidiStream::new(send_stream, recv_stream);
 
             // 3. Perform TUIC v5 handshake (auth + connect)
-            self.tuic_handshake(&mut quic_stream, &target.host, target.port)
+            self.tuic_handshake(&mut quic_stream, &host, port)
                 .await
                 .map_err(AdapterError::Io)?;
 
@@ -483,6 +479,13 @@ impl OutboundConnector for TuicConnector {
         }
     }
 }
+
+crate::impl_canonical_outbound!(
+    TuicConnector,
+    "tuic",
+    |this: &TuicConnector| this.cfg.tag.clone().unwrap_or_else(|| "tuic".to_string()),
+    &[sb_types::NetworkKind::Tcp]
+);
 
 // ---------------------------------------------------------------------------
 // Tests
@@ -546,6 +549,7 @@ mod tests {
     fn test_tuic_config_with_custom_values() {
         let uuid = uuid::Uuid::new_v4();
         let cfg = TuicAdapterConfig {
+            tag: None,
             server: "example.com".to_string(),
             port: 8443,
             uuid,
@@ -579,6 +583,7 @@ mod tests {
     #[test]
     fn test_tuic_connector_creation() {
         let cfg = TuicAdapterConfig {
+            tag: None,
             server: "test.example.com".to_string(),
             port: 9443,
             uuid: uuid::Uuid::new_v4(),

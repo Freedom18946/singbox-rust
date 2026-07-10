@@ -8,7 +8,7 @@
 use sb_adapters::{
     error::AdapterError,
     outbound::socks5::Socks5Connector,
-    traits::{DialOpts, OutboundConnector, ResolveMode, RetryPolicy, Target},
+    traits::{ConnectOptions, ResolveMode, RetryPolicy, TargetAddr},
     Result,
 };
 use std::io::ErrorKind;
@@ -129,14 +129,14 @@ async fn test_retry_backoff_timing() -> Result<()> {
         drop(listener);
 
         let connector = Socks5Connector::no_auth(addr);
-        let target = Target::tcp("example.com", 80);
+        let target = TargetAddr::from_host_port("example.com", 80);
 
         let retry_policy = RetryPolicy::new()
             .with_max_retries(2)
             .with_base_delay(100) // 100ms base delay
             .with_jitter(0.0); // No jitter for predictable timing
 
-        let opts = DialOpts {
+        let opts = ConnectOptions {
             connect_timeout: Duration::from_millis(50), // Short timeout to fail fast
             read_timeout: Duration::from_secs(1),
             retry_policy,
@@ -144,7 +144,9 @@ async fn test_retry_backoff_timing() -> Result<()> {
         };
 
         let start = Instant::now();
-        let result = connector.dial(target, opts).await;
+        let result = connector
+            .dial(&sb_types::Session::outbound(target).with_connect(opts))
+            .await;
         let elapsed = start.elapsed();
 
         // Should fail after retries
@@ -187,21 +189,23 @@ async fn test_retry_success_after_failures() -> Result<()> {
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         let connector = Socks5Connector::no_auth(server_addr);
-        let target = Target::tcp("example.com", 80);
+        let target = TargetAddr::from_host_port("example.com", 80);
 
         let retry_policy = RetryPolicy::new()
             .with_max_retries(3)
             .with_base_delay(50)
             .with_jitter(0.0);
 
-        let opts = DialOpts {
+        let opts = ConnectOptions {
             connect_timeout: Duration::from_secs(1),
             read_timeout: Duration::from_secs(1),
             retry_policy,
             resolve_mode: ResolveMode::Remote,
         };
 
-        let result = connector.dial(target, opts).await;
+        let result = connector
+            .dial(&sb_types::Session::outbound(target).with_connect(opts))
+            .await;
 
         // Should succeed after retries
         assert!(result.is_ok());
@@ -242,21 +246,23 @@ async fn test_retry_exhaustion() -> Result<()> {
         tokio::time::sleep(Duration::from_millis(10)).await;
 
         let connector = Socks5Connector::no_auth(server_addr);
-        let target = Target::tcp("example.com", 80);
+        let target = TargetAddr::from_host_port("example.com", 80);
 
         let retry_policy = RetryPolicy::new()
             .with_max_retries(2) // Only retry 2 times
             .with_base_delay(10)
             .with_jitter(0.0);
 
-        let opts = DialOpts {
+        let opts = ConnectOptions {
             connect_timeout: Duration::from_secs(1),
             read_timeout: Duration::from_secs(1),
             retry_policy,
             resolve_mode: ResolveMode::Remote,
         };
 
-        let result = connector.dial(target, opts).await;
+        let result = connector
+            .dial(&sb_types::Session::outbound(target).with_connect(opts))
+            .await;
 
         // Should fail after exhausting retries
         assert!(result.is_err());

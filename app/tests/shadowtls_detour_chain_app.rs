@@ -244,7 +244,7 @@ async fn config_bridge_builds_shadowtls_detour_chain_for_shadowsocks() {
     let outbounds = runtime_outbounds().expect("runtime outbounds should be installed");
 
     let mut stream = outbounds
-        .connect_io(
+        .connect_tcp_stream(
             &RouteTarget::Named("ss-chain".to_string()),
             Endpoint::Ip(echo_addr),
         )

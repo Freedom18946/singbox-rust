@@ -5,11 +5,11 @@
 //! connectors, starts URLTest health checks, and depends on runtime services.
 
 #[cfg(feature = "router")]
-use sb_core::adapter::OutboundConnector as AdapterConnector;
-#[cfg(feature = "router")]
 use sb_core::outbound::selector_group::{
     ProxyMember as GroupMember, SelectorGroup, UrlTestOptions,
 };
+#[cfg(feature = "router")]
+use sb_core::outbound::Outbound as AdapterConnector;
 #[cfg(feature = "router")]
 use sb_core::outbound::{DirectConnector, OutboundImpl};
 #[cfg(feature = "router")]
@@ -120,7 +120,7 @@ fn collect_group_members(
         match existing.get(member) {
             Some(impl_ref) => {
                 if let Some(conn) = to_adapter_connector(impl_ref) {
-                    group_members.push(GroupMember::new(member.clone(), conn, None));
+                    group_members.push(GroupMember::new(member.clone(), conn));
                 } else {
                     tracing::warn!(
                         member = %member,

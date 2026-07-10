@@ -15,8 +15,8 @@
 //! followed by null-terminated domain name.
 
 use crate::outbound::prelude::*;
-use crate::traits::ResolveMode;
 use anyhow::Context;
+use sb_types::{ConnectOptions, ResolveMode};
 use std::net::{IpAddr, SocketAddr};
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
@@ -31,6 +31,10 @@ pub struct Socks4Connector {
 }
 
 impl Socks4Connector {
+    pub const fn name(&self) -> &'static str {
+        "socks4"
+    }
+
     pub fn new(config: Socks4Config) -> Self {
         Self { config }
     }
@@ -68,29 +72,15 @@ impl Default for Socks4Connector {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for Socks4Connector {
-    fn name(&self) -> &'static str {
-        "socks4"
-    }
-
-    async fn start(&self) -> Result<()> {
-        Ok(())
-    }
-
-    async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
-        let _span = crate::outbound::span_dial("socks4", &target);
+impl Socks4Connector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
+        let target = &session.target;
+        let opts = &session.connect;
+        let _span = crate::outbound::span_dial("socks4", target);
 
         // Start metrics timing
         #[cfg(feature = "metrics")]
         let start_time = sb_metrics::start_adapter_timer();
-
-        // SOCKS4 only supports TCP
-        if target.kind != TransportKind::Tcp {
-            return Err(AdapterError::Protocol(
-                "SOCKS4 only supports TCP connections".to_string(),
-            ));
-        }
 
         let dial_result = async {
             // Parse proxy server address
@@ -113,7 +103,7 @@ impl OutboundConnector for Socks4Connector {
                     .map_err(|e| AdapterError::Other(e.to_string()))?;
 
             // Perform SOCKS4/SOCKS4a handshake
-            self.socks4_connect(&mut stream, &target, &opts).await?;
+            self.socks4_connect(&mut stream, target, opts).await?;
 
             Ok(Box::new(stream) as BoxedStream)
         }
@@ -134,7 +124,7 @@ impl OutboundConnector for Socks4Connector {
             Ok(stream) => {
                 tracing::debug!(
                     server = %self.config.server,
-                    target = %format!("{}:{}", target.host, target.port),
+                    target = %target,
                     has_user_id = %self.config.user_id.is_some(),
                     "SOCKS4 connection established"
                 );
@@ -143,7 +133,7 @@ impl OutboundConnector for Socks4Connector {
             Err(e) => {
                 tracing::debug!(
                     server = %self.config.server,
-                    target = %format!("{}:{}", target.host, target.port),
+                    target = %target,
                     has_user_id = %self.config.user_id.is_some(),
                     error = %e,
                     "SOCKS4 connection failed"
@@ -154,17 +144,30 @@ impl OutboundConnector for Socks4Connector {
     }
 }
 
+crate::impl_canonical_outbound!(
+    Socks4Connector,
+    "socks4",
+    |this: &Socks4Connector| this
+        .config
+        .tag
+        .clone()
+        .unwrap_or_else(|| "socks4".to_string()),
+    &[sb_types::NetworkKind::Tcp]
+);
+
 impl Socks4Connector {
     /// Perform SOCKS4 CONNECT request
     /// 执行 SOCKS4 CONNECT 请求
     async fn socks4_connect(
         &self,
         stream: &mut TcpStream,
-        target: &Target,
-        opts: &DialOpts,
+        target: &TargetAddr,
+        opts: &ConnectOptions,
     ) -> Result<()> {
         // Determine if we need SOCKS4a (for domain names)
-        let use_socks4a = target.host.parse::<IpAddr>().is_err();
+        let host = target.host();
+        let port = target.port();
+        let use_socks4a = host.parse::<IpAddr>().is_err();
 
         // Build SOCKS4/4a request
         let mut request = Vec::new();
@@ -176,7 +179,7 @@ impl Socks4Connector {
         request.push(0x01);
 
         // Port (2 bytes, big endian)
-        request.extend_from_slice(&target.port.to_be_bytes());
+        request.extend_from_slice(&port.to_be_bytes());
 
         // IP address (4 bytes)
         if use_socks4a {
@@ -188,8 +191,8 @@ impl Socks4Connector {
             let ipv4 = match opts.resolve_mode {
                 ResolveMode::Local => {
                     // Resolve locally
-                    let ip = target.host.parse::<IpAddr>().map_err(|_| {
-                        AdapterError::Network(format!("Failed to parse IP: {}", target.host))
+                    let ip = host.parse::<IpAddr>().map_err(|_| {
+                        AdapterError::Network(format!("Failed to parse IP: {}", host))
                     })?;
 
                     match ip {
@@ -205,7 +208,7 @@ impl Socks4Connector {
                     // For SOCKS4 without 4a support, we must resolve locally
                     // Try to parse as IP first
 
-                    if let Ok(ip) = target.host.parse::<IpAddr>() {
+                    if let Ok(ip) = host.parse::<IpAddr>() {
                         match ip {
                             IpAddr::V4(ipv4) => ipv4,
                             IpAddr::V6(_) => {
@@ -235,7 +238,7 @@ impl Socks4Connector {
 
         // SOCKS4a: Domain name (null-terminated string)
         if use_socks4a {
-            request.extend_from_slice(target.host.as_bytes());
+            request.extend_from_slice(host.as_bytes());
             request.push(0x00); // Null terminator
         }
 

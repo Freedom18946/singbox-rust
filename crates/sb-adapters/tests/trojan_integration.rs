@@ -125,8 +125,8 @@ fn test_trojan_connector_name() {
 
 #[test]
 fn test_trojan_implements_outbound_connector() {
-    // Verify the connector implements OutboundConnector trait
-    fn assert_outbound_connector<T: OutboundConnector>() {}
+    // Verify the connector implements Outbound trait
+    fn assert_outbound_connector<T: Outbound>() {}
     assert_outbound_connector::<TrojanConnector>();
 }
 
@@ -160,10 +160,12 @@ async fn test_trojan_connector_start() {
 async fn test_trojan_dial_without_config() {
     // Default connector without config should fail
     let connector = TrojanConnector::default();
-    let target = Target::tcp("example.com", 80);
-    let opts = DialOpts::new();
+    let target = TargetAddr::from_host_port("example.com", 80);
+    let opts = ConnectOptions::new();
 
-    let result = connector.dial(target, opts).await;
+    let result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
     assert!(
         result.is_err(),
         "Dial without configured server should fail"
@@ -312,9 +314,11 @@ async fn test_trojan_hostname_server_does_not_fail_at_local_parse() {
         multiplex: None,
     };
     let connector = TrojanConnector::new(config);
-    let target = Target::tcp("example.com", 80);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_millis(500));
-    let result = connector.dial(target, opts).await;
+    let target = TargetAddr::from_host_port("example.com", 80);
+    let opts = ConnectOptions::new().with_connect_timeout(Duration::from_millis(500));
+    let result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
     let err = match result {
         Ok(_) => panic!("dial unexpectedly succeeded against a non-routable .invalid hostname"),
         Err(e) => e,
@@ -420,9 +424,11 @@ mod fresh13_tls_verifier_loopback {
         let (addr, _server) = start_self_signed_tls_listener().await;
         let config = make_trojan_config(&format!("127.0.0.1:{}", addr.port()), true);
         let connector = TrojanConnector::new(config);
-        let target = Target::tcp("example.com", 80);
-        let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(2));
-        let result = connector.dial(target, opts).await;
+        let target = TargetAddr::from_host_port("example.com", 80);
+        let opts = ConnectOptions::new().with_connect_timeout(Duration::from_secs(2));
+        let result = connector
+            .dial(&sb_types::Session::outbound(target).with_connect(opts))
+            .await;
         let msg = match result {
             Ok(_) => String::new(),
             Err(e) => format!("{e}"),
@@ -455,9 +461,11 @@ mod fresh13_tls_verifier_loopback {
         let (addr, _server) = start_self_signed_tls_listener().await;
         let config = make_trojan_config(&format!("127.0.0.1:{}", addr.port()), false);
         let connector = TrojanConnector::new(config);
-        let target = Target::tcp("example.com", 80);
-        let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(2));
-        let result = connector.dial(target, opts).await;
+        let target = TargetAddr::from_host_port("example.com", 80);
+        let opts = ConnectOptions::new().with_connect_timeout(Duration::from_secs(2));
+        let result = connector
+            .dial(&sb_types::Session::outbound(target).with_connect(opts))
+            .await;
         let err = match result {
             Ok(_) => {
                 panic!("skip_cert_verify=false unexpectedly accepted a self-signed localhost cert")
@@ -490,9 +498,11 @@ mod fresh13_tls_verifier_loopback {
         let (addr, _server) = start_self_signed_tls_listener().await;
         let config = make_trojan_config(&format!("127.0.0.1:{}", addr.port()), true);
         let connector = TrojanConnector::new(config);
-        let target = Target::tcp("example.com", 80);
-        let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(2));
-        let result = connector.dial(target, opts).await;
+        let target = TargetAddr::from_host_port("example.com", 80);
+        let opts = ConnectOptions::new().with_connect_timeout(Duration::from_secs(2));
+        let result = connector
+            .dial(&sb_types::Session::outbound(target).with_connect(opts))
+            .await;
         let msg = match result {
             Ok(_) => String::new(),
             Err(e) => format!("{e}").to_ascii_lowercase(),
@@ -520,18 +530,18 @@ mod fresh13_tls_verifier_loopback {
     /// IP, well before any TLS/CryptoProvider use. We still call `init_crypto()` to
     /// remove all doubt, then assert the dial fails within a bounded time (it must not
     /// hang indefinitely). NOTE: since package09 trojan `dial` honors
-    /// `DialOpts.connect_timeout`, taking the stricter of it and `config.connect_timeout_sec`.
-    /// This test uses `make_trojan_config` (config timeout 2s) + default `DialOpts` (10s),
+    /// `ConnectOptions.connect_timeout`, taking the stricter of it and `config.connect_timeout_sec`.
+    /// This test uses `make_trojan_config` (config timeout 2s) + default `ConnectOptions` (10s),
     /// so the effective bound is ~2s; the generous 30s assertion below still holds.
-    /// See `dial_honors_short_dialopts_connect_timeout` for the DialOpts-driven bound.
+    /// See `dial_honors_short_dialopts_connect_timeout` for the ConnectOptions-driven bound.
     #[tokio::test]
     async fn connection_to_unroutable_ip_fails_bounded() {
         init_crypto();
         let config = make_trojan_config("10.255.255.1:443", true); // non-routable
         let connector = TrojanConnector::new(config);
-        let target = Target::tcp("example.com", 80);
+        let target = TargetAddr::from_host_port("example.com", 80);
         let start = std::time::Instant::now();
-        let result = connector.dial(target, DialOpts::new()).await;
+        let result = connector.dial(&sb_types::Session::outbound(target)).await;
         let elapsed = start.elapsed();
         assert!(
             result.is_err(),
@@ -544,11 +554,11 @@ mod fresh13_tls_verifier_loopback {
     }
 
     /// package09 (supersedes package08 follow-up #2): trojan `dial` previously ignored
-    /// `DialOpts` and derived its connect timeout solely from `config.connect_timeout_sec`.
+    /// `ConnectOptions` and derived its connect timeout solely from `config.connect_timeout_sec`.
     /// It now uses `opts.connect_timeout.min(config_timeout)`. Give the config a large,
-    /// distinctive 99s ceiling and dial a non-routable IP with a 250ms `DialOpts.connect_timeout`:
+    /// distinctive 99s ceiling and dial a non-routable IP with a 250ms `ConnectOptions.connect_timeout`:
     /// the dial must fail well within the ceiling, and its `AdapterError::Timeout` must report the
-    /// 250ms DialOpts bound, never 99s. The error-content check is deterministic — the reported
+    /// 250ms ConnectOptions bound, never 99s. The error-content check is deterministic — the reported
     /// duration is the internal `timeout` variable (250ms) regardless of scheduler jitter, so this
     /// does not flake under the timer starvation seen when many connect-to-unroutable tests run in
     /// parallel. The outer 40s test-side timeout guards against a regression that hangs ~99s.
@@ -556,14 +566,17 @@ mod fresh13_tls_verifier_loopback {
     async fn dial_honors_short_dialopts_connect_timeout() {
         init_crypto();
         let mut config = make_trojan_config("10.255.255.1:443", true); // non-routable
-        config.connect_timeout_sec = Some(99); // large, distinctive ceiling; the DialOpts must win
+        config.connect_timeout_sec = Some(99); // large, distinctive ceiling; the ConnectOptions must win
         let connector = TrojanConnector::new(config);
-        let target = Target::tcp("example.com", 80);
-        let opts = DialOpts::new().with_connect_timeout(Duration::from_millis(250));
-        let outcome =
-            tokio::time::timeout(Duration::from_secs(40), connector.dial(target, opts)).await;
+        let target = TargetAddr::from_host_port("example.com", 80);
+        let opts = ConnectOptions::new().with_connect_timeout(Duration::from_millis(250));
+        let outcome = tokio::time::timeout(
+            Duration::from_secs(40),
+            connector.dial(&sb_types::Session::outbound(target).with_connect(opts)),
+        )
+        .await;
         let result = outcome.expect(
-            "DialOpts.connect_timeout (250ms) must bound dial well under the 99s config ceiling; \
+            "ConnectOptions.connect_timeout (250ms) must bound dial well under the 99s config ceiling; \
              dial did not return within 40s (regressed to the config ceiling?)",
         );
         let err = match result {
@@ -573,7 +586,7 @@ mod fresh13_tls_verifier_loopback {
         let msg = format!("{err}");
         assert!(
             !msg.contains("99s"),
-            "dial timeout must reflect the 250ms DialOpts.connect_timeout, not the 99s config \
+            "dial timeout must reflect the 250ms ConnectOptions.connect_timeout, not the 99s config \
              ceiling; got: {msg}"
         );
     }

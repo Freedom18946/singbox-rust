@@ -509,3 +509,83 @@ mod tests {
         assert!(b'G'.is_ascii_alphabetic());
     }
 }
+/// Transitional blocking driver for mixed inbound registration.
+#[cfg(all(
+    feature = "adapter-http",
+    feature = "adapter-socks",
+    feature = "mixed",
+    feature = "router"
+))]
+#[derive(Debug)]
+pub(crate) struct MixedInboundDriver {
+    cfg: MixedInboundConfig,
+    stop_tx: std::sync::Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+#[cfg(all(
+    feature = "adapter-http",
+    feature = "adapter-socks",
+    feature = "mixed",
+    feature = "router"
+))]
+impl MixedInboundDriver {
+    pub(crate) fn new(cfg: MixedInboundConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: std::sync::Mutex::new(None),
+        }
+    }
+}
+
+#[cfg(all(
+    feature = "adapter-http",
+    feature = "adapter-socks",
+    feature = "mixed",
+    feature = "router"
+))]
+impl sb_core::adapter::InboundTaskDriver for MixedInboundDriver {
+    fn serve(&self) -> std::io::Result<()> {
+        self.serve_with_ready(None)
+    }
+
+    fn supports_startup_readiness(&self) -> bool {
+        true
+    }
+
+    fn serve_with_ready(
+        &self,
+        ready: Option<sb_core::adapter::InboundReadySender>,
+    ) -> std::io::Result<()> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(std::io::Error::other)?;
+        let (stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+        *self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(stop_tx);
+        let result = runtime.block_on(async {
+            serve_mixed(self.cfg.clone(), stop_rx, ready)
+                .await
+                .map_err(std::io::Error::other)
+        });
+        let _ = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        result
+    }
+
+    fn request_shutdown(&self) {
+        if let Some(stop_tx) = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+        {
+            let _ = stop_tx.try_send(());
+        }
+    }
+}

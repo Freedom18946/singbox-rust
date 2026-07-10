@@ -244,3 +244,54 @@ async fn handle_conn(cfg: &TproxyConfig, mut cli: TcpStream, peer: SocketAddr) -
     }
     Ok(())
 }
+/// Transitional blocking driver for TProxy inbound registration.
+#[cfg(all(target_os = "linux", feature = "router"))]
+#[derive(Debug)]
+pub(crate) struct TproxyInboundDriver {
+    cfg: TproxyConfig,
+    stop_tx: std::sync::Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+#[cfg(all(target_os = "linux", feature = "router"))]
+impl TproxyInboundDriver {
+    pub(crate) fn new(cfg: TproxyConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: std::sync::Mutex::new(None),
+        }
+    }
+}
+
+#[cfg(all(target_os = "linux", feature = "router"))]
+impl sb_core::adapter::InboundTaskDriver for TproxyInboundDriver {
+    fn serve(&self) -> std::io::Result<()> {
+        let runtime = tokio::runtime::Runtime::new().map_err(std::io::Error::other)?;
+        let (stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+        *self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(stop_tx);
+        let result = runtime.block_on(async {
+            serve(self.cfg.clone(), stop_rx)
+                .await
+                .map_err(std::io::Error::other)
+        });
+        let _ = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        result
+    }
+
+    fn request_shutdown(&self) {
+        if let Some(stop_tx) = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+        {
+            let _ = stop_tx.try_send(());
+        }
+    }
+}

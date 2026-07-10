@@ -7,12 +7,10 @@
 //! - Health checking with configurable test URL and interval
 //! - Graceful degradation when proxies fail
 
-use crate::adapter::{OutboundConnector, UdpOutboundFactory};
 use std::io;
 use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
-use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 
 /// Proxy selection mode
@@ -32,8 +30,7 @@ pub enum SelectMode {
 #[derive(Clone)]
 pub struct ProxyMember {
     pub tag: String,
-    pub connector: Arc<dyn OutboundConnector>,
-    pub udp_factory: Option<Arc<dyn UdpOutboundFactory>>,
+    pub connector: Arc<dyn sb_types::Outbound>,
     pub health: Arc<ProxyHealth>,
 }
 
@@ -42,21 +39,22 @@ impl std::fmt::Debug for ProxyMember {
         f.debug_struct("ProxyMember")
             .field("tag", &self.tag)
             .field("health", &self.health)
-            .field("udp_supported", &self.udp_factory.is_some())
+            .field(
+                "udp_supported",
+                &self
+                    .connector
+                    .network()
+                    .contains(&sb_types::NetworkKind::Udp),
+            )
             .finish()
     }
 }
 
 impl ProxyMember {
-    pub fn new(
-        tag: impl Into<String>,
-        connector: Arc<dyn OutboundConnector>,
-        udp_factory: Option<Arc<dyn UdpOutboundFactory>>,
-    ) -> Self {
+    pub fn new(tag: impl Into<String>, connector: Arc<dyn sb_types::Outbound>) -> Self {
         Self {
             tag: tag.into(),
             connector,
-            udp_factory,
             health: Arc::new(ProxyHealth::default()),
         }
     }
@@ -123,13 +121,21 @@ impl ProxyHealth {
     }
 
     fn record_failure_with_error(&self, err: &io::Error) {
-        self.record_failure();
-        if let Ok(mut msg) = self.last_error.lock() {
-            *msg = Some(err.to_string());
-        }
+        self.record_failure_message(err.to_string());
     }
 
     pub(crate) fn record_permanent_failure(&self, err: &io::Error) {
+        self.record_permanent_failure_message(err.to_string());
+    }
+
+    fn record_failure_message(&self, message: String) {
+        self.record_failure();
+        if let Ok(mut msg) = self.last_error.lock() {
+            *msg = Some(message);
+        }
+    }
+
+    fn record_permanent_failure_message(&self, message: String) {
         self.permanent_failure.store(true, Ordering::Relaxed);
         *self.is_alive.write() = false;
         self.consecutive_fails.store(usize::MAX, Ordering::Relaxed);
@@ -137,7 +143,7 @@ impl ProxyHealth {
             *last = Some(Instant::now());
         }
         if let Ok(mut msg) = self.last_error.lock() {
-            *msg = Some(err.to_string());
+            *msg = Some(message);
         }
     }
 
@@ -526,146 +532,126 @@ impl std::fmt::Debug for SelectorGroup {
     }
 }
 
-#[async_trait::async_trait]
-impl OutboundConnector for SelectorGroup {
-    async fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
-        let member = self.select_best().await.ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("no available proxy in selector {}", self.name),
-            )
-        })?;
-
-        // Track active connection
-        let count = member
-            .health
-            .active_connections
-            .fetch_add(1, Ordering::Relaxed);
-        sb_metrics::set_active_connections(&member.tag, (count + 1) as i64);
-
-        let start = Instant::now();
-        let result = member.connector.connect(host, port).await;
-        let elapsed_ms = start.elapsed().as_millis() as u64;
-
-        // Update metrics and health
-        match &result {
-            Ok(_) => {
-                member.health.record_success(elapsed_ms);
-                tracing::debug!(
-                    selector = %self.name,
-                    proxy = %member.tag,
-                    duration_ms = elapsed_ms,
-                    "connect ok"
-                );
-                sb_metrics::inc_proxy_select(&self.name);
-                // Update score gauge with observed connect RTT in ms
-                sb_metrics::set_proxy_select_score(&self.name, elapsed_ms as f64);
-            }
-            Err(e) => {
-                if e.kind() == io::ErrorKind::Unsupported {
-                    member.health.record_permanent_failure(e);
-                    tracing::warn!(
-                        selector = %self.name,
-                        proxy = %member.tag,
-                        error = %e,
-                        "selector member permanently disabled (unsupported outbound)"
-                    );
-                } else {
-                    member.health.record_failure_with_error(e);
-                    tracing::warn!(
-                        selector = %self.name,
-                        proxy = %member.tag,
-                        error = %e,
-                        "connect failed"
-                    );
-                }
+impl sb_types::Outbound for SelectorGroup {
+    fn r#type(&self) -> &str {
+        match self.mode {
+            SelectMode::Manual => "selector",
+            SelectMode::UrlTest => "urltest",
+            SelectMode::RoundRobin | SelectMode::LeastConnections | SelectMode::Random => {
+                "loadbalance"
             }
         }
-
-        // Decrement connection counter when dropped (handled by caller)
-        // Decrement connection counter when dropped (handled by caller)
-        let count = member
-            .health
-            .active_connections
-            .fetch_sub(1, Ordering::Relaxed);
-        sb_metrics::set_active_connections(&member.tag, (count - 1) as i64);
-
-        result
     }
 
-    #[cfg(feature = "v2ray_transport")]
-    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
-        let member = self.select_best().await.ok_or_else(|| {
-            std::io::Error::new(
-                std::io::ErrorKind::NotFound,
-                format!("no available proxy in selector {}", self.name),
-            )
-        })?;
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(self.name.clone())
+    }
 
-        let count = member
-            .health
-            .active_connections
-            .fetch_add(1, Ordering::Relaxed);
-        sb_metrics::set_active_connections(&member.tag, (count + 1) as i64);
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
 
-        let start = Instant::now();
-        let result = member.connector.connect_io(host, port).await;
-        let elapsed_ms = start.elapsed().as_millis() as u64;
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            let member = self.select_best().await.ok_or_else(|| {
+                sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unreachable,
+                    format!("no available proxy in selector {}", self.name),
+                )
+            })?;
 
-        match &result {
-            Ok(_) => {
-                member.health.record_success(elapsed_ms);
-                tracing::debug!(
-                    selector = %self.name,
-                    proxy = %member.tag,
-                    duration_ms = elapsed_ms,
-                    "connect_io ok"
-                );
-                sb_metrics::inc_proxy_select(&self.name);
-                sb_metrics::set_proxy_select_score(&self.name, elapsed_ms as f64);
-            }
-            Err(e) => {
-                if e.kind() == io::ErrorKind::Unsupported {
-                    member.health.record_permanent_failure(e);
-                    tracing::warn!(
+            // Track active connection
+            let count = member
+                .health
+                .active_connections
+                .fetch_add(1, Ordering::Relaxed);
+            sb_metrics::set_active_connections(&member.tag, (count + 1) as i64);
+
+            let start = Instant::now();
+            let result = member.connector.dial(session).await;
+            let elapsed_ms = start.elapsed().as_millis() as u64;
+
+            // Update metrics and health
+            match &result {
+                Ok(_) => {
+                    member.health.record_success(elapsed_ms);
+                    tracing::debug!(
                         selector = %self.name,
                         proxy = %member.tag,
-                        error = %e,
-                        "selector member permanently disabled (unsupported outbound)"
+                        duration_ms = elapsed_ms,
+                        "connect ok"
                     );
-                } else {
-                    member.health.record_failure_with_error(e);
-                    tracing::warn!(
-                        selector = %self.name,
-                        proxy = %member.tag,
-                        error = %e,
-                        "connect_io failed"
-                    );
+                    sb_metrics::inc_proxy_select(&self.name);
+                    // Update score gauge with observed connect RTT in ms
+                    sb_metrics::set_proxy_select_score(&self.name, elapsed_ms as f64);
+                }
+                Err(e) => {
+                    if matches!(
+                        e,
+                        sb_types::CoreError::Connect {
+                            kind: sb_types::ConnectErrorKind::Unsupported,
+                            ..
+                        }
+                    ) {
+                        member
+                            .health
+                            .record_permanent_failure_message(e.to_string());
+                        tracing::warn!(
+                            selector = %self.name,
+                            proxy = %member.tag,
+                            error = %e,
+                            "selector member permanently disabled (unsupported outbound)"
+                        );
+                    } else {
+                        member.health.record_failure_message(e.to_string());
+                        tracing::warn!(
+                            selector = %self.name,
+                            proxy = %member.tag,
+                            error = %e,
+                            "connect failed"
+                        );
+                    }
                 }
             }
-        }
 
-        let count = member
-            .health
-            .active_connections
-            .fetch_sub(1, Ordering::Relaxed);
-        sb_metrics::set_active_connections(&member.tag, (count - 1) as i64);
+            // Decrement connection counter when dropped (handled by caller)
+            // Decrement connection counter when dropped (handled by caller)
+            let count = member
+                .health
+                .active_connections
+                .fetch_sub(1, Ordering::Relaxed);
+            sb_metrics::set_active_connections(&member.tag, (count - 1) as i64);
 
-        result
+            result
+        })
     }
 
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
-        Some(self)
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            let member = self.select_best_for_udp().ok_or_else(|| {
+                sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unreachable,
+                    format!("no UDP-capable proxy in selector {}", self.name),
+                )
+            })?;
+            member.connector.listen_packet(session).await
+        })
     }
 
-    fn as_group(&self) -> Option<&dyn crate::adapter::OutboundGroup> {
+    fn as_group(&self) -> Option<&dyn sb_types::OutboundGroup> {
         Some(self)
     }
 }
 
-impl crate::adapter::OutboundGroup for SelectorGroup {
-    fn now(&self) -> String {
-        match self.mode {
+impl sb_types::OutboundGroup for SelectorGroup {
+    fn now(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(match self.mode {
             SelectMode::UrlTest => {
                 // Go parity: return computed-best outbound by latency
                 // (Go caches this in selectedOutboundTCP via performUpdateCheck)
@@ -682,91 +668,37 @@ impl crate::adapter::OutboundGroup for SelectorGroup {
                 .or_else(|| self.default_member.clone())
                 .or_else(|| self.members.first().map(|m| m.tag.clone()))
                 .unwrap_or_default(),
-        }
+        })
     }
 
-    fn all(&self) -> Vec<String> {
-        self.members.iter().map(|m| m.tag.clone()).collect()
+    fn all(&self) -> Vec<sb_types::OutboundTag> {
+        self.members
+            .iter()
+            .map(|member| sb_types::OutboundTag::new(member.tag.clone()))
+            .collect()
     }
 
-    fn group_type(&self) -> &str {
-        match self.mode {
-            SelectMode::Manual => "Selector",
-            SelectMode::UrlTest => "URLTest",
-            SelectMode::RoundRobin | SelectMode::LeastConnections | SelectMode::Random => {
-                "LoadBalance"
-            }
-        }
-    }
-
-    fn members_health(&self) -> Vec<(String, bool, u64)> {
-        self.get_members()
-    }
-
-    fn select_outbound<'a>(
-        &'a self,
-        tag: &'a str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send + 'a>> {
-        Box::pin(self.select_by_name(tag))
+    fn as_selector_control(&self) -> Option<&dyn sb_types::SelectorControl> {
+        Some(self)
     }
 }
 
-impl UdpOutboundFactory for SelectorGroup {
-    fn open_session(
-        &self,
-    ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = std::io::Result<Arc<dyn crate::adapter::UdpOutboundSession>>,
-                > + Send,
-        >,
-    > {
-        let name = self.name.clone();
-        let selected_member = self.select_best_for_udp();
+impl sb_types::SelectorControl for SelectorGroup {
+    fn select<'a>(
+        &'a self,
+        tag: &'a str,
+    ) -> sb_types::BoxFuture<'a, Result<(), sb_types::CoreError>> {
         Box::pin(async move {
-            let member = selected_member.ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::NotFound,
-                    format!("no available proxy in selector {}", name),
-                )
-            })?;
-
-            member
-                .health
-                .active_connections
-                .fetch_add(1, std::sync::atomic::Ordering::Relaxed);
-
-            let factory = member.udp_factory.clone().ok_or_else(|| {
-                io::Error::new(
-                    io::ErrorKind::Unsupported,
-                    format!("proxy {} does not support UDP", member.tag),
-                )
-            });
-
-            match factory {
-                Ok(f) => {
-                    let result = f.open_session().await;
-                    member
-                        .health
-                        .active_connections
-                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                    result
-                }
-                Err(e) => {
-                    member
-                        .health
-                        .active_connections
-                        .fetch_sub(1, std::sync::atomic::Ordering::Relaxed);
-                    Err(e)
-                }
-            }
+            self.select_by_name(tag)
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))
         })
     }
 }
 
 /// Perform a health check via a specific outbound connector
 async fn health_check_via(
-    connector: Arc<dyn OutboundConnector>,
+    connector: Arc<dyn sb_types::Outbound>,
     url: &str,
     timeout: Duration,
 ) -> std::io::Result<u64> {
@@ -776,7 +708,18 @@ async fn health_check_via(
 
     // Use connector to establish a stream to host:port
     let result = tokio::time::timeout(timeout, async {
-        let mut stream = connector.connect(&host, port).await?;
+        use tokio_util::compat::FuturesAsyncReadCompatExt;
+
+        let session = sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new("selector-health"),
+            sb_types::TargetAddr::domain(host.clone(), port),
+        );
+        let mut stream = connector
+            .dial(&session)
+            .await
+            .map_err(std::io::Error::other)?
+            .compat();
 
         if use_https {
             // For HTTPS, just consider TCP connect success as OK at P0 level

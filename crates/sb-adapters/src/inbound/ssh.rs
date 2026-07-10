@@ -10,7 +10,7 @@ use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
 use std::sync::Arc;
 
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 use tokio::net::TcpListener;
 use tokio::sync::Notify;
 use tracing::{debug, info, trace, warn};
@@ -100,7 +100,7 @@ impl SshInboundAdapter {
     /// Create a new SSH inbound adapter from InboundParam.
     pub fn create(
         param: &sb_core::adapter::InboundParam,
-    ) -> std::io::Result<Box<dyn InboundService>> {
+    ) -> std::io::Result<Box<dyn InboundTaskDriver>> {
         // SSH inbound uses password field for simple auth
         let mut passwords = HashMap::new();
         if let Some(pwd) = &param.password {
@@ -533,7 +533,7 @@ impl SshInboundAdapter {
     }
 }
 
-impl InboundService for SshInboundAdapter {
+impl InboundTaskDriver for SshInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         // Run in a blocking context to match the sync interface
         let rt = tokio::runtime::Handle::try_current()

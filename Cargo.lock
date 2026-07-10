@@ -7165,6 +7165,8 @@ dependencies = [
  "sb-config",
  "sb-core",
  "sb-subscribe",
+ "sb-transport",
+ "sb-types",
  "serde",
  "serde_json",
  "serial_test 3.4.0",
@@ -7173,6 +7175,7 @@ dependencies = [
  "tokio-stream",
  "tokio-test",
  "tokio-tungstenite",
+ "tokio-util",
  "tonic 0.11.0",
  "tonic-build 0.11.0",
  "tower 0.4.13",
@@ -7361,19 +7364,6 @@ dependencies = [
 ]
 
 [[package]]
-name = "sb-proto"
-version = "0.1.0"
-dependencies = [
- "async-trait",
- "bytes",
- "hex",
- "sb-transport",
- "sha2 0.10.9",
- "thiserror 1.0.69",
- "tokio",
-]
-
-[[package]]
 name = "sb-runtime"
 version = "0.1.0"
 dependencies = [
@@ -7514,6 +7504,7 @@ dependencies = [
 name = "sb-types"
 version = "0.1.0"
 dependencies = [
+ "futures",
  "serde",
  "serde_json",
  "thiserror 1.0.69",

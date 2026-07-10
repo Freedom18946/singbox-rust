@@ -4,12 +4,8 @@
 //!
 //! This module tests HTTPS proxy support with mock TLS servers.
 
-use sb_adapters::{
-    error::AdapterError,
-    outbound::http::HttpProxyConnector,
-    traits::{DialOpts, OutboundConnector, ResolveMode, Target},
-    Result,
-};
+use sb_adapters::{error::AdapterError, outbound::http::HttpProxyConnector, Result};
+use sb_types::{ConnectOptions, ResolveMode, Session, TargetAddr};
 use std::io::ErrorKind;
 use std::net::SocketAddr;
 use std::time::Duration;
@@ -118,15 +114,16 @@ async fn test_http_connect_basic() -> Result<()> {
         let connector = HttpProxyConnector::no_auth(proxy_addr.to_string());
 
         // Test connection
-        let target = Target::tcp("example.com", 80);
-        let opts = DialOpts {
+        let target = TargetAddr::domain("example.com", 80);
+        let opts = ConnectOptions {
             connect_timeout: Duration::from_secs(5),
             read_timeout: Duration::from_secs(5),
             retry_policy: Default::default(),
             resolve_mode: ResolveMode::Remote,
         };
 
-        let result = connector.dial(target, opts).await;
+        let session = Session::outbound(target).with_connect(opts);
+        let result = connector.dial(&session).await;
         assert!(result.is_ok());
 
         // Clean up
@@ -162,15 +159,16 @@ async fn test_http_connect_with_auth() -> Result<()> {
 
         // Test without auth (should fail)
         let connector_no_auth = HttpProxyConnector::no_auth(proxy_addr.to_string());
-        let target = Target::tcp("example.com", 80);
-        let opts = DialOpts {
+        let target = TargetAddr::domain("example.com", 80);
+        let opts = ConnectOptions {
             connect_timeout: Duration::from_secs(1),
             read_timeout: Duration::from_secs(1),
             retry_policy: Default::default(),
             resolve_mode: ResolveMode::Remote,
         };
 
-        let result = connector_no_auth.dial(target.clone(), opts.clone()).await;
+        let session = Session::outbound(target.clone()).with_connect(opts.clone());
+        let result = connector_no_auth.dial(&session).await;
         // Should fail with 407 or connection error
         assert!(result.is_err());
 
@@ -193,7 +191,8 @@ async fn test_http_connect_with_auth() -> Result<()> {
         let connector_with_auth =
             HttpProxyConnector::with_auth(proxy2_addr, "testuser", "testpass");
 
-        let result = connector_with_auth.dial(target, opts).await;
+        let session = Session::outbound(target).with_connect(opts);
+        let result = connector_with_auth.dial(&session).await;
         assert!(result.is_ok());
 
         proxy_task2.abort();
@@ -227,28 +226,30 @@ async fn test_http_resolve_modes() -> Result<()> {
     let connector = HttpProxyConnector::no_auth("127.0.0.1:8080");
 
     // Test with domain name target
-    let target = Target::tcp("example.com", 80);
+    let target = TargetAddr::domain("example.com", 80);
 
     // Test Remote resolve mode (should try to connect and fail)
-    let opts_remote = DialOpts {
+    let opts_remote = ConnectOptions {
         connect_timeout: Duration::from_millis(100),
         read_timeout: Duration::from_secs(1),
         retry_policy: Default::default(),
         resolve_mode: ResolveMode::Remote,
     };
 
-    let result = connector.dial(target.clone(), opts_remote).await;
+    let session = Session::outbound(target.clone()).with_connect(opts_remote);
+    let result = connector.dial(&session).await;
     assert!(result.is_err()); // Should fail since no server
 
     // Test Local resolve mode (should also fail but after resolving)
-    let opts_local = DialOpts {
+    let opts_local = ConnectOptions {
         connect_timeout: Duration::from_millis(100),
         read_timeout: Duration::from_secs(1),
         retry_policy: Default::default(),
         resolve_mode: ResolveMode::Local,
     };
 
-    let result = connector.dial(target, opts_local).await;
+    let session = Session::outbound(target).with_connect(opts_local);
+    let result = connector.dial(&session).await;
     assert!(result.is_err()); // Should also fail
 
     Ok(())

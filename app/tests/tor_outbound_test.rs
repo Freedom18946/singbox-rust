@@ -64,11 +64,11 @@ fn test_tor_outbound_registration() {
     let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some(), "Tor outbound should be buildable");
 
-    let (connector, udp_factory) = result.unwrap();
-    // connector is Arc<dyn OutboundConnector>, not Option
+    let connector = result.unwrap();
+    // connector is Arc<dyn Outbound>, not Option
     assert!(
-        udp_factory.is_none(),
-        "Tor outbound should not have UDP factory (not yet implemented)"
+        !connector.network().contains(&sb_types::NetworkKind::Udp),
+        "Tor outbound should not advertise canonical UDP support"
     );
 
     // Verify debug format works
@@ -148,7 +148,7 @@ fn test_tor_outbound_debug_format() {
     let result = builder.unwrap()(&param, &ir, &ctx());
     assert!(result.is_some());
 
-    let (connector, _) = result.unwrap();
+    let connector = result.unwrap();
     // Verify that Debug formatting works
     let debug_str = format!("{:?}", connector);
     assert!(

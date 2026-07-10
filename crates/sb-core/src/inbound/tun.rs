@@ -12,7 +12,7 @@
 //! 4. **Outbound Dispatch**: Packets are forwarded to the selected outbound
 //! 5. **Response Path**: Responses from outbounds are written back to the TUN device
 
-use crate::adapter::InboundService;
+use crate::adapter::InboundTaskDriver;
 use crate::router::{RouteCtx, RouterHandle, Transport};
 use crate::runtime::switchboard::OutboundSwitchboard;
 use crate::services::v2ray_api::StatsManager;
@@ -858,13 +858,20 @@ impl TunInboundService {
 
                             // 5. Connect and Forward
                             if let Some(connector) = outbound_manager.get_connector(&target_tag) {
-                                let target = crate::runtime::switchboard::Target::tcp(
-                                    dst_ip.to_string(),
+                                use tokio_util::compat::FuturesAsyncReadCompatExt;
+
+                                let target = sb_types::TargetAddr::Socket(SocketAddr::new(
+                                    dst_ip,
                                     key_clone.dst.port(),
+                                ));
+                                let session = sb_types::Session::new(
+                                    0,
+                                    sb_types::InboundTag::new("tun"),
+                                    target,
                                 );
-                                let opts = crate::runtime::switchboard::DialOpts::default();
-                                match connector.dial(target, opts).await {
-                                    Ok(mut stream) => {
+                                match connector.dial(&session).await {
+                                    Ok(stream) => {
+                                        let mut stream = stream.compat();
                                         use tokio::io::AsyncWriteExt;
 
                                         // Send buffered data first if any
@@ -1089,18 +1096,26 @@ impl TunInboundService {
                         let traffic_up = traffic.clone();
                         let traffic_down = traffic.clone();
 
-                        if let Some(factory) = outbound_manager.get_udp_factory(&target_tag) {
-                            match factory.open_session().await {
+                        if let Some(connector) = outbound_manager.get_connector(&target_tag) {
+                            let canonical_session = sb_types::Session::new(
+                                0,
+                                sb_types::InboundTag::new(
+                                    inbound_tag.clone().unwrap_or_else(|| "tun".to_string()),
+                                ),
+                                sb_types::TargetAddr::socket(SocketAddr::new(
+                                    dst_ip,
+                                    key_clone.dst.port(),
+                                )),
+                            );
+                            match connector.listen_packet(&canonical_session).await {
                                 Ok(session) => {
+                                    let session = Arc::<dyn sb_types::PacketConn>::from(session);
                                     let msg_send = session.clone();
                                     let msg_recv = session.clone();
-                                    let dst_str = dst_ip.to_string();
-                                    let dst_port = key_clone.dst.port();
-
+                                    let destination = canonical_session.target.clone();
                                     // Send buffered packets first
                                     for pkt in buffered_packets {
-                                        if msg_send.send_to(&pkt, &dst_str, dst_port).await.is_ok()
-                                        {
+                                        if msg_send.send_to(&pkt, &destination).await.is_ok() {
                                             if let Some(ref recorder) = traffic_up {
                                                 recorder.record_up(pkt.len() as u64);
                                                 recorder.record_up_packet(1);
@@ -1113,12 +1128,13 @@ impl TunInboundService {
 
                                     let session_for_upload = session_for_task.clone();
                                     let session_for_download = session_for_task.clone();
+                                    let upload_destination = destination.clone();
                                     tokio::join!(
                                         async move {
                                             // TUN -> Remote
                                             while let Some(data) = bridge_rx.recv().await {
                                                 if msg_send
-                                                    .send_to(&data, &dst_str, dst_port)
+                                                    .send_to(&data, &upload_destination)
                                                     .await
                                                     .is_ok()
                                                 {
@@ -1136,11 +1152,15 @@ impl TunInboundService {
                                         },
                                         async move {
                                             // Remote -> TUN
+                                            let mut data = vec![0u8; 65_535];
                                             loop {
-                                                match msg_recv.recv_from().await {
-                                                    Ok((data, _addr)) => {
-                                                        let data_len = data.len();
-                                                        if bridge_tx.send(data).await.is_err() {
+                                                match msg_recv.recv_from(&mut data).await {
+                                                    Ok((data_len, _addr)) => {
+                                                        if bridge_tx
+                                                            .send(data[..data_len].to_vec())
+                                                            .await
+                                                            .is_err()
+                                                        {
                                                             break;
                                                         }
                                                         if let Some(ref recorder) = traffic_down {
@@ -1167,7 +1187,7 @@ impl TunInboundService {
                                 }
                             }
                         } else {
-                            warn!("No UDP factory for outbound {}", target_tag);
+                            warn!("No canonical UDP outbound {}", target_tag);
                         }
                     });
                     bridges.insert(
@@ -1322,7 +1342,7 @@ impl<'a> TxToken for TunTxToken<'a> {
     }
 }
 
-impl InboundService for TunInboundService {
+impl InboundTaskDriver for TunInboundService {
     fn serve(&self) -> std::io::Result<()> {
         info!("Starting TUN inbound service");
         let rt = tokio::runtime::Runtime::new().map_err(io::Error::other)?;
@@ -1335,10 +1355,6 @@ impl InboundService for TunInboundService {
 
     fn udp_sessions_estimate(&self) -> Option<u64> {
         Some(self.sessions.len() as u64)
-    }
-
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
-        Some(self)
     }
 }
 

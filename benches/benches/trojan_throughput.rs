@@ -2,11 +2,10 @@
 use criterion::{black_box, criterion_group, criterion_main, BenchmarkId, Criterion, Throughput};
 use sb_adapters::inbound::trojan::TrojanInboundConfig;
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
-use sb_adapters::TransportKind;
 use sb_benches::{install_direct_rules_engine, setup_tracing};
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 use std::io::Write;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicU64, Ordering};
@@ -135,16 +134,11 @@ async fn wait_for_trojan_ready(
             multiplex: None,
         };
         let connector = TrojanConnector::new(client_config);
-        let dial = connector
-            .dial(
-                Target {
-                    host: target.ip().to_string(),
-                    port: target.port(),
-                    kind: TransportKind::Tcp,
-                },
-                DialOpts::default(),
-            )
-            .await;
+        let session = Session::outbound(TargetAddr::from_host_port(
+            target.ip().to_string(),
+            target.port(),
+        ));
+        let dial = connector.dial(&session).await;
         if dial.is_ok() {
             return true;
         }
@@ -205,12 +199,11 @@ fn bench_trojan_throughput(c: &mut Criterion) {
                     let connector = TrojanConnector::new(client_config);
                     let connect = || async {
                         for _ in 0..10 {
-                            let target = Target {
-                                host: echo_addr.ip().to_string(),
-                                port: echo_addr.port(),
-                                kind: TransportKind::Tcp,
-                            };
-                            match connector.dial(target, DialOpts::default()).await {
+                            let target = TargetAddr::from_host_port(
+                                echo_addr.ip().to_string(),
+                                echo_addr.port(),
+                            );
+                            match connector.dial(&Session::outbound(target)).await {
                                 Ok(stream) => return Some(stream),
                                 Err(_) => {
                                     tokio::time::sleep(Duration::from_millis(100)).await;
@@ -347,12 +340,9 @@ fn bench_trojan_handshake_overhead(c: &mut Criterion) {
             let stream = {
                 let mut connected = None;
                 for _ in 0..10 {
-                    let target = Target {
-                        host: echo_addr.ip().to_string(),
-                        port: echo_addr.port(),
-                        kind: TransportKind::Tcp,
-                    };
-                    match connector.dial(target, DialOpts::default()).await {
+                    let target =
+                        TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+                    match connector.dial(&Session::outbound(target)).await {
                         Ok(stream) => {
                             connected = Some(stream);
                             break;

@@ -6,7 +6,7 @@ use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream, UdpSocket};
 
-use crate::adapter::{Bridge, InboundService};
+use crate::adapter::{Bridge, InboundTaskDriver};
 use crate::log::{self, Level};
 use crate::net::metered::{self, TrafficRecorder};
 
@@ -143,7 +143,7 @@ pub(crate) async fn handle_conn(
             // A simple buffer reused for I/O
             let mut buf = vec![0u8; 64 * 1024];
             // Outbound UDP session created lazily on demand
-            let mut udp_sess: Option<Arc<dyn crate::adapter::UdpOutboundSession>> = None;
+            let mut udp_sess: Option<Arc<dyn sb_types::PacketConn>> = None;
             // Best-effort traffic recorder for relay-originated packets (no NAT/session)
             let mut last_traffic: Option<Arc<dyn TrafficRecorder>> = None;
             // Conntrack wiring (per UDP associate session)
@@ -339,9 +339,17 @@ pub(crate) async fn handle_conn(
 
                     // Open UDP session once, if available for outbound
                     if udp_sess.is_none() {
-                        if let Some(factory) = br_owned.find_udp_factory(&out_name) {
-                            match factory.open_session().await {
+                        if let Some(outbound) = br_owned.get_member(&out_name) {
+                            let mut canonical_session = sb_types::Session::new(
+                                0,
+                                sb_types::InboundTag::new("socks5-udp"),
+                                sb_types::TargetAddr::domain(dst_host.clone(), dst_port),
+                            );
+                            canonical_session.packet.idle_timeout =
+                                std::time::Duration::from_secs(300);
+                            match outbound.listen_packet(&canonical_session).await {
                                 Ok(sess) => {
+                                    let sess = Arc::<dyn sb_types::PacketConn>::from(sess);
                                     // Spawn a receive loop for this session → client endpoint
                                     if let Some(ep) = client_ep {
                                         let relay_c = relay.clone();
@@ -357,10 +365,22 @@ pub(crate) async fn handle_conn(
                                                 let recv_res = if let Some(cancel) = &cancel_c {
                                                     tokio::select! {
                                                         _ = cancel.cancelled() => break,
-                                                        r = sess_c.recv_from() => r,
+                                                        r = async {
+                                                            let mut data = vec![0u8; 65_535];
+                                                            sess_c.recv_from(&mut data).await.map(|(size, source)| {
+                                                                data.truncate(size);
+                                                                (data, source)
+                                                            })
+                                                        } => r,
                                                     }
                                                 } else {
-                                                    sess_c.recv_from().await
+                                                    let mut data = vec![0u8; 65_535];
+                                                    sess_c.recv_from(&mut data).await.map(
+                                                        |(size, source)| {
+                                                            data.truncate(size);
+                                                            (data, source)
+                                                        },
+                                                    )
                                                 };
                                                 let Ok((data, src_addr)) = recv_res else {
                                                     break;
@@ -368,19 +388,36 @@ pub(crate) async fn handle_conn(
                                                 // Wrap and forward to client
                                                 let mut pkt = Vec::with_capacity(data.len() + 10);
                                                 pkt.extend_from_slice(&[0x00, 0x00, 0x00]); // RSV RSV FRAG
-                                                match src_addr.ip() {
-                                                    std::net::IpAddr::V4(v4) => {
-                                                        pkt.push(0x01);
-                                                        pkt.extend_from_slice(&v4.octets());
+                                                match &src_addr {
+                                                    sb_types::TargetAddr::Socket(src_addr) => {
+                                                        match src_addr.ip() {
+                                                            std::net::IpAddr::V4(v4) => {
+                                                                pkt.push(0x01);
+                                                                pkt.extend_from_slice(&v4.octets());
+                                                            }
+                                                            std::net::IpAddr::V6(v6) => {
+                                                                pkt.push(0x04);
+                                                                pkt.extend_from_slice(&v6.octets());
+                                                            }
+                                                        }
+                                                        pkt.extend_from_slice(
+                                                            &src_addr.port().to_be_bytes(),
+                                                        );
                                                     }
-                                                    std::net::IpAddr::V6(v6) => {
-                                                        pkt.push(0x04);
-                                                        pkt.extend_from_slice(&v6.octets());
+                                                    sb_types::TargetAddr::Domain(domain, port) => {
+                                                        pkt.push(0x03);
+                                                        pkt.push(
+                                                            domain.len().min(u8::MAX as usize)
+                                                                as u8,
+                                                        );
+                                                        pkt.extend_from_slice(
+                                                            &domain.as_bytes()[..domain
+                                                                .len()
+                                                                .min(u8::MAX as usize)],
+                                                        );
+                                                        pkt.extend_from_slice(&port.to_be_bytes());
                                                     }
                                                 }
-                                                pkt.extend_from_slice(
-                                                    &src_addr.port().to_be_bytes(),
-                                                );
                                                 pkt.extend_from_slice(&data);
                                                 if relay_c.send_to(&pkt, ep).await.is_ok() {
                                                     if let Some(ref recorder) = traffic_c {
@@ -410,7 +447,8 @@ pub(crate) async fn handle_conn(
                         }
                     }
                     if let Some(ref sess) = udp_sess {
-                        if sess.send_to(payload, &dst_host, dst_port).await.is_ok() {
+                        let destination = sb_types::TargetAddr::domain(dst_host.clone(), dst_port);
+                        if sess.send_to(payload, &destination).await.is_ok() {
                             if let Some(meta) = &conntrack_meta {
                                 meta.traffic.record_up(payload.len() as u64);
                                 meta.traffic.record_up_packet(1);
@@ -625,8 +663,14 @@ pub(crate) async fn handle_conn(
     })?;
 
     // 4) 连接上游并回放首包
-    let mut upstream = match ob.connect(&host, port).await {
-        Ok(stream) => stream,
+    use tokio_util::compat::FuturesAsyncReadCompatExt;
+    let session = sb_types::Session::new(
+        0,
+        sb_types::InboundTag::new("socks"),
+        sb_types::TargetAddr::domain(host.clone(), port),
+    );
+    let mut upstream = match ob.dial(&session).await {
+        Ok(stream) => stream.compat(),
         Err(e) => {
             return Err(std::io::Error::other(e));
         }
@@ -796,7 +840,7 @@ impl Socks5 {
     }
 }
 
-impl InboundService for Socks5 {
+impl InboundTaskDriver for Socks5 {
     fn serve(&self) -> std::io::Result<()> {
         // 阻塞式入口，内部启动 tokio runtime
         #[cfg(not(feature = "router"))]

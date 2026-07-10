@@ -6,7 +6,7 @@ use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::{TcpListener, TcpStream};
 
-use crate::adapter::{Bridge, InboundService};
+use crate::adapter::{Bridge, InboundTaskDriver};
 
 #[cfg(feature = "router")]
 use crate::routing::engine::Engine as RouterEngine;
@@ -170,7 +170,7 @@ async fn handle_conn(
     return crate::inbound::http_connect::handle(cli, http_eng, br, http_auth, sniff_enabled).await;
 }
 
-impl InboundService for MixedInbound {
+impl InboundTaskDriver for MixedInbound {
     fn serve(&self) -> std::io::Result<()> {
         #[cfg(not(feature = "router"))]
         let eng = {

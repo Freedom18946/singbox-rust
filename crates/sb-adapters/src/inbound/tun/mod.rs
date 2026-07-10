@@ -18,7 +18,7 @@ use serde::Deserialize;
 use serde_json::Value;
 use tracing::{debug, info, trace, warn};
 
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 use sb_core::outbound::{Endpoint, OutboundKind, OutboundRegistryHandle, RouteTarget};
 use sb_core::router::engine::Transport;
 use sb_core::router::rules::Decision;
@@ -758,7 +758,7 @@ impl TunInbound {
     }
 }
 
-impl InboundService for TunInbound {
+impl InboundTaskDriver for TunInbound {
     fn serve(&self) -> io::Result<()> {
         let rt = tokio::runtime::Builder::new_current_thread()
             .enable_all()

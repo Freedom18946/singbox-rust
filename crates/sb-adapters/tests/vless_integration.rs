@@ -78,6 +78,7 @@ fn test_vless_config_default() {
 fn test_vless_config_custom() {
     let uuid = Uuid::new_v4();
     let config = VlessConfig {
+        tag: None,
         server: "edge.example.com".to_string(),
         port: 8443,
         uuid,
@@ -138,7 +139,7 @@ fn test_vless_connector_default() {
 
 #[test]
 fn test_vless_connector_implements_outbound_connector() {
-    fn assert_outbound_connector<T: OutboundConnector>() {}
+    fn assert_outbound_connector<T: Outbound>() {}
     assert_outbound_connector::<VlessConnector>();
 }
 
@@ -199,11 +200,13 @@ async fn test_vless_dial_unreachable() {
     };
 
     let connector = VlessConnector::new(config);
-    let target = Target::tcp("example.com", 80);
-    let opts = DialOpts::new();
+    let target = TargetAddr::from_host_port("example.com", 80);
+    let opts = ConnectOptions::new();
 
     let start = std::time::Instant::now();
-    let result = connector.dial(target, opts).await;
+    let result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
     let elapsed = start.elapsed();
 
     // Should fail

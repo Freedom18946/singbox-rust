@@ -134,7 +134,7 @@ fn test_dns_connector_default() {
 
 #[test]
 fn test_dns_connector_implements_outbound_connector() {
-    fn assert_outbound_connector<T: OutboundConnector>() {}
+    fn assert_outbound_connector<T: Outbound>() {}
     assert_outbound_connector::<DnsConnector>();
 }
 
@@ -150,17 +150,14 @@ fn test_dns_connector_implements_debug_clone() {
 // ============================================================================
 
 fn skip_if_net_denied(err: &AdapterError, _label: &str) -> bool {
-    match err {
+    matches!(
+        err,
         AdapterError::Io(e)
             if matches!(
                 e.kind(),
                 std::io::ErrorKind::PermissionDenied | std::io::ErrorKind::AddrNotAvailable
-            ) =>
-        {
-            true
-        }
-        _ => false,
-    }
+            )
+    )
 }
 
 #[tokio::test]
@@ -186,11 +183,13 @@ async fn test_dns_connector_dial_udp() {
     };
 
     let connector = DnsConnector::new(config);
-    let target = Target::udp("example.com", 53);
-    let opts = DialOpts::new();
+    let target = TargetAddr::from_host_port("example.com", 53);
+    let opts = ConnectOptions::new();
 
     // DNS dial creates connection to DNS server
-    let result = connector.dial(target, opts).await;
+    let result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
     if let Err(e) = &result {
         if skip_if_net_denied(e, "test_dns_connector_dial_udp") {
             return;
@@ -218,10 +217,12 @@ async fn test_dns_connector_dial_tcp() {
     };
 
     let connector = DnsConnector::new(config);
-    let target = Target::tcp("example.com", 53);
-    let opts = DialOpts::new();
+    let target = TargetAddr::from_host_port("example.com", 53);
+    let opts = ConnectOptions::new();
 
-    let result = connector.dial(target, opts).await;
+    let result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
     if let Err(e) = &result {
         if skip_if_net_denied(e, "test_dns_connector_dial_tcp") {
             return;
@@ -258,7 +259,10 @@ async fn test_dns_connector_dot_is_explicitly_unsupported() {
     ));
 
     let result = connector
-        .dial(Target::tcp("example.com", 53), DialOpts::new())
+        .dial(
+            &sb_types::Session::outbound(TargetAddr::from_host_port("example.com", 53))
+                .with_connect(ConnectOptions::new()),
+        )
         .await;
 
     assert!(
@@ -289,11 +293,13 @@ async fn test_dns_connector_timeout() {
     };
 
     let connector = DnsConnector::new(config);
-    let target = Target::tcp("example.com", 53);
-    let opts = DialOpts::new();
+    let target = TargetAddr::from_host_port("example.com", 53);
+    let opts = ConnectOptions::new();
 
     let start = std::time::Instant::now();
-    let result = connector.dial(target, opts).await;
+    let result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
     let elapsed = start.elapsed();
 
     // Should fail and respect timeout
@@ -325,10 +331,12 @@ async fn test_dns_connector_dial_doh() {
     };
 
     let connector = DnsConnector::new(config);
-    let target = Target::tcp("example.com", 443);
-    let opts = DialOpts::new();
+    let target = TargetAddr::from_host_port("example.com", 443);
+    let opts = ConnectOptions::new();
 
-    let result = connector.dial(target, opts).await;
+    let result = connector
+        .dial(&sb_types::Session::outbound(target).with_connect(opts))
+        .await;
     if let Err(e) = &result {
         if skip_if_net_denied(e, "test_dns_connector_dial_doh") {
             return;

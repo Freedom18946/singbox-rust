@@ -14,19 +14,18 @@ VERSION|l21.250-wave202-v1|||L21 wave#200-202 — MIG-02 inbound handler + tails
 #     assertions.
 
 
-forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
-forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
+forbid|W1-01-no-core-direct-import|crates/sb-adapters/src/register/builders.rs|use sb_core::outbound::DirectConnector;|Direct outbound builder must not import sb-core DirectConnector
+forbid|W1-02-no-core-direct-import-tailscale|crates/sb-adapters/src/register/builders.rs|use sb_core::outbound::direct_connector::DirectConnector;|Tailscale builder must not import sb-core direct connector impl
 forbid|W1-02-no-directconcrete-type|crates/sb-adapters/src/outbound/tailscale.rs|Arc<DirectConnector>|Tailscale must depend on trait object instead of sb-core concrete direct type
 forbid|W1-03-no-core-tlsclient-dot|crates/sb-core/src/dns/dot.rs|use crate::transport::tls::TlsClient;|DoT path must not fall back to sb-core TlsClient
 forbid|W1-03-no-tlsclient-call-dot|crates/sb-core/src/dns/dot.rs|TlsClient::from_env|DoT path must use sb-transport dialer stack
 
-require|W1-01-core-direct-bridge|crates/sb-adapters/src/register.rs|build_core_direct_connector|Direct outbound must route through wave#1 bridge helper
-require|W1-02-trait-direct-tailscale|crates/sb-adapters/src/outbound/tailscale.rs|Arc<dyn CoreOutboundConnector>|Tailscale direct fallback must stay trait-based
+require|W1-01-canonical-direct-builder|crates/sb-adapters/src/register/builders.rs|build_direct_outbound|Direct outbound must route through the canonical adapter builder
+require|W1-02-canonical-direct-tailscale|crates/sb-adapters/src/outbound/tailscale.rs|Arc<dyn sb_types::Outbound>|Tailscale direct fallback must use the canonical contract
 require|W1-03-dot-via-sb-transport|crates/sb-core/src/dns/dot.rs|TlsDialer::from_env|DoT path must use sb-transport TlsDialer
 
 forbid|W2-01-no-runtime-direct-placeholder|crates/sb-core/src/runtime/supervisor.rs|crate::outbound::direct_connector::DirectConnector::new\(\)|Runtime outbound manager must not fallback to sb-core direct placeholder per tag
-require|W2-01-runtime-connector-bridge|crates/sb-core/src/runtime/supervisor.rs|struct ManagerConnectorBridge|Runtime outbound manager must register bridge connector wrapper
-require|W2-01-runtime-use-bridge-connector|crates/sb-core/src/runtime/supervisor.rs|inner: connector.clone\(\)|Runtime outbound manager must carry assembled bridge connector into manager
+require|W2-01-runtime-canonical-registration|crates/sb-core/src/runtime/supervisor.rs|\.add_adapter\(name\.clone\(\), connector\.clone\(\)\)|Runtime outbound manager must retain the assembled canonical connector
 
 forbid|W2-02-no-core-tlsclient-diag|app/src/bin/diag.rs|use sb_core::transport::tls::TlsClient;|TLS diagnostics path must not use sb-core legacy TlsClient
 require|W2-02-diag-uses-sb-transport-tls|app/src/bin/diag.rs|use sb_transport::\{.*TlsDialer\};|TLS diagnostics must depend on sb-transport dialer stack
@@ -36,7 +35,7 @@ forbid|W3-01-no-core-direct-import-services|crates/sb-api/src/v2ray/services.rs|
 forbid|W3-02-no-core-direct-test-import-process-aware|crates/sb-adapters/src/inbound/tun_process_aware.rs|DirectConnector|Process-aware TUN tests must not use core DirectConnector
 forbid|W3-03-no-core-direct-test-import-integration|crates/sb-adapters/tests/tun_process_integration.rs|DirectConnector|TUN integration tests must not use core DirectConnector
 forbid|W3-04-no-core-tcpdialer-diag|app/src/bin/diag.rs|use sb_core::transport::tcp::TcpDialer;|TCP diagnostics path must not use sb-core TcpDialer
-require|W3-01-services-reuse-direct-manager|crates/sb-api/src/v2ray/services.rs|\.get\(\"direct\"\)|V2Ray add_outbound must reuse manager-registered direct connector
+require|W3-01-services-no-implicit-direct|crates/sb-api/src/v2ray/services.rs|V2Ray add_outbound requires runtime config parsing and is not implemented|V2Ray add_outbound must not construct an implicit direct connector
 require|W3-04-diag-uses-sb-transport-tcp|app/src/bin/diag.rs|use sb_transport::\{webpki_roots_config, DialError, Dialer as _, TcpDialer, TlsDialer\};|TCP diagnostics must use sb-transport TcpDialer
 
 forbid|W4-01-no-switchboard-default-direct-fallback|crates/sb-core/src/runtime/switchboard.rs|set_default\(direct\)|Switchboard must not auto-install direct as default fallback
@@ -86,7 +85,7 @@ require|W11-03-demo-serve-http-entry|examples/code-examples/proxy/http_inbound_d
 
 forbid|W12-01-no-legacy-selector-outbound-type|app/tests/selector_udp_test.rs|sb_adapters::outbound::selector::SelectorOutbound|selector UDP tests should not depend on removed selector adapter concrete type
 forbid|W12-02-no-legacy-urltest-outbound-type|app/tests/selector_udp_test.rs|sb_adapters::outbound::urltest::UrlTestOutbound|urltest UDP tests should not depend on removed urltest adapter concrete type
-require|W12-03-selector-group-used-in-udp-test|app/tests/selector_udp_test.rs|use sb_core::outbound::selector_group::SelectorGroup;|selector UDP tests should use unified SelectorGroup implementation
+require|W12-03-selector-group-used-in-udp-test|app/tests/selector_udp_test.rs|use sb_core::outbound::selector_group::\{ProxyMember, SelectorGroup, UrlTestOptions\};|selector UDP tests should use unified SelectorGroup implementation
 
 forbid|W15-01-no-selector-outbound-concrete|crates/sb-adapters/src/outbound/selector.rs|struct SelectorOutbound|sb-adapters selector path should not reintroduce concrete SelectorOutbound wrapper
 forbid|W15-02-no-urltest-outbound-concrete|crates/sb-adapters/src/outbound/urltest.rs|struct UrlTestOutbound|sb-adapters urltest path should not reintroduce concrete UrlTestOutbound wrapper
@@ -150,7 +149,7 @@ require|W37-02-core-bridge-ssh-explicit-disabled|crates/sb-core/src/adapter/mod.
 forbid|W38-01-no-core-bridge-selector-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Selector => \{[[:space:]]*direct_connector_fallback\(\)|core bridge Selector outbound should not fallback to direct
 require|W38-02-core-bridge-selector-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Selector outbound is disabled; use adapter::bridge::build_bridge|core bridge Selector outbound should emit explicit migration guidance
 forbid|W39-01-no-core-bridge-block-direct-fallback-noscaffold|crates/sb-core/src/adapter/mod.rs|Fall back to direct connector when scaffold is not available|core bridge Block outbound should not fallback to direct in no-scaffold mode
-require|W39-02-core-bridge-block-noscaffold-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Block outbound is disabled without scaffold; use adapter::bridge::build_bridge|core bridge Block no-scaffold path should emit explicit migration guidance
+require|W39-02-core-bridge-block-canonical|crates/sb-core/src/adapter/mod.rs|canonical_bridge::BlockOutbound::new|core bridge Block fallback remains canonical until WP06 removes scaffold fallbacks
 forbid|W40-01-no-core-bridge-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Direct => direct_connector_fallback\(\)|core bridge Direct outbound should not use direct fallback helper
 require|W40-02-core-bridge-direct-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Direct outbound is disabled; use adapter::bridge::build_bridge|core bridge Direct outbound should emit explicit migration guidance
 forbid|W40-03-no-direct-fallback-helper|crates/sb-core/src/adapter/mod.rs|fn direct_connector_fallback\(\)|core bridge direct fallback helper should be removed after full fallback cleanup
@@ -170,7 +169,7 @@ require|W45-03-udp-balancer-noscaffold-explicit-disabled|crates/sb-core/src/outb
 require|W45-04-udp-balancer-no-upstream-explicit-disabled|crates/sb-core/src/outbound/udp_balancer.rs|no SOCKS5 upstream available in UDP balancer path; direct fallback is disabled|UDP balancer no-upstream path should emit explicit no-fallback diagnostics
 forbid|W46-01-no-tools-udp-direct-fallback-comment|app/src/cli/tools.rs|Fallback: direct UDP|tools connect udp should not keep direct UDP fallback path
 forbid|W46-02-no-tools-udp-direct-fallback-socket|app/src/cli/tools.rs|let target = format!\(\"\\{host\\}:\\{port\\}\"\);|tools connect udp should not build direct UDP target as fallback
-require|W46-03-tools-udp-explicit-no-fallback-msg|app/src/cli/tools.rs|udp outbound factory not found; direct UDP fallback is disabled|tools connect udp should emit explicit no-fallback diagnostics
+require|W46-03-tools-udp-explicit-no-fallback-msg|app/src/cli/tools.rs|canonical UDP outbound not found; direct fallback is disabled|tools connect udp should emit explicit no-fallback diagnostics
 forbid|W47-01-no-v2ray-test-route-direct-default|crates/sb-api/src/v2ray/services.rs|routing_ctx\.outbound_tag = \"direct\"\.to_string\(\);|v2ray test_route should not auto-fill direct outbound as fallback
 require|W47-02-v2ray-test-route-explicit-no-fallback-msg|crates/sb-api/src/v2ray/services.rs|routing outbound_tag is empty; implicit direct fallback is disabled; provide outbound_tag explicitly|v2ray test_route should emit explicit no-fallback diagnostics for empty outbound_tag
 forbid|W48-01-no-bridge-find-direct-fallback-helper|crates/sb-core/src/adapter/mod.rs|pub fn find_direct_fallback\(&self\)|Bridge direct fallback helper should be removed after direct fallback cleanup
@@ -382,30 +381,30 @@ require|W141-01-bridge-outbound-duration-parse-helper|crates/sb-core/src/adapter
 require|W141-02-bridge-invalid-outbound-explicit-reject|crates/sb-core/src/adapter/bridge.rs|invalid outbound config; refusing to build adapter|adapter bridge should reject invalid outbound duration config explicitly
 require|W142-01-bridge-outbound-bind-parse-helper|crates/sb-core/src/adapter/bridge.rs|let inet4_bind_address = parse_optional_outbound_ipv4_addr\(|adapter bridge should parse outbound bind addresses through explicit helpers instead of silent ignore
 require|W142-02-bridge-invalid-outbound-ip-explicit-reject|crates/sb-core/src/adapter/bridge.rs|silent IP parse fallback is disabled|adapter bridge should reject invalid outbound bind address config explicitly
-require|W143-01-register-vmess-uuid-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_uuid\(\"vmess\", outbound_name, ir\.uuid\.as_ref\(\)\)|vmess outbound builder should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
-require|W143-02-register-vmess-invalid-uuid-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vmess\", reason\)|vmess outbound builder should surface invalid uuid through explicit invalid-config connector
-require|W144-01-register-vless-uuid-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_uuid\(\"vless\", outbound_name, ir\.uuid\.as_ref\(\)\)|vless outbound builder should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
-require|W144-02-register-vless-invalid-uuid-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vless\", reason\)|vless outbound builder should surface invalid uuid through explicit invalid-config connector
-require|W145-01-register-tuic-uuid-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_uuid\(\"tuic\", outbound_name, ir\.uuid\.as_ref\(\)\)|tuic outbound builder should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
-require|W145-02-register-tuic-invalid-uuid-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"tuic\", reason\)|tuic outbound builder should surface invalid uuid through explicit invalid-config connector
-require|W146-01-register-dns-server-ip-parse-helper|crates/sb-adapters/src/register.rs|let server = match parse_required_outbound_ip_addr\(|dns outbound builder should parse server ip through explicit helper instead of parse\(\)\.ok\(\)
-require|W146-02-register-dns-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"dns\", reason\)|dns outbound builder should surface invalid server ip through explicit invalid-config connector
-require|W147-01-register-shadowsocks-invalid-config-helper|crates/sb-adapters/src/register.rs|invalid_outbound_config_reason\(\"shadowsocks\", outbound_name, &err\)|shadowsocks outbound builder should format invalid config through explicit helper instead of swallowing connector errors
-require|W147-02-register-shadowsocks-invalid-config-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"shadowsocks\", reason\)|shadowsocks outbound builder should surface invalid connector config through explicit invalid-config connector
-require|W148-01-register-shadowsocksr-invalid-config-helper|crates/sb-adapters/src/register.rs|invalid_outbound_config_reason\(\"shadowsocksr\", outbound_name, &err\)|shadowsocksr outbound builder should format invalid config through explicit helper instead of swallowing TryFrom errors
-require|W148-02-register-shadowsocksr-invalid-config-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"shadowsocksr\", reason\)|shadowsocksr outbound builder should surface invalid TryFrom config through explicit invalid-config connector
+require|W143-01-register-vmess-uuid-parse-helper|crates/sb-adapters/src/register/builders.rs|parse_required_outbound_uuid\(\"vmess\", outbound_name, ir\.uuid\.as_ref\(\)\)|vmess outbound builder should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
+require|W143-02-register-vmess-invalid-uuid-explicit-block|crates/sb-adapters/src/register/builders.rs|invalid_config_outbound\(\"vmess\", reason\)|vmess outbound builder should surface invalid uuid through explicit invalid-config connector
+require|W144-01-register-vless-uuid-parse-helper|crates/sb-adapters/src/register/builders.rs|parse_required_outbound_uuid\(\"vless\", outbound_name, ir\.uuid\.as_ref\(\)\)|vless outbound builder should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
+require|W144-02-register-vless-invalid-uuid-explicit-block|crates/sb-adapters/src/register/builders.rs|invalid_config_outbound\(\"vless\", reason\)|vless outbound builder should surface invalid uuid through explicit invalid-config connector
+require|W145-01-register-tuic-uuid-parse-helper|crates/sb-adapters/src/register/builders.rs|parse_required_outbound_uuid\(\"tuic\", outbound_name, ir\.uuid\.as_ref\(\)\)|tuic outbound builder should parse uuid through explicit helper instead of parse_str\(\)\.ok\(\)
+require|W145-02-register-tuic-invalid-uuid-explicit-block|crates/sb-adapters/src/register/builders.rs|invalid_config_outbound\(\"tuic\", reason\)|tuic outbound builder should surface invalid uuid through explicit invalid-config connector
+require|W146-01-register-dns-server-ip-parse-helper|crates/sb-adapters/src/register/builders.rs|let server = match parse_required_outbound_ip_addr\(|dns outbound builder should parse server ip through explicit helper instead of parse\(\)\.ok\(\)
+require|W146-02-register-dns-invalid-server-explicit-block|crates/sb-adapters/src/register/builders.rs|invalid_config_outbound\(\"dns\", reason\)|dns outbound builder should surface invalid server ip through explicit invalid-config connector
+require|W147-01-register-shadowsocks-invalid-config-helper|crates/sb-adapters/src/register/builders.rs|invalid_outbound_config_reason\(\"shadowsocks\", outbound_name, &err\)|shadowsocks outbound builder should format invalid config through explicit helper instead of swallowing connector errors
+require|W147-02-register-shadowsocks-invalid-config-explicit-block|crates/sb-adapters/src/register/builders.rs|invalid_config_outbound\(\"shadowsocks\", reason\)|shadowsocks outbound builder should surface invalid connector config through explicit invalid-config connector
+require|W148-01-register-shadowsocksr-invalid-config-helper|crates/sb-adapters/src/register/builders.rs|invalid_outbound_config_reason\(\"shadowsocksr\", outbound_name, &err\)|shadowsocksr outbound builder should format invalid TryFrom config through explicit helper instead of swallowing TryFrom errors
+require|W148-02-register-shadowsocksr-invalid-config-explicit-block|crates/sb-adapters/src/register/builders.rs|invalid_config_outbound\(\"shadowsocksr\", reason\)|shadowsocksr outbound builder should surface invalid TryFrom config through explicit invalid-config connector
 require|W149-01-router-udp-env-parse-helper|crates/sb-core/src/router/engine.rs|let idx = match parse_udp_rules_index\(&raw\)|router udp env rules should parse through explicit helper instead of router_build_index_from_str\(\)\.ok\(\)
 require|W149-02-router-udp-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|router udp rules env 'SB_ROUTER_UDP_RULES' is invalid; silent parse fallback is disabled|router udp env invalid rules should emit explicit diagnostics instead of silent ignore
 require|W150-01-geoip-cache-env-parse-helper|crates/sb-core/src/router/engine.rs|let cap = match parse_geoip_cache_cap_env\(cap_env\.as_deref\(\)\)|geoip cache env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
 require|W150-02-geoip-cache-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|geoip env 'SB_GEOIP_CACHE' value '.*' is invalid; silent parse fallback is disabled|geoip cache env invalid value should emit explicit diagnostics instead of silent ignore
 require|W151-01-geoip-ttl-env-parse-helper|crates/sb-core/src/router/engine.rs|let ttl = match parse_geoip_ttl_env\(ttl_env\.as_deref\(\)\)|geoip ttl env should parse through explicit helper instead of humantime::parse_duration\(&v\)\.ok\(\)
 require|W151-02-geoip-ttl-env-invalid-explicit-warn|crates/sb-core/src/router/engine.rs|geoip env 'SB_GEOIP_TTL' value '.*' is invalid; silent parse fallback is disabled|geoip ttl env invalid value should emit explicit diagnostics instead of silent ignore
-require|W152-01-register-vmess-server-addr-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_socket_addr\(\"vmess\", outbound_name, server, port\)|vmess outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
-require|W152-02-register-vmess-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vmess\", reason\)|vmess outbound builder should surface invalid server socket address through explicit invalid-config connector
-require|W153-01-register-vless-server-addr-parse-helper|crates/sb-adapters/src/register.rs|parse_required_outbound_socket_addr\(\"vless\", outbound_name, server, port\)|vless outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
-require|W153-02-register-vless-invalid-server-explicit-block|crates/sb-adapters/src/register.rs|invalid_config_outbound\(\"vless\", reason\)|vless outbound builder should surface invalid server socket address through explicit invalid-config connector
-forbid|W154-01-no-register-listen-parse-silent-fallback|crates/sb-adapters/src/register.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|register listen addr must not silently fallback via chained parse().ok()
-require|W154-02-register-listen-parse-explicit-normalize-msg|crates/sb-adapters/src/register.rs|explicit normalization to '\{normalized\}' is applied; silent listen parse fallback is disabled|listen addr helper should emit explicit normalization diagnostics instead of silent fallback
+require|W152-01-register-vmess-server-addr-parse-helper|crates/sb-adapters/src/register/builders.rs|parse_required_outbound_socket_addr\(\"vmess\", outbound_name, server, port\)|vmess outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
+require|W152-02-register-vmess-invalid-server-explicit-block|crates/sb-adapters/src/register/builders.rs|invalid_config_outbound\(\"vmess\", reason\)|vmess outbound builder should surface invalid server socket address through explicit invalid-config connector
+require|W153-01-register-vless-server-addr-parse-helper|crates/sb-adapters/src/register/builders.rs|parse_required_outbound_socket_addr\(\"vless\", outbound_name, server, port\)|vless outbound builder should parse server socket address through explicit helper instead of parse::<SocketAddr>\(\)\.ok\(\)
+require|W153-02-register-vless-invalid-server-explicit-block|crates/sb-adapters/src/register/builders.rs|invalid_config_outbound\(\"vless\", reason\)|vless outbound builder should surface invalid server socket address through explicit invalid-config connector
+forbid|W154-01-no-register-listen-parse-silent-fallback|crates/sb-adapters/src/register/builders.rs|\.parse(::<[a-z0-9]+>)?\(\)\.ok\(\)|register listen addr must not silently fallback via chained parse().ok()
+require|W154-02-register-listen-parse-explicit-normalize-msg|crates/sb-adapters/src/register/builders.rs|explicit normalization to '\{normalized\}' is applied; silent listen parse fallback is disabled|listen addr helper should emit explicit normalization diagnostics instead of silent fallback
 require|W155-01-router-rules-max-env-parse-helper|crates/sb-core/src/router/mod.rs|let max_rules = router_rules_max_from_env\(\);|router rules max env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
 require|W155-02-router-rules-max-env-invalid-explicit-warn|crates/sb-core/src/router/mod.rs|router env 'SB_ROUTER_RULES_MAX' value '.*' is invalid; silent parse fallback is disabled|router rules max env invalid value should emit explicit diagnostics instead of silent ignore
 require|W156-01-router-hot-reload-ms-env-parse-helper|crates/sb-core/src/router/mod.rs|let interval_ms = router_rules_hot_reload_ms_from_env\(\);|router hot reload interval env should parse through explicit helper instead of v\.parse\(\)\.ok\(\)
@@ -574,9 +573,9 @@ forbid|W198-04-no-socks-sticky-ttl-silent|crates/sb-adapters/src/inbound/socks/m
 forbid|W198-05-no-socks-sticky-cap-silent|crates/sb-adapters/src/inbound/socks/mod.rs|env::var\("SB_PROXY_STICKY_CAP"\)\.ok\(\)\.and_then|socks sticky cap must not silently swallow parse failures
 require|W198-06-socks-sticky-explicit-warn|crates/sb-adapters/src/inbound/socks/mod.rs|silent parse fallback is disabled, using default|socks sticky env should emit explicit diagnostics
 
-forbid|W199-01-no-tailscale-direct-fallback|crates/sb-adapters/src/register.rs|falling back to direct connector|tailscale disabled stub must not fall back to direct connector
-forbid|W199-02-no-tailscale-build-core-direct|crates/sb-adapters/src/register.rs|build_core_direct_connector.*tailscale|tailscale disabled stub must not construct core direct connector
-require|W199-03-tailscale-stub-invalid-config|crates/sb-adapters/src/register.rs|unsupported_outbound_feature_reason\("adapter-tailscale"\)|tailscale disabled stub should fail loud via invalid_config_outbound (CAL-18), not silent stub_outbound/None
+forbid|W199-01-no-tailscale-direct-fallback|crates/sb-adapters/src/register/builders.rs|falling back to direct connector|tailscale disabled stub must not fall back to direct connector
+forbid|W199-02-no-tailscale-build-core-direct|crates/sb-adapters/src/register/builders.rs|build_core_direct_connector.*tailscale|tailscale disabled stub must not construct core direct connector
+require|W199-03-tailscale-stub-invalid-config|crates/sb-adapters/src/register/builders.rs|unsupported_outbound_feature_reason\("adapter-tailscale"\)|tailscale disabled stub should fail loud via invalid_config_outbound (CAL-18), not silent stub_outbound/None
 
 # --- Wave 200: 8 inbound handlers — rules_global Direct default elimination ---
 forbid|W200-01-no-trojan-direct-default|crates/sb-adapters/src/inbound/trojan.rs|let mut decision = RDecision::Direct|trojan inbound must not default to Direct when router missing
@@ -591,7 +590,7 @@ require|W200-09-trojan-explicit-disabled|crates/sb-adapters/src/inbound/trojan.r
 require|W200-10-vless-explicit-disabled|crates/sb-adapters/src/inbound/vless.rs|implicit direct fallback is disabled|vless must explicitly refuse when router missing
 require|W200-11-vmess-explicit-disabled|crates/sb-adapters/src/inbound/vmess.rs|implicit direct fallback is disabled|vmess must explicitly refuse when router missing
 require|W200-12-shadowsocks-explicit-disabled|crates/sb-adapters/src/inbound/shadowsocks.rs|implicit direct fallback is disabled|ss must explicitly refuse when router missing
-require|W200-13-shadowtls-explicit-disabled|crates/sb-adapters/src/inbound/shadowtls.rs|implicit direct fallback is disabled|shadowtls must explicitly refuse when router missing
+require|W200-13-shadowtls-explicit-disabled|crates/sb-adapters/src/inbound/shadowtls.rs|implicit fallback is disabled|shadowtls must explicitly refuse when router missing
 require|W200-14-anytls-explicit-disabled|crates/sb-adapters/src/inbound/anytls.rs|implicit direct fallback is disabled|anytls must explicitly refuse when router missing
 require|W200-15-redirect-explicit-disabled|crates/sb-adapters/src/inbound/redirect.rs|implicit direct fallback is disabled|redirect must explicitly refuse when router missing
 require|W200-16-tproxy-explicit-disabled|crates/sb-adapters/src/inbound/tproxy.rs|implicit direct fallback is disabled|tproxy must explicitly refuse when router missing

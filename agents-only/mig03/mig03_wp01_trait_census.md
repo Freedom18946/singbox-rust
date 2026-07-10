@@ -17,7 +17,7 @@ or a caller; this is intentional because WP02 must migrate its fixtures too.
 ```bash
 # List every contract definition that the census considers.
 rg -n --glob '*.rs' \
-  '^\s*(pub )?trait (InboundService|InboundHandler|InboundAcceptor|OutboundConnector|OutboundGroup|OutboundDatagram|UdpOutboundSession|UdpOutboundFactory|OutboundTcp|OutboundUdp|UdpTransport|Outbound)\b' \
+  '^\s*(pub )?trait (InboundService|InboundHandler|InboundAcceptor|InboundFactory|InboundAdapter|OutboundConnector|OutboundGroup|OutboundFactory|OutboundAdapter|OutboundDatagram|UdpOutboundSession|UdpOutboundFactory|OutboundTcp|OutboundUdp|UdpTransport|Outbound)\b' \
   crates/sb-types crates/sb-core crates/sb-adapters crates/sb-proto
 
 # Reproduce the implementation and dynamic-holder evidence by module.  Inspect
@@ -30,7 +30,7 @@ rg -n --glob '*.rs' 'impl .*OutboundDatagram for' crates/sb-adapters
 rg -n --glob '*.rs' 'dyn (OutboundConnector|InboundService|UdpTransport)' crates app
 ```
 
-The first command finds 19 trait definitions in the four relevant crates. The
+The first command finds 23 migration-relevant trait definitions in the four relevant crates. The
 Primary-evidence list describes the nine public/legacy families; the remaining
 definitions are recorded in §2.3 so a forgotten side interface cannot become a
 seventh connector contract during WP02.
@@ -71,6 +71,9 @@ The decisive ownership evidence is not a raw bare-name count:
 | O12 | `sb-core/src/outbound/crypto_types.rs:33` | A second `OutboundTcp`: associated Tokio `IO`, `connect(&HostPort) -> io::Result<IO>`, required `protocol_name()`. | No active implementation/reference outside this legacy file was found. **Delete** with its dead module after compiler confirmation in WP03. |
 | O13 | `sb-core/src/outbound/crypto_types.rs:45` | `OutboundUdp::bind() -> io::Result<UdpSocket>`; default `connect_addr(&SocketAddr) -> Ok(())`; `protocol_name()`. | No active implementation/reference found. **Delete** in WP03; its bind model is not Go `ListenPacket`. |
 | O14 | `sb-core/src/outbound/traits.rs:26` | `UdpTransport::send_to(&[u8], &Endpoint) -> SbResult<usize>` and `recv_from(&mut [u8]) -> SbResult<(usize, SocketAddr)>`. | Active through `DirectUdpTransport`, `UdpFactoryTransport`, manager tests, and `net/datagram.rs`. **Replace** with canonical `PacketConn`. |
+| O15 | `sb-core/src/adapter/mod.rs:149` `OutboundGroup` | `now/all/group_type/members_health` plus async boxed `select_outbound`. | One production implementation (`SelectorGroup`); reached through O3 `as_group()` and consumed by control-plane handlers. **Replace** with canonical `OutboundGroup` plus optional `SelectorControl`; delete unconsumed health/type hooks. |
+| O16 | `sb-core/src/outbound/manager.rs:115` `OutboundAdapter` | Supertrait `OutboundConnector + Lifecycle`; adds `tag()` and `outbound_type()`; `OutboundHandler = Arc<dyn OutboundAdapter>`. | Dynamic manager registry surface plus one test implementation; duplicates canonical connection and lifecycle ownership. **Delete** in WP03; manager stores canonical outbound objects and lifecycle stays with concrete owner. |
+| O17 | `sb-core/src/adapter/mod.rs:459` `OutboundFactory` | `create(&OutboundParam) -> Option<Arc<dyn OutboundConnector>>`. | **0 implementations and 0 callers** at snapshot; `Option` also erases build errors. **Delete** in WP03 rather than migrate. |
 
 ## 3. Inbound census
 

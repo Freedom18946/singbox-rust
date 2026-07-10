@@ -5,7 +5,6 @@
 //! Supports both TCP and UDP relay.
 
 use crate::outbound::prelude::*;
-use crate::traits::OutboundDatagram;
 use crate::transport_config::TransportConfig;
 use std::sync::Arc;
 
@@ -308,9 +307,9 @@ impl TrojanConnector {
         Ok(tls_stream)
     }
 
-    /// Create UDP relay connection (returns OutboundDatagram)
+    /// Create canonical UDP relay association.
     #[cfg(feature = "adapter-trojan")]
-    pub async fn udp_relay_dial(&self, target: Target) -> Result<Box<dyn OutboundDatagram>> {
+    pub async fn udp_relay_dial(&self, session: &Session) -> Result<sb_types::BoxedPacketConn> {
         use sha2::{Digest, Sha224};
         use tokio::io::AsyncWriteExt;
         use tokio::net::{lookup_host, UdpSocket};
@@ -322,7 +321,7 @@ impl TrojanConnector {
 
         tracing::debug!(
             server = %config.server,
-            target = %format!("{}:{}", target.host, target.port),
+            target = %session.target,
             "Creating Trojan UDP relay"
         );
 
@@ -422,29 +421,26 @@ impl TrojanConnector {
             .map_err(|e| AdapterError::Network(format!("UDP connect failed: {}", e)))?;
 
         // Create Trojan UDP socket wrapper
-        let trojan_udp = TrojanUdpSocket::new(Arc::new(udp_socket))?;
+        let trojan_udp = TrojanUdpSocket::new(
+            Arc::new(udp_socket),
+            session.target.clone(),
+            session.packet.idle_timeout,
+        )?;
 
         Ok(Box::new(trojan_udp))
     }
 }
 
-#[async_trait]
-impl OutboundConnector for TrojanConnector {
-    fn name(&self) -> &'static str {
+impl TrojanConnector {
+    pub const fn name(&self) -> &'static str {
         "trojan"
     }
 
-    async fn start(&self) -> Result<()> {
-        #[cfg(not(feature = "adapter-trojan"))]
-        return Err(AdapterError::NotImplemented {
-            what: "adapter-trojan",
-        });
-
-        #[cfg(feature = "adapter-trojan")]
+    pub async fn start(&self) -> Result<()> {
         Ok(())
     }
 
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-trojan"))]
         return Err(AdapterError::NotImplemented {
             what: "adapter-trojan",
@@ -460,7 +456,10 @@ impl OutboundConnector for TrojanConnector {
                 .as_ref()
                 .ok_or_else(|| AdapterError::Other("Trojan config not set".to_string()))?;
 
-            let _span = crate::outbound::span_dial("trojan", &target);
+            let target = &session.target;
+            let host = target.host();
+            let port = target.port();
+            let _span = crate::outbound::span_dial("trojan", target);
 
             // Update comment: Multiplex is now integrated via transport layer
             // Trojan protocol flow with V2Ray transports:
@@ -471,13 +470,16 @@ impl OutboundConnector for TrojanConnector {
             );
 
             // Step 1: Establish base connection via dialer (handles transport layer + multiplex)
-            // Honor the caller's DialOpts.connect_timeout, taking the stricter of it and the
-            // configured connect_timeout_sec (default 30s): a short DialOpts fails fast while a
+            // Honor caller connect timeout, taking stricter configured ceiling.
+            // configured connect_timeout_sec (default 30s): a short session timeout fails fast while a
             // configured ceiling still applies. `_opts` keeps its underscore name because the
             // feature-off dial arm above does not use it. (package09; supersedes package08 follow-up #2)
-            let timeout = _opts.connect_timeout.min(std::time::Duration::from_secs(
-                config.connect_timeout_sec.unwrap_or(30),
-            ));
+            let timeout = session
+                .connect
+                .connect_timeout
+                .min(std::time::Duration::from_secs(
+                    config.connect_timeout_sec.unwrap_or(30),
+                ));
 
             // Parse server endpoint into (host, port). DNS resolution is
             // deferred to the transport layer, so a hostname server no
@@ -591,7 +593,7 @@ impl OutboundConnector for TrojanConnector {
             request.push(0x01);
 
             // Address type and address
-            if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
+            if let Ok(ip) = host.parse::<std::net::IpAddr>() {
                 match ip {
                     std::net::IpAddr::V4(ipv4) => {
                         request.push(0x01); // IPv4
@@ -605,12 +607,12 @@ impl OutboundConnector for TrojanConnector {
             } else {
                 // Domain name
                 request.push(0x03); // Domain
-                request.push(target.host.len() as u8);
-                request.extend_from_slice(target.host.as_bytes());
+                request.push(host.len() as u8);
+                request.extend_from_slice(host.as_bytes());
             }
 
             // Port (big-endian)
-            request.extend_from_slice(&target.port.to_be_bytes());
+            request.extend_from_slice(&port.to_be_bytes());
             request.extend_from_slice(b"\r\n");
 
             // Send Trojan request
@@ -623,39 +625,87 @@ impl OutboundConnector for TrojanConnector {
     }
 }
 
-/// Trojan UDP socket wrapper that implements OutboundDatagram
+impl sb_types::Outbound for TrojanConnector {
+    fn r#type(&self) -> &str {
+        "trojan"
+    }
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(
+            self._config
+                .as_ref()
+                .and_then(|config| config.tag.clone())
+                .unwrap_or_else(|| "trojan".to_string()),
+        )
+    }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
+    fn dial<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+            let stream = TrojanConnector::dial(self, session)
+                .await
+                .map_err(|error| crate::outbound::core_error(error, session))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            #[cfg(feature = "adapter-trojan")]
+            {
+                self.udp_relay_dial(session)
+                    .await
+                    .map_err(|error| crate::outbound::core_error(error, session))
+            }
+            #[cfg(not(feature = "adapter-trojan"))]
+            {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "Trojan UDP support is not compiled",
+                ))
+            }
+        })
+    }
+}
+
+/// Trojan canonical UDP packet association.
 #[cfg(feature = "adapter-trojan")]
 #[derive(Debug)]
 pub struct TrojanUdpSocket {
     socket: Arc<tokio::net::UdpSocket>,
-    target_addr: tokio::sync::Mutex<Option<Target>>,
+    state: crate::outbound::PacketState,
 }
 
 #[cfg(feature = "adapter-trojan")]
 impl TrojanUdpSocket {
-    pub fn new(socket: Arc<tokio::net::UdpSocket>) -> Result<Self> {
+    pub fn new(
+        socket: Arc<tokio::net::UdpSocket>,
+        target: TargetAddr,
+        idle_timeout: std::time::Duration,
+    ) -> Result<Self> {
         Ok(Self {
             socket,
-            target_addr: tokio::sync::Mutex::new(None),
+            state: crate::outbound::PacketState::new(target, idle_timeout),
         })
-    }
-
-    /// Set target address for subsequent operations
-    pub async fn set_target(&self, target: Target) {
-        let mut addr = self.target_addr.lock().await;
-        *addr = Some(target);
     }
 
     /// Encode Trojan UDP packet
     /// Format: CMD(0x03) + ATYP + DST.ADDR + PORT + PAYLOAD
-    fn encode_packet(&self, data: &[u8], target: &Target) -> Result<Vec<u8>> {
+    fn encode_packet(&self, data: &[u8], target: &TargetAddr) -> Result<Vec<u8>> {
         let mut packet = Vec::new();
+        let host = target.host();
 
         // CMD: UDP (0x03)
         packet.push(0x03);
 
         // Address type and address
-        if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
+        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
             match ip {
                 std::net::IpAddr::V4(ipv4) => {
                     packet.push(0x01); // IPv4
@@ -669,7 +719,7 @@ impl TrojanUdpSocket {
         } else {
             // Domain name
             packet.push(0x03); // Domain
-            let hostname_bytes = target.host.as_bytes();
+            let hostname_bytes = host.as_bytes();
             if hostname_bytes.len() > 255 {
                 return Err(AdapterError::InvalidConfig("Hostname too long"));
             }
@@ -678,7 +728,7 @@ impl TrojanUdpSocket {
         }
 
         // Port
-        packet.extend_from_slice(&target.port.to_be_bytes());
+        packet.extend_from_slice(&target.port().to_be_bytes());
 
         // Payload
         packet.extend_from_slice(data);
@@ -742,58 +792,80 @@ impl TrojanUdpSocket {
 }
 
 #[cfg(feature = "adapter-trojan")]
-#[async_trait]
-impl OutboundDatagram for TrojanUdpSocket {
-    async fn send_to(&self, payload: &[u8]) -> Result<usize> {
-        // Get target address
-        let target = {
-            let addr_lock = self.target_addr.lock().await;
-            addr_lock
-                .as_ref()
-                .ok_or_else(|| AdapterError::Other("Target address not set".to_string()))?
-                .clone()
-        };
-
-        // Encode packet
-        let packet = self.encode_packet(payload, &target)?;
-
-        // Send to Trojan server
-        let sent = self.socket.send(&packet).await.map_err(AdapterError::Io)?;
-
-        tracing::trace!(
-            target = %format!("{}:{}", target.host, target.port),
-            sent = sent,
-            "Trojan UDP packet sent"
-        );
-
-        Ok(payload.len())
+impl sb_types::PacketConn for TrojanUdpSocket {
+    fn send_to<'a>(
+        &'a self,
+        payload: &'a [u8],
+        destination: &'a TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.state.ensure_open()?;
+            self.state.set_target(destination);
+            let packet = self
+                .encode_packet(payload, destination)
+                .map_err(|error| sb_types::CoreError::protocol(error.to_string()))?;
+            let sent = crate::outbound::with_packet_deadline(
+                self.state.write_deadline(),
+                self.socket.send(&packet),
+            )
+            .await?;
+            if sent == packet.len() {
+                Ok(payload.len())
+            } else {
+                Err(sb_types::CoreError::io("partial Trojan UDP packet sent"))
+            }
+        })
     }
 
-    async fn recv_from(&self, buf: &mut [u8]) -> Result<usize> {
-        // Receive from Trojan server
-        let (n, _peer) = self.socket.recv_from(buf).await.map_err(AdapterError::Io)?;
-
-        // Decode packet
-        let payload = self.decode_packet(&buf[..n])?;
-
-        // Copy payload back to buffer
-        if payload.len() > buf.len() {
-            return Err(AdapterError::Other("Buffer too small".to_string()));
-        }
-
-        buf[..payload.len()].copy_from_slice(&payload);
-
-        tracing::trace!(
-            received = n,
-            payload_len = payload.len(),
-            "Trojan UDP packet received"
-        );
-
-        Ok(payload.len())
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            self.state.ensure_open()?;
+            let mut packet = vec![0_u8; buffer.len() + 256];
+            let (size, _) = crate::outbound::with_packet_deadline(
+                self.state.read_deadline(),
+                self.socket.recv_from(&mut packet),
+            )
+            .await?;
+            let payload = self
+                .decode_packet(&packet[..size])
+                .map_err(|error| sb_types::CoreError::protocol(error.to_string()))?;
+            if payload.len() > buffer.len() {
+                return Err(sb_types::CoreError::io("packet buffer too small"));
+            }
+            buffer[..payload.len()].copy_from_slice(&payload);
+            Ok((payload.len(), self.state.target()))
+        })
     }
 
-    async fn close(&self) -> Result<()> {
-        tracing::debug!("Trojan UDP socket closed");
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        self.state.close();
+        Box::pin(async { Ok(()) })
+    }
+    fn local_addr(&self) -> Option<TargetAddr> {
+        self.socket.local_addr().ok().map(TargetAddr::socket)
+    }
+    fn set_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.state.set_deadline(deadline);
+        Ok(())
+    }
+    fn set_read_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.state.set_read_deadline(deadline);
+        Ok(())
+    }
+    fn set_write_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.state.set_write_deadline(deadline);
         Ok(())
     }
 }
@@ -961,13 +1033,18 @@ mod tests {
 
     async fn loopback_udp_socket() -> TrojanUdpSocket {
         let udp = tokio::net::UdpSocket::bind("127.0.0.1:0").await.unwrap();
-        TrojanUdpSocket::new(std::sync::Arc::new(udp)).unwrap()
+        TrojanUdpSocket::new(
+            std::sync::Arc::new(udp),
+            TargetAddr::domain("fixture", 1),
+            std::time::Duration::from_secs(300),
+        )
+        .unwrap()
     }
 
     #[tokio::test]
     async fn trojan_udp_roundtrip_ipv4() {
         let sock = loopback_udp_socket().await;
-        let target = Target::tcp("1.2.3.4", 4433);
+        let target = TargetAddr::from_host_port("1.2.3.4", 4433);
         let packet = sock.encode_packet(b"ping", &target).unwrap();
         assert_eq!(packet[0], 0x03, "CMD must be UDP (0x03)");
         assert_eq!(packet[1], 0x01, "ATYP must be IPv4 (0x01)");
@@ -980,7 +1057,7 @@ mod tests {
     #[tokio::test]
     async fn trojan_udp_roundtrip_ipv6() {
         let sock = loopback_udp_socket().await;
-        let target = Target::tcp("2001:db8::1", 443);
+        let target = TargetAddr::from_host_port("2001:db8::1", 443);
         let packet = sock.encode_packet(b"x", &target).unwrap();
         assert_eq!(packet[0], 0x03);
         assert_eq!(packet[1], 0x04, "ATYP must be IPv6 (0x04)");
@@ -990,7 +1067,7 @@ mod tests {
     #[tokio::test]
     async fn trojan_udp_roundtrip_domain() {
         let sock = loopback_udp_socket().await;
-        let target = Target::tcp("example.com", 8080);
+        let target = TargetAddr::domain("example.com", 8080);
         let packet = sock.encode_packet(b"payload", &target).unwrap();
         assert_eq!(packet[0], 0x03);
         assert_eq!(packet[1], 0x03, "ATYP must be Domain (0x03)");
@@ -1006,7 +1083,7 @@ mod tests {
     async fn trojan_udp_encode_rejects_overlong_domain() {
         let sock = loopback_udp_socket().await;
         let long_host = "a".repeat(256);
-        let target = Target::tcp(long_host.as_str(), 443);
+        let target = TargetAddr::domain(long_host, 443);
         assert!(
             sock.encode_packet(b"d", &target).is_err(),
             "domain longer than 255 bytes must be rejected"

@@ -436,7 +436,7 @@ impl Hysteria2Inbound {
     }
 }
 
-impl sb_core::adapter::InboundService for Hysteria2Inbound {
+impl sb_core::adapter::InboundTaskDriver for Hysteria2Inbound {
     fn serve(&self) -> std::io::Result<()> {
         #[cfg(not(feature = "adapter-hysteria2"))]
         {

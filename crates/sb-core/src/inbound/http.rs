@@ -4,7 +4,7 @@
 //! This implementation handles HTTP CONNECT requests and establishes tunnels
 //! to target destinations.
 
-use crate::adapter::InboundService;
+use crate::adapter::InboundTaskDriver;
 use std::io;
 use std::net::SocketAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
@@ -342,7 +342,7 @@ impl Clone for HttpInboundService {
     }
 }
 
-impl InboundService for HttpInboundService {
+impl InboundTaskDriver for HttpInboundService {
     fn serve(&self) -> std::io::Result<()> {
         info!("Starting HTTP CONNECT proxy server on {}", self.addr);
 

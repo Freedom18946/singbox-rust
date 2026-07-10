@@ -1,5 +1,5 @@
 use sb_config::ir::{ConfigIR, InboundIR, InboundType};
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 use sb_core::inbound::socks5::Socks5;
 use sb_core::routing::engine::Engine;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr, TcpListener, TcpStream, UdpSocket};

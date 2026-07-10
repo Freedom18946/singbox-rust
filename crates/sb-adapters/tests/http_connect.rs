@@ -8,6 +8,7 @@
 use base64::Engine;
 use sb_adapters::outbound::http::HttpProxyConnector;
 use sb_adapters::outbound::prelude::*;
+use sb_types::{ConnectOptions, Session, TargetAddr};
 use std::io::ErrorKind;
 use std::time::Duration;
 use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
@@ -66,10 +67,10 @@ async fn test_http_connect_no_auth() {
 
     // Create connector and test
     let connector = HttpProxyConnector::no_auth(server_addr.to_string());
-    let target = Target::tcp("example.com", 443);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
+    let session = Session::outbound(TargetAddr::domain("example.com", 443))
+        .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5)));
 
-    let result = connector.dial(target, opts).await;
+    let result = connector.dial(&session).await;
     assert!(
         result.is_ok(),
         "HTTP CONNECT should succeed: {:?}",
@@ -130,10 +131,10 @@ async fn test_http_connect_with_auth() {
 
     // Create connector with auth and test
     let connector = HttpProxyConnector::with_auth(server_addr.to_string(), "testuser", "testpass");
-    let target = Target::tcp("example.com", 443);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
+    let session = Session::outbound(TargetAddr::domain("example.com", 443))
+        .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5)));
 
-    let result = connector.dial(target, opts).await;
+    let result = connector.dial(&session).await;
     assert!(
         result.is_ok(),
         "HTTP CONNECT with auth should succeed: {:?}",
@@ -172,10 +173,10 @@ async fn test_http_connect_failure() {
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     let connector = HttpProxyConnector::no_auth(server_addr.to_string());
-    let target = Target::tcp("example.com", 443);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
+    let session = Session::outbound(TargetAddr::domain("example.com", 443))
+        .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5)));
 
-    let result = connector.dial(target, opts).await;
+    let result = connector.dial(&session).await;
     assert!(result.is_err(), "HTTP CONNECT should fail");
 
     if let Err(AdapterError::Protocol(msg)) = result {
@@ -214,10 +215,10 @@ async fn test_http_connect_bad_response() {
     tokio::time::sleep(Duration::from_millis(10)).await;
 
     let connector = HttpProxyConnector::no_auth(server_addr.to_string());
-    let target = Target::tcp("example.com", 443);
-    let opts = DialOpts::new().with_connect_timeout(Duration::from_secs(5));
+    let session = Session::outbound(TargetAddr::domain("example.com", 443))
+        .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5)));
 
-    let result = connector.dial(target, opts).await;
+    let result = connector.dial(&session).await;
     assert!(
         result.is_err(),
         "HTTP CONNECT should fail with bad response"

@@ -434,8 +434,8 @@ fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
             return PROXY_TYPE_HTTP.to_string();
         }
         if let OutboundImpl::Connector(c) = outbound {
-            if let Some(group) = c.as_group() {
-                return group.group_type().to_string();
+            if c.as_group().is_some() {
+                return c.r#type().to_string();
             }
         }
         return PROXY_TYPE_UNKNOWN.to_string();
@@ -527,11 +527,25 @@ async fn http_url_test(
     // Connect through the outbound
     let connect_result = match outbound {
         Some(OutboundImpl::Connector(c)) => {
-            tokio::time::timeout(timeout, c.connect(host, port)).await
+            use tokio_util::compat::FuturesAsyncReadCompatExt;
+            let session = sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("clash-urltest"),
+                sb_types::TargetAddr::domain(host, port),
+            );
+            tokio::time::timeout(timeout, async move {
+                let stream = c.dial(&session).await.map_err(std::io::Error::other)?;
+                Ok::<sb_transport::IoStream, std::io::Error>(Box::new(stream.compat()))
+            })
+            .await
         }
         Some(OutboundImpl::Direct) | None => {
-            let fut = tokio::net::TcpStream::connect((host, port));
-            tokio::time::timeout(timeout, fut).await
+            tokio::time::timeout(timeout, async move {
+                Ok::<sb_transport::IoStream, std::io::Error>(Box::new(
+                    tokio::net::TcpStream::connect((host, port)).await?,
+                ))
+            })
+            .await
         }
         _ => return Err(StatusCode::INTERNAL_SERVER_ERROR),
     };
@@ -583,7 +597,7 @@ fn lookup_proxy_history(
     let lookup_tag = match outbound {
         Some(OutboundImpl::Connector(c)) => c
             .as_group()
-            .map(|g| g.now())
+            .map(|g| g.now().to_string())
             .unwrap_or_else(|| tag.to_string()),
         _ => tag.to_string(),
     };
@@ -646,9 +660,9 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
 
         if let OutboundImpl::Connector(c) = outbound {
             if let Some(group) = c.as_group() {
-                proxy.all = group.all();
-                proxy.now = group.now();
-                proxy.r#type = group.group_type().to_string();
+                proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
+                proxy.now = group.now().to_string();
+                proxy.r#type = c.r#type().to_string();
                 // Group-level alive/delay are None (matches Go behavior)
                 proxy.alive = None;
                 proxy.delay = None;
@@ -749,9 +763,9 @@ pub async fn get_proxy(
 
         if let OutboundImpl::Connector(c) = &outbound {
             if let Some(group) = c.as_group() {
-                proxy.all = group.all();
-                proxy.now = group.now();
-                proxy.r#type = group.group_type().to_string();
+                proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
+                proxy.now = group.now().to_string();
+                proxy.r#type = c.r#type().to_string();
                 proxy.alive = None;
                 proxy.delay = None;
             }
@@ -837,7 +851,14 @@ pub async fn select_proxy(
 
         if let Some(OutboundImpl::Connector(c)) = outbound_opt {
             if let Some(group) = c.as_group() {
-                match group.select_outbound(&request.name).await {
+                let result = match group.as_selector_control() {
+                    Some(control) => control.select(&request.name).await,
+                    None => Err(sb_types::CoreError::connect(
+                        sb_types::ConnectErrorKind::Unsupported,
+                        "group does not support selection",
+                    )),
+                };
+                match result {
                     Ok(()) => {
                         log::info!(
                             "Selected proxy '{}' for group '{}'",
@@ -1761,11 +1782,11 @@ pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse
 
                 groups.push(json!({
                     "name": tag,
-                    "type": group.group_type(),
+                    "type": c.r#type(),
                     "udp": true,
                     "history": history,
-                    "all": all,
-                    "now": now,
+                    "all": all.into_iter().map(|tag| tag.to_string()).collect::<Vec<_>>(),
+                    "now": now.to_string(),
                     "hidden": false,
                     "icon": "",
                 }));
@@ -1798,9 +1819,9 @@ pub async fn get_meta_group(
 
         if let OutboundImpl::Connector(c) = &outbound {
             if let Some(group) = c.as_group() {
-                all = group.all();
-                now = group.now();
-                proxy_type = group.group_type().to_string();
+                all = group.all().into_iter().map(|tag| tag.to_string()).collect();
+                now = group.now().to_string();
+                proxy_type = c.r#type().to_string();
             }
         }
 
@@ -1890,6 +1911,7 @@ pub async fn get_meta_group_delay(
                             .all()
                             .into_iter()
                             .map(|tag| {
+                                let tag = tag.to_string();
                                 let ob = reg.get(&tag).cloned();
                                 (tag, ob)
                             })

@@ -9,7 +9,6 @@
 //! 支持 TCP 和 UDP 转发。
 
 use crate::outbound::prelude::*;
-use crate::traits::OutboundDatagram;
 use crate::transport_config::{TransportConfig, TransportType};
 use parking_lot::Mutex;
 use rand::{Rng, RngCore};
@@ -82,6 +81,8 @@ impl Encryption {
 /// VLESS 配置
 #[derive(Debug, Clone)]
 pub struct VlessConfig {
+    /// Optional configured outbound tag.
+    pub tag: Option<String>,
     /// Server host
     /// 服务端主机
     pub server: String,
@@ -126,6 +127,7 @@ pub struct VlessConfig {
 impl Default for VlessConfig {
     fn default() -> Self {
         Self {
+            tag: None,
             server: "127.0.0.1".to_string(),
             port: 443,
             uuid: Uuid::new_v4(),
@@ -166,6 +168,17 @@ impl std::fmt::Debug for VlessConnector {
 }
 
 impl VlessConnector {
+    pub const fn name(&self) -> &'static str {
+        "vless"
+    }
+
+    pub async fn start(&self) -> Result<()> {
+        if self.config.uuid.is_nil() {
+            return Err(AdapterError::InvalidConfig("vless UUID must not be nil"));
+        }
+        Ok(())
+    }
+
     fn flow_addons(&self) -> Vec<u8> {
         let flow = self.config.flow.as_str();
         if flow.is_empty() {
@@ -245,9 +258,10 @@ impl VlessConnector {
 
     /// Build VLESS request header
     /// 构建 VLESS 请求头
-    fn build_request_header(&self, target: &Target) -> Vec<u8> {
+    fn build_request_header(&self, target: &TargetAddr) -> Vec<u8> {
         let mut header = Vec::new();
         let addons = self.flow_addons();
+        let host = target.host();
 
         // VLESS version (1 byte)
         header.push(0x00);
@@ -263,11 +277,11 @@ impl VlessConnector {
         header.push(0x01);
 
         // Port (2 bytes, big endian)
-        let port = target.port;
+        let port = target.port();
         header.extend_from_slice(&port.to_be_bytes());
 
         // Address Type and Address
-        match target.host.parse::<std::net::IpAddr>() {
+        match host.parse::<std::net::IpAddr>() {
             Ok(std::net::IpAddr::V4(ipv4)) => {
                 header.push(0x01); // IPv4
                 header.extend_from_slice(&ipv4.octets());
@@ -278,7 +292,7 @@ impl VlessConnector {
             }
             Err(_) => {
                 header.push(0x02); // Domain
-                let domain_bytes = target.host.as_bytes();
+                let domain_bytes = host.as_bytes();
                 header.push(domain_bytes.len() as u8);
                 header.extend_from_slice(domain_bytes);
             }
@@ -287,12 +301,11 @@ impl VlessConnector {
         header
     }
 
-    /// Create UDP relay connection (returns OutboundDatagram)
-    /// 创建 UDP 中继连接 (返回 OutboundDatagram)
-    pub async fn udp_relay_dial(&self, target: Target) -> Result<Box<dyn OutboundDatagram>> {
+    /// Create canonical UDP relay association.
+    pub async fn udp_relay_dial(&self, session: &Session) -> Result<sb_types::BoxedPacketConn> {
         tracing::debug!(
             server = %self.server_endpoint(),
-            target = %format!("{}:{}", target.host, target.port),
+            target = %session.target,
             "Creating VLESS UDP relay"
         );
 
@@ -308,12 +321,17 @@ impl VlessConnector {
             .map_err(|e| AdapterError::Network(format!("UDP connect failed: {}", e)))?;
 
         // Create VLESS UDP socket wrapper
-        let vless_udp = VlessUdpSocket::new(Arc::new(local_socket), self.config.uuid)?;
+        let vless_udp = VlessUdpSocket::new(
+            Arc::new(local_socket),
+            self.config.uuid,
+            session.target.clone(),
+            session.packet.idle_timeout,
+        )?;
 
         Ok(Box::new(vless_udp))
     }
 
-    async fn write_request<S>(&self, stream: &mut S, target: &Target) -> Result<()>
+    async fn write_request<S>(&self, stream: &mut S, target: &TargetAddr) -> Result<()>
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + ?Sized,
     {
@@ -355,7 +373,7 @@ impl VlessConnector {
 
     /// Perform VLESS handshake
     /// 执行 VLESS 握手
-    async fn handshake<S>(&self, stream: &mut S, target: &Target) -> Result<()>
+    async fn handshake<S>(&self, stream: &mut S, target: &TargetAddr) -> Result<()>
     where
         S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + ?Sized,
     {
@@ -417,38 +435,14 @@ impl Default for VlessConnector {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for VlessConnector {
-    fn name(&self) -> &'static str {
-        "vless"
-    }
+impl VlessConnector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
+        let target = &session.target;
+        tracing::debug!("VLESS dialing target: {:?}", target);
 
-    async fn start(&self) -> Result<()> {
-        // Validate configuration
         if self.config.uuid.is_nil() {
             return Err(AdapterError::InvalidConfig("VLESS UUID cannot be nil"));
         }
-
-        // Test connectivity to server (optional)
-        if let Err(e) =
-            tokio::net::TcpStream::connect((self.config.server.as_str(), self.config.port)).await
-        {
-            tracing::warn!("VLESS server connectivity test failed: {}", e);
-            // Don't fail startup for connectivity issues - they might be temporary
-        }
-
-        tracing::info!(
-            "VLESS connector started - server: {}, flow: {:?}, encryption: {:?}",
-            self.server_endpoint(),
-            self.config.flow,
-            self.config.encryption
-        );
-
-        Ok(())
-    }
-
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        tracing::debug!("VLESS dialing target: {:?}", target);
 
         // Create connection to VLESS server
         #[cfg(not(any(feature = "tls_reality", feature = "transport_ech")))]
@@ -475,7 +469,7 @@ impl OutboundConnector for VlessConnector {
                     .await
                     .map_err(|e| AdapterError::Other(format!("REALITY handshake failed: {}", e)))?;
 
-                self.write_request(&mut tls_stream, &target).await?;
+                self.write_request(&mut tls_stream, target).await?;
 
                 let stream: BoxedStream = Box::new(VisionRealityClientStream::new(
                     tls_stream,
@@ -575,9 +569,9 @@ impl OutboundConnector for VlessConnector {
         };
 
         if self.vision_enabled() {
-            self.write_request(&mut stream, &target).await?;
+            self.write_request(&mut stream, target).await?;
         } else {
-            self.handshake(&mut stream, &target).await?;
+            self.handshake(&mut stream, target).await?;
         }
 
         if self.vision_enabled() {
@@ -594,37 +588,74 @@ impl OutboundConnector for VlessConnector {
     }
 }
 
-/// VLESS UDP socket wrapper that implements OutboundDatagram
-/// 实现 OutboundDatagram 的 VLESS UDP socket 包装器
+impl sb_types::Outbound for VlessConnector {
+    fn r#type(&self) -> &str {
+        "vless"
+    }
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(
+            self.config
+                .tag
+                .clone()
+                .unwrap_or_else(|| "vless".to_string()),
+        )
+    }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
+    fn dial<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+            let stream = VlessConnector::dial(self, session)
+                .await
+                .map_err(|error| crate::outbound::core_error(error, session))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.udp_relay_dial(session)
+                .await
+                .map_err(|error| crate::outbound::core_error(error, session))
+        })
+    }
+}
+
+/// VLESS canonical UDP packet association.
 #[derive(Debug)]
 pub struct VlessUdpSocket {
     socket: Arc<UdpSocket>,
     uuid: Uuid,
-    target_addr: tokio::sync::Mutex<Option<Target>>,
+    state: crate::outbound::PacketState,
 }
 
 impl VlessUdpSocket {
-    pub fn new(socket: Arc<UdpSocket>, uuid: Uuid) -> Result<Self> {
+    pub fn new(
+        socket: Arc<UdpSocket>,
+        uuid: Uuid,
+        target: TargetAddr,
+        idle_timeout: std::time::Duration,
+    ) -> Result<Self> {
         Ok(Self {
             socket,
             uuid,
-            target_addr: tokio::sync::Mutex::new(None),
+            state: crate::outbound::PacketState::new(target, idle_timeout),
         })
-    }
-
-    /// Set target address for subsequent operations
-    /// 设置后续操作的目标地址
-    pub async fn set_target(&self, target: Target) {
-        let mut addr = self.target_addr.lock().await;
-        *addr = Some(target);
     }
 
     /// Encode VLESS UDP packet
     /// Format: VER(0x00) + UUID(16) + CMD(0x02) + ATYP + DST.ADDR + PORT + PAYLOAD
     /// 编码 VLESS UDP 数据包
     /// 格式: VER(0x00) + UUID(16) + CMD(0x02) + ATYP + DST.ADDR + PORT + PAYLOAD
-    fn encode_packet(&self, data: &[u8], target: &Target) -> Result<Vec<u8>> {
+    fn encode_packet(&self, data: &[u8], target: &TargetAddr) -> Result<Vec<u8>> {
         let mut packet = Vec::new();
+        let host = target.host();
 
         // VLESS version (1 byte)
         packet.push(0x00);
@@ -636,7 +667,7 @@ impl VlessUdpSocket {
         packet.push(0x02);
 
         // Address type and address
-        if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
+        if let Ok(ip) = host.parse::<std::net::IpAddr>() {
             match ip {
                 std::net::IpAddr::V4(ipv4) => {
                     packet.push(0x01); // IPv4
@@ -650,7 +681,7 @@ impl VlessUdpSocket {
         } else {
             // Domain name
             packet.push(0x02); // Domain
-            let hostname_bytes = target.host.as_bytes();
+            let hostname_bytes = host.as_bytes();
             if hostname_bytes.len() > 255 {
                 return Err(AdapterError::InvalidConfig("Hostname too long"));
             }
@@ -659,7 +690,7 @@ impl VlessUdpSocket {
         }
 
         // Port (2 bytes, big endian)
-        packet.extend_from_slice(&target.port.to_be_bytes());
+        packet.extend_from_slice(&target.port().to_be_bytes());
 
         // Payload
         packet.extend_from_slice(data);
@@ -741,58 +772,78 @@ impl VlessUdpSocket {
     }
 }
 
-#[async_trait]
-impl OutboundDatagram for VlessUdpSocket {
-    async fn send_to(&self, payload: &[u8]) -> Result<usize> {
-        // Get target address
-        let target = {
-            let addr_lock = self.target_addr.lock().await;
-            addr_lock
-                .as_ref()
-                .ok_or_else(|| AdapterError::Other("Target address not set".to_string()))?
-                .clone()
-        };
-
-        // Encode packet
-        let packet = self.encode_packet(payload, &target)?;
-
-        // Send to VLESS server
-        let sent = self.socket.send(&packet).await.map_err(AdapterError::Io)?;
-
-        tracing::trace!(
-            target = %format!("{}:{}", target.host, target.port),
-            sent = sent,
-            "VLESS UDP packet sent"
-        );
-
-        Ok(payload.len())
+impl sb_types::PacketConn for VlessUdpSocket {
+    fn send_to<'a>(
+        &'a self,
+        payload: &'a [u8],
+        destination: &'a TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.state.ensure_open()?;
+            self.state.set_target(destination);
+            let packet = self
+                .encode_packet(payload, destination)
+                .map_err(|error| sb_types::CoreError::protocol(error.to_string()))?;
+            let sent = crate::outbound::with_packet_deadline(
+                self.state.write_deadline(),
+                self.socket.send(&packet),
+            )
+            .await?;
+            if sent == packet.len() {
+                Ok(payload.len())
+            } else {
+                Err(sb_types::CoreError::io("partial VLESS UDP packet sent"))
+            }
+        })
     }
-
-    async fn recv_from(&self, buf: &mut [u8]) -> Result<usize> {
-        // Receive from VLESS server
-        let (n, _peer) = self.socket.recv_from(buf).await.map_err(AdapterError::Io)?;
-
-        // Decode packet
-        let payload = self.decode_packet(&buf[..n])?;
-
-        // Copy payload back to buffer
-        if payload.len() > buf.len() {
-            return Err(AdapterError::Other("Buffer too small".to_string()));
-        }
-
-        buf[..payload.len()].copy_from_slice(&payload);
-
-        tracing::trace!(
-            received = n,
-            payload_len = payload.len(),
-            "VLESS UDP packet received"
-        );
-
-        Ok(payload.len())
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            self.state.ensure_open()?;
+            let mut packet = vec![0_u8; buffer.len() + 256];
+            let (size, _) = crate::outbound::with_packet_deadline(
+                self.state.read_deadline(),
+                self.socket.recv_from(&mut packet),
+            )
+            .await?;
+            let payload = self
+                .decode_packet(&packet[..size])
+                .map_err(|error| sb_types::CoreError::protocol(error.to_string()))?;
+            if payload.len() > buffer.len() {
+                return Err(sb_types::CoreError::io("packet buffer too small"));
+            }
+            buffer[..payload.len()].copy_from_slice(&payload);
+            Ok((payload.len(), self.state.target()))
+        })
     }
-
-    async fn close(&self) -> Result<()> {
-        tracing::debug!("VLESS UDP socket closed");
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        self.state.close();
+        Box::pin(async { Ok(()) })
+    }
+    fn local_addr(&self) -> Option<TargetAddr> {
+        self.socket.local_addr().ok().map(TargetAddr::socket)
+    }
+    fn set_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.state.set_deadline(deadline);
+        Ok(())
+    }
+    fn set_read_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.state.set_read_deadline(deadline);
+        Ok(())
+    }
+    fn set_write_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.state.set_write_deadline(deadline);
         Ok(())
     }
 }
@@ -1927,7 +1978,7 @@ mod tests {
     #[test]
     fn test_build_request_header_omits_addons_without_flow() {
         let connector = VlessConnector::default();
-        let target = Target::tcp("example.com", 80);
+        let target = TargetAddr::domain("example.com", 80);
         let header = connector.build_request_header(&target);
 
         assert_eq!(header[0], 0x00);
@@ -1941,7 +1992,7 @@ mod tests {
             flow: FlowControl::XtlsRprxVision,
             ..VlessConfig::default()
         });
-        let target = Target::tcp("example.com", 80);
+        let target = TargetAddr::domain("example.com", 80);
         let header = connector.build_request_header(&target);
 
         let flow = b"xtls-rprx-vision";
@@ -1962,7 +2013,7 @@ mod tests {
             flow: FlowControl::XtlsRprxVision,
             ..VlessConfig::default()
         });
-        let target = Target::tcp("example.com", 80);
+        let target = TargetAddr::domain("example.com", 80);
         let request = connector.build_request_header(&target);
         let (client, mut server) = tokio::io::duplex(4096);
 
@@ -1994,7 +2045,7 @@ mod tests {
             flow: FlowControl::XtlsRprxVision,
             ..VlessConfig::default()
         });
-        let target = Target::tcp("example.com", 80);
+        let target = TargetAddr::domain("example.com", 80);
         let request = connector.build_request_header(&target);
         let (mut client, mut server) = tokio::io::duplex(4096);
 

@@ -1110,7 +1110,20 @@ where
 }
 
 use parking_lot::Mutex;
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
+
+static DETOUR_INBOUNDS: once_cell::sync::Lazy<
+    dashmap::DashMap<String, std::sync::Weak<ShadowsocksInboundAdapter>>,
+> = once_cell::sync::Lazy::new(dashmap::DashMap::new);
+
+#[doc(hidden)]
+pub fn register_detour_inbound(tag: String, inbound: &Arc<ShadowsocksInboundAdapter>) {
+    DETOUR_INBOUNDS.insert(tag, Arc::downgrade(inbound));
+}
+
+pub(crate) fn resolve_detour_inbound(tag: &str) -> Option<Arc<ShadowsocksInboundAdapter>> {
+    DETOUR_INBOUNDS.get(tag).and_then(|entry| entry.upgrade())
+}
 
 #[cfg(feature = "service_ssmapi")]
 use sb_core::services::ssmapi::{ManagedSSMServer, TrafficTracker};
@@ -1284,7 +1297,7 @@ impl ManagedSSMServer for ShadowsocksInboundAdapter {
     }
 }
 
-impl InboundService for ShadowsocksInboundAdapter {
+impl InboundTaskDriver for ShadowsocksInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         let (tx, rx) = mpsc::channel(1);
         *self.stop_tx.lock() = Some(tx);
@@ -1333,10 +1346,6 @@ impl InboundService for ShadowsocksInboundAdapter {
         if let Some(tx) = self.stop_tx.lock().take() {
             let _ = tx.try_send(());
         }
-    }
-
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
-        Some(self)
     }
 }
 

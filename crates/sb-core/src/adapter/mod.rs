@@ -3,9 +3,9 @@
 //!
 //! This module defines the core abstraction layer between configuration and runtime:
 //! 本模块定义了配置和运行时之间的核心抽象层：
-//! - [`InboundService`]: Trait for inbound protocol handlers (socks5, http, tun, etc.)
+//! - [`InboundTaskDriver`]: Trait for inbound protocol handlers (socks5, http, tun, etc.)
 //!   入站协议处理程序的 Trait（socks5, http, tun 等）
-//! - [`OutboundConnector`]: Trait for outbound connection providers
+//! - [`Outbound`]: Trait for outbound connection providers
 //!   出站连接提供者的 Trait
 //! - [`Bridge`]: Runtime container managing all inbound/outbound instances
 //!   管理所有入站/出站实例的运行时容器
@@ -21,15 +21,19 @@ use crate::service::{service_registry, Service, ServiceContext};
 use sb_config::ir::{Credentials, MultiplexOptionsIR};
 use std::collections::HashMap;
 use std::io;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
 pub use crate::outbound::selector::Member as SelectorMember;
 pub mod bridge;
+pub mod canonical_bridge;
 pub mod clash;
 pub mod handler;
+mod inbound_transition;
 pub mod registry;
 pub mod surface;
+
+#[doc(hidden)]
+pub use inbound_transition::{manage_inbound, InboundTaskDriver};
 
 pub type InboundReadySender = tokio::sync::oneshot::Sender<io::Result<()>>;
 
@@ -54,131 +58,46 @@ impl UnsupportedOutboundConnector {
     }
 }
 
-#[async_trait::async_trait]
-impl OutboundConnector for UnsupportedOutboundConnector {
-    async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            self.reason.to_string(),
-        ))
-    }
-}
-
-fn unsupported_outbound_connector(reason: impl Into<Arc<str>>) -> Arc<dyn OutboundConnector> {
-    Arc::new(UnsupportedOutboundConnector::new(reason))
-}
-
-/// Inbound service trait for protocol handlers (socks5/http/tun).
-/// 协议处理程序（socks5/http/tun）的入站服务 trait。
-///
-/// Implementers provide a blocking `serve()` method that internally spawns worker threads.
-/// 实现者提供一个阻塞的 `serve()` 方法，该方法在内部生成工作线程。
-pub trait InboundService: Send + Sync + std::fmt::Debug + 'static {
-    /// Blocking entry point to run the service (spawns internal workers).
-    /// 运行服务的阻塞入口点（生成内部工作线程）。
-    fn serve(&self) -> std::io::Result<()>;
-
-    /// Whether this inbound can report bind/startup readiness.
-    fn supports_startup_readiness(&self) -> bool {
-        false
+impl sb_types::Outbound for UnsupportedOutboundConnector {
+    fn r#type(&self) -> &str {
+        "unsupported"
     }
 
-    /// Blocking entry point with an optional readiness channel.
-    fn serve_with_ready(&self, _ready: Option<InboundReadySender>) -> std::io::Result<()> {
-        self.serve()
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new("core-fallback")
     }
 
-    /// Request a graceful shutdown if supported by the implementation.
-    /// Default implementation is a no-op for servers that don't support it.
-    fn request_shutdown(&self) {
-        // Default: do nothing
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp]
     }
 
-    /// Optional: return current active connections if available.
-    /// Implementers that track connection count can override this.
-    fn active_connections(&self) -> Option<u64> {
-        None
-    }
-
-    /// Optional: return current estimated UDP session count (for UDP-capable inbounds)
-    fn udp_sessions_estimate(&self) -> Option<u64> {
-        None
-    }
-
-    /// Allow downcasting to concrete type
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
-        None
-    }
-}
-
-/// Outbound connector trait for establishing TCP connections to targets.
-/// 用于建立到目标的 TCP 连接的出站连接器 trait。
-///
-/// Implementers handle protocol-specific handshakes (e.g., SOCKS5 upstream, HTTP CONNECT).
-/// 实现者处理特定于协议的握手（例如，SOCKS5 上游，HTTP CONNECT）。
-#[async_trait::async_trait]
-pub trait OutboundConnector: Send + Sync + std::fmt::Debug + 'static {
-    /// Establish a TCP connection to the specified host and port.
-    /// 建立到指定主机和端口的 TCP 连接。
-    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream>;
-
-    /// Establish a generic IO stream connection (supports encrypted protocols).
-    /// 建立通用 IO 流连接（支持加密协议）。
-    ///
-    /// Default implementation delegates to `connect()` and boxes the TcpStream.
-    /// Encrypted protocol adapters should override this to return their layered stream.
-    #[cfg(feature = "v2ray_transport")]
-    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
-        let stream = self.connect(host, port).await?;
-        Ok(Box::new(stream))
-    }
-
-    /// Allow downcasting to concrete type
-    fn as_any(&self) -> Option<&dyn std::any::Any> {
-        None
-    }
-
-    /// If this connector is an outbound group, return the group trait object
-    fn as_group(&self) -> Option<&dyn OutboundGroup> {
-        None
-    }
-}
-
-/// Trait for outbound groups (Selector, URLTest, Fallback, etc.)
-/// Go adapter.OutboundGroup interface equivalent.
-pub trait OutboundGroup: Send + Sync {
-    /// Currently selected outbound tag
-    fn now(&self) -> String;
-    /// All member tags
-    fn all(&self) -> Vec<String>;
-    /// Group type name ("Selector", "URLTest", "Fallback", etc.)
-    fn group_type(&self) -> &str;
-    /// All members' health status: (tag, is_alive, rtt_ms)
-    fn members_health(&self) -> Vec<(String, bool, u64)>;
-    /// Select a specific outbound (only effective in Manual mode)
-    fn select_outbound<'a>(
+    fn dial<'a>(
         &'a self,
-        tag: &'a str,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = std::io::Result<()>> + Send + 'a>>;
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                self.reason.to_string(),
+            ))
+        })
+    }
+
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                self.reason.to_string(),
+            ))
+        })
+    }
 }
 
-/// UDP session for datagram-based outbound protocols (e.g. QUIC-based).
-#[async_trait::async_trait]
-pub trait UdpOutboundSession: Send + Sync + std::fmt::Debug + 'static {
-    /// Send a UDP datagram to the specified host:port through this session
-    async fn send_to(&self, data: &[u8], host: &str, port: u16) -> std::io::Result<()>;
-    /// Receive the next UDP datagram from remote; returns payload and source address
-    async fn recv_from(&self) -> std::io::Result<(Vec<u8>, SocketAddr)>;
-}
-
-/// Future returning a UDP outbound session.
-pub type UdpOutboundFuture = std::pin::Pin<
-    Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn UdpOutboundSession>>> + Send>,
->;
-
-/// Factory that creates UDP outbound sessions (per SOCKS UDP association).
-pub trait UdpOutboundFactory: Send + Sync + std::fmt::Debug + 'static {
-    fn open_session(&self) -> UdpOutboundFuture;
+fn unsupported_outbound_connector(reason: impl Into<Arc<str>>) -> Arc<dyn sb_types::Outbound> {
+    Arc::new(UnsupportedOutboundConnector::new(reason))
 }
 
 /// Inbound construction parameters (derived from IR).
@@ -450,16 +369,6 @@ impl Default for OutboundParam {
     }
 }
 
-/// Factory interface for creating inbound services (implemented by sb-adapters).
-pub trait InboundFactory: Send + Sync {
-    fn create(&self, p: &InboundParam) -> Option<Arc<dyn InboundService>>;
-}
-
-/// Factory interface for creating outbound connectors (implemented by sb-adapters).
-pub trait OutboundFactory: Send + Sync {
-    fn create(&self, p: &OutboundParam) -> Option<Arc<dyn OutboundConnector>>;
-}
-
 /// Runtime bridge: manages inbound services and outbound connectors.
 /// 运行时桥接：管理入站服务和出站连接器。
 ///
@@ -468,15 +377,13 @@ pub trait OutboundFactory: Send + Sync {
 /// 桥接器由 IR 配置组装而成，作为所有协议处理程序的中央注册表。它支持适配器优先回退到脚手架实现。
 #[derive(Clone)]
 pub struct Bridge {
-    pub inbounds: Vec<Arc<dyn InboundService>>,
+    pub inbounds: Vec<Arc<dyn sb_types::Inbound>>,
     /// Inbound protocol kinds aligned with `inbounds` indices
     pub inbound_kinds: Vec<String>,
     /// Optional inbound tags aligned with `inbounds` indices
     pub inbound_tags: Vec<Option<String>>,
     /// (name, kind, connector) tuples
-    pub outbounds: Vec<(String, String, Arc<dyn OutboundConnector>)>,
-    /// UDP outbound factories by name
-    pub udp_factories: HashMap<String, Arc<dyn UdpOutboundFactory>>,
+    pub outbounds: Vec<(String, String, Arc<dyn sb_types::Outbound>)>,
     /// Outbound dependency graph: tag → depends-on tags (group members)
     pub outbound_deps: HashMap<String, Vec<String>>,
     /// Endpoints (WireGuard, Tailscale, etc.)
@@ -502,7 +409,6 @@ impl Bridge {
             inbound_kinds: vec![],
             inbound_tags: vec![],
             outbounds: vec![],
-            udp_factories: HashMap::new(),
             outbound_deps: HashMap::new(),
             endpoints: vec![],
             services: vec![],
@@ -529,7 +435,7 @@ impl Bridge {
 
                         let addr = parse_socket_addr(&inbound.listen, inbound.port)?;
                         Arc::new(Socks5::new(addr.ip().to_string(), addr.port()))
-                            as Arc<dyn InboundService>
+                            as Arc<dyn InboundTaskDriver>
                     }
                     sb_config::ir::InboundType::Http => {
                         let msg = crate::inbound::unsupported::UnsupportedInbound::new(
@@ -540,7 +446,7 @@ impl Bridge {
                                     .to_string(),
                             ),
                         );
-                        Arc::new(msg) as Arc<dyn InboundService>
+                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
                     }
                     sb_config::ir::InboundType::Mixed => {
                         let msg = crate::inbound::unsupported::UnsupportedInbound::new(
@@ -551,7 +457,7 @@ impl Bridge {
                                     .to_string(),
                             ),
                         );
-                        Arc::new(msg) as Arc<dyn InboundService>
+                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
                     }
                     sb_config::ir::InboundType::Tun => {
                         // TUN inbound service
@@ -562,7 +468,7 @@ impl Bridge {
                             TunInboundService::new()
                                 .with_tag(inbound.tag.clone())
                                 .with_stats(stats),
-                        ) as Arc<dyn InboundService>
+                        ) as Arc<dyn InboundTaskDriver>
                     }
                     sb_config::ir::InboundType::Direct => {
                         use crate::inbound::direct::DirectForward;
@@ -582,7 +488,7 @@ impl Bridge {
                                 .with_tag(inbound.tag.clone())
                                 .with_stats(stats)
                                 .with_conn_tracker(bridge.context.conn_tracker.clone()),
-                        ) as Arc<dyn InboundService>
+                        ) as Arc<dyn InboundTaskDriver>
                     }
                     sb_config::ir::InboundType::Redirect => {
                         let msg = crate::inbound::unsupported::UnsupportedInbound::new(
@@ -592,7 +498,7 @@ impl Bridge {
                                 "Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string(),
                             ),
                         );
-                        Arc::new(msg) as Arc<dyn InboundService>
+                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
                     }
                     sb_config::ir::InboundType::Tproxy => {
                         let msg = crate::inbound::unsupported::UnsupportedInbound::new(
@@ -602,7 +508,7 @@ impl Bridge {
                                 "Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string(),
                             ),
                         );
-                        Arc::new(msg) as Arc<dyn InboundService>
+                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
                     }
                     _ => {
                         let msg = crate::inbound::unsupported::UnsupportedInbound::new(
@@ -613,7 +519,7 @@ impl Bridge {
                                     .to_string(),
                             ),
                         );
-                        Arc::new(msg) as Arc<dyn InboundService>
+                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
                     }
                 };
 
@@ -653,17 +559,8 @@ impl Bridge {
                     "core bridge Direct outbound is disabled; use adapter::bridge::build_bridge",
                 ),
                 sb_config::ir::OutboundType::Block => {
-                    #[cfg(feature = "scaffold")]
-                    {
-                        use crate::outbound::block_connector::BlockConnector;
-                        Arc::new(BlockConnector::new()) as Arc<dyn OutboundConnector>
-                    }
-                    #[cfg(not(feature = "scaffold"))]
-                    {
-                        unsupported_outbound_connector(
-                            "core bridge Block outbound is disabled without scaffold; use adapter::bridge::build_bridge",
-                        )
-                    }
+                    Arc::new(canonical_bridge::BlockOutbound::new(name.clone()))
+                        as Arc<dyn sb_types::Outbound>
                 }
                 sb_config::ir::OutboundType::Http => {
                     unsupported_outbound_connector(
@@ -750,10 +647,7 @@ impl Bridge {
             for (name, _kind, conn) in &bridge.outbounds {
                 reg.insert(name.clone(), OutboundImpl::Connector(conn.clone()));
             }
-            Arc::new(OutboundRegistryHandle::new_with_udp_factories(
-                reg,
-                bridge.udp_factories.clone(),
-            ))
+            Arc::new(OutboundRegistryHandle::new(reg))
         };
 
         let endpoints_map: Arc<
@@ -793,15 +687,16 @@ impl Bridge {
         Ok(bridge)
     }
     /// Registers an inbound service.
-    pub fn add_inbound(&mut self, ib: Arc<dyn InboundService>) {
-        self.inbounds.push(ib);
+    pub fn add_inbound(&mut self, ib: Arc<dyn InboundTaskDriver>) {
+        self.inbounds.push(manage_inbound(ib, "unknown", "unknown"));
         self.inbound_kinds.push("unknown".to_string());
         self.inbound_tags.push(None);
     }
 
     /// Registers an inbound service with explicit kind label
-    pub fn add_inbound_with_kind(&mut self, kind: &str, ib: Arc<dyn InboundService>) {
-        self.inbounds.push(ib);
+    pub fn add_inbound_with_kind(&mut self, kind: &str, ib: Arc<dyn InboundTaskDriver>) {
+        self.inbounds
+            .push(manage_inbound(ib, kind, format!("{kind}-inbound")));
         self.inbound_kinds.push(kind.to_string());
         self.inbound_tags.push(None);
     }
@@ -811,15 +706,31 @@ impl Bridge {
         &mut self,
         kind: &str,
         tag: Option<String>,
-        ib: Arc<dyn InboundService>,
+        ib: Arc<dyn InboundTaskDriver>,
     ) {
-        self.inbounds.push(ib);
+        self.inbounds.push(manage_inbound(
+            ib,
+            kind,
+            tag.clone().unwrap_or_else(|| format!("{kind}-inbound")),
+        ));
+        self.inbound_kinds.push(kind.to_string());
+        self.inbound_tags.push(tag);
+    }
+
+    /// Register an already-canonical inbound built by the adapter registry.
+    pub fn add_canonical_inbound_with_meta(
+        &mut self,
+        kind: &str,
+        tag: Option<String>,
+        inbound: Arc<dyn sb_types::Inbound>,
+    ) {
+        self.inbounds.push(inbound);
         self.inbound_kinds.push(kind.to_string());
         self.inbound_tags.push(tag);
     }
 
     /// Registers an outbound connector with name and kind.
-    pub fn add_outbound(&mut self, name: String, kind: String, ob: Arc<dyn OutboundConnector>) {
+    pub fn add_outbound(&mut self, name: String, kind: String, ob: Arc<dyn sb_types::Outbound>) {
         self.outbounds.push((name, kind, ob));
     }
 
@@ -833,23 +744,13 @@ impl Bridge {
         self.services.push(svc);
     }
 
-    /// Registers an UDP outbound factory with name.
-    pub fn add_outbound_udp_factory(&mut self, name: String, f: Arc<dyn UdpOutboundFactory>) {
-        self.udp_factories.insert(name, f);
-    }
-
     /// Finds an outbound connector by name.
     ///
     /// Returns `None` if no outbound with the given name exists.
-    pub fn find_outbound(&self, name: &str) -> Option<Arc<dyn OutboundConnector>> {
+    pub fn find_outbound(&self, name: &str) -> Option<Arc<dyn sb_types::Outbound>> {
         self.outbounds
             .iter()
             .find_map(|(n, _k, ob)| (n == name).then(|| Arc::clone(ob)))
-    }
-
-    /// Finds an UDP factory by name
-    pub fn find_udp_factory(&self, name: &str) -> Option<Arc<dyn UdpOutboundFactory>> {
-        self.udp_factories.get(name).cloned()
     }
 
     /// Returns a snapshot of all outbound (name, kind) pairs.
@@ -871,7 +772,7 @@ impl Bridge {
     }
 
     /// Alias for `find_outbound` - finds an outbound connector by name.
-    pub fn get_member(&self, name: &str) -> Option<Arc<dyn OutboundConnector>> {
+    pub fn get_member(&self, name: &str) -> Option<Arc<dyn sb_types::Outbound>> {
         self.find_outbound(name)
     }
 }
@@ -888,10 +789,6 @@ impl std::fmt::Debug for Bridge {
             .field("inbounds", &format!("{} services", self.inbounds.len()))
             .field("inbound_kinds", &self.inbound_kinds)
             .field("outbounds", &format!("{} connectors", self.outbounds.len()))
-            .field(
-                "udp_factories",
-                &format!("{} factories", self.udp_factories.len()),
-            )
             .field(
                 "outbound_deps",
                 &format!("{} deps", self.outbound_deps.len()),

@@ -57,7 +57,6 @@ singbox-rust/
 - `sb-metrics`
 - `sb-security`
 - `sb-common`
-- `sb-proto`
 - `sb-subscribe`
 - `sb-admin-contract`
 - `sb-test-utils`

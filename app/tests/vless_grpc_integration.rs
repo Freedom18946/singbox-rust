@@ -7,7 +7,6 @@ use std::net::SocketAddr;
 use uuid::Uuid;
 
 use sb_adapters::outbound::vless::{Encryption, FlowControl, VlessConfig, VlessConnector};
-use sb_adapters::outbound::OutboundConnector;
 use sb_adapters::transport_config::{GrpcTransportConfig, TransportConfig};
 
 #[tokio::test]
@@ -22,6 +21,7 @@ async fn test_vless_grpc_config_creation() {
     };
 
     let config = VlessConfig {
+        tag: None,
         server: server_addr.ip().to_string(),
         port: server_addr.port(),
         uuid: test_uuid,
@@ -48,6 +48,7 @@ async fn test_vless_grpc_with_multiplex() {
     let server_addr = SocketAddr::from(([127, 0, 0, 1], 8443));
 
     let config = VlessConfig {
+        tag: None,
         server: server_addr.ip().to_string(),
         port: server_addr.port(),
         uuid: test_uuid,
@@ -81,6 +82,7 @@ async fn test_vless_grpc_flow_control_modes() {
 
     for flow in flow_modes {
         let config = VlessConfig {
+            tag: None,
             server: server_addr.ip().to_string(),
             port: server_addr.port(),
             uuid: test_uuid,
@@ -109,6 +111,7 @@ async fn test_vless_tcp_vs_grpc() {
 
     // TCP configuration
     let tcp_config = VlessConfig {
+        tag: None,
         server: server_addr.ip().to_string(),
         port: server_addr.port(),
         uuid: test_uuid,
@@ -123,6 +126,7 @@ async fn test_vless_tcp_vs_grpc() {
 
     // gRPC configuration
     let grpc_config = VlessConfig {
+        tag: None,
         server: server_addr.ip().to_string(),
         port: server_addr.port(),
         uuid: test_uuid,

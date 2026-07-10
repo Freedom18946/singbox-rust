@@ -11,6 +11,7 @@ use crate::outbound::prelude::*;
 /// Adapter configuration for Hysteria2 outbound
 #[derive(Debug, Clone)]
 pub struct Hysteria2AdapterConfig {
+    pub tag: Option<String>,
     pub server: String,
     pub port: u16,
     pub password: String,
@@ -27,6 +28,7 @@ pub struct Hysteria2AdapterConfig {
 impl Default for Hysteria2AdapterConfig {
     fn default() -> Self {
         Self {
+            tag: None,
             server: "127.0.0.1".to_string(),
             port: 443,
             password: "password".to_string(),
@@ -49,28 +51,17 @@ pub struct Hysteria2Connector {
 }
 
 impl Hysteria2Connector {
+    pub const fn name(&self) -> &'static str {
+        "hysteria2"
+    }
+
     pub fn new(cfg: Hysteria2AdapterConfig) -> Self {
         Self { cfg }
     }
 }
 
-#[async_trait]
-impl OutboundConnector for Hysteria2Connector {
-    fn name(&self) -> &'static str {
-        "hysteria2"
-    }
-
-    async fn start(&self) -> Result<()> {
-        #[cfg(not(feature = "adapter-hysteria2"))]
-        return Err(AdapterError::NotImplemented {
-            what: "adapter-hysteria2",
-        });
-
-        #[cfg(feature = "adapter-hysteria2")]
-        Ok(())
-    }
-
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
+impl Hysteria2Connector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-hysteria2"))]
         return Err(AdapterError::NotImplemented {
             what: "adapter-hysteria2",
@@ -78,19 +69,14 @@ impl OutboundConnector for Hysteria2Connector {
 
         #[cfg(feature = "adapter-hysteria2")]
         {
-            if target.kind != TransportKind::Tcp {
-                return Err(AdapterError::Protocol(
-                    "Hysteria2 outbound only supports TCP".to_string(),
-                ));
-            }
-
-            let _span = crate::outbound::span_dial("hysteria2", &target);
+            let target = &session.target;
+            let _span = crate::outbound::span_dial("hysteria2", target);
 
             let inner =
                 Hysteria2Inner::new(&self.cfg).map_err(|e| AdapterError::Other(e.to_string()))?;
 
             let stream = inner
-                .connect(&target.host, target.port)
+                .connect(&target.host(), target.port())
                 .await
                 .map_err(AdapterError::Io)?;
 
@@ -98,6 +84,17 @@ impl OutboundConnector for Hysteria2Connector {
         }
     }
 }
+
+crate::impl_canonical_outbound!(
+    Hysteria2Connector,
+    "hysteria2",
+    |this: &Hysteria2Connector| this
+        .cfg
+        .tag
+        .clone()
+        .unwrap_or_else(|| "hysteria2".to_string()),
+    &[sb_types::NetworkKind::Tcp]
+);
 
 // ---------------------------------------------------------------------------
 // Full protocol implementation (feature-gated)

@@ -10,7 +10,7 @@ use anyhow::{anyhow, Result};
 use quinn::{Endpoint, ServerConfig};
 // Use types re-exported by quinn to satisfy trait bounds
 use quinn::rustls::pki_types::{CertificateDer, PrivateKeyDer};
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 use sb_core::net::metered::TrafficRecorder;
 use sb_core::outbound::{
     Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget as OutRouteTarget,
@@ -896,7 +896,7 @@ impl TuicInboundAdapter {
     }
 }
 
-impl InboundService for TuicInboundAdapter {
+impl InboundTaskDriver for TuicInboundAdapter {
     fn serve(&self) -> io::Result<()> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()

@@ -8,7 +8,7 @@ use sb_adapters::build_default_registry;
 #[cfg(feature = "adapter-shadowsocks")]
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::shadowtls::{ShadowTlsAdapterConfig, ShadowTlsConnector};
-use sb_adapters::traits::{DialOpts, OutboundConnector, Target};
+use sb_adapters::traits::{ConnectOptions, Outbound, TargetAddr};
 use sb_config::ir::{OutboundIR, OutboundType};
 use sb_core::adapter::registry as core_registry;
 use sb_core::adapter::OutboundParam;
@@ -20,7 +20,7 @@ use std::sync::Arc;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::task::JoinHandle;
-use tokio::time::{timeout, Duration};
+use tokio::time::Duration;
 use tokio_rustls::TlsAcceptor;
 
 fn init_crypto() {
@@ -30,6 +30,7 @@ fn init_crypto() {
 fn test_connector() -> ShadowTlsConnector {
     init_crypto();
     ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+        tag: None,
         server: "127.0.0.1".to_string(),
         port: 443,
         version: 1,
@@ -424,33 +425,15 @@ async fn start_shadowtls_v2_relay(
 }
 
 #[tokio::test]
-async fn shadowtls_rejects_standalone_leaf_dialing() {
+async fn shadowtls_canonical_contract_advertises_stream_only() {
     let connector = test_connector();
-    let err = timeout(
-        Duration::from_secs(2),
-        connector.dial(Target::tcp("127.0.0.1", 18080), DialOpts::default()),
-    )
-    .await
-    .expect("shadowtls guardrail dial timed out");
-    let err = match err {
-        Ok(_) => panic!("shadowtls standalone leaf dial should be rejected"),
-        Err(err) => err,
-    };
-
-    assert!(
-        err.to_string()
-            .contains("standalone leaf dialing is disabled"),
-        "unexpected error: {err}"
-    );
-    assert!(
-        err.to_string().contains("transport-wrapper/detour model"),
-        "unexpected error: {err}"
-    );
+    assert_eq!(connector.network(), &[sb_types::NetworkKind::Tcp]);
 }
 
 #[tokio::test]
-async fn shadowtls_standalone_rejection_happens_before_network_io() {
+async fn shadowtls_packet_rejection_happens_before_network_io() {
     let connector = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+        tag: None,
         server: "127.0.0.1".to_string(),
         port: 1,
         version: 1,
@@ -461,22 +444,20 @@ async fn shadowtls_standalone_rejection_happens_before_network_io() {
         utls_fingerprint: None,
     });
 
-    let err = timeout(
-        Duration::from_secs(2),
-        connector.dial(Target::tcp("198.51.100.10", 443), DialOpts::default()),
-    )
-    .await
-    .expect("shadowtls guardrail dial timed out");
+    let session = sb_types::Session::outbound(TargetAddr::from_host_port("198.51.100.10", 443));
+    let err = connector.listen_packet(&session).await;
     let err = match err {
-        Ok(_) => panic!("shadowtls standalone leaf dial should be rejected before connect"),
+        Ok(_) => panic!("shadowtls packet association should be rejected before connect"),
         Err(err) => err,
     };
 
-    assert!(
-        err.to_string()
-            .contains("standalone leaf dialing is disabled"),
-        "unexpected error: {err}"
-    );
+    assert!(matches!(
+        err,
+        sb_types::CoreError::Connect {
+            kind: sb_types::ConnectErrorKind::Unsupported,
+            ..
+        }
+    ));
 }
 
 #[tokio::test]
@@ -489,6 +470,7 @@ async fn shadowtls_detour_wrapper_connects_for_requested_endpoint_via_configured
         .expect("failed to start shadowtls v1 relay");
 
     let connector = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+        tag: None,
         server: "127.0.0.1".to_string(),
         port: relay_addr.port(),
         version: 1,
@@ -523,6 +505,7 @@ async fn shadowtls_detour_wrapper_uses_configured_wrapper_for_arbitrary_requeste
         .expect("failed to start shadowtls v1 relay");
 
     let connector = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+        tag: None,
         server: "127.0.0.1".to_string(),
         port: relay_addr.port(),
         version: 1,
@@ -560,6 +543,7 @@ async fn shadowtls_v2_detour_wrapper_connects_for_requested_endpoint_via_configu
             .expect("failed to start shadowtls v2 relay");
 
     let connector = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+        tag: None,
         server: "127.0.0.1".to_string(),
         port: relay_addr.port(),
         version: 2,
@@ -586,7 +570,7 @@ async fn shadowtls_v2_detour_wrapper_connects_for_requested_endpoint_via_configu
 
 #[tokio::test]
 #[serial(shadowtls_runtime)]
-async fn shadowtls_registry_builder_exposes_detour_only_connect_io() {
+async fn shadowtls_registry_builder_exposes_detour_canonical_stream() {
     let (echo_addr, echo_task) = start_tcp_echo_server()
         .await
         .expect("failed to bind tcp echo listener");
@@ -622,16 +606,24 @@ async fn shadowtls_registry_builder_exposes_detour_only_connect_io() {
         ..Default::default()
     };
 
-    let (connector, udp_factory) = builder(&param, &ir, &ctx).expect("builder should succeed");
-    assert!(udp_factory.is_none());
+    let connector = builder(&param, &ir, &ctx).expect("builder should succeed");
+    assert!(!connector.network().contains(&sb_types::NetworkKind::Udp));
 
     let mut stream = connector
-        .connect_io("198.51.100.10", 443)
+        .dial(&sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new("test"),
+            sb_types::TargetAddr::domain("198.51.100.10", 443),
+        ))
         .await
-        .expect("wrapper connect_io should expose wrapped raw stream for requested endpoint");
-    stream.write_all(b"ping").await.unwrap();
+        .expect("wrapper dial should expose wrapped raw stream for requested endpoint");
+    futures::io::AsyncWriteExt::write_all(&mut stream, b"ping")
+        .await
+        .unwrap();
     let mut buf = [0u8; 4];
-    stream.read_exact(&mut buf).await.unwrap();
+    futures::io::AsyncReadExt::read_exact(&mut stream, &mut buf)
+        .await
+        .unwrap();
     assert_eq!(&buf, b"ping");
 
     drop(stream);
@@ -643,6 +635,7 @@ async fn shadowtls_registry_builder_exposes_detour_only_connect_io() {
 #[tokio::test]
 async fn shadowtls_detour_wrapper_rejects_unimplemented_versions() {
     let connector = ShadowTlsConnector::new(ShadowTlsAdapterConfig {
+        tag: None,
         server: "127.0.0.1".to_string(),
         port: 1,
         version: 9,
@@ -726,7 +719,7 @@ async fn shadowtls_shadowsocks_detour_chain_completes_mock_handshake() {
         skip_cert_verify: Some(true),
         ..Default::default()
     };
-    let (shadowtls_connector, _) = builder(&param, &ir, &ctx).expect("builder should succeed");
+    let shadowtls_connector = builder(&param, &ir, &ctx).expect("builder should succeed");
 
     let mut outbounds = OutboundRegistry::default();
     outbounds.insert(
@@ -748,8 +741,8 @@ async fn shadowtls_shadowsocks_detour_chain_completes_mock_handshake() {
 
     let result = shadowsocks
         .dial(
-            Target::tcp("example.com", 80),
-            DialOpts::new().with_connect_timeout(Duration::from_secs(5)),
+            &sb_types::Session::outbound(TargetAddr::from_host_port("example.com", 80))
+                .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5))),
         )
         .await;
     assert!(
@@ -831,7 +824,7 @@ async fn shadowtls_v2_shadowsocks_detour_chain_completes_mock_handshake() {
         skip_cert_verify: Some(true),
         ..Default::default()
     };
-    let (shadowtls_connector, _) = builder(&param, &ir, &ctx).expect("builder should succeed");
+    let shadowtls_connector = builder(&param, &ir, &ctx).expect("builder should succeed");
 
     let mut outbounds = OutboundRegistry::default();
     outbounds.insert(
@@ -853,8 +846,8 @@ async fn shadowtls_v2_shadowsocks_detour_chain_completes_mock_handshake() {
 
     let result = shadowsocks
         .dial(
-            Target::tcp("example.com", 80),
-            DialOpts::new().with_connect_timeout(Duration::from_secs(5)),
+            &sb_types::Session::outbound(TargetAddr::from_host_port("example.com", 80))
+                .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5))),
         )
         .await;
     assert!(

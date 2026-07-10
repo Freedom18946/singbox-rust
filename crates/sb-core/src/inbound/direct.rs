@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 use tokio::time::timeout;
 use tokio_util::sync::CancellationToken;
 
-use crate::adapter::InboundService;
+use crate::adapter::InboundTaskDriver;
 use crate::net::datagram::UdpConntrackMeta;
 use crate::net::metered;
 use crate::services::v2ray_api::StatsManager;
@@ -497,7 +497,7 @@ impl DirectForward {
     }
 }
 
-impl InboundService for DirectForward {
+impl InboundTaskDriver for DirectForward {
     fn serve(&self) -> std::io::Result<()> {
         // Try current runtime or create one
         match tokio::runtime::Handle::try_current() {

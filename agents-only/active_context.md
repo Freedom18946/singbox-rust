@@ -10,24 +10,22 @@
 
 ---
 
-## Resume (2026-07-10) - MIG-03 WP01 trait census + canonical-contract ADR DONE
+## Resume (2026-07-10) - MIG-03 WP01 + combined WP02/WP03 DONE
 
-- **WP01 is DONE (documentation only)**: the full trait/UDP/inbound
-  [census](agents-only/mig03/mig03_wp01_trait_census.md) and binding
-  exact-signature [ADR](agents-only/mig03/mig03_adr01_canonical_connector.md)
-  are complete.
-  It closes the D1–D8 precondition for WP02/WP03 without a D18 conflict.
-- The ADR specifies one `sb-types` outbound/inbound/packet contract, structured
-  error mapping, session-carried connection + finalized UDP route options,
-  Go-shaped group/selector control, direct cutover, and the deletion map for
-  every legacy trait. WP02 may now implement the adapters path; WP04 remains
-  independent and can run in parallel.
-- **Discovery handed forward, not fixed here**: isolated
-  `adapter-trojan,router` feature compilation exposes a missing `trojan`
-  feature gate; endpoint UDP facade and existing UDP timeout precedence are
-  explicitly captured for WP02/WP03.
-- **Scope note**: documentation/process work only. No production code, parity/BHV,
-  packaging, or REALITY movement is claimed.
+- **WP01-03 accepted:** census/ADR red-team omissions corrected; one canonical
+  `sb-types` outbound/inbound/packet contract now owns adapter and core holders.
+  Legacy connector/UDP traits, compatibility aliases, `connect_io`, and
+  `sb-proto` are removed.
+- Registration wrappers are 0; `register.rs` is a 7-line façade. Packet paths
+  snapshot finalized route controls, enforce idle/explicit deadlines, report
+  effective timeout duration, and reject I/O after close. Named stream routing
+  always uses canonical boxed dialing.
+- Validation: global five gates, crate/focused tests, scaffold smoke, feature
+  isolation, and dual-kernel SOCKS TCP/UDP replay+diff pass clean. No parity/BHV,
+  packaging, or REALITY denominator movement claimed.
+- **Authorized transition:** `adapter/inbound_transition.rs` and scaffold-era
+  core direct ownership remain scheduled for WP06; selector family dedup remains
+  WP12. Next MIG-03 dependency step: WP04 semantic audit, then WP05.
 
 ## Resume (2026-07-07) - agents-only doc compression + maintenance automation
 

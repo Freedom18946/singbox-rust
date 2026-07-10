@@ -11,8 +11,6 @@
 //! - Obfuscation support for censorship resistance
 
 #[cfg(feature = "out_hysteria2")]
-use async_trait::async_trait;
-#[cfg(feature = "out_hysteria2")]
 use quinn::Connection;
 #[cfg(feature = "out_hysteria2")]
 use sha2::{Digest, Sha256};
@@ -20,6 +18,7 @@ use sha2::{Digest, Sha256};
 use std::io;
 #[cfg(feature = "out_hysteria2")]
 use std::net::SocketAddr;
+use std::sync::atomic::{AtomicBool, Ordering};
 #[cfg(feature = "out_hysteria2")]
 use std::sync::Arc;
 #[cfg(feature = "out_hysteria2")]
@@ -30,8 +29,7 @@ use tokio::sync::Mutex;
 #[cfg(feature = "out_hysteria2")]
 use super::quic::common::{connect as quic_connect, QuicConfig};
 #[cfg(feature = "out_hysteria2")]
-use super::types::{HostPort, OutboundTcp};
-use crate::adapter::{UdpOutboundFactory, UdpOutboundSession};
+use super::types::HostPort;
 
 #[cfg(feature = "out_hysteria2")]
 #[derive(Clone, Debug)]
@@ -525,6 +523,7 @@ impl Hysteria2Outbound {
     pub async fn create_udp_session(
         &self,
         connection: &Connection,
+        idle_timeout: Duration,
     ) -> io::Result<Hysteria2UdpSession> {
         // Send UDP session initialization datagram
         let mut init_packet = Vec::new();
@@ -546,6 +545,9 @@ impl Hysteria2Outbound {
             connection: connection.clone(),
             session_id,
             bandwidth_limiter: self.bandwidth_limiter.clone(),
+            idle_timeout,
+            deadlines: parking_lot::Mutex::new((None, None)),
+            closed: AtomicBool::new(false),
         })
     }
 
@@ -726,52 +728,54 @@ impl Hysteria2Outbound {
 }
 
 #[cfg(feature = "out_hysteria2")]
-impl UdpOutboundFactory for Hysteria2Outbound {
-    fn open_session(
-        &self,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = io::Result<Arc<dyn UdpOutboundSession>>> + Send>,
-    > {
-        let this = self.clone();
-        Box::pin(async move {
-            #[cfg(feature = "metrics")]
-            metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "stage"=>"attempt")
-                .increment(1);
-            let conn = match this.get_connection().await {
-                Ok(c) => c,
-                Err(e) => {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "result"=>"conn_error").increment(1);
-                    return Err(e);
-                }
-            };
-            let sess = match this.create_udp_session(&conn).await {
-                Ok(s) => {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "result"=>"ok").increment(1);
-                    s
-                }
-                Err(e) => {
-                    #[cfg(feature = "metrics")]
-                    metrics::counter!("udp_session_open_total", "proto"=>"hysteria2", "result"=>"error").increment(1);
-                    return Err(e);
-                }
-            };
-            Ok(Arc::new(sess) as Arc<dyn UdpOutboundSession>)
-        })
-    }
-}
-
-#[cfg(feature = "out_hysteria2")]
 #[derive(Debug)]
 pub struct Hysteria2UdpSession {
     connection: Connection,
     session_id: [u8; 8],
     bandwidth_limiter: Option<Arc<BandwidthLimiter>>,
+    idle_timeout: Duration,
+    deadlines: parking_lot::Mutex<(Option<Instant>, Option<Instant>)>,
+    closed: AtomicBool,
+}
+
+fn packet_operation_timeout(
+    idle_timeout: Duration,
+    explicit: Option<Instant>,
+) -> (Instant, Duration) {
+    let now = Instant::now();
+    let duration = explicit
+        .map(|deadline| deadline.saturating_duration_since(now))
+        .unwrap_or(idle_timeout);
+    (now + duration, duration)
+}
+
+fn ensure_packet_open(closed: &AtomicBool) -> Result<(), sb_types::CoreError> {
+    if closed.load(Ordering::Acquire) {
+        Err(sb_types::CoreError::connect(
+            sb_types::ConnectErrorKind::Reset,
+            "packet connection closed",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn close_packet(closed: &AtomicBool) {
+    closed.store(true, Ordering::Release);
 }
 
 #[cfg(feature = "out_hysteria2")]
 impl Hysteria2UdpSession {
+    fn operation_timeout(&self, read: bool) -> (Instant, Duration) {
+        let deadlines = self.deadlines.lock();
+        let explicit = if read { deadlines.0 } else { deadlines.1 };
+        packet_operation_timeout(self.idle_timeout, explicit)
+    }
+
+    fn ensure_open(&self) -> Result<(), sb_types::CoreError> {
+        ensure_packet_open(&self.closed)
+    }
+
     pub async fn send_udp(&self, data: &[u8], target: &HostPort) -> io::Result<()> {
         // Check bandwidth limits
         if let Some(ref limiter) = self.bandwidth_limiter {
@@ -933,27 +937,86 @@ impl Hysteria2UdpSession {
 }
 
 #[cfg(feature = "out_hysteria2")]
-#[async_trait::async_trait]
-impl UdpOutboundSession for Hysteria2UdpSession {
-    async fn send_to(&self, data: &[u8], host: &str, port: u16) -> io::Result<()> {
-        let target = HostPort {
-            host: host.to_string(),
-            port,
-        };
-        self.send_udp(data, &target).await
+impl sb_types::PacketConn for Hysteria2UdpSession {
+    fn send_to<'a>(
+        &'a self,
+        data: &'a [u8],
+        destination: &'a sb_types::TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.ensure_open()?;
+            let (host, port) = match destination {
+                sb_types::TargetAddr::Socket(address) => (address.ip().to_string(), address.port()),
+                sb_types::TargetAddr::Domain(host, port) => (host.clone(), *port),
+            };
+            let target = HostPort { host, port };
+            let operation = self.send_udp(data, &target);
+            let (deadline, duration) = self.operation_timeout(false);
+            let result =
+                tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), operation)
+                    .await
+                    .map_err(|_| sb_types::CoreError::timeout("packet-send", duration))?;
+            result
+                .map(|()| data.len())
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))
+        })
     }
 
-    async fn recv_from(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
-        self.recv_udp().await
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, sb_types::TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            self.ensure_open()?;
+            let operation = self.recv_udp();
+            let (deadline, duration) = self.operation_timeout(true);
+            let result =
+                tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), operation)
+                    .await
+                    .map_err(|_| sb_types::CoreError::timeout("packet-recv", duration))?;
+            let (data, source) =
+                result.map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            let size = data.len().min(buffer.len());
+            buffer[..size].copy_from_slice(&data[..size]);
+            Ok((size, sb_types::TargetAddr::Socket(source)))
+        })
+    }
+
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        close_packet(&self.closed);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn local_addr(&self) -> Option<sb_types::TargetAddr> {
+        None
+    }
+
+    fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        *self.deadlines.lock() = (deadline, deadline);
+        Ok(())
+    }
+
+    fn set_read_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        self.deadlines.lock().0 = deadline;
+        Ok(())
+    }
+
+    fn set_write_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        self.deadlines.lock().1 = deadline;
+        Ok(())
     }
 }
 
 #[cfg(feature = "out_hysteria2")]
-#[async_trait]
-impl OutboundTcp for Hysteria2Outbound {
-    type IO = crate::outbound::quic::io::QuicBidiStream;
+impl Hysteria2Outbound {
+    pub const fn protocol_name(&self) -> &'static str {
+        "hysteria2"
+    }
 
-    async fn connect(&self, target: &HostPort) -> io::Result<Self::IO> {
+    pub async fn connect_tunnel(
+        &self,
+        target: &HostPort,
+    ) -> io::Result<crate::outbound::quic::io::QuicBidiStream> {
         use crate::metrics::outbound::{record_connect_attempt, record_connect_success};
 
         record_connect_attempt(crate::outbound::OutboundKind::Hysteria2);
@@ -1033,10 +1096,6 @@ impl OutboundTcp for Hysteria2Outbound {
             recv_stream,
         ))
     }
-
-    fn protocol_name(&self) -> &'static str {
-        "hysteria2"
-    }
 }
 
 #[cfg(feature = "out_hysteria2")]
@@ -1108,8 +1167,7 @@ impl tokio::io::AsyncWrite for Hysteria2Stream {
 }
 
 #[cfg(feature = "out_hysteria2")]
-#[async_trait::async_trait]
-impl crate::adapter::OutboundConnector for Hysteria2Outbound {
+impl Hysteria2Outbound {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
         // Establish QUIC connection first
         #[cfg(feature = "metrics")]
@@ -1175,6 +1233,57 @@ impl crate::adapter::OutboundConnector for Hysteria2Outbound {
 
         // Convert to async TcpStream-like behavior
         self.create_tcp_proxy(hysteria2_stream).await
+    }
+}
+
+#[cfg(feature = "out_hysteria2")]
+impl sb_types::Outbound for Hysteria2Outbound {
+    fn r#type(&self) -> &str {
+        "hysteria2"
+    }
+
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new("hysteria2")
+    }
+
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
+
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+
+            let (host, port) = match &session.target {
+                sb_types::TargetAddr::Socket(address) => (address.ip().to_string(), address.port()),
+                sb_types::TargetAddr::Domain(host, port) => (host.clone(), *port),
+            };
+            let stream = self
+                .connect(&host, port)
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            let connection = self
+                .get_connection()
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            let packet = self
+                .create_udp_session(&connection, session.packet.idle_timeout)
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            Ok(Box::new(packet) as sb_types::BoxedPacketConn)
+        })
     }
 }
 

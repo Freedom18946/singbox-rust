@@ -15,7 +15,7 @@ use anytls_rs::session::{Session, Stream};
 use anytls_rs::util::auth::hash_password;
 use anytls_rs::util::AnyTlsError;
 use bytes::Bytes;
-use sb_core::adapter::{InboundParam, InboundService};
+use sb_core::adapter::{InboundParam, InboundTaskDriver};
 use sb_core::net::metered::TrafficRecorder;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{
@@ -79,7 +79,7 @@ impl AnyTlsInboundAdapter {
         param: &InboundParam,
         router: Arc<router::RouterHandle>,
         outbounds: Arc<OutboundRegistryHandle>,
-    ) -> std::io::Result<Box<dyn InboundService>> {
+    ) -> std::io::Result<Box<dyn InboundTaskDriver>> {
         let listen_str = format!("{}:{}", param.listen, param.port);
         let listen: SocketAddr = listen_str.parse().map_err(|e| {
             std::io::Error::new(
@@ -118,7 +118,7 @@ impl AnyTlsInboundAdapter {
     }
 }
 
-impl InboundService for AnyTlsInboundAdapter {
+impl InboundTaskDriver for AnyTlsInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         let (stop_tx, stop_rx) = mpsc::channel(1);
         {

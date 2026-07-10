@@ -9,7 +9,7 @@ use tokio::io::{AsyncBufReadExt, AsyncWriteExt, BufReader};
 use tokio::net::{TcpListener, TcpStream};
 
 use crate::adapter::Bridge;
-use crate::adapter::InboundService;
+use crate::adapter::InboundTaskDriver;
 use crate::log::Level;
 use crate::net::metered;
 // Stage 2: HTTP Host sniff is inline; stream sniff stubs live in router::sniff
@@ -317,15 +317,24 @@ pub(crate) async fn handle(
 
     // 5) 建立上游连接（异步）
     let mut upstream = match ob {
-        Some(connector) => match connector.connect(&host, port).await {
-            Ok(stream) => stream,
-            Err(e) => {
-                let _ = cli
-                    .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
-                    .await;
-                return Err(std::io::Error::other(e));
+        Some(connector) => {
+            use tokio_util::compat::FuturesAsyncReadCompatExt;
+
+            let session = sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("http-connect"),
+                sb_types::TargetAddr::domain(host.clone(), port),
+            );
+            match connector.dial(&session).await {
+                Ok(stream) => stream.compat(),
+                Err(e) => {
+                    let _ = cli
+                        .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
+                        .await;
+                    return Err(std::io::Error::other(e));
+                }
             }
-        },
+        }
         None => {
             let _ = cli
                 .write_all(b"HTTP/1.1 502 Bad Gateway\r\nContent-Length: 0\r\n\r\n")
@@ -484,7 +493,7 @@ impl HttpConnect {
     }
 }
 
-impl InboundService for HttpConnect {
+impl InboundTaskDriver for HttpConnect {
     fn serve(&self) -> std::io::Result<()> {
         // 阻塞式入口，内部启动 tokio runtime
         #[cfg(not(feature = "router"))]

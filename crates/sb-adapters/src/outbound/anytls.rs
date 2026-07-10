@@ -11,7 +11,6 @@ use anytls_rs::session::Session;
 use anytls_rs::util::auth::hash_password;
 use bytes::Bytes;
 use rand::Rng;
-use sb_core::adapter::OutboundConnector;
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
@@ -23,6 +22,7 @@ use tokio_rustls::TlsConnector;
 /// AnyTLS configuration
 #[derive(Debug, Clone)]
 pub struct AnyTlsConfig {
+    pub tag: Option<String>,
     pub server: String,
     pub port: u16,
     pub password: String,
@@ -194,8 +194,7 @@ impl AnyTlsConnector {
     }
 }
 
-#[async_trait::async_trait]
-impl OutboundConnector for AnyTlsConnector {
+impl AnyTlsConnector {
     async fn connect(&self, host: &str, port: u16) -> std::io::Result<TcpStream> {
         // Drain completed bridge tasks to prevent unbounded accumulation
         {
@@ -311,6 +310,57 @@ impl OutboundConnector for AnyTlsConnector {
     }
 }
 
+impl sb_types::Outbound for AnyTlsConnector {
+    fn r#type(&self) -> &str {
+        "anytls"
+    }
+
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(
+            self.config
+                .tag
+                .clone()
+                .unwrap_or_else(|| "anytls".to_string()),
+        )
+    }
+
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp]
+    }
+
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::ports::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+
+            let (host, port) = match &session.target {
+                sb_types::TargetAddr::Domain(host, port) => (host.as_str(), *port),
+                sb_types::TargetAddr::Socket(address) => ("ip-target", address.port()),
+            };
+            let stream = self
+                .connect(host, port)
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::ports::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+    {
+        Box::pin(async {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                "AnyTLS has no packet association",
+            ))
+        })
+    }
+}
+
 impl std::fmt::Debug for AnyTlsConnector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
         f.debug_struct("AnyTlsConnector")
@@ -405,6 +455,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for AnyTlsConnector {
             .to_owned();
 
         let anytls_config = AnyTlsConfig {
+            tag: ir.name.clone(),
             server,
             port,
             password,
@@ -584,6 +635,7 @@ mod tests {
             .with_no_client_auth();
 
         let config = AnyTlsConfig {
+            tag: None,
             server: "example.com".into(),
             port: 443,
             password: "test".into(),

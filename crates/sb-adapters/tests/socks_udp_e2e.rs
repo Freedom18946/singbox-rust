@@ -3,13 +3,11 @@
 // SOCKS5 UDP 端到端集成测试
 // 由于解析函数是私有的，这里主要测试服务启动和基本功能
 
-use async_trait::async_trait;
 use sb_adapters::inbound::socks::udp::{
     encode_udp_datagram, parse_udp_datagram, serve_udp_datagrams, serve_udp_datagrams_with_runtime,
     UdpDatagramRuntime,
 };
 use sb_config::ir::{ConfigIR, RuleAction, RuleIR};
-use sb_core::adapter::{UdpOutboundFactory, UdpOutboundSession};
 use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 use sb_core::router::RouterHandle;
 use serial_test::serial;
@@ -44,54 +42,99 @@ fn encode_socks5_udp_ipv4(ip: Ipv4Addr, port: u16, payload: &[u8]) -> Vec<u8> {
 #[derive(Debug)]
 struct MockTcpConnector;
 
-#[async_trait]
-impl sb_core::adapter::OutboundConnector for MockTcpConnector {
-    async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            "mock connector only supports UDP",
-        ))
+impl sb_types::Outbound for MockTcpConnector {
+    fn r#type(&self) -> &str {
+        "mock"
     }
-}
-
-#[derive(Debug)]
-struct EchoUdpFactory;
-
-impl UdpOutboundFactory for EchoUdpFactory {
-    fn open_session(&self) -> sb_core::adapter::UdpOutboundFuture {
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new("mock")
+    }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Udp]
+    }
+    fn dial<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                "mock connector only supports UDP",
+            ))
+        })
+    }
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
         Box::pin(async {
             let (tx, rx) = mpsc::channel(8);
-            Ok(Arc::new(EchoUdpSession {
+            Ok(Box::new(EchoPacketConn {
                 tx,
                 rx: Mutex::new(rx),
-            }) as Arc<dyn UdpOutboundSession>)
+            }) as sb_types::BoxedPacketConn)
         })
     }
 }
 
 #[derive(Debug)]
-struct EchoUdpSession {
+struct EchoPacketConn {
     tx: mpsc::Sender<(Vec<u8>, std::net::SocketAddr)>,
     rx: Mutex<mpsc::Receiver<(Vec<u8>, std::net::SocketAddr)>>,
 }
 
-#[async_trait]
-impl UdpOutboundSession for EchoUdpSession {
-    async fn send_to(&self, data: &[u8], _host: &str, port: u16) -> std::io::Result<()> {
-        let from = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, port));
-        self.tx
-            .send((data.to_vec(), from))
-            .await
-            .map_err(|_| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "mock closed"))
+impl sb_types::PacketConn for EchoPacketConn {
+    fn send_to<'a>(
+        &'a self,
+        data: &'a [u8],
+        destination: &'a sb_types::TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move {
+            let port = match destination {
+                sb_types::TargetAddr::Socket(address) => address.port(),
+                sb_types::TargetAddr::Domain(_, port) => *port,
+            };
+            let from = std::net::SocketAddr::from((Ipv4Addr::LOCALHOST, port));
+            self.tx
+                .send((data.to_vec(), from))
+                .await
+                .map_err(|_| sb_types::CoreError::io("mock closed"))?;
+            Ok(data.len())
+        })
     }
 
-    async fn recv_from(&self) -> std::io::Result<(Vec<u8>, std::net::SocketAddr)> {
-        self.rx
-            .lock()
-            .await
-            .recv()
-            .await
-            .ok_or_else(|| std::io::Error::new(std::io::ErrorKind::BrokenPipe, "mock closed"))
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, sb_types::TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            let (data, source) = self
+                .rx
+                .lock()
+                .await
+                .recv()
+                .await
+                .ok_or_else(|| sb_types::CoreError::io("mock closed"))?;
+            let size = data.len().min(buffer.len());
+            buffer[..size].copy_from_slice(&data[..size]);
+            Ok((size, sb_types::TargetAddr::Socket(source)))
+        })
+    }
+
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        Box::pin(async { Ok(()) })
+    }
+    fn local_addr(&self) -> Option<sb_types::TargetAddr> {
+        None
+    }
+    fn set_deadline(&self, _: Option<std::time::Instant>) -> Result<(), sb_types::CoreError> {
+        Ok(())
+    }
+    fn set_read_deadline(&self, _: Option<std::time::Instant>) -> Result<(), sb_types::CoreError> {
+        Ok(())
+    }
+    fn set_write_deadline(&self, _: Option<std::time::Instant>) -> Result<(), sb_types::CoreError> {
+        Ok(())
     }
 }
 
@@ -113,14 +156,10 @@ fn udp_runtime(disable_domain_unmapping: bool) -> UdpDatagramRuntime {
         "udp-mock".to_string(),
         OutboundImpl::Connector(Arc::new(MockTcpConnector)),
     );
-    let mut udp_factories: HashMap<String, Arc<dyn UdpOutboundFactory>> = HashMap::new();
-    udp_factories.insert("udp-mock".to_string(), Arc::new(EchoUdpFactory));
-
     UdpDatagramRuntime::new(
         Some(Arc::new(RouterHandle::from_index(idx))),
-        Some(Arc::new(OutboundRegistryHandle::new_with_udp_factories(
+        Some(Arc::new(OutboundRegistryHandle::new(
             OutboundRegistry::new(outbounds),
-            udp_factories,
         ))),
     )
 }

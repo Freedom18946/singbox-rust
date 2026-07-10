@@ -2,14 +2,11 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use sb_config::ir::OutboundIR;
-use sb_core::adapter::{registry, OutboundConnector, OutboundParam, UdpOutboundFactory};
+use sb_core::adapter::{registry, OutboundParam};
 use sb_core::outbound::selector_group::UrlTestOptions;
 use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup};
 
-type OutboundBuilderResult = Option<(
-    Arc<dyn OutboundConnector>,
-    Option<Arc<dyn UdpOutboundFactory>>,
-)>;
+type OutboundBuilderResult = Option<Arc<dyn sb_types::Outbound>>;
 
 pub fn build_urltest_outbound(
     param: &OutboundParam,
@@ -26,8 +23,7 @@ pub fn build_urltest_outbound(
     let mut members = Vec::new();
     for tag in member_tags {
         if let Some(connector) = ctx.bridge.get_member(&tag) {
-            let udp_factory = ctx.bridge.find_udp_factory(&tag);
-            members.push(ProxyMember::new(tag, connector, udp_factory));
+            members.push(ProxyMember::new(tag, connector));
         } else {
             tracing::warn!("UrlTest {} member {} not found", name, tag);
         }
@@ -56,5 +52,5 @@ pub fn build_urltest_outbound(
         },
     ));
 
-    Some((group.clone(), Some(group)))
+    Some(group)
 }

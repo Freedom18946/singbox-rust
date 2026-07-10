@@ -13,13 +13,10 @@
 //! The crate follows a trait-based design pattern:
 //! 本 crate 遵循基于 trait 的设计模式：
 //!
-//! - [`OutboundConnector`]: Trait for establishing outbound connections (建立出站连接的 Trait)
-//! - [`OutboundDatagram`]: Trait for UDP-based protocols (基于 UDP 协议的 Trait)
-//! - [`Target`]: Represents connection destinations (IP, domain, or FQDN) (表示连接目标：IP、域名或 FQDN)
+//! - [`Outbound`]: Trait for establishing outbound connections (建立出站连接的 Trait)
+//! - [`sb_types::PacketConn`]: Canonical UDP association contract
+//! - [`sb_types::Session`]: Canonical target and connection controls
 //! - [`TransportConfig`]: Configures transport layers (TLS, mux, WebSocket, etc.) (配置传输层：TLS, mux, WebSocket 等)
-//! - [`RetryPolicy`]: Configurable retry with exponential backoff (带指数退避的可配置重试策略)
-//! - [`DialOpts`]: Connection options (timeouts, retry, DNS mode) (连接选项：超时、重试、DNS 模式)
-//! - [`ResolveMode`]: DNS resolution strategy (local vs remote) (DNS 解析策略：本地 vs 远程)
 //!
 //! # Module Structure / 模块结构
 //!
@@ -58,17 +55,17 @@
 //! ## Outbound Connection Example / 出站连接示例
 //!
 //! ```rust,ignore
-//! use sb_adapters::{OutboundConnector, Target, Result};
+//! use sb_adapters::{Outbound, Result, Session, TargetAddr};
 //! use tokio::io::{AsyncReadExt, AsyncWriteExt};
 //!
-//! async fn connect_example(connector: &impl OutboundConnector) -> Result<()> {
+//! async fn connect_example(connector: &impl Outbound) -> Result<()> {
 //!     // Create a target (domain name, port)
 //!     // 创建目标（域名，端口）
-//!     let target = Target::Domain("example.com".to_string(), 443);
+//!     let session = Session::outbound(TargetAddr::domain("example.com", 443));
 //!
 //!     // Establish connection
 //!     // 建立连接
-//!     let mut stream = connector.connect(&target).await?;
+//!     let mut stream = connector.dial(&session).await?;
 //!
 //!     // Use the stream
 //!     // 使用流
@@ -85,7 +82,7 @@
 //!
 //! ```rust,ignore
 //! use sb_adapters::outbound::socks5::Socks5Outbound;
-//! use sb_adapters::{OutboundConnector, Target};
+//! use sb_adapters::{Outbound, Session, TargetAddr};
 //!
 //! async fn create_socks5_adapter() -> Result<()> {
 //!     let socks5 = Socks5Outbound::new(
@@ -93,8 +90,8 @@
 //!         None, // No authentication / 无需认证
 //!     );
 //!
-//!     let target = Target::Ip("93.184.216.34".parse()?, 80);
-//!     let stream = socks5.connect(&target).await?;
+//!     let session = Session::outbound(TargetAddr::from_host_port("93.184.216.34", 80));
+//!     let stream = socks5.dial(&session).await?;
 //!
 //!     Ok(())
 //! }
@@ -190,18 +187,10 @@ pub use error::{AdapterError, Result};
 /// Re-exported core traits for adapter implementations.
 ///
 /// These are the primary abstractions used throughout the singbox-rust ecosystem:
-/// - [`OutboundConnector`]: Connect to remote targets via TCP streams
-/// - [`OutboundDatagram`]: Send/receive UDP packets through a proxy
-/// - [`Target`]: Represent connection destinations (IP, domain, or FQDN)
+/// - [`Outbound`]: Connect to remote targets via TCP streams
 /// - [`BoxedStream`]: Type alias for boxed async TCP streams
-/// - [`TransportKind`]: Enum representing different transport layer types
-/// - [`RetryPolicy`]: Configurable retry with exponential backoff
-/// - [`DialOpts`]: Connection options (timeouts, retry, DNS mode)
-/// - [`ResolveMode`]: DNS resolution strategy (local vs remote)
-pub use traits::{
-    BoxedStream, DialOpts, OutboundConnector, OutboundDatagram, ResolveMode, RetryPolicy, Target,
-    TransportKind,
-};
+pub use sb_types::{ConnectOptions, Outbound, ResolveMode, RetryPolicy, Session, TargetAddr};
+pub use traits::BoxedStream;
 
 /// Re-exported transport configuration types.
 ///

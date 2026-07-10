@@ -1,233 +1,198 @@
 use sb_config::ir::{OutboundIR, OutboundType};
-use sb_core::adapter::{
-    Bridge, OutboundConnector, OutboundParam, UdpOutboundFactory, UdpOutboundSession,
-};
+use sb_core::adapter::{Bridge, OutboundParam};
 use sb_core::context::{Context, ContextRegistry};
-use sb_core::outbound::selector_group::ProxyMember;
-use std::io;
+use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup, UrlTestOptions};
+use sb_types::Outbound;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::net::TcpStream;
 
-// Mock UDP Factory
-#[derive(Debug, Clone)]
-struct MockUdpFactoryImpl {
+#[derive(Debug)]
+struct MockConnector {
     tag: String,
 }
 
-impl UdpOutboundFactory for MockUdpFactoryImpl {
-    fn open_session(
-        &self,
-    ) -> std::pin::Pin<
-        Box<dyn std::future::Future<Output = std::io::Result<Arc<dyn UdpOutboundSession>>> + Send>,
-    > {
+impl MockConnector {
+    fn new(tag: impl Into<String>) -> Self {
+        Self { tag: tag.into() }
+    }
+}
+
+impl Outbound for MockConnector {
+    fn r#type(&self) -> &str {
+        "mock"
+    }
+
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(self.tag.clone())
+    }
+
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Udp]
+    }
+
+    fn dial<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                "mock only supports UDP",
+            ))
+        })
+    }
+
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
         let tag = self.tag.clone();
-        Box::pin(async move { Ok(Arc::new(MockUdpSession { tag }) as Arc<dyn UdpOutboundSession>) })
+        Box::pin(async move { Ok(Box::new(MockPacketConn { tag }) as sb_types::BoxedPacketConn) })
     }
 }
 
 #[derive(Debug)]
-struct MockUdpSession {
+struct MockPacketConn {
     tag: String,
 }
 
-#[async_trait::async_trait]
-impl UdpOutboundSession for MockUdpSession {
-    async fn send_to(&self, _data: &[u8], _host: &str, _port: u16) -> std::io::Result<()> {
+impl sb_types::PacketConn for MockPacketConn {
+    fn send_to<'a>(
+        &'a self,
+        data: &'a [u8],
+        _destination: &'a sb_types::TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move { Ok(data.len()) })
+    }
+
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, sb_types::TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            let data = self.tag.as_bytes();
+            let size = data.len().min(buffer.len());
+            buffer[..size].copy_from_slice(&data[..size]);
+            Ok((
+                size,
+                sb_types::TargetAddr::socket("127.0.0.1:0".parse().unwrap()),
+            ))
+        })
+    }
+
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        Box::pin(async { Ok(()) })
+    }
+
+    fn local_addr(&self) -> Option<sb_types::TargetAddr> {
+        None
+    }
+
+    fn set_deadline(
+        &self,
+        _deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
         Ok(())
     }
-    async fn recv_from(&self) -> std::io::Result<(Vec<u8>, std::net::SocketAddr)> {
-        Ok((self.tag.as_bytes().to_vec(), "127.0.0.1:0".parse().unwrap()))
+
+    fn set_read_deadline(
+        &self,
+        _deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        Ok(())
+    }
+
+    fn set_write_deadline(
+        &self,
+        _deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        Ok(())
     }
 }
 
-// Mock Connector
-#[derive(Debug)]
-struct MockConnector;
-#[async_trait::async_trait]
-impl OutboundConnector for MockConnector {
-    async fn connect(&self, _host: &str, _port: u16) -> io::Result<TcpStream> {
-        Err(io::Error::other("mock connector"))
-    }
+fn packet_session() -> sb_types::Session {
+    sb_types::Session::new(
+        0,
+        sb_types::InboundTag::new("selector-test"),
+        sb_types::TargetAddr::domain("example.test", 53),
+    )
+}
+
+async fn assert_packet_tag(outbound: &dyn Outbound, expected: &str) {
+    let packet = outbound
+        .listen_packet(&packet_session())
+        .await
+        .expect("open canonical packet connection");
+    let mut buffer = [0u8; 64];
+    let (size, _) = packet.recv_from(&mut buffer).await.expect("recv tag");
+    assert_eq!(&buffer[..size], expected.as_bytes());
 }
 
 #[tokio::test]
-async fn test_selector_udp_support() {
-    // 1. Setup Bridge
+async fn selector_builder_routes_udp_through_selected_member() {
     let mut bridge = Bridge::new(Context::new());
-
-    // 2. Register mock members
-    let member1_tag = "proxy1".to_string();
-    let member2_tag = "proxy2".to_string();
-
     bridge.add_outbound(
-        member1_tag.clone(),
+        "proxy1".to_string(),
         "mock".to_string(),
-        Arc::new(MockConnector),
+        Arc::new(MockConnector::new("proxy1")),
     );
-    bridge.add_outbound_udp_factory(
-        member1_tag.clone(),
-        Arc::new(MockUdpFactoryImpl {
-            tag: member1_tag.clone(),
-        }),
-    );
-
     bridge.add_outbound(
-        member2_tag.clone(),
+        "proxy2".to_string(),
         "mock".to_string(),
-        Arc::new(MockConnector),
-    );
-    bridge.add_outbound_udp_factory(
-        member2_tag.clone(),
-        Arc::new(MockUdpFactoryImpl {
-            tag: member2_tag.clone(),
-        }),
+        Arc::new(MockConnector::new("proxy2")),
     );
 
-    // 3. Build SelectorOutbound
-    // We use the builder function from sb-adapters
-    use sb_adapters::outbound::selector::build_selector_outbound;
-
-    let selector_tag = "test-selector".to_string();
     let ir = OutboundIR {
-        name: Some(selector_tag.clone()),
+        name: Some("test-selector".to_string()),
         ty: OutboundType::Selector,
-        members: Some(vec![member1_tag.clone(), member2_tag.clone()]),
-        default_member: Some(member1_tag.clone()),
+        members: Some(vec!["proxy1".to_string(), "proxy2".to_string()]),
+        default_member: Some("proxy1".to_string()),
         ..Default::default()
     };
-
     let param = OutboundParam {
-        name: Some(selector_tag.clone()),
+        name: Some("test-selector".to_string()),
         ..Default::default()
     };
-
-    let bridge_arc = Arc::new(bridge);
-    let ctx = sb_core::adapter::registry::AdapterOutboundContext {
-        bridge: bridge_arc.clone(),
-        context: ContextRegistry::from(&bridge_arc.context),
+    let bridge = Arc::new(bridge);
+    let context = sb_core::adapter::registry::AdapterOutboundContext {
+        context: ContextRegistry::from(&bridge.context),
+        bridge,
     };
+    let selector = sb_adapters::outbound::selector::build_selector_outbound(&param, &ir, &context)
+        .expect("selector builder");
 
-    let (_connector, udp_factory) =
-        build_selector_outbound(&param, &ir, &ctx).expect("failed to build selector");
-
-    assert!(udp_factory.is_some(), "Selector should support UDP");
-    let udp_factory = udp_factory.unwrap();
-
-    // 4. Test UDP session
-    // By default, selector selects the default member (proxy1)
-    let session = udp_factory
-        .open_session()
-        .await
-        .expect("failed to open session");
-    let (data, _) = session.recv_from().await.expect("failed to recv");
-    assert_eq!(data, member1_tag.as_bytes(), "Should select proxy1");
-
-    // 5. Change selection (we need access to SelectorGroup to change selection)
-    // But we only have OutboundConnector and UdpOutboundFactory.
-    // We can cast connector to SelectorOutbound if we knew the type, but it's dyn.
-    // However, we can verify that if we select proxy2, it uses proxy2.
-    // But we can't easily change selection from here without casting.
-
-    // Ideally we should use SelectorGroup directly or expose selection method on the adapter?
-    // The adapter wraps SelectorGroup.
-    // SelectorGroup is exposed in sb-core.
-
-    // Let's try to use SelectorGroup directly to verify selection logic with UDP factories
-    // But we want to test the ADAPTER integration.
-
-    // Since we can't easily change selection on the opaque adapter, we rely on the fact that it uses SelectorGroup.
-    // We verified SelectorGroup logic in unit tests (though not UDP part specifically).
-    // But wait, I removed UDP logic from SelectorGroup struct!
-    // The UDP logic is in SelectorOutbound adapter.
-    // And SelectorOutbound adapter uses SelectorGroup::select_best().
-
-    // So if I want to test switching, I need to control what select_best() returns.
-    // select_best() returns the manually selected proxy (if manual mode) or based on URLTest.
-    // This is manual selector.
-    // SelectorGroup exposes `select_by_name`.
-    // But I don't have access to SelectorGroup instance here, it's inside the adapter.
-
-    use sb_core::outbound::selector_group::SelectorGroup;
-
-    // Re-create members with UDP factories
-    let members = vec![
-        ProxyMember::new(
-            member1_tag.clone(),
-            Arc::new(MockConnector),
-            Some(Arc::new(MockUdpFactoryImpl {
-                tag: member1_tag.clone(),
-            })),
-        ),
-        ProxyMember::new(
-            member2_tag.clone(),
-            Arc::new(MockConnector),
-            Some(Arc::new(MockUdpFactoryImpl {
-                tag: member2_tag.clone(),
-            })),
-        ),
-    ];
-
-    let group = SelectorGroup::new_manual(
-        selector_tag.clone(),
-        members,
-        Some(member1_tag.clone()),
-        None,
-        None,
-    );
-    let group = Arc::new(group);
-
-    // Test proxy1
-    let session = group.open_session().await.expect("failed to open session");
-    let (data, _) = session.recv_from().await.expect("failed to recv");
-    assert_eq!(data, member1_tag.as_bytes());
-
-    // Switch to proxy2
-    group
-        .select_by_name(&member2_tag)
-        .await
-        .expect("failed to select proxy2");
-
-    // Test proxy2
-    let session = group.open_session().await.expect("failed to open session");
-    let (data, _) = session.recv_from().await.expect("failed to recv");
-    assert_eq!(data, member2_tag.as_bytes());
+    assert!(selector.network().contains(&sb_types::NetworkKind::Udp));
+    assert_packet_tag(selector.as_ref(), "proxy1").await;
 }
 
 #[tokio::test]
-async fn test_urltest_udp_support() {
-    // Similar setup for URLTest
-    let member1_tag = "fast".to_string();
-    let member2_tag = "slow".to_string();
-
-    use sb_core::outbound::selector_group::{SelectorGroup, UrlTestOptions};
+async fn selector_and_urltest_switch_canonical_udp_members() {
+    let members = vec![
+        ProxyMember::new("proxy1", Arc::new(MockConnector::new("proxy1"))),
+        ProxyMember::new("proxy2", Arc::new(MockConnector::new("proxy2"))),
+    ];
+    let group = SelectorGroup::new_manual(
+        "manual".to_string(),
+        members,
+        Some("proxy1".to_string()),
+        None,
+        None,
+    );
+    assert_packet_tag(&group, "proxy1").await;
+    group.select_by_name("proxy2").await.expect("select proxy2");
+    assert_packet_tag(&group, "proxy2").await;
 
     let members = vec![
-        ProxyMember::new(
-            member1_tag.clone(),
-            Arc::new(MockConnector),
-            Some(Arc::new(MockUdpFactoryImpl {
-                tag: member1_tag.clone(),
-            })),
-        ),
-        ProxyMember::new(
-            member2_tag.clone(),
-            Arc::new(MockConnector),
-            Some(Arc::new(MockUdpFactoryImpl {
-                tag: member2_tag.clone(),
-            })),
-        ),
+        ProxyMember::new("fast", Arc::new(MockConnector::new("fast"))),
+        ProxyMember::new("slow", Arc::new(MockConnector::new("slow"))),
     ];
-
-    // Set health for members
-    members[0].health.record_success(10); // Fast
-    members[1].health.record_success(100); // Slow
-
+    members[0].health.record_success(10);
+    members[1].health.record_success(100);
     let group = SelectorGroup::new_urltest(
-        "test-urltest".to_string(),
+        "urltest".to_string(),
         members,
         UrlTestOptions {
-            test_url: "http://test.com".to_string(),
+            test_url: "http://test.invalid".to_string(),
             interval: Duration::from_secs(60),
             timeout: Duration::from_secs(5),
             tolerance_ms: 50,
@@ -235,10 +200,5 @@ async fn test_urltest_udp_support() {
             urltest_history: None,
         },
     );
-    let group = Arc::new(group);
-
-    // Should select fast
-    let session = group.open_session().await.expect("failed to open session");
-    let (data, _) = session.recv_from().await.expect("failed to recv");
-    assert_eq!(data, member1_tag.as_bytes());
+    assert_packet_tag(&group, "fast").await;
 }

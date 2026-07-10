@@ -27,10 +27,9 @@ use tokio_rustls::rustls::{
 use tokio_rustls::TlsAcceptor;
 
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 use std::collections::HashMap;
 
 // Helper: Start TCP echo server
@@ -337,13 +336,9 @@ async fn test_trojan_tls_handshake_stress() {
     for _ in 0..handshake_count {
         let connector = connector.clone();
         handles.push(tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr.ip().to_string(),
-                port: echo_addr.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            match connector.dial(target, DialOpts::default()).await {
+            match connector.dial(&Session::outbound(target)).await {
                 Ok(mut stream) => {
                     let _ = stream.write_all(b"ping").await;
                     let mut buf = [0u8; 4];
@@ -381,20 +376,16 @@ async fn test_trojan_sni_verification() {
         multiplex: None,
     };
 
-    let target = Target {
-        host: "example.com".to_string(),
-        port: 80,
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port("example.com".to_string(), 80);
 
     let good_connector = TrojanConnector::new(client_config(expected_sni));
     let ok = good_connector
-        .dial(target.clone(), DialOpts::default())
+        .dial(&Session::outbound(target.clone()))
         .await;
     assert!(ok.is_ok(), "SNI match should succeed");
 
     let bad_connector = TrojanConnector::new(client_config("wrong.sni.test"));
-    let err = bad_connector.dial(target, DialOpts::default()).await;
+    let err = bad_connector.dial(&Session::outbound(target)).await;
     assert!(
         err.is_err(),
         "SNI mismatch should fail TLS handshake with SNI-enforced server"
@@ -427,14 +418,10 @@ async fn test_trojan_cert_validation_valid() {
     };
 
     let connector = TrojanConnector::new(client_config);
-    let target = Target {
-        host: "127.0.0.1".to_string(),
-        port: 80, // Dummy
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port("127.0.0.1", 80);
 
     // Should succeed (handshake only)
-    let result = connector.dial(target, DialOpts::default()).await;
+    let result = connector.dial(&Session::outbound(target)).await;
     assert!(result.is_ok(), "Valid cert handshake failed");
 }
 
@@ -462,14 +449,10 @@ async fn test_trojan_cert_validation_expired() {
     };
 
     let connector = TrojanConnector::new(client_config);
-    let target = Target {
-        host: "127.0.0.1".to_string(),
-        port: 80,
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port("127.0.0.1".to_string(), 80);
 
     // Should fail due to expiration
-    let result = connector.dial(target, DialOpts::default()).await;
+    let result = connector.dial(&Session::outbound(target)).await;
     assert!(result.is_err(), "Expired cert should fail handshake");
     let _err = result.err().unwrap().to_string();
     // Error message depends on rustls version/platform, but usually contains "certificate" or "expired"
@@ -500,14 +483,10 @@ async fn test_trojan_cert_validation_self_signed() {
     };
 
     let connector = TrojanConnector::new(client_config);
-    let target = Target {
-        host: "127.0.0.1".to_string(),
-        port: 80,
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port("127.0.0.1".to_string(), 80);
 
     // Should fail due to untrusted cert
-    let result = connector.dial(target, DialOpts::default()).await;
+    let result = connector.dial(&Session::outbound(target)).await;
     assert!(
         result.is_err(),
         "Self-signed cert should fail without skip_cert_verify"
@@ -538,20 +517,16 @@ async fn test_trojan_alpn_negotiation() {
         multiplex: None,
     };
 
-    let target = Target {
-        host: "example.com".to_string(),
-        port: 80,
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port("example.com".to_string(), 80);
 
     // Matching ALPN should succeed
     let good = TrojanConnector::new(make_cfg(Some(vec!["h2".to_string()])));
-    let ok = good.dial(target.clone(), DialOpts::default()).await;
+    let ok = good.dial(&Session::outbound(target.clone())).await;
     assert!(ok.is_ok(), "ALPN match should succeed");
 
     // Mismatched ALPN should fail (server only accepts h2)
     let bad = TrojanConnector::new(make_cfg(Some(vec!["http/1.1".to_string()])));
-    let err = bad.dial(target, DialOpts::default()).await;
+    let err = bad.dial(&Session::outbound(target)).await;
     assert!(
         err.is_err(),
         "ALPN mismatch should fail TLS handshake with ALPN-enforcing server"
@@ -594,13 +569,9 @@ async fn test_trojan_connection_pooling() {
     for i in 0..120 {
         let connector = connector.clone();
         handles.push(tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr.ip().to_string(),
-                port: echo_addr.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            match connector.dial(target, DialOpts::default()).await {
+            match connector.dial(&Session::outbound(target)).await {
                 Ok(mut stream) => {
                     let data = format!("conn{}", i);
                     match stream.write_all(data.as_bytes()).await {
@@ -665,14 +636,10 @@ async fn test_trojan_timeout_handling() {
     let connector = TrojanConnector::new(client_config);
 
     // Connect to unreachable host should timeout
-    let target = Target {
-        host: "192.0.2.1".to_string(), // TEST-NET-1, should be unreachable
-        port: 9999,
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port("192.0.2.1", 9999);
 
     let start = std::time::Instant::now();
-    let result = connector.dial(target, DialOpts::default()).await;
+    let result = connector.dial(&Session::outbound(target)).await;
     let elapsed = start.elapsed();
 
     assert!(
@@ -693,13 +660,9 @@ async fn test_trojan_timeout_handling() {
     let Some(slow_addr) = start_slow_echo_server(Duration::from_secs(2)).await else {
         return;
     };
-    let target = Target {
-        host: slow_addr.ip().to_string(),
-        port: slow_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(slow_addr.ip().to_string(), slow_addr.port());
     let mut slow_stream = connector
-        .dial(target, DialOpts::default())
+        .dial(&Session::outbound(target))
         .await
         .expect("dial slow server");
     slow_stream.write_all(b"slow").await.expect("write slow");
@@ -738,14 +701,10 @@ async fn test_trojan_auth_failure() {
     };
 
     let connector = TrojanConnector::new(client_config);
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     // Should fail or be closed immediately
-    let result = connector.dial(target, DialOpts::default()).await;
+    let result = connector.dial(&Session::outbound(target)).await;
 
     // Depending on implementation, it might connect but fail to read/write,
     // or fail handshake. Trojan usually closes connection on auth failure.

@@ -16,9 +16,8 @@ use tokio::sync::mpsc;
 
 use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 
 // Helper: Start TCP echo server
 async fn start_echo_server() -> Option<SocketAddr> {
@@ -158,13 +157,9 @@ async fn test_ss_aes_128_gcm() {
     };
 
     let connector = ShadowsocksConnector::new(client_config).unwrap();
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
+    let mut stream = connector.dial(&Session::outbound(target)).await.unwrap();
     stream.write_all(b"test-aes-128-gcm").await.unwrap();
 
     let mut buf = vec![0u8; 16];
@@ -192,13 +187,9 @@ async fn test_ss_aes_256_gcm() {
     };
 
     let connector = ShadowsocksConnector::new(client_config).unwrap();
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
+    let mut stream = connector.dial(&Session::outbound(target)).await.unwrap();
     stream.write_all(b"test-aes-256-gcm").await.unwrap();
 
     let mut buf = vec![0u8; 16];
@@ -228,13 +219,9 @@ async fn test_ss_chacha20_poly1305() {
     };
 
     let connector = ShadowsocksConnector::new(client_config).unwrap();
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    let mut stream = connector.dial(target, DialOpts::default()).await.unwrap();
+    let mut stream = connector.dial(&Session::outbound(target)).await.unwrap();
     stream.write_all(b"test-chacha20").await.unwrap();
 
     let mut buf = vec![0u8; 13];
@@ -267,13 +254,9 @@ async fn test_ss_tcp_connectivity_foundation() {
     };
 
     let connector = ShadowsocksConnector::new(client_config).unwrap();
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    let result = connector.dial(target, DialOpts::default()).await;
+    let result = connector.dial(&Session::outbound(target)).await;
     assert!(result.is_ok(), "TCP connectivity should work");
 
     println!("Shadowsocks TCP connectivity verified");
@@ -309,14 +292,10 @@ async fn test_ss_multi_user_auth() {
     };
 
     let connector1 = ShadowsocksConnector::new(client1_config).unwrap();
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
     let mut stream1 = connector1
-        .dial(target.clone(), DialOpts::default())
+        .dial(&Session::outbound(target.clone()))
         .await
         .unwrap();
     stream1.write_all(b"user1-data").await.unwrap();
@@ -336,7 +315,7 @@ async fn test_ss_multi_user_auth() {
     };
 
     let connector2 = ShadowsocksConnector::new(client2_config).unwrap();
-    let mut stream2 = connector2.dial(target, DialOpts::default()).await.unwrap();
+    let mut stream2 = connector2.dial(&Session::outbound(target)).await.unwrap();
     stream2.write_all(b"user2-data").await.unwrap();
     let mut buf2 = vec![0u8; 10];
     stream2.read_exact(&mut buf2).await.unwrap();

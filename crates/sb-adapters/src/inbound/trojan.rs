@@ -10,7 +10,7 @@
 use super::tls;
 use crate::transport_config::InboundStream;
 use anyhow::{anyhow, Result};
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 use sb_core::net::metered;
 use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
@@ -921,7 +921,7 @@ impl TrojanInboundAdapter {
     }
 }
 
-impl InboundService for TrojanInboundAdapter {
+impl InboundTaskDriver for TrojanInboundAdapter {
     fn serve(&self) -> io::Result<()> {
         let rt = tokio::runtime::Builder::new_multi_thread()
             .enable_all()

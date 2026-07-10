@@ -3,7 +3,7 @@
 //! Tests that direct inbound correctly forwards both TCP and UDP traffic
 //! to a fixed destination address.
 
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 use std::net::SocketAddr;
 use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};

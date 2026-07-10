@@ -6,14 +6,9 @@
 //! - `scaffold`: Use built-in simple implementations (direct/socks/http/ssh/selector/etc.)
 
 use crate::adapter::registry;
-use crate::adapter::{
-    AnyTlsUserParam, Bridge, InboundParam, InboundService, OutboundConnector, OutboundParam,
-    UdpOutboundFactory,
-};
+use crate::adapter::{AnyTlsUserParam, Bridge, InboundParam, OutboundParam};
 use crate::context::Context;
-use crate::endpoint::{
-    endpoint_registry, Endpoint, EndpointAsOutbound, EndpointContext, EndpointUdpOutboundFactory,
-};
+use crate::endpoint::{endpoint_registry, Endpoint, EndpointAsOutbound, EndpointContext};
 #[allow(unused_imports)]
 use crate::outbound::selector::Selector;
 #[allow(unused_imports)]
@@ -38,14 +33,13 @@ fn outbound_registry_from_bridge(br: &Bridge) -> OutboundRegistry {
 }
 
 fn outbound_registry_handle_from_bridge(br: &Bridge) -> Arc<OutboundRegistryHandle> {
-    Arc::new(OutboundRegistryHandle::new_with_udp_factories(
-        outbound_registry_from_bridge(br),
-        br.udp_factories.clone(),
-    ))
+    Arc::new(OutboundRegistryHandle::new(outbound_registry_from_bridge(
+        br,
+    )))
 }
 
 fn refresh_outbound_registry_handle(handle: &OutboundRegistryHandle, br: &Bridge) {
-    handle.replace_with_udp_factories(outbound_registry_from_bridge(br), br.udp_factories.clone());
+    handle.replace(outbound_registry_from_bridge(br));
 }
 
 fn add_endpoint_with_outbound(br: &mut Bridge, endpoint: Arc<dyn Endpoint>) {
@@ -89,18 +83,9 @@ fn add_endpoint_with_outbound(br: &mut Bridge, endpoint: Arc<dyn Endpoint>) {
     }
 
     let kind = format!("endpoint/{}", endpoint.endpoint_type());
-    let connector: Arc<dyn OutboundConnector> =
+    let connector: Arc<dyn sb_types::Outbound> =
         Arc::new(EndpointAsOutbound::new(tag.clone(), endpoint.clone()));
     br.add_outbound(tag.clone(), kind, connector);
-    if endpoint.supports_udp_outbound() {
-        br.add_outbound_udp_factory(
-            tag.clone(),
-            Arc::new(EndpointUdpOutboundFactory::new(
-                tag.clone(),
-                endpoint.clone(),
-            )),
-        );
-    }
     br.add_endpoint(endpoint);
 }
 
@@ -591,7 +576,7 @@ fn to_outbound_param(ob: &OutboundIR) -> anyhow::Result<(String, OutboundParam)>
 fn try_adapter_inbound(
     p: &InboundParam,
     ctx: &registry::AdapterInboundContext,
-) -> Option<Arc<dyn InboundService>> {
+) -> Option<Arc<dyn sb_types::Inbound>> {
     if let Some(builder) = registry::get_inbound(&p.kind) {
         return builder(p, ctx);
     }
@@ -606,29 +591,25 @@ fn try_adapter_outbound(p: &OutboundParam, ob: &OutboundIR, br: &Bridge) -> Opti
             bridge: Arc::new(br.clone()),
             context: crate::context::ContextRegistry::from(&br.context),
         };
-        if let Some((tcp, udp)) = builder(p, ob, &ctx) {
-            return Some(BuiltOutbound { tcp, udp });
+        if let Some(outbound) = builder(p, ob, &ctx) {
+            return Some(BuiltOutbound { outbound });
         }
     }
     None
 }
 
 struct BuiltOutbound {
-    tcp: Arc<dyn OutboundConnector>,
-    udp: Option<Arc<dyn UdpOutboundFactory>>,
+    outbound: Arc<dyn sb_types::Outbound>,
 }
 
-// no-op wrapper for non-adapter builds (registry is available regardless)
-
+// WP06 removes these scaffold-era direct/block fallbacks.
 fn core_fallback_outbound(ob: &OutboundIR) -> Option<BuiltOutbound> {
     match ob.ty {
         OutboundType::Direct => Some(BuiltOutbound {
-            tcp: Arc::new(crate::outbound::DirectConnector::new()),
-            udp: None,
+            outbound: Arc::new(super::canonical_bridge::DirectOutbound::new("direct")),
         }),
         OutboundType::Block => Some(BuiltOutbound {
-            tcp: Arc::new(crate::outbound::block_connector::BlockConnector::new()),
-            udp: None,
+            outbound: Arc::new(super::canonical_bridge::BlockOutbound::new("block")),
         }),
         _ => None,
     }
@@ -659,11 +640,8 @@ fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
 
         if let Some(o) = try_adapter_outbound(&p, ob, br).or_else(|| core_fallback_outbound(ob)) {
             // Optionally wrap with circuit breaker
-            let tcp = maybe_wrap_with_cb(name.as_str(), o.tcp);
-            br.add_outbound(name.clone(), kind, tcp);
-            if let Some(udp_f) = o.udp {
-                br.add_outbound_udp_factory(name, udp_f);
-            }
+            let outbound = maybe_wrap_with_cb(name.as_str(), o.outbound);
+            br.add_outbound(name.clone(), kind, outbound);
         } else {
             tracing::error!(
                 target: "sb_core::adapter",
@@ -698,7 +676,7 @@ pub fn cb_state_snapshot() -> Vec<(String, i32)> {
 #[derive(Clone)]
 struct CbConnector {
     name: String,
-    inner: Arc<dyn OutboundConnector>,
+    inner: Arc<dyn sb_types::Outbound>,
     cb: std::sync::Arc<sb_transport::circuit_breaker::CircuitBreaker>,
 }
 
@@ -712,48 +690,62 @@ impl std::fmt::Debug for CbConnector {
 }
 
 #[cfg(feature = "v2ray_transport")]
-#[async_trait::async_trait]
-impl OutboundConnector for CbConnector {
-    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        use std::io::Error;
+impl sb_types::Outbound for CbConnector {
+    fn r#type(&self) -> &str {
+        self.inner.r#type()
+    }
 
-        match self.cb.allow_request().await {
-            sb_transport::circuit_breaker::CircuitBreakerDecision::Reject => {
-                return Err(Error::other("circuit open"));
+    fn tag(&self) -> sb_types::OutboundTag {
+        self.inner.tag()
+    }
+
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        self.inner.network()
+    }
+
+    fn dependencies(&self) -> &[sb_types::OutboundTag] {
+        self.inner.dependencies()
+    }
+
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            match self.cb.allow_request().await {
+                sb_transport::circuit_breaker::CircuitBreakerDecision::Reject => {
+                    return Err(sb_types::CoreError::policy("outbound circuit open"));
+                }
+                sb_transport::circuit_breaker::CircuitBreakerDecision::Allow => {}
             }
-            sb_transport::circuit_breaker::CircuitBreakerDecision::Allow => {}
-        }
 
-        let t0 = Instant::now();
-        let res = self.inner.connect(host, port).await;
+            let res = self.inner.dial(session).await;
+            let is_timeout = matches!(res, Err(sb_types::CoreError::Timeout { .. }));
+            self.cb.record_result(res.is_ok(), is_timeout).await;
+            let code = match self.cb.state().await {
+                sb_transport::circuit_breaker::CircuitState::Closed => 0,
+                sb_transport::circuit_breaker::CircuitState::HalfOpen => 1,
+                sb_transport::circuit_breaker::CircuitState::Open => 2,
+            };
+            crate::metrics::set_outbound_circuit_state(self.name.as_str(), code);
+            cb_state_set(self.name.as_str(), code);
+            res
+        })
+    }
 
-        // Heuristic: treat Timeout kind and "timeout" substring as timeout
-        let mut is_timeout = false;
-        let success = match &res {
-            Ok(_) => true,
-            Err(e) => {
-                is_timeout = e.kind() == std::io::ErrorKind::TimedOut
-                    || e.to_string().to_ascii_lowercase().contains("timeout")
-                    || t0.elapsed().as_secs() >= 10; // coarse guard
-                false
-            }
-        };
-        self.cb.record_result(success, is_timeout).await;
-        // Update CB state gauge
-        let st = self.cb.state().await;
-        let code = match st {
-            sb_transport::circuit_breaker::CircuitState::Closed => 0,
-            sb_transport::circuit_breaker::CircuitState::HalfOpen => 1,
-            sb_transport::circuit_breaker::CircuitState::Open => 2,
-        };
-        crate::metrics::set_outbound_circuit_state(self.name.as_str(), code);
-        cb_state_set(self.name.as_str(), code);
-        res
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        self.inner.listen_packet(session)
     }
 }
 
 #[cfg(feature = "v2ray_transport")]
-fn maybe_wrap_with_cb(name: &str, inner: Arc<dyn OutboundConnector>) -> Arc<dyn OutboundConnector> {
+fn maybe_wrap_with_cb(
+    name: &str,
+    inner: Arc<dyn sb_types::Outbound>,
+) -> Arc<dyn sb_types::Outbound> {
     // Default disabled; enable with SB_CB_ENABLE=1
     let enabled = std::env::var("SB_CB_ENABLE")
         .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
@@ -772,8 +764,8 @@ fn maybe_wrap_with_cb(name: &str, inner: Arc<dyn OutboundConnector>) -> Arc<dyn 
 #[cfg(not(feature = "v2ray_transport"))]
 fn maybe_wrap_with_cb(
     _name: &str,
-    inner: Arc<dyn OutboundConnector>,
-) -> Arc<dyn OutboundConnector> {
+    inner: Arc<dyn sb_types::Outbound>,
+) -> Arc<dyn sb_types::Outbound> {
     // Circuit breaker requires v2ray_transport feature
     inner
 }
@@ -800,11 +792,8 @@ fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
             let kind = p.kind.clone();
 
             if let Some(o) = try_adapter_outbound(&p, ob, br) {
-                let tcp = maybe_wrap_with_cb(name.as_str(), o.tcp);
-                br.add_outbound(name.clone(), kind, tcp);
-                if let Some(udp_f) = o.udp {
-                    br.add_outbound_udp_factory(name, udp_f);
-                }
+                let outbound = maybe_wrap_with_cb(name.as_str(), o.outbound);
+                br.add_outbound(name.clone(), kind, outbound);
             } else {
                 tracing::error!(
                     target: "sb_core::adapter",
@@ -845,12 +834,10 @@ pub fn build_bridge(
     #[cfg(feature = "router")]
     let endpoint_handler = {
         let stats = br.context.v2ray_server.as_ref().and_then(|s| s.stats());
-        let udp_factories = Arc::new(br.udp_factories.clone());
         Some(Arc::new(
             crate::endpoint::handler::EndpointConnectionHandler::new(
                 router_handle.clone(),
                 outbound_handle.clone(),
-                udp_factories,
                 stats,
             ),
         ))
@@ -896,7 +883,7 @@ pub fn build_bridge(
         };
 
         if let Some(i) = try_adapter_inbound(&p, &adapter_ctx) {
-            br.add_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
+            br.add_canonical_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
         } else {
             if p.kind == "tun" {
                 br.startup_errors.push(format!(
@@ -1010,7 +997,7 @@ pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
         };
 
         if let Some(i) = try_adapter_inbound(&p, &adapter_ctx) {
-            br.add_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
+            br.add_canonical_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
         } else {
             if p.kind == "tun" {
                 br.startup_errors.push(format!(
@@ -1077,22 +1064,45 @@ mod tests {
         parse_optional_outbound_ipv4_addr, parse_optional_outbound_ipv6_addr, to_inbound_param,
         to_outbound_param,
     };
-    use crate::adapter::OutboundConnector;
     use crate::endpoint::{Endpoint, StartStage};
     use sb_config::ir::{InboundIR, InboundType, OutboundIR, OutboundType};
     use std::sync::Arc;
-    use tokio::net::TcpStream;
 
     #[derive(Debug)]
     struct DummyConnector;
 
-    #[async_trait::async_trait]
-    impl OutboundConnector for DummyConnector {
-        async fn connect(&self, _host: &str, _port: u16) -> std::io::Result<TcpStream> {
-            Err(std::io::Error::new(
-                std::io::ErrorKind::Unsupported,
-                "dummy connector",
-            ))
+    impl sb_types::Outbound for DummyConnector {
+        fn r#type(&self) -> &str {
+            "dummy"
+        }
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new("dummy")
+        }
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp]
+        }
+        fn dial<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "dummy connector",
+                ))
+            })
+        }
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
+            Box::pin(async {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Unsupported,
+                    "dummy connector",
+                ))
+            })
         }
     }
 

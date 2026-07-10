@@ -9,121 +9,7 @@ use anyhow::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
-use tracing::{error, info, warn};
-
-/// Transport type for connection requests
-#[derive(Debug, Clone, PartialEq, Eq)]
-pub enum TransportKind {
-    Tcp,
-    Udp,
-}
-
-/// Connection target specification
-#[derive(Debug, Clone)]
-pub struct Target {
-    pub host: String,
-    pub port: u16,
-    pub kind: TransportKind,
-}
-
-impl Target {
-    pub fn new(host: impl Into<String>, port: u16, kind: TransportKind) -> Self {
-        Self {
-            host: host.into(),
-            port,
-            kind,
-        }
-    }
-
-    pub fn tcp(host: impl Into<String>, port: u16) -> Self {
-        Self::new(host, port, TransportKind::Tcp)
-    }
-
-    pub fn udp(host: impl Into<String>, port: u16) -> Self {
-        Self::new(host, port, TransportKind::Udp)
-    }
-}
-
-/// Dial options for connection requests
-#[derive(Debug, Clone)]
-pub struct DialOpts {
-    pub connect_timeout: Duration,
-    pub read_timeout: Duration,
-}
-
-impl Default for DialOpts {
-    fn default() -> Self {
-        Self {
-            connect_timeout: Duration::from_secs(10),
-            read_timeout: Duration::from_secs(30),
-        }
-    }
-}
-
-impl DialOpts {
-    pub fn new() -> Self {
-        Self::default()
-    }
-
-    pub const fn with_connect_timeout(mut self, timeout: Duration) -> Self {
-        self.connect_timeout = timeout;
-        self
-    }
-
-    pub const fn with_read_timeout(mut self, timeout: Duration) -> Self {
-        self.read_timeout = timeout;
-        self
-    }
-}
-
-/// Boxed async stream for connections (temporary abstraction)
-pub type BoxedStream = Box<dyn AsyncStream>;
-
-/// Connected UDP socket exposed as an `AsyncRead`/`AsyncWrite` stream.
-///
-/// Each `read` call receives one datagram; each `write` call sends one datagram.
-/// The socket MUST be in connected (peer-bound) mode before being wrapped.
-struct ConnectedUdpStream(tokio::net::UdpSocket);
-
-impl tokio::io::AsyncRead for ConnectedUdpStream {
-    fn poll_read(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &mut tokio::io::ReadBuf<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        self.get_mut().0.poll_recv(cx, buf)
-    }
-}
-
-impl tokio::io::AsyncWrite for ConnectedUdpStream {
-    fn poll_write(
-        self: std::pin::Pin<&mut Self>,
-        cx: &mut std::task::Context<'_>,
-        buf: &[u8],
-    ) -> std::task::Poll<std::io::Result<usize>> {
-        self.get_mut().0.poll_send(cx, buf)
-    }
-
-    fn poll_flush(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-
-    fn poll_shutdown(
-        self: std::pin::Pin<&mut Self>,
-        _cx: &mut std::task::Context<'_>,
-    ) -> std::task::Poll<std::io::Result<()>> {
-        std::task::Poll::Ready(Ok(()))
-    }
-}
-
-/// Combined trait for async read + write + unpin + send
-pub trait AsyncStream: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
-
-/// Blanket implementation for any type that implements the required traits
-impl<T> AsyncStream for T where T: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send {}
+use tracing::{info, warn};
 
 /// Adapter error types
 #[derive(Debug, thiserror::Error)]
@@ -144,32 +30,13 @@ pub enum AdapterError {
 
 pub type AdapterResult<T> = Result<T, AdapterError>;
 
-/// Unified outbound connector trait for all adapters
-#[async_trait::async_trait]
-pub trait OutboundConnector: Send + Sync + std::fmt::Debug {
-    /// Initialize the connector (load certificates, resolve DNS, etc.)
-    async fn start(&self) -> AdapterResult<()> {
-        Ok(())
-    }
-
-    /// Establish connection to target
-    async fn dial(&self, target: Target, opts: DialOpts) -> AdapterResult<BoxedStream>;
-
-    /// Get connector type/name for logging
-    fn name(&self) -> &'static str {
-        "unknown"
-    }
-}
-
 /// Outbound switchboard for managing and selecting connectors
 #[derive(Debug)]
 pub struct OutboundSwitchboard {
     /// Registry mapping outbound names to connector instances
-    registry: HashMap<String, Arc<dyn OutboundConnector>>,
+    registry: HashMap<String, Arc<dyn sb_types::Outbound>>,
     /// Default connector when no routing match is found
-    default_connector: Option<Arc<dyn OutboundConnector>>,
-    /// UDP factories by outbound name (for QUIC-based protocols, etc.)
-    udp_registry: HashMap<String, Arc<dyn crate::adapter::UdpOutboundFactory>>,
+    default_connector: Option<Arc<dyn sb_types::Outbound>>,
 }
 
 impl OutboundSwitchboard {
@@ -178,45 +45,15 @@ impl OutboundSwitchboard {
         Self {
             registry: HashMap::new(),
             default_connector: None,
-            udp_registry: HashMap::new(),
         }
     }
 
     /// Register an outbound connector with a given name
     pub fn register<C>(&mut self, name: String, connector: C) -> SbResult<()>
     where
-        C: OutboundConnector + 'static,
+        C: sb_types::Outbound + 'static,
     {
         let connector = Arc::new(connector);
-
-        // Initialize the connector
-        let connector_clone = connector.clone();
-        let connector_name = connector.name();
-        let fut = async move {
-            if let Err(e) = connector_clone.start().await {
-                error!(
-                    "Failed to initialize outbound connector '{}': {}",
-                    connector_name, e
-                );
-            } else {
-                info!(
-                    "Outbound connector '{}' initialized successfully",
-                    connector_name
-                );
-            }
-        };
-        match tokio::runtime::Handle::try_current() {
-            Ok(h) => {
-                h.spawn(fut);
-            }
-            Err(_) => {
-                std::thread::spawn(move || {
-                    if let Ok(rt) = tokio::runtime::Runtime::new() {
-                        rt.block_on(fut);
-                    }
-                });
-            }
-        }
 
         self.registry.insert(name.clone(), connector);
         info!("Registered outbound connector: '{}'", name);
@@ -226,38 +63,9 @@ impl OutboundSwitchboard {
     /// Set the default connector to use when no routing match is found
     pub fn set_default<C>(&mut self, connector: C) -> SbResult<()>
     where
-        C: OutboundConnector + 'static,
+        C: sb_types::Outbound + 'static,
     {
         let connector = Arc::new(connector);
-
-        // Initialize the connector
-        let connector_clone = connector.clone();
-        let connector_name = connector.name();
-        let fut = async move {
-            if let Err(e) = connector_clone.start().await {
-                error!(
-                    "Failed to initialize default outbound connector '{}': {}",
-                    connector_name, e
-                );
-            } else {
-                info!(
-                    "Default outbound connector '{}' initialized successfully",
-                    connector_name
-                );
-            }
-        };
-        match tokio::runtime::Handle::try_current() {
-            Ok(h) => {
-                h.spawn(fut);
-            }
-            Err(_) => {
-                std::thread::spawn(move || {
-                    if let Ok(rt) = tokio::runtime::Runtime::new() {
-                        rt.block_on(fut);
-                    }
-                });
-            }
-        }
 
         self.default_connector = Some(connector);
         info!("Set default outbound connector");
@@ -267,7 +75,7 @@ impl OutboundSwitchboard {
     /// Get a connector by name.
     ///
     /// No implicit fallback is performed for unknown names.
-    pub fn get_connector(&self, name: &str) -> Option<Arc<dyn OutboundConnector>> {
+    pub fn get_connector(&self, name: &str) -> Option<Arc<dyn sb_types::Outbound>> {
         if let Some(connector) = self.registry.get(name) {
             return Some(connector.clone());
         }
@@ -287,31 +95,6 @@ impl OutboundSwitchboard {
             "Outbound connector not found; no fallback connector is applied"
         );
         None
-    }
-
-    /// Register a UDP factory for an outbound by name
-    pub fn register_udp_factory(
-        &mut self,
-        name: String,
-        f: Arc<dyn crate::adapter::UdpOutboundFactory>,
-    ) -> SbResult<()> {
-        self.udp_registry.insert(name, f);
-        Ok(())
-    }
-
-    /// Get a UDP factory by name
-    pub fn get_udp_factory(
-        &self,
-        name: &str,
-    ) -> Option<Arc<dyn crate::adapter::UdpOutboundFactory>> {
-        self.udp_registry.get(name).cloned()
-    }
-
-    /// List all registered UDP factory names
-    pub fn list_udp_factories(&self) -> Vec<String> {
-        let mut names: Vec<_> = self.udp_registry.keys().cloned().collect();
-        names.sort();
-        names
     }
 
     /// List all registered connector names
@@ -392,88 +175,20 @@ impl SwitchboardBuilder {
 
         match ir.ty {
             OutboundType::Direct => {
-                #[derive(Debug, Clone, Default)]
-                struct DirectPassthroughConnector;
-
-                #[async_trait::async_trait]
-                impl OutboundConnector for DirectPassthroughConnector {
-                    async fn dial(
-                        &self,
-                        target: Target,
-                        opts: DialOpts,
-                    ) -> AdapterResult<BoxedStream> {
-                        if target.kind == TransportKind::Tcp {
-                            let stream = tokio::time::timeout(
-                                opts.connect_timeout,
-                                crate::outbound::connect(&target.host, target.port),
-                            )
-                            .await
-                            .map_err(|_| AdapterError::Timeout(opts.connect_timeout))?
-                            .map_err(AdapterError::Io)?;
-                            return Ok(Box::new(stream));
-                        }
-
-                        // UDP: resolve host, bind an ephemeral socket, connect to peer.
-                        let addrs: Vec<std::net::SocketAddr> =
-                            tokio::net::lookup_host(format!("{}:{}", target.host, target.port))
-                                .await
-                                .map_err(AdapterError::Io)?
-                                .collect();
-                        let dst = addrs.first().copied().ok_or_else(|| {
-                            AdapterError::Io(std::io::Error::new(
-                                std::io::ErrorKind::AddrNotAvailable,
-                                format!("could not resolve {}", target.host),
-                            ))
-                        })?;
-                        let bind_addr: std::net::SocketAddr = if dst.is_ipv6() {
-                            "[::]:0".parse().unwrap()
-                        } else {
-                            "0.0.0.0:0".parse().unwrap()
-                        };
-                        let socket = tokio::net::UdpSocket::bind(bind_addr)
-                            .await
-                            .map_err(AdapterError::Io)?;
-                        tokio::time::timeout(opts.connect_timeout, socket.connect(dst))
-                            .await
-                            .map_err(|_| AdapterError::Timeout(opts.connect_timeout))?
-                            .map_err(AdapterError::Io)?;
-                        Ok(Box::new(ConnectedUdpStream(socket)))
-                    }
-
-                    fn name(&self) -> &'static str {
-                        "direct"
-                    }
-                }
-
                 self.switchboard
-                    .register(name.to_string(), DirectPassthroughConnector)
+                    .register(
+                        name.to_string(),
+                        crate::adapter::canonical_bridge::DirectOutbound::new(name),
+                    )
                     .map_err(|e| AdapterError::Other(e.into()))?;
             }
 
             OutboundType::Block => {
-                #[derive(Debug, Clone, Default)]
-                struct BlockRejectConnector;
-
-                #[async_trait::async_trait]
-                impl OutboundConnector for BlockRejectConnector {
-                    async fn dial(
-                        &self,
-                        _target: Target,
-                        _opts: DialOpts,
-                    ) -> AdapterResult<BoxedStream> {
-                        Err(AdapterError::Io(std::io::Error::new(
-                            std::io::ErrorKind::PermissionDenied,
-                            "blocked by block outbound",
-                        )))
-                    }
-
-                    fn name(&self) -> &'static str {
-                        "block"
-                    }
-                }
-
                 self.switchboard
-                    .register(name.to_string(), BlockRejectConnector)
+                    .register(
+                        name.to_string(),
+                        crate::adapter::canonical_bridge::BlockOutbound::new(name),
+                    )
                     .map_err(|e| AdapterError::Other(e.into()))?;
             }
 
@@ -645,16 +360,39 @@ impl DegradedConnector {
     }
 }
 
-#[async_trait::async_trait]
-impl OutboundConnector for DegradedConnector {
-    async fn dial(&self, _target: Target, _opts: DialOpts) -> AdapterResult<BoxedStream> {
-        Err(AdapterError::NotImplemented(format!(
-            "Outbound '{}' is in degraded mode: {}",
-            self.name, self.error_reason
-        )))
-    }
-
-    fn name(&self) -> &'static str {
+impl sb_types::Outbound for DegradedConnector {
+    fn r#type(&self) -> &str {
         "degraded"
+    }
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(self.name.clone())
+    }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp]
+    }
+    fn dial<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                format!(
+                    "Outbound '{}' is in degraded mode: {}",
+                    self.name, self.error_reason
+                ),
+            ))
+        })
+    }
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                "degraded outbound",
+            ))
+        })
     }
 }

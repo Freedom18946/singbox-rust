@@ -2,9 +2,7 @@
 //!
 //! Common types and traits used across all outbound implementations.
 
-use async_trait::async_trait;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
-use tokio::io::{AsyncRead, AsyncWrite};
 
 // Re-export TargetAddr from net module for convenience
 pub use crate::net::udp_nat::TargetAddr;
@@ -37,18 +35,6 @@ impl From<&HostPort> for Addr {
             Ok(IpAddr::V6(v)) => Self::V6(v),
             _ => Self::Domain(h.host.clone()),
         }
-    }
-}
-
-/// Trait for TCP outbound connections
-#[async_trait]
-pub trait OutboundTcp: Send + Sync {
-    type IO: AsyncRead + AsyncWrite + Unpin + Send + 'static;
-
-    async fn connect(&self, target: &HostPort) -> std::io::Result<Self::IO>;
-
-    fn protocol_name(&self) -> &'static str {
-        "unknown"
     }
 }
 
@@ -151,23 +137,4 @@ impl Default for UdpBindRequest {
         let default_sa = std::net::SocketAddr::from(([0, 0, 0, 0], 0));
         Self::new("0.0.0.0:0".parse().unwrap_or(default_sa))
     }
-}
-
-/// Generic outbound connection trait
-#[async_trait]
-pub trait Outbound: Send + Sync {
-    /// Connect TCP to target
-    async fn tcp_connect(&self, req: TcpConnectRequest) -> anyhow::Result<tokio::net::TcpStream>;
-
-    /// Connect TCP with TLS to target
-    async fn tcp_connect_tls(
-        &self,
-        req: TcpConnectRequest,
-    ) -> anyhow::Result<crate::transport::TlsStream<tokio::net::TcpStream>>;
-
-    /// Bind UDP socket
-    async fn udp_bind(&self, req: UdpBindRequest) -> anyhow::Result<tokio::net::UdpSocket>;
-
-    /// Get outbound name/identifier
-    fn name(&self) -> &'static str;
 }

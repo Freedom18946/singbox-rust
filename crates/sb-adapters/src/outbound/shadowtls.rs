@@ -13,7 +13,9 @@
 //! - `connect_detour_stream` dials `WrapperEndpoint`, **not** the requested target.
 //! - The returned `BoxedStream` is an `OwnedBridgeStream` whose `Drop` aborts
 //!   the background bridge task — no orphan tasks can leak.
-//! - Standalone leaf `dial()` is permanently rejected.
+//! - Canonical `dial()` opens the configured wrapper stream; upper-layer
+//!   protocols still own encoding of the requested endpoint.
+//! - Packet associations are unsupported because ShadowTLS wraps streams only.
 //!
 use crate::outbound::prelude::*;
 use std::time::Duration;
@@ -914,6 +916,8 @@ where
 /// Configuration for ShadowTLS outbound adapter
 #[derive(Debug, Clone)]
 pub struct ShadowTlsAdapterConfig {
+    /// Optional configured outbound tag.
+    pub tag: Option<String>,
     /// Decoy TLS server hostname or IP
     pub server: String,
     /// Decoy TLS server port (usually 443)
@@ -935,6 +939,7 @@ pub struct ShadowTlsAdapterConfig {
 impl Default for ShadowTlsAdapterConfig {
     fn default() -> Self {
         Self {
+            tag: None,
             server: "127.0.0.1".to_string(),
             port: 443,
             version: 1,
@@ -1016,6 +1021,10 @@ pub struct ShadowTlsConnector {
 }
 
 impl ShadowTlsConnector {
+    pub const fn name(&self) -> &'static str {
+        "shadowtls"
+    }
+
     pub fn new(cfg: ShadowTlsAdapterConfig) -> Self {
         Self { cfg }
     }
@@ -1226,50 +1235,54 @@ impl ShadowTlsConnector {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for ShadowTlsConnector {
-    fn name(&self) -> &'static str {
+impl sb_types::Outbound for ShadowTlsConnector {
+    fn r#type(&self) -> &str {
         "shadowtls"
     }
 
-    async fn start(&self) -> Result<()> {
-        #[cfg(not(feature = "adapter-shadowtls"))]
-        return Err(AdapterError::NotImplemented {
-            what: "adapter-shadowtls",
-        });
-
-        #[cfg(feature = "adapter-shadowtls")]
-        Ok(())
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(
+            self.cfg
+                .tag
+                .clone()
+                .unwrap_or_else(|| "shadowtls".to_string()),
+        )
     }
 
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        #[cfg(not(feature = "adapter-shadowtls"))]
-        return Err(AdapterError::NotImplemented {
-            what: "adapter-shadowtls",
-        });
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp]
+    }
 
-        #[cfg(feature = "adapter-shadowtls")]
-        {
-            if target.kind != TransportKind::Tcp {
-                return Err(AdapterError::Protocol(
-                    "ShadowTLS outbound only supports TCP".to_string(),
-                ));
-            }
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::ports::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
 
-            let _span = crate::outbound::span_dial("shadowtls", &target);
-            tracing::warn!(
-                server = %self.cfg.server,
-                port = self.cfg.port,
-                version = self.cfg.version,
-                sni = %self.cfg.sni,
-                target = %format!("{}:{}", target.host, target.port),
-                "shadowtls standalone leaf dial rejected; transport-wrapper remodel is required"
-            );
-            Err(AdapterError::Protocol(format!(
-                "ShadowTLS standalone leaf dialing is disabled for version {}: sing-box parity requires a transport-wrapper/detour model, not the legacy TLS+CONNECT tunnel",
-                self.cfg.version
-            )))
-        }
+            let (host, port) = match &session.target {
+                sb_types::TargetAddr::Domain(host, port) => (host.as_str(), *port),
+                sb_types::TargetAddr::Socket(address) => ("ip-target", address.port()),
+            };
+            let stream = self
+                .connect_detour_stream(host, port)
+                .await
+                .map_err(|error| crate::outbound::core_error(error, session))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::ports::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+    {
+        Box::pin(async {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Unsupported,
+                "ShadowTLS is a stream transport wrapper and has no packet association",
+            ))
+        })
     }
 }
 

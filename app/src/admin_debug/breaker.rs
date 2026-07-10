@@ -550,6 +550,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_breaker_basic() {
         let mut br = HostBreaker::new(1000, 500, 3, 0.5);
         assert!(br.check("test.com"));
@@ -558,6 +559,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_breaker_trips_on_threshold() {
         let _clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 1000, 3, 0.9);
@@ -572,6 +574,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_breaker_explicit_metrics_owner_tracks_reopen() {
         let _clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 1000, 2, 0.9);
@@ -590,6 +593,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn breaker_store_owner_helpers_roundtrip_state() {
         let _clock = setup_test_clock();
         let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
@@ -618,6 +622,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_breaker_trips_on_ratio() {
         let _clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 1000, 100, 0.5);
@@ -634,6 +639,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_breaker_recovers_after_timeout() {
         let clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 50, 2, 0.9);
@@ -651,6 +657,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_breaker_window_reset() {
         let clock = setup_test_clock();
         let mut br = HostBreaker::new(50, 1000, 3, 0.9);
@@ -669,6 +676,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_breaker_half_open_success() {
         let clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 100, 2, 0.9);
@@ -703,6 +711,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_breaker_half_open_failure_backoff() {
         let clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 100, 2, 0.9);
@@ -734,6 +743,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_exponential_backoff_calculation() {
         let br = HostBreaker::new(10000, 1000, 3, 0.5);
 
@@ -749,6 +759,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_half_open_probe_limit() {
         let clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 100, 2, 0.9);
@@ -775,6 +786,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_state_stats_output() {
         let mut br = HostBreaker::new(10000, 1000, 2, 0.9);
 
@@ -795,6 +807,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_jitter_application() {
         let br = HostBreaker::new(10000, 1000, 3, 0.5);
 
@@ -827,6 +840,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_backoff_cap() {
         let br = HostBreaker::new(10000, 100, 3, 0.5); // 100ms base, max 3200ms
 
@@ -857,6 +871,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_metrics_integration() {
         let clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 500, 2, 0.9);
@@ -900,6 +915,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_host_isolation() {
         let mut br = HostBreaker::new(10000, 1000, 2, 0.9);
 
@@ -918,6 +934,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_state_transitions() {
         let clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 100, 2, 0.9);
@@ -954,6 +971,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn test_reopen_count_progression() {
         let clock = setup_test_clock();
         let mut br = HostBreaker::new(10000, 50, 2, 0.9);
@@ -995,6 +1013,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn explicit_metrics_owner_records_breaker_reopen_without_default_state() {
         crate::admin_debug::security_metrics::clear_default_for_test();
 

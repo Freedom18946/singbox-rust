@@ -13,8 +13,11 @@
 use crate::outbound::prelude::*;
 use ipnet::IpNet;
 use std::net::{IpAddr, SocketAddr};
-use std::sync::Arc;
-use std::time::Duration;
+use std::sync::{
+    atomic::{AtomicBool, Ordering},
+    Arc, Mutex,
+};
+use std::time::{Duration, Instant};
 
 use sb_transport::wireguard::{WgUdpSocket, WireGuardConfig, WireGuardTransport};
 use tracing::{debug, warn};
@@ -145,25 +148,225 @@ impl WireGuardOutbound {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for WireGuardOutbound {
-    fn name(&self) -> &'static str {
-        "wireguard"
+#[derive(Debug)]
+struct WireGuardPacketConn {
+    socket: WgUdpSocket,
+    idle_timeout: Duration,
+    deadlines: Mutex<(Option<Instant>, Option<Instant>)>,
+    closed: AtomicBool,
+}
+
+fn packet_operation_timeout(
+    idle_timeout: Duration,
+    explicit: Option<Instant>,
+) -> (Instant, Duration) {
+    let now = Instant::now();
+    let duration = explicit
+        .map(|deadline| deadline.saturating_duration_since(now))
+        .unwrap_or(idle_timeout);
+    (now + duration, duration)
+}
+
+fn ensure_packet_open(closed: &AtomicBool) -> Result<(), sb_types::CoreError> {
+    if closed.load(Ordering::Acquire) {
+        Err(sb_types::CoreError::connect(
+            sb_types::ConnectErrorKind::Reset,
+            "packet connection closed",
+        ))
+    } else {
+        Ok(())
+    }
+}
+
+fn close_packet(closed: &AtomicBool) {
+    closed.store(true, Ordering::Release);
+}
+
+async fn run_packet_operation<T, F>(
+    deadline: Instant,
+    duration: Duration,
+    operation: &'static str,
+    future: F,
+) -> Result<T, sb_types::CoreError>
+where
+    F: std::future::Future<Output = Result<T, sb_types::CoreError>>,
+{
+    tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), future)
+        .await
+        .map_err(|_| sb_types::CoreError::timeout(operation, duration))?
+}
+
+impl WireGuardPacketConn {
+    fn operation_timeout(&self, read: bool) -> (Instant, Duration) {
+        let deadlines = self
+            .deadlines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let explicit = if read { deadlines.0 } else { deadlines.1 };
+        packet_operation_timeout(self.idle_timeout, explicit)
     }
 
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        debug!("WireGuard dial request to {}:{}", target.host, target.port);
+    fn ensure_open(&self) -> Result<(), sb_types::CoreError> {
+        ensure_packet_open(&self.closed)
+    }
+}
+
+impl sb_types::PacketConn for WireGuardPacketConn {
+    fn send_to<'a>(
+        &'a self,
+        data: &'a [u8],
+        destination: &'a sb_types::TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.ensure_open()?;
+            let (deadline, duration) = self.operation_timeout(false);
+            let operation = async {
+                let address = match destination {
+                    sb_types::TargetAddr::Socket(address) => *address,
+                    sb_types::TargetAddr::Domain(host, port) => {
+                        tokio::net::lookup_host((host.as_str(), *port))
+                            .await
+                            .map_err(|error| sb_types::CoreError::dns(error.to_string()))?
+                            .next()
+                            .ok_or_else(|| {
+                                sb_types::CoreError::dns("no WireGuard UDP address resolved")
+                            })?
+                    }
+                };
+                self.socket
+                    .send_to(data, address)
+                    .await
+                    .map_err(|error| sb_types::CoreError::io(error.to_string()))
+            };
+            run_packet_operation(deadline, duration, "packet-send", operation).await
+        })
+    }
+
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, sb_types::TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            self.ensure_open()?;
+            let (deadline, duration) = self.operation_timeout(true);
+            tokio::time::timeout_at(
+                tokio::time::Instant::from_std(deadline),
+                self.socket.recv_from(buffer),
+            )
+            .await
+            .map_err(|_| sb_types::CoreError::timeout("packet-recv", duration))?
+            .map(|(size, source)| (size, sb_types::TargetAddr::Socket(source)))
+            .map_err(|error| sb_types::CoreError::io(error.to_string()))
+        })
+    }
+
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        close_packet(&self.closed);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn local_addr(&self) -> Option<sb_types::TargetAddr> {
+        None
+    }
+
+    fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        *self
+            .deadlines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = (deadline, deadline);
+        Ok(())
+    }
+
+    fn set_read_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        self.deadlines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .0 = deadline;
+        Ok(())
+    }
+
+    fn set_write_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        self.deadlines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .1 = deadline;
+        Ok(())
+    }
+}
+
+macro_rules! impl_wireguard_outbound {
+    ($type:ty, $tag:expr) => {
+        impl sb_types::Outbound for $type {
+            fn r#type(&self) -> &str {
+                "wireguard"
+            }
+
+            fn tag(&self) -> sb_types::OutboundTag {
+                sb_types::OutboundTag::new(($tag)(self))
+            }
+
+            fn network(&self) -> &[sb_types::NetworkKind] {
+                &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+            }
+
+            fn dial<'a>(
+                &'a self,
+                session: &'a sb_types::Session,
+            ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+                Box::pin(async move {
+                    use tokio_util::compat::TokioAsyncReadCompatExt;
+                    let stream = <$type>::dial(self, session)
+                        .await
+                        .map_err(|error| crate::outbound::core_error(error, session))?;
+                    Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+                })
+            }
+
+            fn listen_packet<'a>(
+                &'a self,
+                session: &'a sb_types::Session,
+            ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+            {
+                Box::pin(async move {
+                    let socket = self
+                        .connect_udp()
+                        .await
+                        .map_err(|error| crate::outbound::core_error(error, session))?;
+                    Ok(Box::new(WireGuardPacketConn {
+                        socket,
+                        idle_timeout: session.packet.idle_timeout,
+                        deadlines: Mutex::new((None, None)),
+                        closed: AtomicBool::new(false),
+                    }) as sb_types::BoxedPacketConn)
+                })
+            }
+        }
+    };
+}
+
+impl WireGuardOutbound {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
+        let target = &session.target;
+        let host = target.host();
+        let port = target.port();
+        debug!("WireGuard dial request to {}", target);
         use sb_transport::Dialer;
         // Establish a real TCP connection to the in-tunnel target through the
         // userspace netstack (boringtun + smoltcp), not a raw tunnel stream.
         let stream = self
             .transport
-            .connect(&target.host, target.port)
+            .connect(&host, port)
             .await
             .map_err(|e| AdapterError::other(format!("WireGuard dial failed: {e}")))?;
         Ok(crate::traits::from_transport_stream(stream))
     }
 }
+
+impl_wireguard_outbound!(WireGuardOutbound, |this: &WireGuardOutbound| this
+    ._config
+    .tag
+    .clone()
+    .unwrap_or_else(|| "wireguard".to_string()));
 
 /// Lazy-initialized WireGuard connector.
 ///
@@ -208,17 +411,18 @@ impl LazyWireGuardConnector {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for LazyWireGuardConnector {
-    fn name(&self) -> &'static str {
-        "wireguard"
-    }
-
-    async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
+impl LazyWireGuardConnector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
         let inner = self.get_or_init().await?;
-        inner.dial(target, opts).await
+        inner.dial(session).await
     }
 }
+
+impl_wireguard_outbound!(LazyWireGuardConnector, |this: &LazyWireGuardConnector| this
+    .config
+    .tag
+    .clone()
+    .unwrap_or_else(|| "wireguard".to_string()));
 
 /// Build WireGuard outbound from IR configuration.
 impl TryFrom<&sb_config::ir::OutboundIR> for WireGuardOutboundConfig {
@@ -340,6 +544,52 @@ impl TryFrom<&sb_config::ir::OutboundIR> for WireGuardOutboundConfig {
 mod tests {
     use super::*;
     use base64::{engine::general_purpose::STANDARD as BASE64, Engine as _};
+
+    #[test]
+    fn packet_timeout_prefers_explicit_and_reports_remaining_duration() {
+        let idle = Duration::from_secs(30);
+        let (_, default_duration) = packet_operation_timeout(idle, None);
+        assert_eq!(default_duration, idle);
+
+        let (_, explicit_duration) =
+            packet_operation_timeout(idle, Some(Instant::now() + Duration::from_millis(20)));
+        assert!(explicit_duration <= Duration::from_millis(20));
+        assert!(explicit_duration < idle);
+    }
+
+    #[test]
+    fn packet_close_state_rejects_io() {
+        let closed = AtomicBool::new(false);
+        ensure_packet_open(&closed).unwrap();
+        close_packet(&closed);
+        assert!(matches!(
+            ensure_packet_open(&closed),
+            Err(sb_types::CoreError::Connect {
+                kind: sb_types::ConnectErrorKind::Reset,
+                ..
+            })
+        ));
+    }
+
+    #[tokio::test]
+    async fn packet_timeout_wraps_entire_async_operation() {
+        let duration = Duration::from_millis(5);
+        let error = run_packet_operation(
+            Instant::now() + duration,
+            duration,
+            "packet-send",
+            std::future::pending::<Result<(), sb_types::CoreError>>(),
+        )
+        .await
+        .expect_err("pending resolution/send operation must time out");
+        assert!(matches!(
+            error,
+            sb_types::CoreError::Timeout {
+                operation,
+                duration: reported,
+            } if operation == "packet-send" && reported == duration
+        ));
+    }
 
     #[test]
     fn test_config_default() {

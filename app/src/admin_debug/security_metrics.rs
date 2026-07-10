@@ -858,6 +858,7 @@ mod tests {
     }
 
     #[test]
+    #[serial_test::serial]
     fn explicit_snapshot_with_control_plane_uses_supplied_owner_state() {
         let state = SecurityMetricsState::new();
         state.inc_total_requests();

@@ -11,7 +11,9 @@
 //! - **Graceful Shutdown**: Waits for active connections to drain before terminating, ensuring zero data loss.
 //! - **Diffing**: Calculates the difference between old and new configs to minimize churn (e.g., only restarting changed inbounds).
 
-use crate::adapter::{Bridge, InboundService};
+use crate::adapter::Bridge;
+#[cfg(test)]
+use crate::adapter::InboundTaskDriver;
 use crate::context::{Context, Startable, V2RayServer, V2RayServerActivePhase};
 use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 #[cfg(feature = "router")]
@@ -20,7 +22,6 @@ use crate::service::{Service, StartStage as ServiceStage};
 use anyhow::{Context as AnyhowContext, Result};
 use sb_config::ir::diff::Diff;
 use std::collections::HashMap;
-use std::io;
 use std::net::IpAddr;
 use std::path::Path;
 use std::sync::atomic::{AtomicBool, Ordering};
@@ -69,31 +70,6 @@ pub enum ReloadMsg {
 struct ProviderOverlayState {
     outbounds_by_provider: HashMap<String, Vec<String>>,
     rules_by_provider: HashMap<String, Vec<sb_config::ir::RuleIR>>,
-}
-
-#[derive(Clone, Debug, PartialEq, Eq)]
-enum InboundExitKind {
-    CleanShutdown,
-    UnexpectedCompletion,
-    ServeError,
-    Panicked,
-    JoinCancelled,
-}
-
-impl InboundExitKind {
-    fn as_str(&self) -> &'static str {
-        match self {
-            Self::CleanShutdown => "clean_shutdown",
-            Self::UnexpectedCompletion => "unexpected_completion",
-            Self::ServeError => "serve_error",
-            Self::Panicked => "panicked",
-            Self::JoinCancelled => "join_cancelled",
-        }
-    }
-
-    fn is_error(&self) -> bool {
-        !matches!(self, Self::CleanShutdown)
-    }
 }
 
 #[derive(Clone, Debug)]
@@ -1608,7 +1584,9 @@ impl Supervisor {
             monitor.shutdown_requested.store(true, Ordering::SeqCst);
         }
         for inbound in &inbounds {
-            inbound.request_shutdown();
+            if let Err(error) = inbound.close() {
+                tracing::warn!(%error, tag = %inbound.tag(), "canonical inbound close failed");
+            }
         }
         tracing::warn!(
             target: "sb_core::runtime",
@@ -1849,96 +1827,6 @@ fn inbound_runtime_label(
     InboundRuntimeLabel { tag, kind, phase }
 }
 
-fn classify_inbound_exit(
-    outcome: Result<io::Result<()>, tokio::task::JoinError>,
-    shutdown_requested: bool,
-) -> (InboundExitKind, Option<String>) {
-    match outcome {
-        Ok(Ok(())) => {
-            if shutdown_requested {
-                (InboundExitKind::CleanShutdown, None)
-            } else {
-                (InboundExitKind::UnexpectedCompletion, None)
-            }
-        }
-        Ok(Err(error)) => {
-            if shutdown_requested {
-                (InboundExitKind::CleanShutdown, None)
-            } else {
-                (InboundExitKind::ServeError, Some(error.to_string()))
-            }
-        }
-        Err(join_error) => {
-            if join_error.is_panic() {
-                let payload = join_error.into_panic();
-                let message = payload
-                    .downcast_ref::<&str>()
-                    .map(|s| (*s).to_string())
-                    .or_else(|| payload.downcast_ref::<String>().cloned())
-                    .unwrap_or_else(|| "panic with non-string payload".to_string());
-                (InboundExitKind::Panicked, Some(message))
-            } else if join_error.is_cancelled() {
-                if shutdown_requested {
-                    (InboundExitKind::CleanShutdown, None)
-                } else {
-                    (InboundExitKind::JoinCancelled, None)
-                }
-            } else {
-                (InboundExitKind::JoinCancelled, None)
-            }
-        }
-    }
-}
-
-fn record_inbound_exit(
-    label: &InboundRuntimeLabel,
-    exit_kind: &InboundExitKind,
-    error: Option<&str>,
-) {
-    if exit_kind.is_error() {
-        tracing::error!(
-            target: "sb_core::runtime",
-            component = "inbound",
-            tag = %label.tag,
-            kind = %label.kind,
-            phase = label.phase,
-            exit_kind = exit_kind.as_str(),
-            error = error.unwrap_or(""),
-            "inbound serve task exited abnormally"
-        );
-    } else {
-        tracing::debug!(
-            target: "sb_core::runtime",
-            component = "inbound",
-            tag = %label.tag,
-            kind = %label.kind,
-            phase = label.phase,
-            exit_kind = exit_kind.as_str(),
-            "inbound serve task stopped"
-        );
-    }
-}
-
-fn spawn_inbound_monitor(
-    label: InboundRuntimeLabel,
-    shutdown_requested: Arc<AtomicBool>,
-    serve_join: tokio::task::JoinHandle<io::Result<()>>,
-) -> InboundRuntimeMonitor {
-    let monitor_label = label.clone();
-    let monitor_shutdown = shutdown_requested.clone();
-    let join = tokio::spawn(async move {
-        let outcome = serve_join.await;
-        let (exit_kind, error) =
-            classify_inbound_exit(outcome, monitor_shutdown.load(Ordering::SeqCst));
-        record_inbound_exit(&monitor_label, &exit_kind, error.as_deref());
-    });
-    InboundRuntimeMonitor {
-        label,
-        shutdown_requested,
-        join,
-    }
-}
-
 async fn drain_inbound_monitors(monitors: Vec<InboundRuntimeMonitor>, reason: &'static str) {
     for monitor in monitors {
         let label = monitor.label.clone();
@@ -1977,7 +1865,7 @@ async fn drain_inbound_monitors(monitors: Vec<InboundRuntimeMonitor>, reason: &'
 }
 
 async fn shutdown_inbounds_and_monitors(
-    inbounds: &[Arc<dyn InboundService>],
+    inbounds: &[Arc<dyn sb_types::Inbound>],
     monitors: Vec<InboundRuntimeMonitor>,
     reason: &'static str,
 ) {
@@ -1985,7 +1873,9 @@ async fn shutdown_inbounds_and_monitors(
         monitor.shutdown_requested.store(true, Ordering::SeqCst);
     }
     for inbound in inbounds {
-        inbound.request_shutdown();
+        if let Err(error) = inbound.close() {
+            tracing::warn!(%error, reason, tag = %inbound.tag(), "canonical inbound close failed");
+        }
     }
     drain_inbound_monitors(monitors, reason).await;
 }
@@ -1994,53 +1884,10 @@ async fn start_inbounds_until_ready(
     bridge: &Bridge,
     phase: &'static str,
 ) -> Result<Vec<InboundRuntimeMonitor>> {
-    let mut monitors = Vec::new();
+    let monitors = Vec::new();
     for (index, inbound) in bridge.inbounds.iter().enumerate() {
         let label = inbound_runtime_label(bridge, index, phase);
-        let shutdown_requested = Arc::new(AtomicBool::new(false));
-        if inbound.supports_startup_readiness() {
-            let (ready_tx, ready_rx) = oneshot::channel();
-            let ib = inbound.clone();
-            let serve_join =
-                tokio::task::spawn_blocking(move || ib.serve_with_ready(Some(ready_tx)));
-            let current_monitor =
-                spawn_inbound_monitor(label, shutdown_requested.clone(), serve_join);
-
-            match tokio::time::timeout(INBOUND_READY_TIMEOUT, ready_rx).await {
-                Ok(Ok(Ok(()))) => {
-                    monitors.push(current_monitor);
-                }
-                Ok(Ok(Err(error))) => {
-                    shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "readiness-failed")
-                        .await;
-                    drain_inbound_monitors(vec![current_monitor], "readiness-failed").await;
-                    return Err(anyhow::anyhow!("{phase} inbound readiness failed: {error}"));
-                }
-                Ok(Err(_closed)) => {
-                    shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "readiness-closed")
-                        .await;
-                    drain_inbound_monitors(vec![current_monitor], "readiness-closed").await;
-                    return Err(anyhow::anyhow!(
-                        "{phase} inbound exited before reporting readiness"
-                    ));
-                }
-                Err(_elapsed) => {
-                    current_monitor
-                        .shutdown_requested
-                        .store(true, Ordering::SeqCst);
-                    shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "readiness-timeout")
-                        .await;
-                    for inbound in &bridge.inbounds {
-                        inbound.request_shutdown();
-                    }
-                    drain_inbound_monitors(vec![current_monitor], "readiness-timeout").await;
-                    return Err(anyhow::anyhow!(
-                        "{phase} inbound readiness timed out after {:?}",
-                        INBOUND_READY_TIMEOUT
-                    ));
-                }
-            }
-        } else {
+        if !inbound.supports_startup_readiness() {
             tracing::warn!(
                 target: "sb_core::runtime",
                 phase,
@@ -2048,9 +1895,34 @@ async fn start_inbounds_until_ready(
                 kind = %label.kind,
                 "inbound does not expose bind readiness; starting best-effort"
             );
-            let ib = inbound.clone();
-            let serve_join = tokio::task::spawn_blocking(move || ib.serve());
-            monitors.push(spawn_inbound_monitor(label, shutdown_requested, serve_join));
+        }
+        let ib = inbound.clone();
+        let started = tokio::time::timeout(
+            INBOUND_READY_TIMEOUT,
+            tokio::task::spawn_blocking(move || ib.start(sb_types::StartStage::Start)),
+        )
+        .await;
+        match started {
+            Ok(Ok(Ok(()))) => {}
+            Ok(Ok(Err(error))) => {
+                shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "readiness-failed")
+                    .await;
+                return Err(anyhow::anyhow!("{phase} inbound readiness failed: {error}"));
+            }
+            Ok(Err(error)) => {
+                shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "readiness-join").await;
+                return Err(anyhow::anyhow!(
+                    "{phase} inbound start task failed: {error}"
+                ));
+            }
+            Err(_) => {
+                shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "readiness-timeout")
+                    .await;
+                return Err(anyhow::anyhow!(
+                    "{phase} inbound readiness timed out after {:?}",
+                    INBOUND_READY_TIMEOUT
+                ));
+            }
         }
     }
     Ok(monitors)
@@ -2405,12 +2277,12 @@ fn shutdown_replaced_context(old_context: &Context, preserve_v2ray: bool) {
 fn shutdown_failed_reload_context(
     old_context: &Context,
     new_context: &Context,
-    new_inbounds: &[Arc<dyn InboundService>],
+    new_inbounds: &[Arc<dyn sb_types::Inbound>],
     new_endpoints: &[Arc<dyn Endpoint>],
     new_services: &[Arc<dyn Service>],
 ) {
     for ib in new_inbounds {
-        ib.request_shutdown();
+        let _ = ib.close();
     }
     stop_endpoints(new_endpoints);
     stop_services(new_services);
@@ -2421,12 +2293,12 @@ async fn shutdown_failed_reload_context_lifecycle(
     old_context: &Context,
     new_context: &Context,
     new_dns_runtime: Option<&RuntimeDns>,
-    new_inbounds: &[Arc<dyn InboundService>],
+    new_inbounds: &[Arc<dyn sb_types::Inbound>],
     new_endpoints: &[Arc<dyn Endpoint>],
     new_services: &[Arc<dyn Service>],
 ) {
     for ib in new_inbounds {
-        ib.request_shutdown();
+        let _ = ib.close();
     }
     stop_endpoints(new_endpoints);
     stop_services(new_services);
@@ -2523,50 +2395,17 @@ async fn install_ntp_task(state: &Arc<RwLock<State>>, cfg: Option<sb_config::ir:
 
 /// Populate endpoint/service managers from the assembled bridge for parity with Go managers.
 async fn populate_bridge_managers(ctx: &Context, bridge: &Bridge) -> Result<()> {
-    // Note: Bridge maintains its own `inbounds` vector for legacy InboundService types.
+    // Note: Bridge maintains its own `inbounds` vector for legacy InboundTaskDriver types.
     // InboundManager now expects Arc<dyn InboundAdapter> with lifecycle support.
     // New inbound adapters should be registered via InboundManager.add_handler().
-    // Legacy inbounds are started via bridge.inbounds directly, not through InboundManager.
+    // Legacy bridge inbounds start directly, not through InboundManager.
 
-    #[derive(Clone, Debug)]
-    struct ManagerConnectorBridge {
-        inner: std::sync::Arc<dyn crate::adapter::OutboundConnector>,
-    }
-
-    #[async_trait::async_trait]
-    impl crate::outbound::traits::OutboundConnector for ManagerConnectorBridge {
-        async fn connect_tcp(
-            &self,
-            ctx: &crate::types::ConnCtx,
-        ) -> crate::error::SbResult<tokio::net::TcpStream> {
-            let host = ctx.dst.host.to_string();
-            self.inner
-                .connect(&host, ctx.dst.port)
-                .await
-                .map_err(crate::error::SbError::io)
-        }
-
-        async fn connect_udp(
-            &self,
-            _ctx: &crate::types::ConnCtx,
-        ) -> crate::error::SbResult<Box<dyn crate::outbound::traits::UdpTransport>> {
-            Err(crate::error::SbError::network(
-                crate::error::ErrorClass::Protocol,
-                "udp not supported by manager connector bridge".to_string(),
-            ))
-        }
-    }
-
-    // Register real bridge connectors into OutboundManager so startup/default
-    // resolution and runtime fetch paths stay aligned with assembled outbounds.
+    // Register real bridge connectors into OutboundManager using the same
+    // canonical objects owned by the bridge.  No TcpStream-shaped adapter is
+    // inserted between the two registries.
     for (name, _kind, connector) in &bridge.outbounds {
         ctx.outbound_manager
-            .add_connector(
-                name.clone(),
-                std::sync::Arc::new(ManagerConnectorBridge {
-                    inner: connector.clone(),
-                }),
-            )
+            .add_adapter(name.clone(), connector.clone())
             .await;
     }
 
@@ -2936,60 +2775,6 @@ mod tests {
         assert!(msg.contains("silent parse fallback is disabled"));
     }
 
-    #[test]
-    fn inbound_exit_classifier_covers_clean_unexpected_and_serve_error() {
-        assert_eq!(
-            classify_inbound_exit(Ok(Ok(())), true),
-            (InboundExitKind::CleanShutdown, None)
-        );
-        assert_eq!(
-            classify_inbound_exit(Ok(Ok(())), false),
-            (InboundExitKind::UnexpectedCompletion, None)
-        );
-        let (kind, error) =
-            classify_inbound_exit(Ok(Err(std::io::Error::other("serve exploded"))), false);
-        assert_eq!(kind, InboundExitKind::ServeError);
-        assert_eq!(error.as_deref(), Some("serve exploded"));
-        assert_eq!(
-            classify_inbound_exit(
-                Ok(Err(std::io::Error::new(
-                    std::io::ErrorKind::Interrupted,
-                    "closed",
-                ))),
-                true,
-            ),
-            (InboundExitKind::CleanShutdown, None)
-        );
-    }
-
-    #[tokio::test]
-    async fn inbound_exit_classifier_covers_panic_and_cancelled_join() {
-        let panic_handle = tokio::spawn(async {
-            panic!("inbound panic marker");
-        });
-        let (kind, error) = classify_inbound_exit(
-            panic_handle.await.map(|()| Ok::<(), std::io::Error>(())),
-            false,
-        );
-        assert_eq!(kind, InboundExitKind::Panicked);
-        assert!(error
-            .as_deref()
-            .unwrap_or_default()
-            .contains("inbound panic marker"));
-
-        let cancel_handle = tokio::spawn(async {
-            tokio::time::sleep(Duration::from_secs(60)).await;
-        });
-        cancel_handle.abort();
-        assert_eq!(
-            classify_inbound_exit(
-                cancel_handle.await.map(|()| Ok::<(), std::io::Error>(())),
-                false
-            ),
-            (InboundExitKind::JoinCancelled, None)
-        );
-    }
-
     #[derive(Debug)]
     struct TestInbound {
         shutdown: AtomicBool,
@@ -3005,7 +2790,7 @@ mod tests {
         }
     }
 
-    impl InboundService for TestInbound {
+    impl InboundTaskDriver for TestInbound {
         fn serve(&self) -> std::io::Result<()> {
             if self.fail {
                 return Err(std::io::Error::other("test inbound failure"));
@@ -3022,38 +2807,38 @@ mod tests {
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn inbound_monitor_drains_clean_shutdown_without_hanging() {
-        let inbound: Arc<dyn InboundService> = Arc::new(TestInbound::new(false));
+    async fn canonical_inbound_close_drains_clean_shutdown_without_hanging() {
+        let inbound: Arc<dyn InboundTaskDriver> = Arc::new(TestInbound::new(false));
         let mut bridge = Bridge::new(Context::new());
         bridge.add_inbound_with_meta("test", Some("clean-test".into()), inbound);
         let monitors = start_inbounds_until_ready(&bridge, "startup")
             .await
             .expect("best-effort inbound starts");
-        assert_eq!(monitors.len(), 1);
+        assert!(monitors.is_empty());
         shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "test-clean").await;
     }
 
     #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
-    async fn inbound_monitor_drains_abnormal_return() {
-        let inbound: Arc<dyn InboundService> = Arc::new(TestInbound::new(true));
+    async fn canonical_inbound_close_drains_abnormal_return() {
+        let inbound: Arc<dyn InboundTaskDriver> = Arc::new(TestInbound::new(true));
         let mut bridge = Bridge::new(Context::new());
         bridge.add_inbound_with_meta("test", Some("serve-error-test".into()), inbound);
         let monitors = start_inbounds_until_ready(&bridge, "startup")
             .await
             .expect("best-effort inbound starts even without readiness");
-        assert_eq!(monitors.len(), 1);
-        drain_inbound_monitors(monitors, "test-error").await;
+        assert!(monitors.is_empty());
+        shutdown_inbounds_and_monitors(&bridge.inbounds, monitors, "test-error").await;
     }
 
     #[test]
-    fn inbound_liveness_logs_keep_stable_fields() {
-        let source = include_str!("supervisor.rs");
+    fn transition_inbound_liveness_logs_keep_stable_fields() {
+        let source = include_str!("../adapter/inbound_transition.rs");
         for needle in [
             "component = \"inbound\"",
-            "tag = %label.tag",
-            "kind = %label.kind",
-            "phase = label.phase",
-            "exit_kind = exit_kind.as_str()",
+            "tag = %tag",
+            "kind,",
+            "phase = \"transition\"",
+            "exit_kind,",
             "error = error.unwrap_or(\"\")",
         ] {
             assert!(
@@ -3360,7 +3145,6 @@ mod tests {
         use crate::adapter::{InboundParam, InboundReadySender};
         use sb_config::ir::ConfigIR;
         use serde_json::json;
-        use std::io;
         use std::net::{SocketAddr, TcpListener};
         use std::sync::atomic::{AtomicBool, Ordering};
         use std::thread;
@@ -3381,8 +3165,8 @@ mod tests {
             }
         }
 
-        impl InboundService for ReadyTcpInbound {
-            fn serve(&self) -> io::Result<()> {
+        impl InboundTaskDriver for ReadyTcpInbound {
+            fn serve(&self) -> std::io::Result<()> {
                 self.serve_with_ready(None)
             }
 
@@ -3390,12 +3174,13 @@ mod tests {
                 true
             }
 
-            fn serve_with_ready(&self, ready: Option<InboundReadySender>) -> io::Result<()> {
+            fn serve_with_ready(&self, ready: Option<InboundReadySender>) -> std::io::Result<()> {
                 let listener = match TcpListener::bind(self.listen) {
                     Ok(listener) => listener,
                     Err(error) => {
                         if let Some(tx) = ready {
-                            let _ = tx.send(Err(io::Error::new(error.kind(), error.to_string())));
+                            let _ =
+                                tx.send(Err(std::io::Error::new(error.kind(), error.to_string())));
                         }
                         return Err(error);
                     }
@@ -3407,7 +3192,7 @@ mod tests {
                 while !self.shutdown.load(Ordering::SeqCst) {
                     match listener.accept() {
                         Ok((_stream, _peer)) => {}
-                        Err(error) if error.kind() == io::ErrorKind::WouldBlock => {
+                        Err(error) if error.kind() == std::io::ErrorKind::WouldBlock => {
                             thread::sleep(StdDuration::from_millis(10));
                         }
                         Err(error) => return Err(error),
@@ -3424,11 +3209,15 @@ mod tests {
         fn build_ready_inbound(
             param: &InboundParam,
             _ctx: &AdapterInboundContext,
-        ) -> Option<Arc<dyn InboundService>> {
+        ) -> Option<Arc<dyn sb_types::Inbound>> {
             let listen = format!("{}:{}", param.listen, param.port)
                 .parse::<SocketAddr>()
                 .ok()?;
-            Some(Arc::new(ReadyTcpInbound::new(listen)))
+            Some(crate::adapter::manage_inbound(
+                Arc::new(ReadyTcpInbound::new(listen)),
+                "http",
+                param.tag.clone().unwrap_or_else(|| "http".to_string()),
+            ))
         }
 
         fn registry_snapshot() -> RegistrySnapshot {
@@ -3570,15 +3359,9 @@ mod tests {
             {
                 let state = supervisor.state().await;
                 let guard = state.read().await;
-                assert_eq!(
-                    guard.inbound_monitors.len(),
-                    1,
-                    "failed reload must keep the old committed inbound monitor"
-                );
-                assert_eq!(
-                    guard.inbound_monitors[0].label.tag, "old-http-reload",
-                    "failed reload must not swap in the new inbound monitor"
-                );
+                let inbounds = &guard.bridge.inbounds;
+                assert_eq!(inbounds.len(), 1);
+                assert_eq!(inbounds[0].tag().as_str(), "old-http-reload");
             }
 
             let runtime = crate::adapter::registry::runtime_outbounds()
@@ -3980,20 +3763,20 @@ mod tests {
     mod rollback_guard {
         use super::super::shutdown_failed_reload_context;
         use super::{DummyEndpoint, DummyService};
-        use crate::adapter::InboundService;
+        use crate::adapter::InboundTaskDriver;
         use crate::context::{Context, V2RayServer};
         use crate::endpoint::{Endpoint, StartStage as EndpointStage};
         use crate::service::Service;
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::{Arc, Mutex};
 
-        /// An `InboundService` test double that counts `request_shutdown` calls.
+        /// An `InboundTaskDriver` test double that counts `request_shutdown` calls.
         #[derive(Debug)]
         struct CountingInbound {
             shutdowns: AtomicUsize,
         }
 
-        impl InboundService for CountingInbound {
+        impl InboundTaskDriver for CountingInbound {
             fn serve(&self) -> std::io::Result<()> {
                 Ok(())
             }
@@ -4002,7 +3785,7 @@ mod tests {
             }
         }
 
-        /// An `InboundService` test double that holds a REAL bound listener until
+        /// An `InboundTaskDriver` test double that holds a REAL bound listener until
         /// `request_shutdown` releases it (mirrors the accept-loop-exits-on-flag contract:
         /// dropping the Arc alone never frees the port; only request_shutdown does).
         #[derive(Debug)]
@@ -4010,7 +3793,7 @@ mod tests {
             listener: Mutex<Option<std::net::TcpListener>>,
         }
 
-        impl InboundService for PortHoldingInbound {
+        impl InboundTaskDriver for PortHoldingInbound {
             fn serve(&self) -> std::io::Result<()> {
                 Ok(())
             }
@@ -4072,7 +3855,7 @@ mod tests {
             let inbound_impl = Arc::new(CountingInbound {
                 shutdowns: AtomicUsize::new(0),
             });
-            let inbound: Arc<dyn InboundService> = inbound_impl.clone();
+            let inbound = crate::adapter::manage_inbound(inbound_impl.clone(), "test", "counting");
             let ep_impl = Arc::new(DummyEndpoint::new("rollback-ep"));
             let ep: Arc<dyn Endpoint> = ep_impl.clone();
             let svc_impl = Arc::new(DummyService::new("rollback-svc"));
@@ -4096,9 +3879,13 @@ mod tests {
         fn f_rollback_releases_new_inbound_listener_port() {
             let listener = std::net::TcpListener::bind("127.0.0.1:0").expect("bind inbound port");
             let port = listener.local_addr().expect("local addr").port();
-            let inbound: Arc<dyn InboundService> = Arc::new(PortHoldingInbound {
-                listener: Mutex::new(Some(listener)),
-            });
+            let inbound = crate::adapter::manage_inbound(
+                Arc::new(PortHoldingInbound {
+                    listener: Mutex::new(Some(listener)),
+                }),
+                "test",
+                "port-holder",
+            );
 
             shutdown_failed_reload_context(
                 &Context::new(),

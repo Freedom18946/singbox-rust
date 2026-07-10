@@ -13,10 +13,10 @@ use sb_adapters::inbound::shadowtls::{
     ShadowTlsWildcardSniMode,
 };
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::traits::{DialOpts, OutboundConnector, Target};
+use sb_adapters::traits::{ConnectOptions, TargetAddr};
 use sb_config::ir::{OutboundIR, OutboundType};
 use sb_core::adapter::registry as core_registry;
-use sb_core::adapter::{InboundService, OutboundParam};
+use sb_core::adapter::OutboundParam;
 use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 use serial_test::serial;
 use sha1::Sha1;
@@ -284,14 +284,10 @@ async fn shadowtls_v2_inbound_detours_into_shadowsocks_inbound() {
         "ss-detour".to_string(),
     ));
 
-    let mut inbounds = HashMap::new();
-    inbounds.insert(
+    sb_adapters::inbound::shadowsocks::register_detour_inbound(
         "ss-detour".to_string(),
-        ss_adapter.clone() as Arc<dyn InboundService>,
+        &ss_adapter,
     );
-    core_registry::install_runtime_inbounds(Arc::new(core_registry::InboundRegistryHandle::new(
-        inbounds,
-    )));
 
     let probe = TcpListener::bind("127.0.0.1:0")
         .await
@@ -349,7 +345,7 @@ async fn shadowtls_v2_inbound_detours_into_shadowsocks_inbound() {
         skip_cert_verify: Some(true),
         ..Default::default()
     };
-    let (shadowtls_connector, _) = builder(&param, &ir, &ctx).expect("shadowtls connector");
+    let shadowtls_connector = builder(&param, &ir, &ctx).expect("shadowtls connector");
 
     let mut outbounds = OutboundRegistry::default();
     outbounds.insert(
@@ -372,8 +368,8 @@ async fn shadowtls_v2_inbound_detours_into_shadowsocks_inbound() {
     let mut stream = timeout(
         Duration::from_secs(5),
         shadowsocks.dial(
-            Target::tcp("127.0.0.1", echo_addr.port()),
-            DialOpts::new().with_connect_timeout(Duration::from_secs(5)),
+            &sb_types::Session::outbound(TargetAddr::from_host_port("127.0.0.1", echo_addr.port()))
+                .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5))),
         ),
     )
     .await
@@ -423,14 +419,10 @@ async fn shadowtls_v3_outbound_and_inbound_detour_into_shadowsocks_inbound() {
         "ss-detour".to_string(),
     ));
 
-    let mut inbounds = HashMap::new();
-    inbounds.insert(
+    sb_adapters::inbound::shadowsocks::register_detour_inbound(
         "ss-detour".to_string(),
-        ss_adapter.clone() as Arc<dyn InboundService>,
+        &ss_adapter,
     );
-    core_registry::install_runtime_inbounds(Arc::new(core_registry::InboundRegistryHandle::new(
-        inbounds,
-    )));
 
     let probe = TcpListener::bind("127.0.0.1:0")
         .await
@@ -491,7 +483,7 @@ async fn shadowtls_v3_outbound_and_inbound_detour_into_shadowsocks_inbound() {
         skip_cert_verify: Some(true),
         ..Default::default()
     };
-    let (shadowtls_connector, _) = builder(&param, &ir, &ctx).expect("shadowtls connector");
+    let shadowtls_connector = builder(&param, &ir, &ctx).expect("shadowtls connector");
 
     let mut outbounds = OutboundRegistry::default();
     outbounds.insert(
@@ -514,8 +506,8 @@ async fn shadowtls_v3_outbound_and_inbound_detour_into_shadowsocks_inbound() {
     let mut stream = timeout(
         Duration::from_secs(5),
         shadowsocks.dial(
-            Target::tcp("127.0.0.1", echo_addr.port()),
-            DialOpts::new().with_connect_timeout(Duration::from_secs(5)),
+            &sb_types::Session::outbound(TargetAddr::from_host_port("127.0.0.1", echo_addr.port()))
+                .with_connect(ConnectOptions::new().with_connect_timeout(Duration::from_secs(5))),
         ),
     )
     .await

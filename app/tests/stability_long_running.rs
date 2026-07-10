@@ -17,9 +17,8 @@ use tokio::sync::mpsc;
 
 use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 
 // Global metrics
 static TOTAL_REQUESTS: AtomicU64 = AtomicU64::new(0);
@@ -129,13 +128,10 @@ async fn test_stability_long_running() {
                 let echo_addr = echo_addr;
 
                 tokio::spawn(async move {
-                    let target = Target {
-                        host: echo_addr.ip().to_string(),
-                        port: echo_addr.port(),
-                        kind: TransportKind::Tcp,
-                    };
+                    let target =
+                        TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-                    match connector.dial(target, DialOpts::default()).await {
+                    match connector.dial(&Session::outbound(target)).await {
                         Ok(mut stream) => {
                             let data = b"stability-test-payload";
                             if stream.write_all(data).await.is_ok() {

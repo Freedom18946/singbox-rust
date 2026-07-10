@@ -1,7 +1,6 @@
 #![cfg(feature = "parity")]
 
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_config::ir::{
     ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, ServiceIR, ServiceType,
     ShadowsocksUserIR,
@@ -9,6 +8,7 @@ use sb_config::ir::{
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
 use sb_core::runtime::Runtime;
+use sb_types::{Session, TargetAddr};
 use serde_json::{json, Value};
 use std::collections::HashMap;
 use std::io;
@@ -239,7 +239,7 @@ async fn add_user(client: &reqwest::Client, base_url: &str, name: &str, password
 
 fn stop_runtime(runtime: &Runtime) {
     for inbound in &runtime.bridge().inbounds {
-        inbound.request_shutdown();
+        let _ = inbound.close();
     }
     for service in &runtime.bridge().services {
         let _ = service.close();
@@ -335,11 +335,12 @@ async fn managed_shadowsocks_ssmapi_tcp_udp_stats_and_cache() {
         .expect("missing endpoint request");
     assert_eq!(missing_endpoint.status(), reqwest::StatusCode::NOT_FOUND);
 
+    let tcp_session = Session::outbound(TargetAddr::from_host_port(
+        tcp_echo.ip().to_string(),
+        tcp_echo.port(),
+    ));
     let mut tcp_stream = ss_connector(ss_addr, "alice-pw")
-        .dial(
-            Target::tcp(tcp_echo.ip().to_string(), tcp_echo.port()),
-            DialOpts::default(),
-        )
+        .dial(&tcp_session)
         .await
         .expect("dial Shadowsocks TCP");
     let tcp_payload = b"ssmapi tcp regression";
@@ -351,14 +352,18 @@ async fn managed_shadowsocks_ssmapi_tcp_udp_stats_and_cache() {
         .expect("tcp read");
     assert_eq!(tcp_back, tcp_payload);
 
+    let udp_target = TargetAddr::from_host_port(udp_echo.ip().to_string(), udp_echo.port());
+    let udp_session = Session::outbound(udp_target.clone());
     let udp = ss_connector(ss_addr, "bob-pw")
-        .udp_relay_dial(Target::udp(udp_echo.ip().to_string(), udp_echo.port()))
+        .udp_relay_dial(&udp_session)
         .await
         .expect("dial Shadowsocks UDP");
     let udp_payload = b"ssmapi udp regression";
-    udp.send_to(udp_payload).await.expect("udp send");
+    udp.send_to(udp_payload, &udp_target)
+        .await
+        .expect("udp send");
     let mut udp_back = [0u8; 256];
-    let n = timeout(Duration::from_secs(5), udp.recv_from(&mut udp_back))
+    let (n, _) = timeout(Duration::from_secs(5), udp.recv_from(&mut udp_back))
         .await
         .expect("udp recv timeout")
         .expect("udp recv");

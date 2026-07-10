@@ -612,7 +612,7 @@ async fn parse_vless_address(
 }
 
 use parking_lot::Mutex;
-use sb_core::adapter::InboundService;
+use sb_core::adapter::InboundTaskDriver;
 
 #[derive(Debug)]
 pub struct VlessInboundAdapter {
@@ -629,7 +629,7 @@ impl VlessInboundAdapter {
     }
 }
 
-impl InboundService for VlessInboundAdapter {
+impl InboundTaskDriver for VlessInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
         let (tx, rx) = mpsc::channel(1);
         *self.stop_tx.lock() = Some(tx);

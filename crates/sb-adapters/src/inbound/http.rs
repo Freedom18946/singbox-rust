@@ -767,7 +767,7 @@ where
                 // Prefer registry-based outbound first (Go-style: route -> outbound by tag).
                 if let Ok(s) = cfg
                     .outbounds
-                    .connect_io(
+                    .connect_tcp_stream(
                         &OutRouteTarget::Named(name.clone()),
                         OutEndpoint::Domain(dial_host.clone(), port),
                     )
@@ -1547,5 +1547,78 @@ mod health_fallback_policy_tests {
             apply_health_fallback_policy(RDecision::Direct, Some(true)),
             RDecision::Direct
         ));
+    }
+}
+/// Transitional blocking driver for HTTP inbound registration.
+#[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
+#[derive(Debug)]
+pub(crate) struct HttpInboundDriver {
+    cfg: HttpProxyConfig,
+    stop_tx: std::sync::Mutex<Option<tokio::sync::mpsc::Sender<()>>>,
+}
+
+#[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
+impl HttpInboundDriver {
+    pub(crate) fn new(cfg: HttpProxyConfig) -> Self {
+        Self {
+            cfg,
+            stop_tx: std::sync::Mutex::new(None),
+        }
+    }
+}
+
+#[cfg(all(feature = "adapter-http", feature = "http", feature = "router"))]
+impl sb_core::adapter::InboundTaskDriver for HttpInboundDriver {
+    fn serve(&self) -> std::io::Result<()> {
+        self.serve_with_ready(None)
+    }
+
+    fn supports_startup_readiness(&self) -> bool {
+        true
+    }
+
+    fn serve_with_ready(
+        &self,
+        ready: Option<sb_core::adapter::InboundReadySender>,
+    ) -> std::io::Result<()> {
+        let runtime = tokio::runtime::Builder::new_multi_thread()
+            .enable_all()
+            .build()
+            .map_err(std::io::Error::other)?;
+        let (stop_tx, stop_rx) = tokio::sync::mpsc::channel(1);
+        *self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner()) = Some(stop_tx);
+        let result = runtime.block_on(async {
+            serve_http(self.cfg.clone(), stop_rx, ready)
+                .await
+                .map_err(std::io::Error::other)
+        });
+        let _ = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take();
+        result
+    }
+
+    fn request_shutdown(&self) {
+        if let Some(stop_tx) = self
+            .stop_tx
+            .lock()
+            .unwrap_or_else(|error| error.into_inner())
+            .take()
+        {
+            let _ = stop_tx.try_send(());
+        }
+    }
+
+    fn active_connections(&self) -> Option<u64> {
+        Some(
+            self.cfg
+                .active_connections
+                .load(std::sync::atomic::Ordering::Relaxed),
+        )
     }
 }

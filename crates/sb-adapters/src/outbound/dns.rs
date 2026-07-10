@@ -78,12 +78,42 @@ impl Default for DnsConfig {
 #[derive(Debug, Clone)]
 pub struct DnsConnector {
     config: DnsConfig,
+    tag: sb_types::OutboundTag,
 }
 
 impl DnsConnector {
+    pub const fn name(&self) -> &'static str {
+        "dns"
+    }
+
+    pub async fn start(&self) -> Result<()> {
+        self.validate_config()?;
+
+        if let Err(error) =
+            tokio::time::timeout(self.config.timeout, TcpStream::connect(self.server_addr())).await
+        {
+            tracing::warn!("DNS server connectivity test failed: {:?}", error);
+        }
+
+        tracing::info!(
+            "DNS connector started - server: {}, transport: {:?}",
+            self.server_addr(),
+            self.config.transport
+        );
+        Ok(())
+    }
+
     /// Create a new DNS connector with the given configuration
     pub fn new(config: DnsConfig) -> Self {
-        Self { config }
+        Self::with_tag(config, "dns")
+    }
+
+    /// Create a connector with the configured outbound tag.
+    pub fn with_tag(config: DnsConfig, tag: impl Into<String>) -> Self {
+        Self {
+            config,
+            tag: sb_types::OutboundTag::new(tag),
+        }
     }
 
     /// Get the DNS server address with port
@@ -216,35 +246,11 @@ impl Default for DnsConnector {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for DnsConnector {
-    fn name(&self) -> &'static str {
-        "dns"
-    }
+impl DnsConnector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
+        tracing::debug!("DNS connector dialing target: {:?}", session.target);
 
-    async fn start(&self) -> Result<()> {
-        // Validate configuration
         self.validate_config()?;
-
-        // Test connectivity to DNS server
-        if let Err(e) =
-            tokio::time::timeout(self.config.timeout, TcpStream::connect(self.server_addr())).await
-        {
-            tracing::warn!("DNS server connectivity test failed: {:?}", e);
-            // Don't fail startup for connectivity issues
-        }
-
-        tracing::info!(
-            "DNS connector started - server: {}, transport: {:?}",
-            self.server_addr(),
-            self.config.transport
-        );
-
-        Ok(())
-    }
-
-    async fn dial(&self, target: Target, _opts: DialOpts) -> Result<BoxedStream> {
-        tracing::debug!("DNS connector dialing target: {:?}", target);
 
         // For DNS connector, we create a connection to the DNS server
         // The actual DNS resolution logic would be handled at a higher level
@@ -259,6 +265,13 @@ impl OutboundConnector for DnsConnector {
         Ok(stream)
     }
 }
+
+crate::impl_canonical_outbound!(
+    DnsConnector,
+    "dns",
+    |this: &DnsConnector| this.tag.as_str().to_string(),
+    crate::outbound::TCP
+);
 
 /// Wrapper to make UDP socket behave like a stream
 struct UdpStreamWrapper {

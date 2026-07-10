@@ -9,7 +9,10 @@ use std::any::Any;
 use std::collections::HashMap;
 use std::io;
 use std::net::{IpAddr, SocketAddr};
+use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
+use std::sync::Mutex;
+use std::time::{Duration, Instant};
 use tokio::net::UdpSocket;
 
 /// Network protocol type.
@@ -108,6 +111,149 @@ impl From<SocketAddr> for Socksaddr {
 /// A boxed async stream for TCP connections through endpoints.
 /// This is re-exported from sb_transport for compatibility.
 pub type EndpointStream = sb_transport::IoStream;
+
+#[derive(Debug)]
+pub(crate) struct EndpointUdpSocketPacketConn {
+    socket: Arc<UdpSocket>,
+    idle_timeout: Duration,
+    deadlines: Mutex<(Option<Instant>, Option<Instant>)>,
+    closed: AtomicBool,
+}
+
+impl EndpointUdpSocketPacketConn {
+    pub(crate) fn new(socket: Arc<UdpSocket>, idle_timeout: Duration) -> Self {
+        Self {
+            socket,
+            idle_timeout,
+            deadlines: Mutex::new((None, None)),
+            closed: AtomicBool::new(false),
+        }
+    }
+
+    fn operation_timeout(&self, read: bool) -> (Instant, Duration) {
+        let now = Instant::now();
+        let deadlines = self
+            .deadlines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner());
+        let explicit = if read { deadlines.0 } else { deadlines.1 };
+        let duration = explicit
+            .map(|deadline| deadline.saturating_duration_since(now))
+            .unwrap_or(self.idle_timeout);
+        (now + duration, duration)
+    }
+
+    fn ensure_open(&self) -> Result<(), sb_types::CoreError> {
+        if self.closed.load(Ordering::Acquire) {
+            Err(sb_types::CoreError::connect(
+                sb_types::ConnectErrorKind::Reset,
+                "packet connection closed",
+            ))
+        } else {
+            Ok(())
+        }
+    }
+}
+
+async fn run_endpoint_packet_operation<T, F>(
+    deadline: Instant,
+    duration: Duration,
+    operation: &'static str,
+    future: F,
+) -> Result<T, sb_types::CoreError>
+where
+    F: std::future::Future<Output = Result<T, sb_types::CoreError>>,
+{
+    tokio::time::timeout_at(tokio::time::Instant::from_std(deadline), future)
+        .await
+        .map_err(|_| sb_types::CoreError::timeout(operation, duration))?
+}
+
+impl sb_types::PacketConn for EndpointUdpSocketPacketConn {
+    fn send_to<'a>(
+        &'a self,
+        data: &'a [u8],
+        destination: &'a sb_types::TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.ensure_open()?;
+            let (deadline, duration) = self.operation_timeout(false);
+            let operation = async {
+                let address = match destination {
+                    sb_types::TargetAddr::Socket(address) => *address,
+                    sb_types::TargetAddr::Domain(host, port) => {
+                        tokio::net::lookup_host((host.as_str(), *port))
+                            .await
+                            .map_err(|error| sb_types::CoreError::dns(error.to_string()))?
+                            .next()
+                            .ok_or_else(|| {
+                                sb_types::CoreError::dns("no endpoint UDP address resolved")
+                            })?
+                    }
+                };
+                self.socket
+                    .send_to(data, address)
+                    .await
+                    .map_err(|error| sb_types::CoreError::io(error.to_string()))
+            };
+            run_endpoint_packet_operation(deadline, duration, "packet-send", operation).await
+        })
+    }
+
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, sb_types::TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            self.ensure_open()?;
+            let (deadline, duration) = self.operation_timeout(true);
+            tokio::time::timeout_at(
+                tokio::time::Instant::from_std(deadline),
+                self.socket.recv_from(buffer),
+            )
+            .await
+            .map_err(|_| sb_types::CoreError::timeout("packet-recv", duration))?
+            .map(|(size, source)| (size, sb_types::TargetAddr::Socket(source)))
+            .map_err(|error| sb_types::CoreError::io(error.to_string()))
+        })
+    }
+
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        self.closed.store(true, Ordering::Release);
+        Box::pin(async { Ok(()) })
+    }
+
+    fn local_addr(&self) -> Option<sb_types::TargetAddr> {
+        self.socket
+            .local_addr()
+            .ok()
+            .map(sb_types::TargetAddr::Socket)
+    }
+
+    fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        *self
+            .deadlines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner()) = (deadline, deadline);
+        Ok(())
+    }
+
+    fn set_read_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        self.deadlines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .0 = deadline;
+        Ok(())
+    }
+
+    fn set_write_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+        self.deadlines
+            .lock()
+            .unwrap_or_else(|poisoned| poisoned.into_inner())
+            .1 = deadline;
+        Ok(())
+    }
+}
 
 /// Inbound connection context for routing.
 #[derive(Debug, Clone, Default)]
@@ -244,41 +390,17 @@ pub trait Endpoint: Send + Sync + Any {
 
     /// Listen for UDP packets through this endpoint.
     ///
-    /// Returns a UDP socket bound to the tunnel interface.
+    /// Returns the canonical packet connection owned by this endpoint.
     fn listen_packet(
         &self,
-        _destination: Socksaddr,
-    ) -> std::pin::Pin<Box<dyn std::future::Future<Output = io::Result<Arc<UdpSocket>>> + Send + '_>>
-    {
-        Box::pin(async {
-            Err(io::Error::new(
-                io::ErrorKind::Unsupported,
-                "listen_packet not implemented for this endpoint",
-            ))
-        })
-    }
-
-    /// Whether this endpoint can be exposed as a UDP outbound factory.
-    fn supports_udp_outbound(&self) -> bool {
-        false
-    }
-
-    /// Open an endpoint-backed UDP outbound session.
-    #[allow(clippy::type_complexity)]
-    fn open_udp_outbound_session(
-        &self,
+        _session: &sb_types::Session,
     ) -> std::pin::Pin<
-        Box<
-            dyn std::future::Future<
-                    Output = io::Result<Arc<dyn crate::adapter::UdpOutboundSession>>,
-                > + Send
-                + '_,
-        >,
+        Box<dyn std::future::Future<Output = io::Result<sb_types::BoxedPacketConn>> + Send + '_>,
     > {
         Box::pin(async {
             Err(io::Error::new(
                 io::ErrorKind::Unsupported,
-                "udp outbound not implemented for this endpoint",
+                "listen_packet not implemented for this endpoint",
             ))
         })
     }
@@ -608,18 +730,15 @@ impl EndpointManager {
         Ok(self.remove(tag).await)
     }
 
-    /// Get an endpoint as an OutboundConnector (Go parity: Endpoint as Outbound).
+    /// Get an endpoint as the canonical outbound (Go parity: Endpoint as Outbound).
     /// 获取端点作为出站连接器（Go 对等：端点作为出站）。
-    pub async fn as_outbound_connector(
-        &self,
-        tag: &str,
-    ) -> Option<Arc<dyn crate::adapter::OutboundConnector>> {
+    pub async fn as_outbound_connector(&self, tag: &str) -> Option<Arc<dyn sb_types::Outbound>> {
         let ep = self.get(tag).await?;
         Some(Arc::new(EndpointAsOutbound::new(tag.to_string(), ep)))
     }
 }
 
-/// Wrapper to expose an Endpoint as an OutboundConnector (Go parity: endpoint as outbound).
+/// Wrapper to expose an Endpoint as the canonical outbound (Go parity: endpoint as outbound).
 /// 将端点公开为出站连接器的包装器（Go 对等：端点作为出站）。
 pub struct EndpointAsOutbound {
     tag: String,
@@ -645,62 +764,49 @@ impl std::fmt::Debug for EndpointAsOutbound {
     }
 }
 
-#[async_trait::async_trait]
-impl crate::adapter::OutboundConnector for EndpointAsOutbound {
-    async fn connect(&self, host: &str, port: u16) -> std::io::Result<tokio::net::TcpStream> {
-        let _ = (host, port);
-        Err(std::io::Error::new(
-            std::io::ErrorKind::Unsupported,
-            format!(
-                "endpoint {} returns a generic IO stream; use connect_io()",
-                self.tag
-            ),
-        ))
+impl sb_types::Outbound for EndpointAsOutbound {
+    fn r#type(&self) -> &str {
+        self.endpoint.endpoint_type()
     }
 
-    #[cfg(feature = "v2ray_transport")]
-    async fn connect_io(&self, host: &str, port: u16) -> std::io::Result<sb_transport::IoStream> {
-        let destination = match host.parse::<IpAddr>() {
-            Ok(ip) => Socksaddr::from_socket_addr(SocketAddr::new(ip, port)),
-            Err(_) => Socksaddr::from_fqdn(host, port),
-        };
-        self.endpoint
-            .dial_context(Network::Tcp, destination)
-            .await
-            .map_err(|error| {
-                std::io::Error::new(
-                    error.kind(),
-                    format!("endpoint {} dial_context failed: {}", self.tag, error),
-                )
-            })
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(self.tag.clone())
     }
-}
 
-/// Wrapper to expose endpoint UDP sessions through the outbound UDP factory API.
-pub struct EndpointUdpOutboundFactory {
-    tag: String,
-    endpoint: Arc<dyn Endpoint>,
-}
-
-impl EndpointUdpOutboundFactory {
-    pub fn new(tag: String, endpoint: Arc<dyn Endpoint>) -> Self {
-        Self { tag, endpoint }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
     }
-}
 
-impl std::fmt::Debug for EndpointUdpOutboundFactory {
-    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("EndpointUdpOutboundFactory")
-            .field("tag", &self.tag)
-            .field("endpoint_type", &self.endpoint.endpoint_type())
-            .finish()
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+
+            let destination = match &session.target {
+                sb_types::TargetAddr::Socket(address) => Socksaddr::from_socket_addr(*address),
+                sb_types::TargetAddr::Domain(host, port) => Socksaddr::from_fqdn(host, *port),
+            };
+            let stream = self
+                .endpoint
+                .dial_context(Network::Tcp, destination)
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
     }
-}
 
-impl crate::adapter::UdpOutboundFactory for EndpointUdpOutboundFactory {
-    fn open_session(&self) -> crate::adapter::UdpOutboundFuture {
-        let endpoint = self.endpoint.clone();
-        Box::pin(async move { endpoint.open_udp_outbound_session().await })
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.endpoint
+                .listen_packet(session)
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))
+        })
     }
 }
 
@@ -722,7 +828,7 @@ fn stage_rank(stage: StartStage) -> u8 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::adapter::{OutboundConnector, UdpOutboundFactory};
+    use sb_types::Outbound;
     use std::sync::atomic::{AtomicUsize, Ordering};
 
     #[test]
@@ -896,36 +1002,35 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn endpoint_as_outbound_connect_remains_explicitly_unsupported() {
-        let (endpoint, calls) = RecordingEndpoint::new("wg-ep");
-        let connector = EndpointAsOutbound::new("wg-ep".to_string(), Arc::new(endpoint));
-
-        let err = connector
-            .connect("198.51.100.10", 443)
-            .await
-            .expect_err("generic endpoint connector must not pretend to return TcpStream");
-
-        assert_eq!(err.kind(), io::ErrorKind::Unsupported);
-        assert!(
-            err.to_string().contains("use connect_io()"),
-            "error should point callers at the stream-capable API: {err}"
-        );
-        assert!(
-            calls.lock().is_empty(),
-            "connect() must not call dial_context and discard its IoStream"
-        );
-    }
-
-    #[cfg(feature = "v2ray_transport")]
-    #[tokio::test]
-    async fn endpoint_as_outbound_connect_io_delegates_ip_to_dial_context() {
+    async fn endpoint_as_outbound_dial_delegates_to_endpoint_context() {
         let (endpoint, calls) = RecordingEndpoint::new("wg-ep");
         let connector = EndpointAsOutbound::new("wg-ep".to_string(), Arc::new(endpoint));
 
         let _stream = connector
-            .connect_io("198.51.100.10", 443)
+            .dial(&sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("test"),
+                sb_types::TargetAddr::from_host_port("198.51.100.10", 443),
+            ))
             .await
-            .expect("connect_io should expose endpoint dial_context streams");
+            .expect("canonical dial should expose endpoint streams");
+        assert_eq!(calls.lock().len(), 1);
+    }
+
+    #[cfg(feature = "v2ray_transport")]
+    #[tokio::test]
+    async fn endpoint_as_outbound_canonical_dial_delegates_ip_to_dial_context() {
+        let (endpoint, calls) = RecordingEndpoint::new("wg-ep");
+        let connector = EndpointAsOutbound::new("wg-ep".to_string(), Arc::new(endpoint));
+
+        let _stream = connector
+            .dial(&sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("test"),
+                sb_types::TargetAddr::from_host_port("198.51.100.10", 443),
+            ))
+            .await
+            .expect("canonical dial should expose endpoint dial_context streams");
 
         let calls = calls.lock();
         assert_eq!(calls.len(), 1);
@@ -943,14 +1048,18 @@ mod tests {
 
     #[cfg(feature = "v2ray_transport")]
     #[tokio::test]
-    async fn endpoint_as_outbound_connect_io_delegates_domain_to_dial_context() {
+    async fn endpoint_as_outbound_canonical_dial_delegates_domain_to_dial_context() {
         let (endpoint, calls) = RecordingEndpoint::new("wg-ep");
         let connector = EndpointAsOutbound::new("wg-ep".to_string(), Arc::new(endpoint));
 
         let _stream = connector
-            .connect_io("example.test", 8443)
+            .dial(&sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("test"),
+                sb_types::TargetAddr::domain("example.test", 8443),
+            ))
             .await
-            .expect("connect_io should pass domains through as FQDN destinations");
+            .expect("canonical dial should pass domains through as FQDN destinations");
 
         let calls = calls.lock();
         assert_eq!(calls.len(), 1);
@@ -960,18 +1069,44 @@ mod tests {
     }
 
     #[tokio::test]
-    async fn endpoint_udp_factory_delegates_to_endpoint_session_hook() {
+    async fn endpoint_as_outbound_delegates_canonical_packet_connection() {
         #[derive(Debug)]
-        struct MockUdpSession;
+        struct MockPacketConn;
 
-        #[async_trait::async_trait]
-        impl crate::adapter::UdpOutboundSession for MockUdpSession {
-            async fn send_to(&self, _data: &[u8], _host: &str, _port: u16) -> io::Result<()> {
+        impl sb_types::PacketConn for MockPacketConn {
+            fn send_to<'a>(
+                &'a self,
+                data: &'a [u8],
+                _: &'a sb_types::TargetAddr,
+            ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+                Box::pin(async move { Ok(data.len()) })
+            }
+            fn recv_from<'a>(
+                &'a self,
+                _: &'a mut [u8],
+            ) -> sb_types::BoxFuture<'a, Result<(usize, sb_types::TargetAddr), sb_types::CoreError>>
+            {
+                Box::pin(async {
+                    Ok((
+                        0,
+                        sb_types::TargetAddr::socket("127.0.0.1:1".parse().unwrap()),
+                    ))
+                })
+            }
+            fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+                Box::pin(async { Ok(()) })
+            }
+            fn local_addr(&self) -> Option<sb_types::TargetAddr> {
+                None
+            }
+            fn set_deadline(&self, _: Option<Instant>) -> Result<(), sb_types::CoreError> {
                 Ok(())
             }
-
-            async fn recv_from(&self) -> io::Result<(Vec<u8>, SocketAddr)> {
-                Ok((Vec::new(), "127.0.0.1:1".parse().unwrap()))
+            fn set_read_deadline(&self, _: Option<Instant>) -> Result<(), sb_types::CoreError> {
+                Ok(())
+            }
+            fn set_write_deadline(&self, _: Option<Instant>) -> Result<(), sb_types::CoreError> {
+                Ok(())
             }
         }
 
@@ -1000,25 +1135,18 @@ mod tests {
                 Ok(())
             }
 
-            fn supports_udp_outbound(&self) -> bool {
-                true
-            }
-
-            #[allow(clippy::type_complexity)]
-            fn open_udp_outbound_session(
+            fn listen_packet(
                 &self,
+                _session: &sb_types::Session,
             ) -> std::pin::Pin<
                 Box<
-                    dyn std::future::Future<
-                            Output = io::Result<Arc<dyn crate::adapter::UdpOutboundSession>>,
-                        > + Send
+                    dyn std::future::Future<Output = io::Result<sb_types::BoxedPacketConn>>
+                        + Send
                         + '_,
                 >,
             > {
                 self.opened.fetch_add(1, Ordering::SeqCst);
-                Box::pin(async {
-                    Ok(Arc::new(MockUdpSession) as Arc<dyn crate::adapter::UdpOutboundSession>)
-                })
+                Box::pin(async { Ok(Box::new(MockPacketConn) as sb_types::BoxedPacketConn) })
             }
         }
 
@@ -1026,10 +1154,87 @@ mod tests {
         let endpoint = Arc::new(UdpEndpoint {
             opened: opened.clone(),
         });
-        let factory = EndpointUdpOutboundFactory::new("udp-ep".to_string(), endpoint);
-        let session = factory.open_session().await.expect("udp endpoint session");
+        let outbound = EndpointAsOutbound::new("udp-ep".to_string(), endpoint);
+        let session = outbound
+            .listen_packet(&sb_types::Session::new(
+                0,
+                sb_types::InboundTag::new("test"),
+                sb_types::TargetAddr::domain("127.0.0.1", 53),
+            ))
+            .await
+            .expect("udp endpoint session");
 
-        session.send_to(b"x", "127.0.0.1", 53).await.unwrap();
+        session
+            .send_to(b"x", &sb_types::TargetAddr::domain("127.0.0.1", 53))
+            .await
+            .unwrap();
         assert_eq!(opened.load(Ordering::SeqCst), 1);
+    }
+
+    #[tokio::test]
+    async fn endpoint_udp_packet_timeout_uses_idle_then_explicit_deadline() {
+        let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let packet = EndpointUdpSocketPacketConn::new(socket, Duration::from_millis(30));
+        let mut buffer = [0_u8; 1];
+
+        let error = sb_types::PacketConn::recv_from(&packet, &mut buffer)
+            .await
+            .expect_err("idle timeout");
+        assert!(
+            matches!(error, sb_types::CoreError::Timeout { duration, .. } if duration == Duration::from_millis(30))
+        );
+
+        sb_types::PacketConn::set_read_deadline(
+            &packet,
+            Some(Instant::now() + Duration::from_millis(10)),
+        )
+        .unwrap();
+        let error = sb_types::PacketConn::recv_from(&packet, &mut buffer)
+            .await
+            .expect_err("explicit timeout");
+        assert!(
+            matches!(error, sb_types::CoreError::Timeout { duration, .. } if duration <= Duration::from_millis(10) && duration < Duration::from_millis(30))
+        );
+    }
+
+    #[tokio::test]
+    async fn endpoint_udp_packet_close_rejects_later_io() {
+        let socket = Arc::new(UdpSocket::bind("127.0.0.1:0").await.unwrap());
+        let packet = EndpointUdpSocketPacketConn::new(socket, Duration::from_secs(1));
+        sb_types::PacketConn::close(&packet).await.unwrap();
+        let error = sb_types::PacketConn::send_to(
+            &packet,
+            b"x",
+            &sb_types::TargetAddr::socket("127.0.0.1:9".parse().unwrap()),
+        )
+        .await
+        .expect_err("closed packet connection");
+        assert!(matches!(
+            error,
+            sb_types::CoreError::Connect {
+                kind: sb_types::ConnectErrorKind::Reset,
+                ..
+            }
+        ));
+    }
+
+    #[tokio::test]
+    async fn endpoint_udp_timeout_wraps_entire_async_operation() {
+        let duration = Duration::from_millis(5);
+        let error = run_endpoint_packet_operation(
+            Instant::now() + duration,
+            duration,
+            "packet-send",
+            std::future::pending::<Result<(), sb_types::CoreError>>(),
+        )
+        .await
+        .expect_err("pending resolution/send operation must time out");
+        assert!(matches!(
+            error,
+            sb_types::CoreError::Timeout {
+                operation,
+                duration: reported,
+            } if operation == "packet-send" && reported == duration
+        ));
     }
 }

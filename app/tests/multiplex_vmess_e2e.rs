@@ -18,11 +18,10 @@ use sb_adapters::inbound::vmess::VmessInboundConfig;
 use sb_adapters::outbound::vmess::{
     Security, VmessAuth, VmessConfig, VmessConnector, VmessTransport,
 };
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
-use sb_adapters::TransportKind;
 use sb_core::router::engine::RouterHandle;
 use sb_transport::multiplex::{MultiplexConfig, MultiplexServerConfig};
+use sb_types::{Session, TargetAddr};
 
 fn is_constrained_dial_error_str(s: &str) -> bool {
     let s = s.to_ascii_lowercase();
@@ -144,6 +143,7 @@ async fn test_vmess_multiplex_single_stream() {
 
     // Create VMess client with Multiplex enabled
     let client_config = VmessConfig {
+        tag: None,
         server: vmess_addr.ip().to_string(),
         port: vmess_addr.port(),
         auth: VmessAuth {
@@ -164,13 +164,9 @@ async fn test_vmess_multiplex_single_stream() {
     let connector = VmessConnector::new(client_config);
 
     // Dial through VMess to echo server
-    let target = Target {
-        host: echo_addr.ip().to_string(),
-        port: echo_addr.port(),
-        kind: TransportKind::Tcp,
-    };
+    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    let mut stream = match connector.dial(target, DialOpts::default()).await {
+    let mut stream = match connector.dial(&Session::outbound(target)).await {
         Ok(s) => s,
         Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
             eprintln!("Skipping multiplex vmess tests: {}", e);
@@ -204,6 +200,7 @@ async fn test_vmess_multiplex_concurrent_streams() {
 
     // Create VMess client with Multiplex
     let client_config = VmessConfig {
+        tag: None,
         server: vmess_addr.ip().to_string(),
         port: vmess_addr.port(),
         auth: VmessAuth {
@@ -225,12 +222,8 @@ async fn test_vmess_multiplex_concurrent_streams() {
 
     // Preflight a single stream to detect constrained sandbox environments.
     {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
-        let mut s = match connector.dial(target, DialOpts::default()).await {
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+        let mut s = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex vmess tests: {}", e);
@@ -251,14 +244,13 @@ async fn test_vmess_multiplex_concurrent_streams() {
         let echo_addr_clone = echo_addr;
 
         let handle = tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr_clone.ip().to_string(),
-                port: echo_addr_clone.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(
+                echo_addr_clone.ip().to_string(),
+                echo_addr_clone.port(),
+            );
 
             let mut stream = connector_clone
-                .dial(target, DialOpts::default())
+                .dial(&Session::outbound(target))
                 .await
                 .expect("Failed to dial");
 
@@ -301,6 +293,7 @@ async fn test_vmess_multiplex_data_integrity() {
 
     // Create VMess client with Multiplex
     let client_config = VmessConfig {
+        tag: None,
         server: vmess_addr.ip().to_string(),
         port: vmess_addr.port(),
         auth: VmessAuth {
@@ -322,12 +315,8 @@ async fn test_vmess_multiplex_data_integrity() {
 
     // Preflight to detect constrained environments.
     {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
-        let mut s = match connector.dial(target, DialOpts::default()).await {
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+        let mut s = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex vmess tests: {}", e);
@@ -348,14 +337,13 @@ async fn test_vmess_multiplex_data_integrity() {
         let echo_addr_clone = echo_addr;
 
         let handle = tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr_clone.ip().to_string(),
-                port: echo_addr_clone.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(
+                echo_addr_clone.ip().to_string(),
+                echo_addr_clone.port(),
+            );
 
             let mut stream = connector_clone
-                .dial(target, DialOpts::default())
+                .dial(&Session::outbound(target))
                 .await
                 .expect("Failed to dial");
 
@@ -401,6 +389,7 @@ async fn test_vmess_multiplex_vs_non_multiplex() {
     // Test non-multiplex client
     {
         let client_config = VmessConfig {
+            tag: None,
             server: vmess_addr_no_mux.ip().to_string(),
             port: vmess_addr_no_mux.port(),
             auth: VmessAuth {
@@ -420,13 +409,9 @@ async fn test_vmess_multiplex_vs_non_multiplex() {
 
         let connector = VmessConnector::new(client_config);
 
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-        let mut stream = match connector.dial(target, DialOpts::default()).await {
+        let mut stream = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex vmess tests: {}", e);
@@ -447,6 +432,7 @@ async fn test_vmess_multiplex_vs_non_multiplex() {
     // Test multiplex client
     {
         let client_config = VmessConfig {
+            tag: None,
             server: vmess_addr_mux.ip().to_string(),
             port: vmess_addr_mux.port(),
             auth: VmessAuth {
@@ -466,13 +452,9 @@ async fn test_vmess_multiplex_vs_non_multiplex() {
 
         let connector = VmessConnector::new(client_config);
 
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-        let mut stream = match connector.dial(target, DialOpts::default()).await {
+        let mut stream = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex vmess tests: {}", e);
@@ -510,6 +492,7 @@ async fn test_vmess_multiplex_security_levels() {
         Security::ChaCha20Poly1305,
     ] {
         let client_config = VmessConfig {
+            tag: None,
             server: vmess_addr.ip().to_string(),
             port: vmess_addr.port(),
             auth: VmessAuth {
@@ -529,13 +512,9 @@ async fn test_vmess_multiplex_security_levels() {
 
         let connector = VmessConnector::new(client_config);
 
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-        let mut stream = match connector.dial(target, DialOpts::default()).await {
+        let mut stream = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex vmess tests: {}", e);
@@ -569,6 +548,7 @@ async fn test_vmess_multiplex_alter_id_variations() {
     // Test with different alter_id values
     for alter_id in &[0, 4, 16, 64] {
         let client_config = VmessConfig {
+            tag: None,
             server: vmess_addr.ip().to_string(),
             port: vmess_addr.port(),
             auth: VmessAuth {
@@ -588,13 +568,9 @@ async fn test_vmess_multiplex_alter_id_variations() {
 
         let connector = VmessConnector::new(client_config);
 
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-        let mut stream = match connector.dial(target, DialOpts::default()).await {
+        let mut stream = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping multiplex vmess tests: {}", e);

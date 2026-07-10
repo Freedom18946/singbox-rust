@@ -28,6 +28,8 @@ pub enum ErrorClass {
     ResourceExhausted,
     /// Internal logic error (bug).
     Internal,
+    /// Invalid or incomplete component configuration.
+    Configuration,
 }
 
 impl fmt::Display for ErrorClass {
@@ -41,6 +43,7 @@ impl fmt::Display for ErrorClass {
             Self::Policy => "policy",
             Self::ResourceExhausted => "resource_exhausted",
             Self::Internal => "internal",
+            Self::Configuration => "configuration",
         };
         f.write_str(s)
     }
@@ -52,6 +55,13 @@ impl fmt::Display for ErrorClass {
 /// All adapters should map their errors to this type at boundaries.
 #[derive(Debug, Error, Clone, Serialize, Deserialize)]
 pub enum CoreError {
+    /// Structured connection failure at the contract boundary.
+    #[error("connect {kind:?}: {message}")]
+    Connect {
+        kind: ConnectErrorKind,
+        message: String,
+    },
+
     /// I/O error (network, file, etc.).
     #[error("io error: {message}")]
     Io { class: ErrorClass, message: String },
@@ -89,11 +99,39 @@ pub enum CoreError {
     Internal { message: String },
 }
 
+/// Stable classification for connection establishment failures.
+#[derive(Copy, Clone, Debug, Eq, PartialEq, Hash, Serialize, Deserialize)]
+pub enum ConnectErrorKind {
+    /// The remote peer refused the connection.
+    Refused,
+    /// The connection was reset or aborted after opening.
+    Reset,
+    /// No usable route or local address exists for the destination.
+    Unreachable,
+    /// The selected protocol or transport cannot provide the requested operation.
+    Unsupported,
+    /// The adapter configuration is invalid.
+    InvalidConfig,
+}
+
 impl CoreError {
     /// Get the error class for categorization.
     #[inline]
     pub fn class(&self) -> ErrorClass {
         match self {
+            Self::Connect {
+                kind:
+                    ConnectErrorKind::Refused | ConnectErrorKind::Reset | ConnectErrorKind::Unreachable,
+                ..
+            } => ErrorClass::Io,
+            Self::Connect {
+                kind: ConnectErrorKind::Unsupported,
+                ..
+            } => ErrorClass::Protocol,
+            Self::Connect {
+                kind: ConnectErrorKind::InvalidConfig,
+                ..
+            } => ErrorClass::Configuration,
             Self::Io { class, .. } => *class,
             Self::Timeout { .. } => ErrorClass::Timeout,
             Self::Dns { .. } => ErrorClass::Dns,
@@ -111,6 +149,15 @@ impl CoreError {
     pub fn io(message: impl Into<String>) -> Self {
         Self::Io {
             class: ErrorClass::Io,
+            message: message.into(),
+        }
+    }
+
+    /// Build a structured connection failure.
+    #[inline]
+    pub fn connect(kind: ConnectErrorKind, message: impl Into<String>) -> Self {
+        Self::Connect {
+            kind,
             message: message.into(),
         }
     }
@@ -248,6 +295,18 @@ mod tests {
     fn core_error_class() {
         let e = CoreError::timeout("connect", Duration::from_secs(5));
         assert_eq!(e.class(), ErrorClass::Timeout);
+    }
+
+    #[test]
+    fn structured_connect_errors_preserve_their_class() {
+        assert_eq!(
+            CoreError::connect(ConnectErrorKind::Refused, "denied").class(),
+            ErrorClass::Io
+        );
+        assert_eq!(
+            CoreError::connect(ConnectErrorKind::InvalidConfig, "missing server").class(),
+            ErrorClass::Configuration
+        );
     }
 
     #[test]

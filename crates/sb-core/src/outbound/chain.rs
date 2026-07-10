@@ -40,7 +40,7 @@ pub fn compute_chain_leaf_to_matched(
         };
 
         match next {
-            Some(n) if !n.trim().is_empty() => cur = n,
+            Some(n) if !n.0.trim().is_empty() => cur = n.0,
             _ => break,
         }
     }

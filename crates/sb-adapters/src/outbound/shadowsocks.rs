@@ -9,10 +9,10 @@
 //! 支持 TCP 和 UDP 中继。
 
 use crate::outbound::prelude::*;
-use crate::traits::{OutboundDatagram, ResolveMode};
 use anyhow::Context;
 use hkdf::Hkdf;
 use sb_transport::Dialer;
+use sb_types::ResolveMode;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
@@ -107,6 +107,14 @@ pub struct ShadowsocksConnector {
 }
 
 impl ShadowsocksConnector {
+    pub const fn name(&self) -> &'static str {
+        "shadowsocks"
+    }
+
+    pub async fn start(&self) -> Result<()> {
+        Ok(())
+    }
+
     pub fn new(config: ShadowsocksConfig) -> Result<Self> {
         let cipher_method = CipherMethod::from_str(&config.method)?;
         let master_key = Self::derive_master_key(&config.password, cipher_method.key_size());
@@ -174,9 +182,8 @@ impl ShadowsocksConnector {
         Self::new(config)
     }
 
-    /// Create UDP relay connection (returns OutboundDatagram)
-    /// 创建 UDP 中继连接（返回 OutboundDatagram）
-    pub async fn udp_relay_dial(&self, target: Target) -> Result<Box<dyn OutboundDatagram>> {
+    /// Create canonical UDP relay association.
+    pub async fn udp_relay_dial(&self, session: &Session) -> Result<sb_types::BoxedPacketConn> {
         #[cfg(not(feature = "adapter-shadowsocks"))]
         return Err(AdapterError::NotImplemented {
             what: "adapter-shadowsocks",
@@ -186,7 +193,7 @@ impl ShadowsocksConnector {
         {
             tracing::debug!(
                 server = %self.config.server,
-                target = %format!("{}:{}", target.host, target.port),
+                target = %session.target,
                 method = %self.config.method,
                 "Creating Shadowsocks UDP relay"
             );
@@ -227,8 +234,9 @@ impl ShadowsocksConnector {
                 Arc::new(local_socket),
                 self.cipher_method.clone(),
                 self.master_key.clone(),
+                session.target.clone(),
+                session.packet.idle_timeout,
             )?;
-            udp_socket.set_target(target).await;
 
             Ok(Box::new(udp_socket))
         }
@@ -257,23 +265,8 @@ impl Default for ShadowsocksConnector {
     }
 }
 
-#[async_trait]
-impl OutboundConnector for ShadowsocksConnector {
-    fn name(&self) -> &'static str {
-        "shadowsocks"
-    }
-
-    async fn start(&self) -> Result<()> {
-        #[cfg(not(feature = "adapter-shadowsocks"))]
-        return Err(AdapterError::NotImplemented {
-            what: "adapter-shadowsocks",
-        });
-
-        #[cfg(feature = "adapter-shadowsocks")]
-        Ok(())
-    }
-
-    async fn dial(&self, target: Target, opts: DialOpts) -> Result<BoxedStream> {
+impl ShadowsocksConnector {
+    pub async fn dial(&self, session: &Session) -> Result<BoxedStream> {
         #[cfg(not(feature = "adapter-shadowsocks"))]
         return Err(AdapterError::NotImplemented {
             what: "adapter-shadowsocks",
@@ -281,22 +274,18 @@ impl OutboundConnector for ShadowsocksConnector {
 
         #[cfg(feature = "adapter-shadowsocks")]
         {
-            let _span = crate::outbound::span_dial("shadowsocks", &target);
+            let target = &session.target;
+            let opts = &session.connect;
+            let _span = crate::outbound::span_dial("shadowsocks", target);
 
             // Start metrics timing
             // 开始指标计时
             #[cfg(feature = "metrics")]
             let start_time = sb_metrics::start_adapter_timer();
 
-            if target.kind != TransportKind::Tcp {
-                return Err(AdapterError::Protocol(
-                    "Shadowsocks outbound only supports TCP".to_string(),
-                ));
-            }
-
             // Clone target for logging before moving into async block
             // 在移入异步块之前克隆目标以进行日志记录
-            let target_for_log = format!("{}:{}", target.host, target.port);
+            let target_for_log = target.to_string();
 
             let dial_result = async {
                 if self.config.detour.is_some() && self.multiplex_dialer.is_some() {
@@ -316,7 +305,7 @@ impl OutboundConnector for ShadowsocksConnector {
                     })
                     .map_err(|e| AdapterError::Other(e.to_string()))?;
 
-                let addr_payload = encode_target_address(&target, &opts.resolve_mode).await?;
+                let addr_payload = encode_target_address(target, &opts.resolve_mode).await?;
 
                 if let Some(ref mux_dialer) = self.multiplex_dialer {
                     // Multiplex is layered over the encrypted Shadowsocks tunnel:
@@ -404,13 +393,58 @@ impl OutboundConnector for ShadowsocksConnector {
     }
 }
 
+impl sb_types::Outbound for ShadowsocksConnector {
+    fn r#type(&self) -> &str {
+        "shadowsocks"
+    }
+
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(
+            self.config
+                .tag
+                .clone()
+                .unwrap_or_else(|| "shadowsocks".to_string()),
+        )
+    }
+
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
+
+    fn dial<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+            let stream = ShadowsocksConnector::dial(self, session)
+                .await
+                .map_err(|error| crate::outbound::core_error(error, session))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.udp_relay_dial(session)
+                .await
+                .map_err(|error| crate::outbound::core_error(error, session))
+        })
+    }
+}
+
 #[cfg(feature = "adapter-shadowsocks")]
-async fn encode_target_address(target: &Target, resolve_mode: &ResolveMode) -> Result<Vec<u8>> {
+async fn encode_target_address(target: &TargetAddr, resolve_mode: &ResolveMode) -> Result<Vec<u8>> {
     let mut payload = Vec::new();
+    let host = target.host();
+    let port = target.port();
 
     match resolve_mode {
         ResolveMode::Local => {
-            if let Ok(ip) = target.host.parse::<IpAddr>() {
+            if let Ok(ip) = host.parse::<IpAddr>() {
                 match ip {
                     IpAddr::V4(ipv4) => {
                         payload.push(0x01);
@@ -422,7 +456,7 @@ async fn encode_target_address(target: &Target, resolve_mode: &ResolveMode) -> R
                     }
                 }
             } else {
-                match tokio::net::lookup_host((target.host.clone(), target.port)).await {
+                match tokio::net::lookup_host((host.clone(), port)).await {
                     Ok(mut addrs) => {
                         if let Some(addr) = addrs.next() {
                             match addr.ip() {
@@ -438,14 +472,14 @@ async fn encode_target_address(target: &Target, resolve_mode: &ResolveMode) -> R
                         } else {
                             return Err(AdapterError::Network(format!(
                                 "Failed to resolve {}",
-                                target.host
+                                host
                             )));
                         }
                     }
                     Err(e) => {
                         return Err(AdapterError::Network(format!(
                             "DNS resolution failed for {}: {}",
-                            target.host, e
+                            host, e
                         )));
                     }
                 }
@@ -453,7 +487,7 @@ async fn encode_target_address(target: &Target, resolve_mode: &ResolveMode) -> R
         }
         ResolveMode::Remote => {
             payload.push(0x03);
-            let hostname_bytes = target.host.as_bytes();
+            let hostname_bytes = host.as_bytes();
             if hostname_bytes.len() > 255 {
                 return Err(AdapterError::InvalidConfig("Hostname too long"));
             }
@@ -462,7 +496,7 @@ async fn encode_target_address(target: &Target, resolve_mode: &ResolveMode) -> R
         }
     }
 
-    payload.extend_from_slice(&target.port.to_be_bytes());
+    payload.extend_from_slice(&port.to_be_bytes());
     Ok(payload)
 }
 
@@ -840,8 +874,7 @@ impl sb_transport::dialer::Dialer for ShadowsocksTunnelDialer {
     }
 }
 
-/// Shadowsocks UDP socket wrapper that implements OutboundDatagram
-/// 实现 OutboundDatagram 的 Shadowsocks UDP socket 包装器
+/// Shadowsocks canonical UDP packet association.
 /// Handles AEAD encryption/decryption for UDP packets
 /// 处理 UDP 数据包的 AEAD 加密/解密
 #[cfg(feature = "adapter-shadowsocks")]
@@ -850,8 +883,7 @@ pub struct ShadowsocksUdpSocket {
     socket: Arc<UdpSocket>,
     cipher_method: CipherMethod,
     master_key: Vec<u8>,
-    /// Target address for UDP relay (stored during creation)
-    target_addr: tokio::sync::Mutex<Option<Target>>,
+    state: crate::outbound::PacketState,
 }
 
 #[cfg(feature = "adapter-shadowsocks")]
@@ -860,30 +892,26 @@ impl ShadowsocksUdpSocket {
         socket: Arc<UdpSocket>,
         cipher_method: CipherMethod,
         master_key: Vec<u8>,
+        target: TargetAddr,
+        idle_timeout: std::time::Duration,
     ) -> Result<Self> {
         Ok(Self {
             socket,
             cipher_method,
             master_key,
-            target_addr: tokio::sync::Mutex::new(None),
+            state: crate::outbound::PacketState::new(target, idle_timeout),
         })
-    }
-
-    /// Set target address for subsequent operations
-    /// 设置后续操作的目标地址
-    pub async fn set_target(&self, target: Target) {
-        let mut addr = self.target_addr.lock().await;
-        *addr = Some(target);
     }
 
     /// Encode target address in SOCKS5 format
     /// 以 SOCKS5 格式编码目标地址
-    fn encode_target_address(&self, target: &Target) -> Result<Vec<u8>> {
+    fn encode_target_address(&self, target: &TargetAddr) -> Result<Vec<u8>> {
         let mut payload = Vec::new();
+        let host = target.host();
 
         // Try to parse as IP address first
         // 尝试先解析为 IP 地址
-        if let Ok(ip) = target.host.parse::<IpAddr>() {
+        if let Ok(ip) = host.parse::<IpAddr>() {
             match ip {
                 IpAddr::V4(ipv4) => {
                     payload.push(0x01); // IPv4
@@ -898,7 +926,7 @@ impl ShadowsocksUdpSocket {
             // Domain name
             // 域名
             payload.push(0x03); // Domain
-            let hostname_bytes = target.host.as_bytes();
+            let hostname_bytes = host.as_bytes();
             if hostname_bytes.len() > 255 {
                 return Err(AdapterError::InvalidConfig("Hostname too long"));
             }
@@ -908,7 +936,7 @@ impl ShadowsocksUdpSocket {
 
         // Add port
         // 添加端口
-        payload.extend_from_slice(&target.port.to_be_bytes());
+        payload.extend_from_slice(&target.port().to_be_bytes());
 
         Ok(payload)
     }
@@ -917,7 +945,7 @@ impl ShadowsocksUdpSocket {
     /// 使用 AEAD 加密 UDP 数据包
     /// Format: salt (16-32 bytes) + encrypted(ATYP + ADDR + PORT + DATA) + tag (16 bytes)
     /// 格式：salt (16-32 字节) + encrypted(ATYP + ADDR + PORT + DATA) + tag (16 字节)
-    fn encrypt_packet(&self, data: &[u8], target: &Target) -> Result<Vec<u8>> {
+    fn encrypt_packet(&self, data: &[u8], target: &TargetAddr) -> Result<Vec<u8>> {
         // Generate random salt (salt length equals key length).
         let salt_len = self.cipher_method.salt_len();
         let mut salt = vec![0u8; salt_len];
@@ -944,7 +972,7 @@ impl ShadowsocksUdpSocket {
 
     /// Decrypt UDP packet with AEAD
     /// 使用 AEAD 解密 UDP 数据包
-    fn decrypt_packet(&self, packet: &[u8]) -> Result<Vec<u8>> {
+    fn decrypt_packet(&self, packet: &[u8]) -> Result<(Vec<u8>, TargetAddr)> {
         let salt_len = self.cipher_method.salt_len();
         let tag_size = self.cipher_method.tag_size();
 
@@ -965,29 +993,50 @@ impl ShadowsocksUdpSocket {
         // 目前，我们返回完整的解密负载
         // In production, should parse and skip the address header
         // 生产环境中，应解析并跳过地址头部
-        let addr_len = self.parse_address_length(&plaintext)?;
-        Ok(plaintext[addr_len..].to_vec())
+        let (addr_len, source) = self.parse_address(&plaintext)?;
+        Ok((plaintext[addr_len..].to_vec(), source))
     }
 
     /// Parse address header length from decrypted payload
     /// 从解密负载中解析地址头部长度
-    fn parse_address_length(&self, data: &[u8]) -> Result<usize> {
+    fn parse_address(&self, data: &[u8]) -> Result<(usize, TargetAddr)> {
         if data.is_empty() {
             return Err(AdapterError::Protocol("Empty payload".to_string()));
         }
 
         let atyp = data[0];
         match atyp {
-            0x01 => Ok(1 + 4 + 2), // IPv4: ATYP + 4 bytes + port
+            0x01 if data.len() >= 7 => {
+                let ip = std::net::Ipv4Addr::new(data[1], data[2], data[3], data[4]);
+                let port = u16::from_be_bytes([data[5], data[6]]);
+                Ok((7, TargetAddr::ip(IpAddr::V4(ip), port)))
+            }
             0x03 => {
                 // Domain: ATYP + length byte + domain + port
                 if data.len() < 2 {
                     return Err(AdapterError::Protocol("Invalid domain address".to_string()));
                 }
                 let domain_len = data[1] as usize;
-                Ok(1 + 1 + domain_len + 2)
+                let end = 2 + domain_len;
+                if data.len() < end + 2 {
+                    return Err(AdapterError::Protocol(
+                        "Truncated domain address".to_string(),
+                    ));
+                }
+                let domain = std::str::from_utf8(&data[2..end])
+                    .map_err(|_| AdapterError::Protocol("Invalid domain address".to_string()))?;
+                let port = u16::from_be_bytes([data[end], data[end + 1]]);
+                Ok((end + 2, TargetAddr::domain(domain, port)))
             }
-            0x04 => Ok(1 + 16 + 2), // IPv6: ATYP + 16 bytes + port
+            0x04 if data.len() >= 19 => {
+                let mut octets = [0_u8; 16];
+                octets.copy_from_slice(&data[1..17]);
+                let port = u16::from_be_bytes([data[17], data[18]]);
+                Ok((
+                    19,
+                    TargetAddr::ip(IpAddr::V6(std::net::Ipv6Addr::from(octets)), port),
+                ))
+            }
             _ => Err(AdapterError::Protocol(format!(
                 "Unsupported address type: {}",
                 atyp
@@ -997,70 +1046,82 @@ impl ShadowsocksUdpSocket {
 }
 
 #[cfg(feature = "adapter-shadowsocks")]
-#[async_trait]
-impl OutboundDatagram for ShadowsocksUdpSocket {
-    async fn send_to(&self, payload: &[u8]) -> Result<usize> {
-        // Get target address
-        // 获取目标地址
-        let target = {
-            let addr_lock = self.target_addr.lock().await;
-            addr_lock
-                .as_ref()
-                .ok_or_else(|| AdapterError::Other("Target address not set".to_string()))?
-                .clone()
-        };
-
-        // Encrypt packet
-        // 加密数据包
-        let encrypted_packet = self.encrypt_packet(payload, &target)?;
-
-        // Send to Shadowsocks server
-        // 发送到 Shadowsocks 服务器
-        let sent = self
-            .socket
-            .send(&encrypted_packet)
-            .await
-            .map_err(AdapterError::Io)?;
-
-        tracing::trace!(
-            target = %format!("{}:{}", target.host, target.port),
-            sent = sent,
-            encrypted_len = encrypted_packet.len(),
-            "Shadowsocks UDP packet sent"
-        );
-
-        Ok(payload.len())
+impl sb_types::PacketConn for ShadowsocksUdpSocket {
+    fn send_to<'a>(
+        &'a self,
+        payload: &'a [u8],
+        destination: &'a TargetAddr,
+    ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+        Box::pin(async move {
+            self.state.ensure_open()?;
+            self.state.set_target(destination);
+            let packet = self
+                .encrypt_packet(payload, destination)
+                .map_err(|error| sb_types::CoreError::protocol(error.to_string()))?;
+            let sent = crate::outbound::with_packet_deadline(
+                self.state.write_deadline(),
+                self.socket.send(&packet),
+            )
+            .await?;
+            if sent == packet.len() {
+                Ok(payload.len())
+            } else {
+                Err(sb_types::CoreError::io(
+                    "partial Shadowsocks UDP packet sent",
+                ))
+            }
+        })
     }
 
-    async fn recv_from(&self, buf: &mut [u8]) -> Result<usize> {
-        // Receive from Shadowsocks server
-        // 从 Shadowsocks 服务器接收
-        let (n, _peer) = self.socket.recv_from(buf).await.map_err(AdapterError::Io)?;
-
-        // Decrypt packet
-        // 解密数据包
-        let decrypted = self.decrypt_packet(&buf[..n])?;
-
-        // Copy decrypted data back to buffer
-        // 将解密数据复制回缓冲区
-        if decrypted.len() > buf.len() {
-            return Err(AdapterError::Other("Buffer too small".to_string()));
-        }
-
-        buf[..decrypted.len()].copy_from_slice(&decrypted);
-
-        tracing::trace!(
-            received = n,
-            decrypted_len = decrypted.len(),
-            "Shadowsocks UDP packet received"
-        );
-
-        Ok(decrypted.len())
+    fn recv_from<'a>(
+        &'a self,
+        buffer: &'a mut [u8],
+    ) -> sb_types::BoxFuture<'a, Result<(usize, TargetAddr), sb_types::CoreError>> {
+        Box::pin(async move {
+            self.state.ensure_open()?;
+            let mut packet = vec![0_u8; buffer.len() + 128];
+            let (size, _) = crate::outbound::with_packet_deadline(
+                self.state.read_deadline(),
+                self.socket.recv_from(&mut packet),
+            )
+            .await?;
+            let (payload, source) = self
+                .decrypt_packet(&packet[..size])
+                .map_err(|error| sb_types::CoreError::protocol(error.to_string()))?;
+            if payload.len() > buffer.len() {
+                return Err(sb_types::CoreError::io("packet buffer too small"));
+            }
+            buffer[..payload.len()].copy_from_slice(&payload);
+            Ok((payload.len(), source))
+        })
     }
 
-    async fn close(&self) -> Result<()> {
-        // No explicit close needed for UDP sockets
-        tracing::debug!("Shadowsocks UDP socket closed");
+    fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+        self.state.close();
+        Box::pin(async { Ok(()) })
+    }
+    fn local_addr(&self) -> Option<TargetAddr> {
+        self.socket.local_addr().ok().map(TargetAddr::socket)
+    }
+    fn set_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.state.set_deadline(deadline);
+        Ok(())
+    }
+    fn set_read_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.state.set_read_deadline(deadline);
+        Ok(())
+    }
+    fn set_write_deadline(
+        &self,
+        deadline: Option<std::time::Instant>,
+    ) -> Result<(), sb_types::CoreError> {
+        self.state.set_write_deadline(deadline);
         Ok(())
     }
 }
@@ -1131,15 +1192,20 @@ mod tests {
     #[cfg(feature = "adapter-shadowsocks")]
     #[tokio::test]
     async fn test_udp_socket_address_encoding_ipv4() {
-        use crate::traits::TransportKind;
         let Some(socket) = bind_udp_socket().await else {
             return;
         };
 
-        let udp_socket =
-            ShadowsocksUdpSocket::new(socket, CipherMethod::Aes256Gcm, vec![0u8; 32]).unwrap();
+        let target = TargetAddr::from_host_port("192.168.1.1", 8080);
+        let udp_socket = ShadowsocksUdpSocket::new(
+            socket,
+            CipherMethod::Aes256Gcm,
+            vec![0u8; 32],
+            target.clone(),
+            std::time::Duration::from_secs(300),
+        )
+        .unwrap();
 
-        let target = Target::new("192.168.1.1", 8080, TransportKind::Udp);
         let encoded = udp_socket.encode_target_address(&target).unwrap();
 
         // Verify IPv4 encoding: ATYP(1) + IP(4) + PORT(2) = 7 bytes
@@ -1152,15 +1218,20 @@ mod tests {
     #[cfg(feature = "adapter-shadowsocks")]
     #[tokio::test]
     async fn test_udp_socket_address_encoding_domain() {
-        use crate::traits::TransportKind;
         let Some(socket) = bind_udp_socket().await else {
             return;
         };
 
-        let udp_socket =
-            ShadowsocksUdpSocket::new(socket, CipherMethod::Aes256Gcm, vec![0u8; 32]).unwrap();
+        let target = TargetAddr::domain("example.com", 443);
+        let udp_socket = ShadowsocksUdpSocket::new(
+            socket,
+            CipherMethod::Aes256Gcm,
+            vec![0u8; 32],
+            target.clone(),
+            std::time::Duration::from_secs(300),
+        )
+        .unwrap();
 
-        let target = Target::new("example.com", 443, TransportKind::Udp);
         let encoded = udp_socket.encode_target_address(&target).unwrap();
 
         // Verify domain encoding: ATYP(1) + LEN(1) + DOMAIN(11) + PORT(2) = 15 bytes
@@ -1173,16 +1244,19 @@ mod tests {
     #[cfg(feature = "adapter-shadowsocks")]
     #[tokio::test]
     async fn test_udp_packet_encryption_decryption() {
-        use crate::traits::TransportKind;
         let Some(socket) = bind_udp_socket().await else {
             return;
         };
 
-        let udp_socket =
-            ShadowsocksUdpSocket::new(socket, CipherMethod::ChaCha20Poly1305, vec![0u8; 32])
-                .unwrap();
-
-        let target = Target::new("192.168.1.1", 8080, TransportKind::Udp);
+        let target = TargetAddr::from_host_port("192.168.1.1", 8080);
+        let udp_socket = ShadowsocksUdpSocket::new(
+            socket,
+            CipherMethod::ChaCha20Poly1305,
+            vec![0u8; 32],
+            target.clone(),
+            std::time::Duration::from_secs(300),
+        )
+        .unwrap();
         let test_data = b"Hello, World!";
 
         // Encrypt
@@ -1192,10 +1266,11 @@ mod tests {
         assert!(encrypted.len() > test_data.len()); // Should be longer due to salt, address, and tag
 
         // Decrypt
-        let decrypted = udp_socket.decrypt_packet(&encrypted).unwrap();
+        let (decrypted, source) = udp_socket.decrypt_packet(&encrypted).unwrap();
 
         // Verify decrypted data matches original
         assert_eq!(decrypted, test_data);
+        assert_eq!(source, target);
     }
 
     #[cfg(feature = "adapter-shadowsocks")]
@@ -1205,24 +1280,30 @@ mod tests {
             return;
         };
 
-        let udp_socket =
-            ShadowsocksUdpSocket::new(socket, CipherMethod::Aes256Gcm, vec![0u8; 32]).unwrap();
+        let udp_socket = ShadowsocksUdpSocket::new(
+            socket,
+            CipherMethod::Aes256Gcm,
+            vec![0u8; 32],
+            TargetAddr::domain("fixture", 1),
+            std::time::Duration::from_secs(300),
+        )
+        .unwrap();
 
         // IPv4: ATYP(1) + IP(4) + PORT(2) = 7
         let ipv4_data = vec![0x01, 192, 168, 1, 1, 0x1f, 0x90];
-        assert_eq!(udp_socket.parse_address_length(&ipv4_data).unwrap(), 7);
+        assert_eq!(udp_socket.parse_address(&ipv4_data).unwrap().0, 7);
 
         // Domain: ATYP(1) + LEN(1) + DOMAIN(11) + PORT(2) = 15
         let domain_data = vec![
             0x03, 11, b'e', b'x', b'a', b'm', b'p', b'l', b'e', b'.', b'c', b'o', b'm', 0x01, 0xbb,
         ];
-        assert_eq!(udp_socket.parse_address_length(&domain_data).unwrap(), 15);
+        assert_eq!(udp_socket.parse_address(&domain_data).unwrap().0, 15);
 
         // IPv6: ATYP(1) + IP(16) + PORT(2) = 19
         let mut ipv6_data = vec![0x04];
         ipv6_data.extend_from_slice(&[0u8; 16]); // IPv6 address
         ipv6_data.extend_from_slice(&[0x00, 0x50]); // Port
-        assert_eq!(udp_socket.parse_address_length(&ipv6_data).unwrap(), 19);
+        assert_eq!(udp_socket.parse_address(&ipv6_data).unwrap().0, 19);
     }
 
     #[cfg(feature = "adapter-shadowsocks")]

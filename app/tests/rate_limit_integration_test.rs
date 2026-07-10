@@ -21,11 +21,10 @@ use sb_adapters::inbound::shadowsocks::{ShadowsocksInboundConfig, ShadowsocksUse
 use sb_adapters::inbound::trojan::{TrojanInboundConfig, TrojanUser};
 use sb_adapters::outbound::shadowsocks::{ShadowsocksConfig, ShadowsocksConnector};
 use sb_adapters::outbound::trojan::{TrojanConfig, TrojanConnector};
-use sb_adapters::outbound::{DialOpts, OutboundConnector, Target};
 use sb_adapters::transport_config::TransportConfig;
-use sb_adapters::TransportKind;
 use sb_core::net::rate_limit_metrics;
 use sb_core::router::engine::RouterHandle;
+use sb_types::{Session, TargetAddr};
 
 // Initialize crypto provider for TLS operations
 fn init_crypto() {
@@ -263,12 +262,8 @@ async fn test_trojan_high_load_rate_limiting() {
 
     // Preflight to avoid false failures in constrained environments.
     {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
-        let mut s = match connector.dial(target, DialOpts::default()).await {
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+        let mut s = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping rate limit tests: {}", e);
@@ -287,13 +282,9 @@ async fn test_trojan_high_load_rate_limiting() {
         let connector = connector.clone();
 
         handles.push(tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr.ip().to_string(),
-                port: echo_addr.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            match connector.dial(target, DialOpts::default()).await {
+            match connector.dial(&Session::outbound(target)).await {
                 Ok(mut stream) => {
                     // Try to send/receive data
                     match stream.write_all(b"ping").await {
@@ -397,12 +388,8 @@ async fn test_shadowsocks_high_load_rate_limiting() {
 
     // Preflight to avoid false failures in constrained environments.
     {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
-        let mut s = match connector.dial(target, DialOpts::default()).await {
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+        let mut s = match connector.dial(&Session::outbound(target)).await {
             Ok(s) => s,
             Err(e) if is_constrained_dial_error_str(&e.to_string()) => {
                 eprintln!("Skipping rate limit tests: {}", e);
@@ -421,13 +408,9 @@ async fn test_shadowsocks_high_load_rate_limiting() {
         let connector = connector.clone();
 
         handles.push(tokio::spawn(async move {
-            let target = Target {
-                host: echo_addr.ip().to_string(),
-                port: echo_addr.port(),
-                kind: TransportKind::Tcp,
-            };
+            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            match connector.dial(target, DialOpts::default()).await {
+            match connector.dial(&Session::outbound(target)).await {
                 Ok(mut stream) => match stream.write_all(b"ping").await {
                     Ok(_) => {
                         let mut buf = [0u8; 4];
@@ -536,12 +519,8 @@ async fn test_rate_limit_metrics_recording() {
 
     // Preflight to avoid false failures in constrained environments.
     {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
-        match connector.dial(target, DialOpts::default()).await {
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+        match connector.dial(&Session::outbound(target)).await {
             Ok(mut s) => {
                 let _ = s.write_all(b"ping").await;
                 let mut buf = [0u8; 4];
@@ -557,13 +536,9 @@ async fn test_rate_limit_metrics_recording() {
 
     // Make 20 connections (should trigger rate limiting)
     for _ in 0..20 {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-        let _ = connector.dial(target, DialOpts::default()).await;
+        let _ = connector.dial(&Session::outbound(target)).await;
         tokio::time::sleep(Duration::from_millis(10)).await;
     }
 
@@ -620,13 +595,9 @@ async fn test_auth_failure_ban() {
 
     // Make multiple failed auth attempts
     for i in 0..15 {
-        let target = Target {
-            host: echo_addr.ip().to_string(),
-            port: echo_addr.port(),
-            kind: TransportKind::Tcp,
-        };
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-        let result = connector.dial(target, DialOpts::default()).await;
+        let result = connector.dial(&Session::outbound(target)).await;
 
         if let Ok(mut stream) = result {
             let _ = stream.write_all(b"test").await;
