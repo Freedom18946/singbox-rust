@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-11) - MIG-03 WP04 semantic audit DONE
+
+- **WP04 accepted:** `mig03/mig03_wp04_coverage_matrix.md` corrects stale scaffold
+  assumptions, inventories all live construction paths, and records per-protocol eight-dimension
+  coverage, D9/D10/D14 decisions, cross-dependencies, test disposition, and parity handoffs.
+- Two WP05 GAP groups remain: SOCKS inbound Rust-only limiter/active-TCP/compatible metrics plus
+  core UDP dependencies; SOCKS outbound product-profile UDP reachability plus core UDP helper
+  migration. HTTP/mixed/direct/TUN/redirect/tproxy/block and registry-only protocols require no
+  WP05 scaffold-semantic fill. Selector/urltest implementation ownership remains WP12.
+- No D18 item remains. Next dependency step: execute WP05 exactly from matrix §11; WP06 stays
+  blocked until WP05 acceptance.
+- **Scope note:** documentation audit only. No production code, feature, test, packaging,
+  parity/BHV, or REALITY denominator movement is claimed.
+
 ## Resume (2026-07-10) - MIG-03 WP01 + combined WP02/WP03 DONE
 
 - **WP01-03 accepted:** census/ADR red-team omissions corrected; one canonical

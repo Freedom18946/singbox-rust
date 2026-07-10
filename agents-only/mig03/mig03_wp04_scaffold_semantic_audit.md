@@ -1,30 +1,28 @@
 <!-- tier: B -->
 # MIG-03 WP04 — scaffold vs adapters 逐协议语义差异审计
 
-Status: PLANNED
+Status: DONE
 Priority: P0
 Depends on: 无（可与 Phase A 并行）
 Blocks: WP05, WP06
 性质: **纯文档包**——不改任何代码。
 
-Primary evidence:
+Primary evidence（执行后校正）：
 
-- `crates/sb-core/src/adapter/bridge.rs:1` 自述："Prioritizes sb-adapter registry;
-  falls back to scaffold implementations"；registry 查询点 `:595`（inbound）、
-  `:604`（outbound）。
-- scaffold inbound 实现：`crates/sb-core/src/inbound/socks5.rs`（约 800 行）、
-  `inbound/http_connect.rs`、`inbound/mixed.rs`（mixed 内部复用前两者）。
-- scaffold outbound 实现：`crates/sb-core/src/outbound/` 下 `socks5.rs`、
-  `socks5_udp.rs`、`udp_socks5.rs`、`socks_upstream.rs`、`http_proxy.rs`、
-  `http_upstream.rs`、`ss/`、`direct.rs`、`direct_simple.rs`、`direct_connector.rs`、
-  `block.rs`、`block_connector.rs`、`selector*.rs`（组类见 WP12）。
-- 对照物：`crates/sb-adapters/src/outbound/`（25 个协议）与
-  `crates/sb-adapters/src/inbound/`（socks/、http.rs、mixed.rs 等）。
-- 强制双编译：`crates/sb-adapters/Cargo.toml:61`（features 含 "scaffold"）、
-  `app/Cargo.toml:377/:440`。
-- 交叉依赖（删除时的雷）：`crates/sb-adapters/src/inbound/socks/udp.rs:18` 引用
-  `sb_core::outbound::socks5_udp::UpSocksSession`；
-  `crates/sb-core/src/net/udp_upstream_map.rs:3` 同源引用。
+- 主路径 inbound 只走 registry：`crates/sb-core/src/adapter/bridge.rs:573-598,861-900`。
+- 主路径 outbound 仅 direct/block 保留 core fallback：同文件 `:605-615`；
+  selector/urltest 只走 registry：`:773-807`。
+- 活跃 legacy 公共入口 `Bridge::new_from_config`：
+  `crates/sb-core/src/adapter/mod.rs:423-626`，调用方
+  `crates/sb-core/src/runtime/mod.rs:56-68`。
+- switchboard 仍构造 core direct/block，并把其余协议降级为 501：
+  `crates/sb-core/src/runtime/switchboard.rs:137-230`。
+- adapters 注册面：`crates/sb-adapters/src/register/builders.rs:234-385`；
+  强制双编译仍见 `crates/sb-adapters/Cargo.toml:61`、`app/Cargo.toml:377,440`。
+- 删除前必须解开的 SOCKS UDP 交叉依赖：
+  `crates/sb-adapters/src/inbound/socks/udp.rs:12,18`、
+  `udp_enhanced.rs:22`、`crates/sb-core/src/net/udp_upstream_map.rs:3`。
+- 完整结果与施工单：`mig03_wp04_coverage_matrix.md`。
 
 ## Goal
 
@@ -37,9 +35,14 @@ Primary evidence:
 
 ## Current Gap
 
-两套实现共存且运行时"registry 未命中就静默走 scaffold"，意味着删除 scaffold
-之前必须证明 adapters 版语义等价，否则删除=行为变更。目前没有任何文档记录
-两套实现的差异面。
+审计已关闭。当前主 bridge 并不存在普遍静默 fallback；真实删除风险来自三处：
+
+1. legacy `Bridge::new_from_config` 仍构造 SOCKS/TUN/direct；
+2. switchboard 与其他生产 helper 仍持有 core direct/block ownership；
+3. adapter SOCKS UDP 仍直接依赖 core scaffold helper/type。
+
+矩阵确认两组 WP05 GAP：SOCKS inbound 的 Rust-only limiter、active TCP/兼容 metrics 与
+core UDP 依赖；SOCKS outbound 的默认产品 profile UDP 可达性及 core UDP helper 迁移。
 
 ## Non-goals
 
@@ -76,19 +79,24 @@ Primary evidence:
 
 ## Acceptance
 
-- [ ] `mig03_wp04_coverage_matrix.md` 覆盖 bridge scaffold 分支的**全部** kind，
+- [x] `mig03_wp04_coverage_matrix.md` 覆盖 bridge scaffold 分支的**全部** kind，
       每协议 8 个维度无空格（查不到就写"两侧均无此能力"，不许留空）。
-- [ ] 每条 GAP 有精确锚点（scaffold 侧 file:line ↔ adapters 侧 file:line 或"缺失"）。
-- [ ] 交叉依赖清单完整（至少含 evidence 中已知两条），每条有解法建议。
-- [ ] SCAFFOLD-ONLY 项已逐条套用 D9 并记录判定依据（Go 侧证据 + 消费面证据）；
+- [x] 每条 GAP 有精确锚点（scaffold 侧 file:line ↔ adapters 侧 file:line 或"缺失"）。
+- [x] 交叉依赖清单完整（至少含 evidence 中已知两条），每条有解法建议。
+- [x] SCAFFOLD-ONLY 项已逐条套用 D9 并记录判定依据（Go 侧证据 + 消费面证据）；
       D18 升级项清零或已获用户答复。
-- [ ] `git status` 确认只新增本目录文档。
+- [x] `git status` 确认只包含 WP04 文档/状态记录。
 
 ## 验证命令
 
 ```bash
 git status --porcelain
 # 矩阵中引用的每条 grep 证据可复现
+git diff --check
+./agents-only/06-scripts/verify-consistency.sh
+make boundaries
+cargo fmt --check
+cargo check -p app
 ```
 
 ## Risks / known traps
@@ -102,4 +110,13 @@ git status --porcelain
 
 ## 发现移交
 
-（执行时填写。）
+- 原 primary evidence 已漂移：direct/block 四个旧文件已删除；主 bridge inbound 无
+  scaffold fallback；`ADAPTER_FORCE` 无运行时读取。WP06 必须按实际三条构造路径施工。
+- `GAP` 仅两组：SOCKS inbound、SOCKS outbound。精确补齐项见矩阵 §11。
+- TUN 被原 WP04 协议预期漏列；adapter builder 读取完整 options 并注入 router/outbounds，
+  判 `ADAPTERS-COVERS`。
+- selector/urltest adapter shim 直接构造 core `SelectorGroup`；WP06 不拆，真正去重归 WP12。
+- Go direct partial override、SOCKS inbound users、SOCKS outbound UoT、HTTP outbound
+  path/headers、group idle/interrupt 为 parity 发现，不属于 MIG-03，已在矩阵 §10 移交。
+- D9 与 D14 共同适用时，以 D14 的“本轨迹不废弃任何 `SB_*`”约束保留变量语义；
+  未产生 D18 未决项。

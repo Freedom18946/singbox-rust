@@ -180,3 +180,30 @@
 - dual-kernel `p1_rust_core_tcp_via_socks`、`p1_rust_core_udp_via_socks` run+diff clean。
 
 **结果**: WP01/WP02/WP03 DONE。Parity/BHV、packaging、REALITY 状态不变。
+
+---
+
+## 2026-07-11 MIG-03 WP04 scaffold semantic audit
+
+**任务**: 完成 WP04 scaffold/adapters 逐协议语义审计与 WP05/WP06 唯一施工单。
+
+**变更**:
+- 新增 `mig03/mig03_wp04_coverage_matrix.md`：纠正“主 bridge 普遍 fallback”过期假设，
+  覆盖主 bridge、legacy `Bridge::new_from_config`、switchboard 三条构造路径。
+- 对每个相关协议完成配置、认证、TCP、UDP、错误、metrics、`SB_*`、sniff/route
+  八维审计；登记 D9/D10/D14 裁决、交叉依赖、测试处置及 Go parity 发现。
+- 确认 WP05 只有两组 GAP：SOCKS inbound（limiter、active TCP、兼容 metrics、core UDP
+  依赖）与 SOCKS outbound（产品 profile UDP、core helper）；selector/urltest 去重仍归
+  WP12；无 D18 未决项。
+- 更新 WP04 状态、验收清单和 active context；未修改生产代码或测试。
+
+**验证**:
+- 矩阵结构/八维完整性检查
+- 矩阵锚点与 grep 证据复现
+- `git diff --check`
+- `./agents-only/06-scripts/verify-consistency.sh`
+- `make boundaries`
+- `cargo fmt --check`
+- `cargo check -p app`
+
+**结果**: WP04 DONE。未声明 dual-kernel parity / BHV / REALITY / packaging 变化。
