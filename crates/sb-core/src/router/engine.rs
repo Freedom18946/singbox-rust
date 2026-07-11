@@ -978,7 +978,6 @@ impl RouterHandle {
             return d_str;
         }
 
-        #[cfg(feature = "router_keyword")]
         if let Some(d) = crate::router::router_index_decide_keyword(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
@@ -1118,7 +1117,6 @@ impl RouterHandle {
             return d_str;
         }
 
-        #[cfg(feature = "router_keyword")]
         if let Some(d) = crate::router::router_index_decide_keyword(&idx, host_for_domain) {
             let d_str = d.to_string();
             self.cache_put(&cache_key, &d_str);
@@ -1741,9 +1739,9 @@ impl IntoRouterDefault for crate::outbound::OutboundKind {
             crate::outbound::OutboundKind::Block => "block",
             crate::outbound::OutboundKind::Socks => "socks",
             crate::outbound::OutboundKind::Http => "http",
-            #[cfg(feature = "out_naive")]
+
             crate::outbound::OutboundKind::Naive => "naive",
-            #[cfg(feature = "out_hysteria2")]
+
             crate::outbound::OutboundKind::Hysteria2 => "hysteria2",
         }
         .to_string()
@@ -1830,7 +1828,7 @@ pub fn decide_http_explain(target: &str) -> DecisionExplain {
             cache_status: None,
         };
     }
-    #[cfg(feature = "router_keyword")]
+
     {
         if let Some(index) = &idx.keyword_idx {
             if let Some(i) = index.find_idx(&host) {
@@ -1910,7 +1908,7 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
             cache_status: None,
         };
     }
-    #[cfg(feature = "router_keyword")]
+
     {
         if let Some(index) = &idx.keyword_idx {
             if let Some(i) = index.find_idx(&host_norm) {

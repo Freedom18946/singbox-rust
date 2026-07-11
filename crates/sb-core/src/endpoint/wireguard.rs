@@ -38,7 +38,6 @@ pub struct WireGuardEndpoint {
     /// DNS resolver for internal name resolution.
     dns_resolver: Option<Arc<dyn crate::dns::Resolver>>,
     /// Router handle for policy checks.
-    #[cfg(feature = "router")]
     router: Option<Arc<crate::router::RouterHandle>>,
     /// Parsed `udp_timeout` for idle reap of per-peer UDP sockets (Go parity).
     udp_timeout: Option<Duration>,
@@ -424,7 +423,8 @@ impl WireGuardEndpoint {
     pub fn new(
         ir: &EndpointIR,
         dns: Option<Arc<dyn crate::dns::Resolver>>,
-        #[cfg(feature = "router")] router: Option<Arc<crate::router::RouterHandle>>,
+
+        router: Option<Arc<crate::router::RouterHandle>>,
     ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
         let tag = ir.tag.clone().unwrap_or_else(|| "wireguard".to_string());
 
@@ -525,7 +525,7 @@ impl WireGuardEndpoint {
             tcp_accept_rxs: parking_lot::Mutex::new(Vec::new()),
             listen_ports: ir.wireguard_listen_ports.clone().unwrap_or_default(),
             dns_resolver: dns,
-            #[cfg(feature = "router")]
+
             router,
             udp_timeout,
         })
@@ -918,7 +918,7 @@ impl Endpoint for WireGuardEndpoint {
         }
 
         // Integrate with router logic for policy checks
-        #[cfg(feature = "router")]
+
         if let Some(router) = &self.router {
             let host = destination.fqdn();
             let ip = destination.addr();
@@ -1078,12 +1078,7 @@ pub fn build_wireguard_endpoint(
     if ir.ty != EndpointType::Wireguard {
         return None;
     }
-    match WireGuardEndpoint::new(
-        ir,
-        ctx.dns.clone(),
-        #[cfg(feature = "router")]
-        ctx.router.clone(),
-    ) {
+    match WireGuardEndpoint::new(ir, ctx.dns.clone(), ctx.router.clone()) {
         Ok(ep) => Some(Arc::new(ep)),
         Err(e) => {
             tracing::error!(target: "sb_core::endpoint", error = %e, "failed to build WireGuard endpoint");
@@ -1163,13 +1158,7 @@ mod tests {
     #[tokio::test]
     async fn endpoint_udp_session_fails_loudly_without_local_source_address() {
         let ir = wireguard_endpoint_ir(None);
-        let endpoint = WireGuardEndpoint::new(
-            &ir,
-            None,
-            #[cfg(feature = "router")]
-            None,
-        )
-        .expect("wireguard endpoint");
+        let endpoint = WireGuardEndpoint::new(&ir, None, None).expect("wireguard endpoint");
 
         let session = endpoint
             .listen_packet(&sb_types::Session::new(
@@ -1221,39 +1210,21 @@ mod tests {
     #[tokio::test]
     async fn udp_timeout_parsed_into_endpoint() {
         let ir = two_peer_ir(vec!["10.7.0.2/32"], Some("90s"));
-        let ep = WireGuardEndpoint::new(
-            &ir,
-            None,
-            #[cfg(feature = "router")]
-            None,
-        )
-        .expect("endpoint");
+        let ep = WireGuardEndpoint::new(&ir, None, None).expect("endpoint");
         assert_eq!(ep.udp_timeout, Some(Duration::from_secs(90)));
     }
 
     #[tokio::test]
     async fn udp_timeout_invalid_falls_back_to_5m() {
         let ir = two_peer_ir(vec!["10.7.0.2/32"], Some("not-a-duration"));
-        let ep = WireGuardEndpoint::new(
-            &ir,
-            None,
-            #[cfg(feature = "router")]
-            None,
-        )
-        .expect("endpoint");
+        let ep = WireGuardEndpoint::new(&ir, None, None).expect("endpoint");
         assert_eq!(ep.udp_timeout, Some(Duration::from_secs(300)));
     }
 
     #[tokio::test]
     async fn udp_timeout_none_means_no_reap() {
         let ir = two_peer_ir(vec!["10.7.0.2/32"], None);
-        let ep = WireGuardEndpoint::new(
-            &ir,
-            None,
-            #[cfg(feature = "router")]
-            None,
-        )
-        .expect("endpoint");
+        let ep = WireGuardEndpoint::new(&ir, None, None).expect("endpoint");
         assert_eq!(ep.udp_timeout, None);
     }
 
@@ -1269,13 +1240,7 @@ mod tests {
         // is that idle reap + per-peer bucketing don't crash and both sends
         // return Ok.
         let ir = two_peer_ir(vec!["10.7.0.2/32", "fd00::2/128"], None);
-        let ep = WireGuardEndpoint::new(
-            &ir,
-            None,
-            #[cfg(feature = "router")]
-            None,
-        )
-        .expect("endpoint");
+        let ep = WireGuardEndpoint::new(&ir, None, None).expect("endpoint");
         let session = ep
             .listen_packet(&sb_types::Session::new(
                 0,
@@ -1309,13 +1274,7 @@ mod tests {
         // local address so the netstack has a source IP.
         let mut ir = wireguard_endpoint_ir(Some(vec!["10.7.0.2/32".to_string()]));
         ir.wireguard_udp_timeout = Some("200ms".to_string());
-        let ep = WireGuardEndpoint::new(
-            &ir,
-            None,
-            #[cfg(feature = "router")]
-            None,
-        )
-        .expect("endpoint");
+        let ep = WireGuardEndpoint::new(&ir, None, None).expect("endpoint");
         let session = ep
             .listen_packet(&sb_types::Session::new(
                 0,
@@ -1343,13 +1302,7 @@ mod tests {
         // so we verify the invariant indirectly: the endpoint's transports
         // count equals the peer count after construction + double-start.
         let ir = wireguard_endpoint_ir(Some(vec!["10.7.0.2/32".to_string()]));
-        let ep = WireGuardEndpoint::new(
-            &ir,
-            None,
-            #[cfg(feature = "router")]
-            None,
-        )
-        .expect("endpoint");
+        let ep = WireGuardEndpoint::new(&ir, None, None).expect("endpoint");
         // Call ensure_started twice (resolve=false then true, as open_udp does).
         ep.ensure_started(false).expect("start1");
         ep.ensure_started(true).expect("start2");
@@ -1433,13 +1386,7 @@ mod tests {
             reserved: None,
         }]);
 
-        let endpoint = WireGuardEndpoint::new(
-            &ir,
-            None,
-            #[cfg(feature = "router")]
-            None,
-        )
-        .expect("wireguard endpoint");
+        let endpoint = WireGuardEndpoint::new(&ir, None, None).expect("wireguard endpoint");
         let (tx, rx) = tokio::sync::oneshot::channel();
         endpoint.set_connection_handler(Arc::new(CaptureTcpHandler {
             tx: TokioMutex::new(Some(tx)),

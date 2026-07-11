@@ -49,8 +49,10 @@ Generate cryptographic keys (REALITY, ECH)
 Usage: app generate [OPTIONS] <COMMAND>
 
 Commands:
+  uuid               Generate UUID string (V4)
+  rand               Generate random bytes
   reality-keypair    Generate REALITY X25519 keypair
-  ech-keypair        Generate ECH (Encrypted Client Hello) X25519 keypair for HPKE
+  ech-keypair        Generate ECH (Encrypted Client Hello) keypair with PEM output
   tls-keypair        Generate a self-signed TLS keypair (PEM)
   vapid-keypair      Generate VAPID (`WebPush`) P-256 keypair
   wireguard-keypair  Generate `WireGuard` X25519 keypair

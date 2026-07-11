@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 // Test for Config/Route Options Parity
 use sb_config::ir::{ConfigIR, RouteIR, RuleIR};
 
@@ -112,7 +111,6 @@ fn test_route_ir_with_new_fields() {
     assert_eq!(config.route.rules[1].group_id.len(), 1);
 }
 
-#[cfg(feature = "router")]
 #[test]
 fn test_router_parsing_new_fields() {
     use sb_core::adapter::bridge::build_bridge;

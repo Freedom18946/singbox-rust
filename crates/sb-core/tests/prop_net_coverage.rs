@@ -1,6 +1,6 @@
 // crates/sb-core/tests/prop_net_coverage.rs
 // Disabled in default builds; enable with a known feature gate if needed
-#![cfg(not(any(feature = "router", not(feature = "router"))))]
+#![cfg(any())]
 use ipnet::{IpNet, Ipv4Net};
 use proptest::prelude::*;
 use serde_json::json;

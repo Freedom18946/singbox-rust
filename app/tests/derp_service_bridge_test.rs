@@ -27,6 +27,7 @@ fn find_free_port() -> std::io::Result<u16> {
 async fn derp_service_bridge_mock_relay_e2e() -> Result<()> {
     #[cfg(feature = "adapters")]
     sb_adapters::register_all();
+    sb_service_derp::register();
 
     let _ = rustls::crypto::ring::default_provider().install_default();
 

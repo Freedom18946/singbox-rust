@@ -27,7 +27,7 @@ pub enum OutboundErrorClass {
     Other,
 }
 
-#[cfg(any(test, feature = "dev-cli", feature = "metrics"))]
+#[cfg(any(test, feature = "metrics"))]
 #[deprecated(since = "0.1.0", note = "preserved for JSON contract/future export")]
 fn label_kind(k: OutboundKind) -> &'static str {
     match k {
@@ -35,14 +35,14 @@ fn label_kind(k: OutboundKind) -> &'static str {
         OutboundKind::Socks => "socks5",
         OutboundKind::Http => "http",
         OutboundKind::Block => "block",
-        #[cfg(feature = "out_naive")]
+
         OutboundKind::Naive => "naive",
-        #[cfg(feature = "out_hysteria2")]
+
         OutboundKind::Hysteria2 => "hysteria2",
     }
 }
 
-#[cfg(any(test, feature = "dev-cli", feature = "metrics"))]
+#[cfg(any(test, feature = "metrics"))]
 #[deprecated(since = "0.1.0", note = "preserved for JSON contract/future export")]
 fn label_err(c: OutboundErrorClass) -> &'static str {
     match c {
@@ -265,37 +265,31 @@ impl DummyHistogram {
     pub const fn observe(&self, _value: f64) {}
 }
 
-#[cfg(feature = "out_trojan")]
 pub fn record_trojan_connect_success() {
     #[cfg(feature = "metrics")]
     counter!("trojan_connect_total", "result" => "ok").increment(1);
 }
 
-#[cfg(feature = "out_trojan")]
 pub fn record_trojan_connect_error() {
     #[cfg(feature = "metrics")]
     counter!("trojan_connect_total", "result" => "error").increment(1);
 }
 
-#[cfg(feature = "out_trojan")]
 pub fn record_trojan_handshake_duration(duration_ms: f64) {
     #[cfg(feature = "metrics")]
     histogram!("trojan_handshake_ms").record(duration_ms);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_shadowsocks_connect_success() {
     #[cfg(feature = "metrics")]
     counter!("ss_connect_total", "result" => "ok").increment(1);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_shadowsocks_connect_error() {
     #[cfg(feature = "metrics")]
     counter!("ss_connect_total", "result" => "error").increment(1);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_shadowsocks_encrypt_bytes(bytes: u64) {
     #[cfg(feature = "metrics")]
     counter!("ss_encrypt_bytes_total").increment(bytes);
@@ -388,20 +382,18 @@ pub fn register_comprehensive_metrics() {
 }
 
 // Enhanced Trojan metrics
-#[cfg(feature = "out_trojan")]
+
 pub fn record_trojan_connect_attempt(cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("trojan_connect_total", "cipher" => cipher.to_string(), "result" => "attempt")
         .increment(1);
 }
 
-#[cfg(feature = "out_trojan")]
 pub fn record_trojan_connect_success_with_cipher(cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("trojan_connect_total", "cipher" => cipher.to_string(), "result" => "ok").increment(1);
 }
 
-#[cfg(feature = "out_trojan")]
 pub fn record_trojan_connect_error_with_cipher(cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("trojan_connect_total", "cipher" => cipher.to_string(), "result" => "error")
@@ -409,44 +401,38 @@ pub fn record_trojan_connect_error_with_cipher(cipher: &str) {
 }
 
 // Enhanced Shadowsocks metrics
-#[cfg(feature = "out_ss")]
+
 pub fn record_ss_connect_attempt(cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("ss_connect_total", "cipher" => cipher.to_string(), "result" => "attempt")
         .increment(1);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_ss_connect_success_with_cipher(cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("ss_connect_total", "cipher" => cipher.to_string(), "result" => "ok").increment(1);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_ss_connect_error_with_cipher(cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("ss_connect_total", "cipher" => cipher.to_string(), "result" => "error").increment(1);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_ss_encrypt_bytes_with_cipher(bytes: u64, cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("ss_encrypt_bytes_total", "cipher" => cipher.to_string()).increment(bytes);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_ss_udp_send_with_cipher(cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("ss_udp_send_total", "cipher" => cipher.to_string()).increment(1);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_ss_udp_recv_with_cipher(cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("ss_udp_recv_total", "cipher" => cipher.to_string()).increment(1);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_ss_aead_op_duration(duration_ms: f64, cipher: &str, operation: &str) {
     #[cfg(feature = "metrics")]
     histogram!("ss_aead_op_duration_ms", "cipher" => cipher.to_string(), "operation" => operation.to_string())
@@ -498,7 +484,7 @@ pub fn record_aead_encrypt_total(
 }
 
 // Extra Shadowsocks stream metrics used by bridge pumps
-#[cfg(feature = "out_ss")]
+
 pub fn record_ss_stream_error_with_cipher(reason: &str, cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!(
@@ -509,7 +495,6 @@ pub fn record_ss_stream_error_with_cipher(reason: &str, cipher: &str) {
     .increment(1);
 }
 
-#[cfg(feature = "out_ss")]
 pub fn record_ss_decrypt_bytes_with_cipher(bytes: u64, cipher: &str) {
     #[cfg(feature = "metrics")]
     counter!("ss_decrypt_bytes_total", "cipher" => cipher.to_string()).increment(bytes);

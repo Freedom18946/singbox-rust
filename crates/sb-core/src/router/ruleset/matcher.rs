@@ -590,17 +590,9 @@ impl RuleMatcher {
             DomainRule::Exact(pattern) => domain == pattern,
             DomainRule::Suffix(_pattern) => {
                 // Use suffix trie or fallback to linear search
-                #[cfg(feature = "suffix_trie")]
+
                 {
                     self.ruleset.domain_trie.contains(domain)
-                }
-                #[cfg(not(feature = "suffix_trie"))]
-                {
-                    // Fallback: check if domain ends with any suffix
-                    self.ruleset
-                        .domain_suffixes
-                        .iter()
-                        .any(|suffix| domain_matches_suffix(domain, suffix))
                 }
             }
             DomainRule::Keyword(keyword) => domain.contains(keyword),
@@ -701,14 +693,12 @@ mod tests {
             format: RuleSetFormat::Binary,
             version: 1,
             rules,
-            #[cfg(feature = "suffix_trie")]
+
             domain_trie: {
                 let mut domain_trie = crate::router::suffix_trie::SuffixTrie::new();
                 domain_trie.insert("example.com");
                 Arc::new(domain_trie)
             },
-            #[cfg(not(feature = "suffix_trie"))]
-            domain_suffixes: Arc::new(vec!["example.com".to_string()]),
             ip_tree: Arc::new(ip_tree),
             last_updated: SystemTime::now(),
             etag: None,

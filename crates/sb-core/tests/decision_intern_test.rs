@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 #[test]
 fn intern_dedup() {
     let a = sb_core::router::decision_intern::intern_decision("direct");

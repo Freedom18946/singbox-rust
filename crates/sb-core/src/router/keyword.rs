@@ -59,7 +59,7 @@ where
     build_index_with_threshold(pairs, 64)
 }
 
-pub(crate) fn build_index_with_threshold<'a, I>(pairs: I, threshold: usize) -> Option<Index>
+pub(crate) fn build_index_with_threshold<'a, I>(pairs: I, _threshold: usize) -> Option<Index>
 where
     I: IntoIterator<Item = (&'a str, &'a str)>,
 {
@@ -74,7 +74,7 @@ where
     }
     #[cfg(feature = "router_keyword_ac")]
     {
-        let ac = if pats.len() >= threshold {
+        let ac = if pats.len() >= _threshold {
             aho_corasick::AhoCorasick::new(&pats).ok()
         } else {
             None

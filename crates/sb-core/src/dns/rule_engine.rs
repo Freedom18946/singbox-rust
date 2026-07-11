@@ -1513,10 +1513,8 @@ mod tests {
             format: RuleSetFormat::Binary,
             version: 1,
             rules: vec![rule],
-            #[cfg(feature = "suffix_trie")]
+
             domain_trie: Arc::new(Default::default()),
-            #[cfg(not(feature = "suffix_trie"))]
-            domain_suffixes: Arc::new(vec![]),
             ip_tree: Arc::new(Default::default()),
             last_updated: SystemTime::now(),
             etag: None,
@@ -1686,10 +1684,8 @@ mod tests {
             format: RuleSetFormat::Binary,
             version: 1,
             rules: vec![rule],
-            #[cfg(feature = "suffix_trie")]
+
             domain_trie: Arc::new(Default::default()),
-            #[cfg(not(feature = "suffix_trie"))]
-            domain_suffixes: Arc::new(vec![]),
             ip_tree: Arc::new(Default::default()),
             last_updated: SystemTime::now(),
             etag: None,
@@ -1752,10 +1748,8 @@ mod tests {
             format: RuleSetFormat::Binary,
             version: 1,
             rules: vec![rule],
-            #[cfg(feature = "suffix_trie")]
+
             domain_trie: Arc::new(Default::default()),
-            #[cfg(not(feature = "suffix_trie"))]
-            domain_suffixes: Arc::new(vec![]),
             ip_tree: Arc::new(Default::default()),
             last_updated: SystemTime::now(),
             etag: None,
@@ -1826,10 +1820,8 @@ mod tests {
                 domain_suffix: vec!["example.com".to_string()],
                 ..Default::default()
             })],
-            #[cfg(feature = "suffix_trie")]
+
             domain_trie: Arc::new(Default::default()),
-            #[cfg(not(feature = "suffix_trie"))]
-            domain_suffixes: Arc::new(vec![]),
             ip_tree: Arc::new(Default::default()),
             last_updated: SystemTime::now(),
             etag: None,
@@ -1843,10 +1835,8 @@ mod tests {
                 domain_suffix: vec!["example.com".to_string()],
                 ..Default::default()
             })],
-            #[cfg(feature = "suffix_trie")]
+
             domain_trie: Arc::new(Default::default()),
-            #[cfg(not(feature = "suffix_trie"))]
-            domain_suffixes: Arc::new(vec![]),
             ip_tree: Arc::new(Default::default()),
             last_updated: SystemTime::now(),
             etag: None,
@@ -1930,10 +1920,8 @@ mod tests {
                 domain_suffix: vec!["test.com".to_string()],
                 ..Default::default()
             })],
-            #[cfg(feature = "suffix_trie")]
+
             domain_trie: Arc::new(Default::default()),
-            #[cfg(not(feature = "suffix_trie"))]
-            domain_suffixes: Arc::new(vec![]),
             ip_tree: Arc::new(Default::default()),
             last_updated: SystemTime::now(),
             etag: None,
@@ -2005,10 +1993,8 @@ mod tests {
                 inbound: vec!["tun".to_string()],
                 ..Default::default()
             })],
-            #[cfg(feature = "suffix_trie")]
+
             domain_trie: Arc::new(Default::default()),
-            #[cfg(not(feature = "suffix_trie"))]
-            domain_suffixes: Arc::new(vec![]),
             ip_tree: Arc::new(Default::default()),
             last_updated: SystemTime::now(),
             etag: None,
@@ -2576,10 +2562,8 @@ mod tests {
             format: RuleSetFormat::Binary,
             version: 1,
             rules: vec![rule],
-            #[cfg(feature = "suffix_trie")]
+
             domain_trie: Arc::new(Default::default()),
-            #[cfg(not(feature = "suffix_trie"))]
-            domain_suffixes: Arc::new(vec![]),
             ip_tree: Arc::new(Default::default()),
             last_updated: SystemTime::now(),
             etag: None,

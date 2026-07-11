@@ -19,7 +19,6 @@
 //! Data structures and external interfaces remain compatible: No changes needed for Router/Inbound side.
 //! 数据结构与对外接口保持不变：Router/Inbound 端无需改动。
 
-#[cfg(feature = "router")]
 pub mod chain;
 pub mod endpoint;
 pub mod health;
@@ -98,9 +97,9 @@ pub enum OutboundKind {
     Block,
     Socks,
     Http,
-    #[cfg(feature = "out_naive")]
+
     Naive,
-    #[cfg(feature = "out_hysteria2")]
+
     Hysteria2,
 }
 

@@ -1,5 +1,4 @@
-#![cfg(feature = "router")]
-#![cfg(all(feature = "geoip_mmdb", feature = "router"))]
+#![cfg(feature = "geoip_mmdb")]
 
 use sb_core::geoip::{
     install_default_geoip_service, lookup_country_code, lookup_with_metrics,

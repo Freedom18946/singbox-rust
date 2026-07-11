@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_core::router::router_build_index_from_str;
 
 #[test]

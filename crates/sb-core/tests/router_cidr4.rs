@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_core::net::datagram::UdpTargetAddr;
 use sb_core::router;
 use sb_core::runtime_options::RouterRuntimeOptions;

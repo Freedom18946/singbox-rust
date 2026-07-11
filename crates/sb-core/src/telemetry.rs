@@ -174,9 +174,9 @@ pub fn router_select(mode: &'static str, target: &RouteTarget) {
                 OutboundKind::Socks => "socks5",
                 OutboundKind::Http => "http",
                 OutboundKind::Block => "block",
-                #[cfg(feature = "out_naive")]
+
                 OutboundKind::Naive => "naive",
-                #[cfg(feature = "out_hysteria2")]
+
                 OutboundKind::Hysteria2 => "hysteria2",
             };
             let _ = kind; // 值不再作为标签输出，避免高基数

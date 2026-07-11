@@ -1,5 +1,5 @@
 // Disabled in default builds; dns_cache v1 path removed
-#![cfg(not(any(feature = "router", not(feature = "router"))))]
+#![cfg(any())]
 use sb_core::dns::cache::*;
 use std::net::IpAddr;
 use std::time::Duration;

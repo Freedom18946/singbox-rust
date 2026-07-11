@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 //! Integration tests for IP is-private detection
 //!
 //! Tests the routing engine's ability to route based on whether an IP address

@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-11) - MIG-03 WP13 feature matrix slimming DONE
+
+- **WP13 accepted:** sb-core declared features close at 65 and source `cfg(feature)` at 787;
+  all legacy `out_*`, core `router`/`routing`, `legacy_protocols`, and obsolete dev/index gates
+  are retired. Router, suffix trie, keyword linear index, and DNS runtime-option paths are constant.
+- Every retained core feature has a Cargo purpose comment. Census and corrected baseline replay live
+  in `mig03/mig03_wp13_feature_census.md`; regression locks budgets, retired names, comments, and
+  downstream forwarding.
+- Seven build combinations, core all-feature tests, app all-feature lib plus WP13-related E2E,
+  repeated FakeIP isolation, workspace clippy, fmt, boundaries, consistency, and diff-check pass.
+  Full app `net_e2e` retains unrelated macOS Shadowsocks mux/mixed early-EOF/hang quality debt.
+  **Authorized transition:** WP14 next.
+- **Scope note:** structural/feature convergence only. No parity/BHV/REALITY movement claimed.
+
 ## Resume (2026-07-11) - MIG-03 WP09/WP10/WP12 red-team acceptance DONE
 
 - **WP09 accepted:** DERP moved to `sb-service-derp`; SSM/V2Ray API moved to `sb-api`;
@@ -23,7 +37,7 @@
 - Red-team fixes closed default-profile metrics linkage, relocated test dependencies/feature gates,
   DERP header panic paths, and stale boundary assertions. Workspace all-features, focused crate/app
   tests, three app profiles, clippy, fmt, 427 boundaries, and diff-check pass.
-- **Authorized transition:** WP13 is next MIG-03 frontier; WP07 and WP12 prerequisites are closed.
+- **Transition closed:** WP13 accepted; WP14 is next MIG-03 frontier.
 
 ## Resume (2026-07-11) - MIG-03 WP11 env/config convergence DONE
 

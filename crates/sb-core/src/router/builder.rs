@@ -110,9 +110,9 @@ pub fn build_index_from_ir(cfg: &ConfigIR) -> Result<Arc<RouterIndex>, String> {
         cidr6_buckets,
         geoip_rules,
         geosite_rules,
-        #[cfg(feature = "router_keyword")]
+
         keyword_rules: Vec::new(),
-        #[cfg(feature = "router_keyword")]
+
         keyword_idx: None,
         wifi_ssid_rules,
         wifi_bssid_rules,

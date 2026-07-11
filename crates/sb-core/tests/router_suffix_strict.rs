@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_core::router::{
     normalize_host, router_build_index_from_str_with_options, router_index_decide_exact_suffix,
 };

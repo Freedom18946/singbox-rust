@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 //! Integration tests for GeoSite rules in routing engine
 
 use sb_core::router::{geo::GeoSiteDb, router_build_index_from_str, RouterHandle};
@@ -74,9 +73,9 @@ fn test_geosite_rules_with_router_handle() {
         source_rules: vec![],
         dest_rules: vec![],
         user_agent_rules: vec![],
-        #[cfg(feature = "router_keyword")]
+
         keyword_rules: vec![],
-        #[cfg(feature = "router_keyword")]
+
         keyword_idx: None,
         default: "direct",
         gen: 0,

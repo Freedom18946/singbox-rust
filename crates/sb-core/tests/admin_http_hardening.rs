@@ -3,7 +3,6 @@
 //! These tests require the `router` feature to be enabled as they use
 //! Runtime::dummy_engine() which requires router functionality.
 
-#![cfg(feature = "router")]
 #![allow(clippy::await_holding_lock)]
 
 use std::io::{Read, Write};

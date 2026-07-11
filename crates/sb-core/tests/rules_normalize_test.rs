@@ -1,5 +1,3 @@
-#![cfg(feature = "router")]
-
 use sb_core::router::rules_normalize;
 
 #[test]

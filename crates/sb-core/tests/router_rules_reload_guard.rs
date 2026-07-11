@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_core::router::{router_build_index_from_str_with_options, BuildError, InvalidReason};
 use sb_core::runtime_options::RouterRuntimeOptions;
 

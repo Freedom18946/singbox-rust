@@ -265,7 +265,7 @@ pub fn lookup_domain(ip: &IpAddr) -> Option<String> {
 }
 
 pub fn mapping_count() -> usize {
-    let mut st = state().lock();
+    let st = state().lock();
     st.by_domain_v4.len() + st.by_domain_v6.len()
 }
 
@@ -314,7 +314,7 @@ fn is_fake_v6(ip: Ipv6Addr, base: Ipv6Addr, mask: u8) -> bool {
 }
 
 pub fn is_fake_ip(ip: &IpAddr) -> bool {
-    let mut st = state().lock();
+    let st = state().lock();
     match ip {
         IpAddr::V4(v4) => is_fake_v4(*v4, st.v4_base, st.v4_mask),
         IpAddr::V6(v6) => is_fake_v6(*v6, st.v6_base, st.v6_mask),
@@ -334,14 +334,23 @@ mod tests {
     use super::*;
     use crate::runtime_options::DnsRuntimeOptions;
 
+    static TEST_LOCK: std::sync::Mutex<()> = std::sync::Mutex::new(());
+
+    fn lock_state() -> std::sync::MutexGuard<'static, ()> {
+        TEST_LOCK.lock().unwrap_or_else(|error| error.into_inner())
+    }
+
     fn configure_options(options: DnsRuntimeOptions) {
-        let mut dns = sb_config::ir::DnsIR::default();
-        dns.fakeip_enabled = None;
+        let dns = sb_config::ir::DnsIR {
+            fakeip_enabled: None,
+            ..Default::default()
+        };
         configure(&dns, &options);
     }
 
     #[test]
     fn test_fakeip_v4_allocation() {
+        let _guard = lock_state();
         configure_options(DnsRuntimeOptions {
             fakeip_v4_base: "198.18.0.0".parse().unwrap(),
             fakeip_v4_mask: 16,
@@ -369,6 +378,7 @@ mod tests {
 
     #[test]
     fn test_fakeip_v6_allocation() {
+        let _guard = lock_state();
         configure_options(DnsRuntimeOptions {
             fakeip_v6_base: "fd00::".parse().unwrap(),
             fakeip_v6_mask: 8,
@@ -396,6 +406,7 @@ mod tests {
 
     #[test]
     fn test_fakeip_detection() {
+        let _guard = lock_state();
         configure_options(DnsRuntimeOptions {
             fakeip_v4_base: "198.18.0.0".parse().unwrap(),
             fakeip_v4_mask: 16,
@@ -415,6 +426,7 @@ mod tests {
 
     #[test]
     fn test_fakeip_reverse_lookup() {
+        let _guard = lock_state();
         configure_options(DnsRuntimeOptions::default());
 
         let domain = "example.org";
@@ -431,6 +443,7 @@ mod tests {
 
     #[test]
     fn test_fakeip_enabled() {
+        let _guard = lock_state();
         configure_options(DnsRuntimeOptions::default());
         assert!(!enabled());
 

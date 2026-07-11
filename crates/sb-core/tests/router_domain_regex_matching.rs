@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 //! Integration tests for domain regex matching
 //!
 //! Tests the routing engine's ability to route based on regular expression patterns

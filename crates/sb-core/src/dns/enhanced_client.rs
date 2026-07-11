@@ -38,7 +38,6 @@ impl CacheEntry {
         Instant::now() >= self.expires_at
     }
 
-    #[cfg(any(test, feature = "dev-cli"))]
     /// Returns remaining TTL for cache entry
     #[allow(dead_code)]
     fn remaining_ttl(&self) -> Duration {

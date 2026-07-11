@@ -1,8 +1,5 @@
-#![cfg(feature = "router")]
-#[cfg(feature = "router_keyword")]
 use sb_core::router::{router_build_index_from_str, router_index_decide_keyword};
 
-#[cfg(feature = "router_keyword")]
 #[test]
 fn keyword_match_basic() {
     let text = r#"

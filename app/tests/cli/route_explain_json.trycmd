@@ -4,7 +4,7 @@ $ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:443 --exp
   "dest": "example.com:443",
   "matched_rule": "[..]",
   "chain": [],
-  "outbound": "direct"
+  "outbound": "unresolved"
 }
 
 $ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:443 --explain --format json --with-trace
@@ -12,7 +12,7 @@ $ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:443 --exp
   "dest": "example.com:443",
   "matched_rule": "[..]",
   "chain": [],
-  "outbound": "direct"
+  "outbound": "unresolved"
 }
 
 $ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:53 --udp --explain --format json
@@ -20,7 +20,7 @@ $ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:53 --udp 
   "dest": "example.com:53",
   "matched_rule": "[..]",
   "chain": [],
-  "outbound": "direct"
+  "outbound": "unresolved"
 }
 
 ```

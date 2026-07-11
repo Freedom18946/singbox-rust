@@ -1,5 +1,3 @@
-#![cfg(feature = "router")]
-
 use sb_config::ir::{ConfigIR, RuleAction, RuleIR};
 use sb_core::outbound::RouteTarget;
 use sb_core::router::rules::{CompositeRule, Decision, RouteCtx as RuleRouteCtx};

@@ -1,5 +1,3 @@
-#![cfg(feature = "router")]
-
 use sb_core::router::sniff::extract_sni_from_tls_client_hello;
 
 // Use the routing engine over ConfigIR rules

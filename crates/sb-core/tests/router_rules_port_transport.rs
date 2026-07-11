@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 #![allow(clippy::await_holding_lock)]
 use sb_core::router::RouterHandle;
 use sb_core::runtime_options::RouterRuntimeOptions;

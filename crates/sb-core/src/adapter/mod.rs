@@ -15,7 +15,7 @@
 
 use crate::context::Context;
 use crate::endpoint::Endpoint;
-#[cfg(feature = "router")]
+
 use crate::router::RouterHandle;
 use crate::service::Service;
 use sb_config::ir::{Credentials, MultiplexOptionsIR};
@@ -331,7 +331,6 @@ pub struct Bridge {
     /// Global runtime context
     pub context: Context,
     /// Router handle (if available)
-    #[cfg(feature = "router")]
     pub router: Option<Arc<RouterHandle>>,
     pub experimental: Option<sb_config::ir::ExperimentalIR>,
 }
@@ -349,7 +348,7 @@ impl Bridge {
             services: vec![],
             startup_errors: vec![],
             context,
-            #[cfg(feature = "router")]
+
             router: None,
             experimental: None,
         }
@@ -357,14 +356,11 @@ impl Bridge {
 
     /// Create bridge from IR configuration through the installed adapter registry.
     pub fn new_from_config(ir: &sb_config::ir::ConfigIR, context: Context) -> anyhow::Result<Self> {
-        #[cfg(feature = "router")]
         let bridge = bridge::build_bridge(
             ir,
             crate::router::Engine::new(Arc::new(ir.clone())),
             context,
         );
-        #[cfg(not(feature = "router"))]
-        let bridge = bridge::build_bridge(ir, (), context);
 
         if bridge.startup_errors.is_empty() {
             Ok(bridge)

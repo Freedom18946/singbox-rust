@@ -59,13 +59,12 @@ pub mod net;
 pub mod outbound;
 /// Pipeline utilities for adapters.
 /// 适配器的管道工具。
-#[cfg(feature = "router")]
 /// Routing engine and rule matching.
 /// 路由引擎和规则匹配。
 pub mod routing;
 pub mod udp_nat_instrument;
 // Expose legacy router module for compatibility with external crates
-#[cfg(feature = "router")]
+
 pub mod router;
 /// Runtime supervisor and event loop.
 /// 运行时监督者和事件循环。

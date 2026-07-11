@@ -353,7 +353,9 @@ fn test_outbound_adapters_instantiation() -> Result<()> {
                 }],
                 "outbounds": [{
                     "type": "dns",
-                    "tag": "dns-out"
+                    "tag": "dns-out",
+                    "server": "1.1.1.1",
+                    "port": 53
                 }],
                 "dns": {
                     "servers": [{

@@ -1,5 +1,3 @@
-#![cfg(feature = "router")]
-
 use sb_core::outbound::OutboundKind;
 use sb_core::router::{Router, RouterHandle};
 

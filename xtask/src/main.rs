@@ -262,19 +262,6 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
                 "dns_doh3",
                 "tls_rustls",
             ]),
-        // sb-core QUIC / outbound features
-        MatrixCase::new("sb-core", "TUIC outbound core", Check)
-            .with_no_default()
-            .with_features(&["out_tuic", "out_quic", "tls_rustls"]),
-        MatrixCase::new("sb-core", "Hysteria2 outbound core", Check)
-            .with_no_default()
-            .with_features(&["out_hysteria2", "out_quic", "tls_rustls"]),
-        MatrixCase::new("sb-core", "ShadowTLS outbound", Check)
-            .with_no_default()
-            .with_features(&["out_shadowtls", "tls_rustls"]),
-        MatrixCase::new("sb-core", "WireGuard outbound", Check)
-            .with_no_default()
-            .with_features(&["out_wireguard"]),
         // sb-adapters protocol adapters
         MatrixCase::new("sb-adapters", "HTTP adapter", Check)
             .with_no_default()
@@ -376,9 +363,6 @@ fn build_feature_matrix_cases() -> Vec<MatrixCase> {
         MatrixCase::new("sb-core", "Resolved service", Check)
             .with_no_default()
             .with_features(&["service_resolved"]),
-        MatrixCase::new("sb-core", "Router + legacy", Check)
-            .with_no_default()
-            .with_features(&["router", "legacy_protocols"]),
         // sb-adapters combinations
         MatrixCase::new("sb-adapters", "All QUIC adapters", Check)
             .with_no_default()

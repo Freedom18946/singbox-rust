@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_config::ir::{DnsIR, DnsRuleIR};
 use sb_core::dns::{DnsAnswer, DnsUpstream, RecordType};
 use std::collections::HashMap;
@@ -84,10 +83,8 @@ async fn test_dns_rule_query_type_matching() {
             query_type: vec!["AAAA".into()], // The field we added
             ..Default::default()
         })],
-        #[cfg(feature = "suffix_trie")]
+
         domain_trie: Arc::new(Default::default()),
-        #[cfg(not(feature = "suffix_trie"))]
-        domain_suffixes: Arc::new(vec![]),
         ip_tree: Arc::new(Default::default()),
         last_updated: std::time::SystemTime::now(),
         etag: None,
@@ -148,10 +145,8 @@ async fn test_dns_rule_action_hijack() {
             domain_keyword: vec!["google".into()],
             ..Default::default()
         })],
-        #[cfg(feature = "suffix_trie")]
+
         domain_trie: Arc::new(Default::default()),
-        #[cfg(not(feature = "suffix_trie"))]
-        domain_suffixes: Arc::new(vec![]),
         ip_tree: Arc::new(Default::default()),
         last_updated: std::time::SystemTime::now(),
         etag: None,
@@ -208,10 +203,8 @@ async fn test_dns_rule_action_hijack_with_rewrite() {
             domain_keyword: vec!["hijack".into()],
             ..Default::default()
         })],
-        #[cfg(feature = "suffix_trie")]
+
         domain_trie: Arc::new(Default::default()),
-        #[cfg(not(feature = "suffix_trie"))]
-        domain_suffixes: Arc::new(vec![]),
         ip_tree: Arc::new(Default::default()),
         last_updated: std::time::SystemTime::now(),
         etag: None,
@@ -297,10 +290,8 @@ async fn test_dns_rule_action_address_limit() {
             domain_keyword: vec!["limit".into()],
             ..Default::default()
         })],
-        #[cfg(feature = "suffix_trie")]
+
         domain_trie: Arc::new(Default::default()),
-        #[cfg(not(feature = "suffix_trie"))]
-        domain_suffixes: Arc::new(vec![]),
         ip_tree: Arc::new(Default::default()),
         last_updated: std::time::SystemTime::now(),
         etag: None,

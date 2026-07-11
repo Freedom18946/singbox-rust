@@ -35,5 +35,5 @@ anyhow = "1"
 tokio = { version = "1", features = ["full"] }
 sb-adapters = { path = "../../crates/sb-adapters", features = ["adapter-http", "http", "router", "sb-transport"] }
 sb-common = { path = "../../crates/sb-common" }
-sb-core = { path = "../../crates/sb-core", features = ["router"] }
+sb-core = { path = "../../crates/sb-core" }
 sb-transport = { path = "../../crates/sb-transport", features = ["transport_tls"] }

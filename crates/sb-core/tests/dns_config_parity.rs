@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_config::ir::{ConfigIR, DnsIR, DnsServerIR};
 use sb_core::dns::config_builder::resolver_from_ir;
 

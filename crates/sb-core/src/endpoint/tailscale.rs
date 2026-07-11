@@ -540,30 +540,20 @@ pub struct TailscaleEndpoint {
     /// Last error message.
     last_error: Arc<parking_lot::RwLock<Option<String>>>,
     /// Router handle for policy checks.
-    #[cfg(feature = "router")]
     router: Option<Arc<crate::router::RouterHandle>>,
 }
 
 impl TailscaleEndpoint {
     /// Create from IR configuration.
-    pub fn new(
-        ir: &EndpointIR,
-        #[cfg(feature = "router")] router: Option<Arc<crate::router::RouterHandle>>,
-    ) -> Self {
-        #[cfg(feature = "router")]
-        {
-            Self::with_config(TailscaleEndpointConfig::from_ir(ir), router)
-        }
-        #[cfg(not(feature = "router"))]
-        {
-            Self::with_config(TailscaleEndpointConfig::from_ir(ir))
-        }
+    pub fn new(ir: &EndpointIR, router: Option<Arc<crate::router::RouterHandle>>) -> Self {
+        Self::with_config(TailscaleEndpointConfig::from_ir(ir), router)
     }
 
     /// Create with explicit config.
     pub fn with_config(
         config: TailscaleEndpointConfig,
-        #[cfg(feature = "router")] router: Option<Arc<crate::router::RouterHandle>>,
+
+        router: Option<Arc<crate::router::RouterHandle>>,
     ) -> Self {
         Self {
             config,
@@ -573,7 +563,7 @@ impl TailscaleEndpoint {
             connection_handler: parking_lot::RwLock::new(None),
             worker: parking_lot::Mutex::new(None),
             last_error: Arc::new(parking_lot::RwLock::new(None)),
-            #[cfg(feature = "router")]
+
             router,
         }
     }
@@ -914,7 +904,7 @@ impl Endpoint for TailscaleEndpoint {
         destination: Socksaddr,
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Integrate with router logic for policy checks
-        #[cfg(feature = "router")]
+
         if let Some(router) = &self.router {
             let host = destination.fqdn();
             let ip = destination.addr();
@@ -1052,14 +1042,8 @@ pub fn build_tailscale_endpoint(
     if ir.ty != EndpointType::Tailscale {
         return None;
     }
-    #[cfg(feature = "router")]
-    {
-        Some(Arc::new(TailscaleEndpoint::new(ir, _ctx.router.clone())))
-    }
-    #[cfg(not(feature = "router"))]
-    {
-        Some(Arc::new(TailscaleEndpoint::new(ir)))
-    }
+
+    Some(Arc::new(TailscaleEndpoint::new(ir, _ctx.router.clone())))
 }
 
 #[cfg(test)]
@@ -1072,10 +1056,8 @@ mod tests {
             tag: "test".to_string(),
             ..Default::default()
         };
-        #[cfg(feature = "router")]
+
         let endpoint = TailscaleEndpoint::with_config(config.clone(), None);
-        #[cfg(not(feature = "router"))]
-        let endpoint = TailscaleEndpoint::with_config(config);
 
         assert_eq!(endpoint.state(), TailscaleState::Stopped);
 

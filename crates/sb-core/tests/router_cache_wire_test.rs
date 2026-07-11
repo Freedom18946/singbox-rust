@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 //! R135: Tests for router cache wire functionality (R132)
 
 #[cfg(feature = "router_cache_lru_demo")]

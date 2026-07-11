@@ -183,7 +183,7 @@ fi
 # ─── V3: sb-core 协议实现 (feature-gate aware) ───────────
 echo "── V3: sb-core 协议实现代码 ──"
 
-# Check if protocol modules exist AND are NOT behind feature gates in outbound/mod.rs
+# Any protocol implementation left in sb-core is a violation after WP13; protocol gates live in sb-adapters.
 OUTBOUND_MOD="crates/sb-core/src/outbound/mod.rs"
 V3_FILES=0
 V3_UNGATED=""
@@ -192,51 +192,20 @@ for proto in trojan vmess vless shadowsocks shadowtls hysteria hysteria2 tuic wi
     if ! ls crates/sb-core/src/outbound/${proto}* 2>/dev/null | grep -q .; then
         continue
     fi
-    # Check if the module is feature-gated in outbound/mod.rs
-    # Look for: #[cfg(feature = "out_xxx")] or #[cfg(all(feature = "out_xxx", ...))]
-    # followed by: pub mod <proto>
-    # Map protocol name to its feature name
-    feature_name=""
-    case "$proto" in
-        shadowsocks) feature_name="out_ss" ;;
-        naive)       feature_name="out_naive" ;;
-        *)           feature_name="out_${proto}" ;;
-    esac
-    # Check if the pub mod line for this proto has a cfg gate on the preceding line(s)
     if [ -f "$OUTBOUND_MOD" ]; then
-        # Find the line with "pub mod <proto>" (or "pub mod <proto> {")
         mod_line=$(grep -n "pub mod ${proto}" "$OUTBOUND_MOD" 2>/dev/null | head -1 || true)
         if [ -n "$mod_line" ]; then
-            mod_linenum=$(echo "$mod_line" | cut -d: -f1)
-            # Check preceding 3 lines for #[cfg(feature
-            gated=false
-            for i in 1 2 3; do
-                check=$((mod_linenum - i))
-                [ "$check" -lt 1 ] && break
-                prev=$(sed -n "${check}p" "$OUTBOUND_MOD" 2>/dev/null || true)
-                if echo "$prev" | grep -q '#\[cfg(.*feature'; then
-                    gated=true
-                    break
-                fi
-                # Stop if we hit something that's not an attribute or blank
-                case "$prev" in
-                    "#["*|""|" "*) ;; # continue checking
-                    *) break ;;
-                esac
-            done
-            if ! $gated; then
-                V3_FILES=$((V3_FILES + 1))
-                V3_UNGATED="${V3_UNGATED} ${proto}"
-            fi
+            V3_FILES=$((V3_FILES + 1))
+            V3_UNGATED="${V3_UNGATED} ${proto}"
         fi
     fi
 done
 
 if [ "$V3_FILES" -gt 0 ]; then
-    echo "  FAIL: sb-core/outbound/ 有 $V3_FILES 个非门控协议实现:${V3_UNGATED}"
+    echo "  FAIL: sb-core/outbound/ 有 $V3_FILES 个遗留协议实现:${V3_UNGATED}"
     fail
 else
-    echo "  PASS (all protocol modules are feature-gated)"
+    echo "  PASS (protocol implementations owned by sb-adapters)"
 fi
 
 # ─── V4: sb-adapters 反向依赖 ──────────────────────────
@@ -387,12 +356,12 @@ OWNER_POLICY = {
     "axum": {"service_clash_api", "service_v2ray_api", "service_ssmapi"},
     "tonic": {"service_v2ray_api"},
     "tower": set(),
-    "hyper": {"out_naive", "service_derp"},
+    "hyper": {"service_derp"},
     "rustls": {"tls_rustls"},
-    "quinn": {"out_quic", "dns_doq", "dns_doh3"},
+    "quinn": {"dns_doq", "dns_doh3"},
     "reqwest": {"dns_doh", "service_derp"},
     "tokio-tungstenite": {"service_derp"},
-    "snow": {"dns_tailscale", "out_tailscale"},
+    "snow": {"dns_tailscale"},
 }
 
 # 这些依赖允许在 sb-core default feature 闭包里出现（当前决议口径）

@@ -23,7 +23,6 @@ hex = "0.4"
 hmac = "0.12"
 http = "1.3"
 httparse = "1.8"
-hyper = { version = "0.14", features = ["client", "server", "http1", "http2", "tcp"], optional = true }
 lazy_static = "1.5"
 libc = "0.2"
 log = "0.4"
@@ -106,11 +105,10 @@ rcgen = "0.13"
 criterion = "0.5"
 prost = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
-hyper = { version = "0.14", features = ["client", "server", "http1", "http2", "tcp"] }
 
 [features]
 
-# 默认开启 DNS 相关功能，开箱即用（udp/doh/dot/doq + rustls）
+# Default product closure: DNS transports, TLS, and canonical inbounds.
 default = [
     "dns_udp",
     "dns_doh",
@@ -125,127 +123,87 @@ default = [
     "in_http",
     "in_mixed",
     "in_direct",
-    "out_socks",
-    "out_http",
 ]
 
-# 历史/代码中出现过的功能位（按字母序归并；全部先落空数组，行为不变）
-analyze_json       = []
-bench              = []
-cache_stats        = []
-cache_stats_hot    = []
-cache_stats_wire   = []
-chaos              = []
-dev-cli            = []
-dns_cache          = []
-dns_doh            = ["dns_udp", "dep:reqwest"]
-dns_doh3           = ["dns_udp", "tls_rustls", "dep:h3", "dep:h3-quinn", "dep:quinn"]
-dns_dot            = ["dns_udp", "tls_rustls"]
-dns_doq            = ["dns_udp", "tls_rustls", "dep:quinn"]
-dns_dhcp           = ["dep:notify"]
-dns_udp            = []
-dns_resolved       = ["dep:notify"]
-dns_tailscale      = []
-dsl_analyze        = []
-dsl_derive         = []
-dsl_plus           = []
-error-v2           = []
-explain            = []
-fuzzing            = []
-handshake_alpha    = []
-http_exporter      = ["metrics"]  # Activates metrics + HTTP exporter (see app/observe_full)
-# Inbound features
-in_tun             = ["router", "sb-platform/tun"]
-in_socks           = []
-in_http            = []
-in_mixed           = ["in_socks", "in_http"]
-in_direct          = []
-# Outbound features
-out_socks          = []
-out_http           = []
-metrics            = []  # Marker feature: gates #[cfg(feature="metrics")] instrumentation paths
-out_hysteria       = ["out_quic", "tls_rustls"]
-out_hysteria2      = ["out_quic", "tls_rustls"]
-out_naive          = ["dep:hyper"]
-out_quic           = ["dep:quinn"]
-out_shadowtls      = []  # Legacy: protocol code removed, handled by sb-adapters
-out_ssh            = []  # Legacy: protocol code removed, handled by sb-adapters
-out_ss             = []  # Legacy: protocol code removed, handled by sb-adapters
-out_trojan         = []  # Legacy: protocol code removed, handled by sb-adapters
-out_tuic           = []  # Legacy: protocol code removed, handled by sb-adapters
-out_vless          = []  # Legacy: protocol code removed, handled by sb-adapters
-out_vmess          = []  # Legacy: protocol code removed, handled by sb-adapters
-out_wireguard      = []  # Legacy: protocol code removed, handled by sb-adapters
-out_tailscale      = []
-
-# Legacy protocol implementations (deprecated, use sb-adapters instead)
-# This feature enables the deprecated sb-core protocol implementations
-# note: out_trojan, out_vmess, out_vless, out_ss now depend on this feature
-legacy_protocols   = []
-platform           = []
-preview_route      = []
-router             = []
-routing            = ["router"]  # routing as alias for router
-rules_capture      = []
-sbcore_analyze_json= []
-sbcore_rules_tool  = []
-schema-v2          = []
-socks              = []
-subs_clash         = []
-subs_http          = []
-subs_singbox       = []
-tls_rustls         = ["dep:x509-parser", "dep:rustls", "dep:tokio-rustls", "dep:rustls-pemfile", "dep:webpki-roots", "dep:rustls-pki-types"]  # rustls-based TLS
-geoip_hot          = []
-geoip_mmdb         = []
-idna               = ["dep:idna"]
-json               = []
-rand               = []
-router_cache_explain = []
-router_cache_lru_demo = []
-router_cache_wire  = []
-router_json        = []
-router_keyword_ac  = []
-router_keyword     = []
-rule_coverage      = []
-rules_tool         = []
-suffix_trie        = []
-tls                = []
-loom               = ["dep:loom"]
-failpoints         = ["dep:fail"]
-resolv_conf        = ["dep:notify"]
-v2ray_transport    = []
-service_ntp        = []
-service_ssmapi     = []
-service_clash_api  = []
-service_v2ray_api  = []
-service_derp       = []
-service_resolved   = ["dns_udp"]
-# Network monitor for tracking network changes (Linux netlink)
-network_monitor    = []
-
-# 你也可以在后续提交中，将这些特性与依赖绑定，例如：
-# subs_http = ["sb-subscribe?/http"]  # 示例：当 sb-subscribe 提供 http 子特性时
+analyze_json       = [] # Gates router JSON-analysis helpers.
+bench              = [] # Gates Criterion benchmark-only paths.
+cache_stats        = [] # Gates router cache statistics API.
+cache_stats_hot    = [] # Gates hot cache-statistics sampling.
+cache_stats_wire   = [] # Gates cache-statistics wire export.
+chaos              = [] # Gates deterministic chaos hooks.
+dns_cache          = [] # Gates optional DNS cache behavior.
+dns_doh            = ["dns_udp", "dep:reqwest"] # Gates DNS-over-HTTPS and reqwest.
+dns_doh3           = ["dns_udp", "tls_rustls", "dep:h3", "dep:h3-quinn", "dep:quinn"] # Gates DNS-over-HTTP/3 dependencies.
+dns_dot            = ["dns_udp", "tls_rustls"] # Gates DNS-over-TLS.
+dns_doq            = ["dns_udp", "tls_rustls", "dep:quinn"] # Gates DNS-over-QUIC and quinn.
+dns_dhcp           = ["dep:notify"] # Gates DHCP DNS discovery and file watching.
+dns_udp            = [] # Gates UDP DNS transport.
+dns_resolved       = ["dep:notify"] # Gates resolv.conf discovery and watching.
+dns_tailscale      = [] # Gates Tailscale DNS upstream integration.
+dsl_analyze        = [] # Gates route DSL analyzer.
+dsl_derive         = [] # Gates route DSL derivation helpers.
+dsl_plus           = [] # Gates extended route DSL syntax.
+error-v2           = [] # Gates structured v2 error compatibility.
+explain            = [] # Gates route explanation output.
+fuzzing            = [] # Gates fuzz-target helper exports.
+handshake_alpha    = [] # Gates experimental handshake instrumentation.
+http_exporter      = ["metrics"] # Gates metrics HTTP exporter paths.
+in_tun             = ["sb-platform/tun"] # Gates TUN inbound platform support.
+in_socks           = [] # Gates core inbound type registration for SOCKS.
+in_http            = [] # Gates core inbound type registration for HTTP.
+in_mixed           = ["in_socks", "in_http"] # Gates mixed inbound registration.
+in_direct          = [] # Gates direct inbound registration.
+metrics            = [] # Gates metrics instrumentation paths.
+platform           = [] # Gates platform-context routing inputs.
+preview_route      = [] # Gates route preview API.
+rules_capture      = [] # Gates expanded-rule capture.
+sbcore_analyze_json= [] # Compatibility alias for JSON analysis tooling.
+sbcore_rules_tool  = [] # Compatibility alias for rule tooling.
+schema-v2          = [] # Gates schema-v2 compatibility paths.
+socks              = [] # Gates SOCKS utility compatibility paths.
+subs_clash         = [] # Gates Clash subscription compatibility helpers.
+subs_http          = [] # Gates HTTP subscription compatibility helpers.
+subs_singbox       = [] # Gates sing-box subscription compatibility helpers.
+tls_rustls         = ["dep:x509-parser", "dep:rustls", "dep:tokio-rustls", "dep:rustls-pemfile", "dep:webpki-roots", "dep:rustls-pki-types"] # Gates rustls TLS dependencies.
+geoip_hot          = [] # Gates GeoIP hot reload.
+geoip_mmdb         = [] # Gates MMDB-backed GeoIP matching.
+idna               = ["dep:idna"] # Gates IDNA normalization dependency.
+json               = [] # Gates router JSON compatibility helpers.
+rand               = [] # Gates randomized router test/selection paths.
+router_cache_explain = [] # Gates route-cache explanation data.
+router_cache_lru_demo = [] # Gates LRU cache demonstration paths.
+router_cache_wire  = [] # Gates route-cache wire export.
+router_json        = [] # Gates router JSON bridge.
+router_keyword_ac  = [] # Gates Aho-Corasick keyword acceleration.
+rule_coverage      = [] # Gates rule coverage accounting.
+rules_tool         = [] # Gates route rule CLI helpers.
+tls                = [] # Gates legacy TLS compatibility branches.
+loom               = ["dep:loom"] # Gates Loom concurrency tests.
+failpoints         = ["dep:fail"] # Gates failpoint injection.
+resolv_conf        = ["dep:notify"] # Gates resolv.conf watcher support.
+v2ray_transport    = [] # Gates V2Ray transport compatibility paths.
+service_ntp        = [] # Gates NTP service runtime.
+service_ssmapi     = [] # Compatibility marker for external SSM API service.
+service_clash_api  = [] # Compatibility marker for external Clash API service.
+service_v2ray_api  = [] # Gates core V2Ray runtime hooks used by sb-api.
+service_derp       = [] # Compatibility marker for external DERP service.
+service_resolved   = ["dns_udp"] # Gates resolved service integration.
+network_monitor    = [] # Gates network-change monitoring service.
 
 [[bin]]
 name = "rule-hot-reload"
-required-features = ["router"]
 
 [[example]]
 name = "geosite_demo"
-required-features = ["router"]
 
 [[example]]
 name = "router_eval"
-required-features = ["router"]
 
 [[example]]
 name = "router_rules_probe"
-required-features = ["router"]
 
 [[example]]
 name = "process_routing_demo"
-required-features = ["router"]
 
 [[example]]
 name = "rule_hot_reload_demo"
-required-features = ["router"]

@@ -32,6 +32,7 @@ mod bootstrap_runtime;
 pub mod capability_probe;
 pub mod cli;
 pub mod config_loader;
+#[cfg(feature = "router")]
 pub mod core_env;
 #[cfg(feature = "router")]
 pub(crate) mod dns_env;

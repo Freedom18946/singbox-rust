@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 //! Integration tests for inbound/outbound tag matching
 //!
 //! Tests the routing engine's ability to route based on inbound/outbound adapter tags.

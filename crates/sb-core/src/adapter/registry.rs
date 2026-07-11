@@ -8,9 +8,9 @@ use super::{Bridge, InboundParam, OutboundParam};
 use crate::context::ContextRegistry;
 use crate::dns::dns_router::DnsRouter;
 use crate::outbound::OutboundRegistryHandle;
-#[cfg(feature = "router")]
+
 use crate::router::RouteConnectionManager;
-#[cfg(feature = "router")]
+
 use crate::router::RouterHandle;
 use once_cell::sync::Lazy;
 use std::collections::HashMap;
@@ -18,18 +18,16 @@ use std::sync::{Arc, RwLock};
 
 /// Context passed to inbound adapter builders so they can access runtime components.
 pub struct AdapterInboundContext {
-    #[cfg(feature = "router")]
     pub engine: crate::router::Engine,
     pub bridge: Arc<Bridge>,
     pub outbounds: Arc<OutboundRegistryHandle>,
-    #[cfg(feature = "router")]
+
     pub router: Arc<RouterHandle>,
     /// DNS router for domain lookup with routing rules.
     /// DNS 路由器，用于带路由规则的域名查找。
     pub dns_router: Option<Arc<dyn DnsRouter>>,
     /// Connection manager for TCP/UDP handling (Go parity: route.ConnectionManager).
     /// TCP/UDP 连接处理管理器（Go 兼容：route.ConnectionManager）。
-    #[cfg(feature = "router")]
     pub connection_manager: Option<Arc<RouteConnectionManager>>,
     pub context: ContextRegistry,
 }

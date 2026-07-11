@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 //! Integration tests for router hot reload functionality
 
 use std::sync::Arc;

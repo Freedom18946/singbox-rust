@@ -99,7 +99,7 @@ mod observe_tests {
             return;
         }
 
-        let bin = build_app("admin_debug,sbcore_rules_tool");
+        let bin = build_app("admin_debug,sbcore_rules_tool,adapters");
 
         let portfile = NamedTempFile::new().expect("create admin portfile");
         let cfg_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/ok.json");
@@ -228,7 +228,7 @@ mod observe_tests {
             return;
         }
 
-        let bin = build_app("admin_debug");
+        let bin = build_app("admin_debug,adapters");
 
         let portfile = NamedTempFile::new().expect("create admin portfile");
         let cfg_path = Path::new(env!("CARGO_MANIFEST_DIR")).join("tests/data/ok.json");

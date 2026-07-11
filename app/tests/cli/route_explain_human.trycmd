@@ -1,11 +1,11 @@
 ```console
 $ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:443 --explain
-example.com:443 → direct (rule=[..])
+example.com:443 → unresolved (rule=00000000)
 
 $ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:443 --explain --with-trace
-example.com:443 → direct (rule=[..])
+example.com:443 → unresolved (rule=00000000)
 
 $ app route -c tests/cli/fixtures/minimal_good.json --dest example.com:53 --udp --explain
-example.com:53 → direct (rule=00000000)
+example.com:53 → unresolved (rule=00000000)
 
 ```

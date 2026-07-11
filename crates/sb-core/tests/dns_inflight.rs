@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_core::dns::ResolverHandle;
 use sb_core::runtime_options::DnsRuntimeOptions;
 use std::{

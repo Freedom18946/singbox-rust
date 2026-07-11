@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use prost::Message;
 use sb_core::router::geo::{Domain, GeoSite, GeoSiteDb, GeoSiteList, Type};
 use sb_core::router::ruleset::binary;

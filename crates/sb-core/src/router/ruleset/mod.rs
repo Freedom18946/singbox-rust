@@ -274,11 +274,8 @@ pub struct RuleSet {
     /// Compiled rules
     pub rules: Vec<Rule>,
     /// Optimized domain suffix trie (for fast suffix matching)
-    #[cfg(feature = "suffix_trie")]
     pub domain_trie: Arc<crate::router::suffix_trie::SuffixTrie>,
     /// Domain suffix list (fallback when suffix_trie not available)
-    #[cfg(not(feature = "suffix_trie"))]
-    pub domain_suffixes: Arc<Vec<String>>,
     /// IP prefix tree for fast CIDR matching
     pub ip_tree: Arc<IpPrefixTree>,
     /// Last update time

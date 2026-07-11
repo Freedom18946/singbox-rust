@@ -1365,7 +1365,7 @@ fn build_ruleset_from_rule(
     let rule = build_rule(r);
 
     // Attach domain suffix indices for the matcher.
-    #[cfg(feature = "suffix_trie")]
+
     let domain_trie = {
         let mut trie = crate::router::suffix_trie::SuffixTrie::new();
         let mut all_suffixes = Vec::new();
@@ -1374,12 +1374,6 @@ fn build_ruleset_from_rule(
             trie.insert(suffix);
         }
         trie
-    };
-    #[cfg(not(feature = "suffix_trie"))]
-    let suffixes = {
-        let mut all_suffixes = Vec::new();
-        collect_suffixes(&rule, &mut all_suffixes);
-        all_suffixes
     };
 
     // Build IP prefix tree for validation
@@ -1397,10 +1391,8 @@ fn build_ruleset_from_rule(
         format: RuleSetFormat::Binary,
         version: 1,
         rules: vec![rule],
-        #[cfg(feature = "suffix_trie")]
+
         domain_trie: StdArc::new(domain_trie),
-        #[cfg(not(feature = "suffix_trie"))]
-        domain_suffixes: StdArc::new(suffixes),
         ip_tree: StdArc::new(ip_tree),
         last_updated: SystemTime::now(),
         etag: None,

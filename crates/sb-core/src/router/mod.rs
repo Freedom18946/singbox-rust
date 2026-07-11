@@ -44,7 +44,7 @@ pub mod analyze;
 /// Routing context population helpers for P1 parity.
 pub mod context_pop;
 // R15：可选试验模块
-#[cfg(feature = "suffix_trie")]
+
 pub mod suffix_trie;
 // R13：CLI patch 构建工具，仅 feature=rules_tool 时导出
 #[cfg(feature = "rules_tool")]
@@ -77,7 +77,7 @@ pub mod preview;
 pub mod patch_plan;
 // R38：规则规范化
 pub mod decision_intern;
-#[cfg(feature = "router_keyword")]
+
 pub mod keyword;
 // R35: Modern Rule-Set implementation (SRS binary format)
 pub mod normalize;
@@ -303,9 +303,9 @@ pub struct RouterIndex {
     /// GeoSite category -> decision (e.g., google->proxy / ads->reject), simple array traversal.
     /// GeoSite category → decision（例如 google→proxy / ads→reject），简单数组遍历。
     pub geosite_rules: Vec<(String, &'static str)>,
-    #[cfg(feature = "router_keyword")]
+
     pub keyword_rules: Vec<(String, String)>, // Original storage / 原始存储
-    #[cfg(feature = "router_keyword")]
+
     pub keyword_idx: Option<crate::router::keyword::Index>,
     /// WiFi SSID rules: SSID -> decision
     pub wifi_ssid_rules: Vec<(String, &'static str)>,
@@ -407,7 +407,7 @@ impl RouterIndex {
 }
 
 // R15: 试验性后缀 Trie 支持（仅当启用 feature="suffix_trie" 时暴露）
-#[cfg(feature = "suffix_trie")]
+
 impl RouterIndex {
     /// 注入的 suffix-trie 选项启用时，使用 Trie 查询后缀命中。
     pub fn trial_decide_by_suffix(&self, host: &str) -> Option<&'static str> {
@@ -467,7 +467,7 @@ impl RouterIndex {
                 cache_status: None,
             };
         }
-        #[cfg(feature = "router_keyword")]
+
         if let Some(idx) = &self.keyword_idx {
             if let Some(i) = idx.find_idx(&host_norm) {
                 let dec = idx
@@ -627,7 +627,7 @@ pub fn router_build_index_from_str_with_options(
     let mut source = Vec::new();
     let mut dest = Vec::new();
     let mut user_agent = Vec::new();
-    #[cfg(feature = "router_keyword")]
+
     let mut keyword_rules: Vec<(String, String)> = Vec::new();
     let mut default: Option<&'static str> = None;
     // 解析期去重/标记
@@ -768,7 +768,7 @@ pub fn router_build_index_from_str_with_options(
                     exact.insert(host_norm, dec);
                     count += 1;
                 }
-                #[cfg(feature = "router_keyword")]
+
                 "keyword" => {
                     // keyword:foo=decision
                     if pat.is_empty() {
@@ -1091,7 +1091,7 @@ pub fn router_build_index_from_str_with_options(
         rules_capture::capture(&expanded);
     }
     let checksum = blake3_checksum(&expanded /* 使用展开后的文本 */);
-    #[cfg(feature = "router_keyword")]
+
     let mut idx = RouterIndex {
         exact,
         suffix,
@@ -1116,45 +1116,9 @@ pub fn router_build_index_from_str_with_options(
         source_rules: source,
         dest_rules: dest,
         user_agent_rules: user_agent,
-        #[cfg(feature = "router_keyword")]
+
         keyword_rules,
-        #[cfg(feature = "router_keyword")]
-        keyword_idx: None,
-        default: default.unwrap_or("unresolved"),
-        gen: 0,
-        checksum,
-        suffix_strict: runtime_options.suffix_strict,
-        suffix_trie_enabled: runtime_options.suffix_trie,
-        rules: vec![],
-    };
-    #[cfg(not(feature = "router_keyword"))]
-    let idx = RouterIndex {
-        exact,
-        suffix,
-        suffix_map,
-        port_rules,
-        port_ranges,
-        transport_tcp,
-        transport_udp,
-        cidr4,
-        cidr6,
-        cidr4_buckets: buckets4,
-        cidr6_buckets: buckets6,
-        geoip_rules: geoip,
-        geosite_rules: geosite,
-        wifi_ssid_rules: wifi_ssid,
-        wifi_bssid_rules: wifi_bssid,
-        rule_set_rules: rule_set,
-        process_rules: process,
-        process_path_rules: process_path,
-        protocol_rules: protocol,
-        network_rules: network,
-        source_rules: source,
-        dest_rules: dest,
-        user_agent_rules: user_agent,
-        #[cfg(feature = "router_keyword")]
-        keyword_rules,
-        #[cfg(feature = "router_keyword")]
+
         keyword_idx: None,
         default: default.unwrap_or("unresolved"),
         gen: 0,
@@ -1164,7 +1128,7 @@ pub fn router_build_index_from_str_with_options(
         rules: vec![],
     };
     // 可选：构建完成后的收尾操作
-    #[cfg(feature = "router_keyword")]
+
     {
         use crate::router::keyword;
         idx.keyword_idx = keyword::build_index_with_threshold(
@@ -2233,7 +2197,7 @@ pub fn decide_http(target: &str) -> RouteDecision {
         };
     }
     // keyword（可选）：在 suffix 之后尝试
-    #[cfg(feature = "router_keyword")]
+
     {
         if let Some(d) = router_index_decide_keyword(&idx, &host) {
             #[cfg(feature = "metrics")]
@@ -2284,7 +2248,6 @@ pub fn decide_http(target: &str) -> RouteDecision {
 }
 
 /// 可选：基于关键词的命中（顺扫；first-wins）
-#[cfg(feature = "router_keyword")]
 #[inline]
 pub fn router_index_decide_keyword(idx: &RouterIndex, host: &str) -> Option<&'static str> {
     if let Some(index) = &idx.keyword_idx {
@@ -2299,7 +2262,6 @@ pub fn router_index_decide_keyword(idx: &RouterIndex, host: &str) -> Option<&'st
 }
 
 /// 旧 API 场景若需要 &'static，统一从驻留池取，避免泄漏
-#[cfg(feature = "router_keyword")]
 pub fn router_index_decide_keyword_static(
     idx: &RouterIndex,
     host_norm: &str,
@@ -2386,9 +2348,8 @@ pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) ->
             dest_rules: vec![],
             user_agent_rules: vec![],
 
-            #[cfg(feature = "router_keyword")]
             keyword_rules: vec![],
-            #[cfg(feature = "router_keyword")]
+
             keyword_idx: None,
             default: "unresolved",
             gen: 0,
@@ -2440,9 +2401,8 @@ pub fn decide_udp_with_rules_and_handle(
             dest_rules: vec![],
             user_agent_rules: vec![],
 
-            #[cfg(feature = "router_keyword")]
             keyword_rules: vec![],
-            #[cfg(feature = "router_keyword")]
+
             keyword_idx: None,
             default: "unresolved",
             gen: 0,
@@ -2506,9 +2466,8 @@ pub fn decide_udp_with_rules_and_ips_v46(
             dest_rules: vec![],
             user_agent_rules: vec![],
 
-            #[cfg(feature = "router_keyword")]
             keyword_rules: vec![],
-            #[cfg(feature = "router_keyword")]
+
             keyword_idx: None,
             default: "unresolved",
             gen: 0,
@@ -2579,9 +2538,8 @@ pub fn decide_udp_with_rules_and_ips(
             dest_rules: vec![],
             user_agent_rules: vec![],
 
-            #[cfg(feature = "router_keyword")]
             keyword_rules: vec![],
-            #[cfg(feature = "router_keyword")]
+
             keyword_idx: None,
             default: "unresolved",
             gen: 0,

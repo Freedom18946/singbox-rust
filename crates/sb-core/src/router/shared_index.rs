@@ -28,9 +28,9 @@ pub(crate) fn empty_router_index(default: &str) -> Arc<RouterIndex> {
         source_rules: vec![],
         dest_rules: vec![],
         user_agent_rules: vec![],
-        #[cfg(feature = "router_keyword")]
+
         keyword_rules: vec![],
-        #[cfg(feature = "router_keyword")]
+
         keyword_idx: None,
         default: intern_decision(default),
         gen: 0,

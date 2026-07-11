@@ -111,10 +111,8 @@ pub fn parse_binary(data: &[u8], source: RuleSetSource) -> SbResult<RuleSet> {
         format: RuleSetFormat::Binary,
         version,
         rules,
-        #[cfg(feature = "suffix_trie")]
+
         domain_trie: Arc::new(domain_index),
-        #[cfg(not(feature = "suffix_trie"))]
-        domain_suffixes: Arc::new(domain_index),
         ip_tree: Arc::new(ip_tree),
         last_updated: SystemTime::now(),
         etag: None,
@@ -165,10 +163,8 @@ pub fn parse_json(data: &[u8], source: RuleSetSource) -> SbResult<RuleSet> {
         format: RuleSetFormat::Source,
         version,
         rules,
-        #[cfg(feature = "suffix_trie")]
+
         domain_trie: Arc::new(domain_index),
-        #[cfg(not(feature = "suffix_trie"))]
-        domain_suffixes: Arc::new(domain_index),
         ip_tree: Arc::new(ip_tree),
         last_updated: SystemTime::now(),
         etag: None,
@@ -552,7 +548,6 @@ fn parse_json_rule(value: &serde_json::Value, index: usize) -> SbResult<Rule> {
 }
 
 /// Build optimized indices from rules
-#[cfg(feature = "suffix_trie")]
 fn build_indices(rules: &[Rule]) -> (crate::router::suffix_trie::SuffixTrie, IpPrefixTree) {
     let mut domain_trie = crate::router::suffix_trie::SuffixTrie::new();
     let mut ip_tree = IpPrefixTree::new();
@@ -564,19 +559,6 @@ fn build_indices(rules: &[Rule]) -> (crate::router::suffix_trie::SuffixTrie, IpP
     (domain_trie, ip_tree)
 }
 
-#[cfg(not(feature = "suffix_trie"))]
-fn build_indices(rules: &[Rule]) -> (Vec<String>, IpPrefixTree) {
-    let mut domain_suffixes = Vec::new();
-    let mut ip_tree = IpPrefixTree::new();
-
-    for rule in rules {
-        extract_and_index_rule(rule, &mut domain_suffixes, &mut ip_tree);
-    }
-
-    (domain_suffixes, ip_tree)
-}
-
-#[cfg(feature = "suffix_trie")]
 fn extract_and_index_rule(
     rule: &Rule,
     domain_trie: &mut crate::router::suffix_trie::SuffixTrie,
@@ -598,31 +580,6 @@ fn extract_and_index_rule(
             // Recursively index sub-rules
             for sub_rule in &r.rules {
                 extract_and_index_rule(sub_rule, domain_trie, ip_tree);
-            }
-        }
-    }
-}
-
-#[cfg(not(feature = "suffix_trie"))]
-fn extract_and_index_rule(
-    rule: &Rule,
-    domain_suffixes: &mut Vec<String>,
-    ip_tree: &mut IpPrefixTree,
-) {
-    match rule {
-        Rule::Default(r) => {
-            // Collect domain suffixes
-            domain_suffixes.extend(r.domain_suffix.iter().cloned());
-
-            // Index IP CIDRs
-            for cidr in &r.ip_cidr {
-                ip_tree.insert(cidr);
-            }
-        }
-        Rule::Logical(r) => {
-            // Recursively index sub-rules
-            for sub_rule in &r.rules {
-                extract_and_index_rule(sub_rule, domain_suffixes, ip_tree);
             }
         }
     }

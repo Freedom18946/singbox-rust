@@ -59,7 +59,7 @@ metrics = { version = "0.23", optional = true }
 clap = { version = "4", optional = true, features = ["derive"] }
 
 # 工作区内依赖（按你的仓库结构）
-sb-core = { path = "../sb-core", features = ["router", "v2ray_transport"] }
+sb-core = { path = "../sb-core", features = ["v2ray_transport"] }
 sb-common = { path = "../sb-common" }
 sb-config = { path = "../sb-config" }
 sb-types = { path = "../sb-types" }
@@ -167,13 +167,13 @@ e2e = ["socks"]
 # TUIC protocol support
 tuic = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile"]
 # Router-aware adapters rely on sb-core routing infrastructure
-router = ["sb-core/router"]
+router = [] # Gates router-aware adapter builders; sb-core router is always available.
 # V2Ray transport layer support (ws, grpc, h2, etc.)
 v2ray_transport = []
 
 # sb-core outbound feature mirrors (only for protocols whose dial() still delegates to sb-core)
-out_wireguard = ["sb-core/out_wireguard"]
-out_tuic = ["sb-core/out_tuic"]
+out_wireguard = ["adapter-wireguard-outbound"] # Compatibility alias owned by adapters.
+out_tuic = ["adapter-tuic"] # Compatibility alias owned by adapters.
 
 # Go parity adapter feature gates
 adapter-socks = []
@@ -193,7 +193,7 @@ adapter-hysteria2 = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-
 adapter-shadowtls = ["shadowtls", "dep:sb-tls", "dep:rustls", "dep:tokio-rustls", "dep:webpki-roots", "dep:sb-transport", "sb-transport/transport_tls"]
 adapter-ssh = ["ssh"]
 adapter-tuic = ["tuic", "dep:sb-tls", "dep:sb-transport"]
-adapter-tailscale = ["dep:snow", "sb-core/out_tailscale", "sb-transport/transport_tailscale"]
+adapter-tailscale = ["dep:snow", "sb-transport/transport_tailscale"]
 adapter-wireguard = ["out_wireguard"]
 adapter-wireguard-outbound = ["sb-transport", "sb-transport/transport_wireguard"]
 adapter-wireguard-endpoint = ["dep:boringtun", "dep:tun"]

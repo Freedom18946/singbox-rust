@@ -2,10 +2,8 @@
 //! 进程运行时：持有引擎/桥接器，生成入站，可选的健康任务。
 use crate::adapter::Bridge;
 use crate::health;
-#[cfg(feature = "router")]
 use crate::router::Engine;
 use crate::runtime::supervisor::{start_endpoints, start_services};
-#[cfg(feature = "router")]
 use sb_config::ir::ConfigIR;
 use std::sync::Arc;
 use std::thread::{self, JoinHandle as ThreadJoinHandle};
@@ -17,7 +15,6 @@ pub mod transport;
 
 pub use supervisor::{Supervisor, SupervisorHandle};
 
-#[cfg(feature = "router")]
 pub struct Runtime {
     pub engine: Engine,
     pub bridge: Arc<Bridge>,
@@ -27,16 +24,6 @@ pub struct Runtime {
     supervisor: Option<Arc<supervisor::Supervisor>>,
 }
 
-#[cfg(not(feature = "router"))]
-pub struct Runtime {
-    pub bridge: Arc<Bridge>,
-    pub switchboard: Arc<switchboard::OutboundSwitchboard>,
-    workers: Vec<ThreadJoinHandle<()>>,
-    health: Option<tokio::task::JoinHandle<()>>,
-    supervisor: Option<Arc<supervisor::Supervisor>>,
-}
-
-#[cfg(feature = "router")]
 impl Runtime {
     pub fn new(
         engine: Engine,
@@ -66,19 +53,6 @@ impl Runtime {
         })?;
         let switchboard = switchboard::SwitchboardBuilder::from_bridge(&bridge)?;
         Ok(Self::new(engine, bridge, switchboard))
-    }
-}
-
-#[cfg(not(feature = "router"))]
-impl Runtime {
-    pub fn new(_engine: (), bridge: Bridge, switchboard: switchboard::OutboundSwitchboard) -> Self {
-        Self {
-            bridge: Arc::new(bridge),
-            switchboard: Arc::new(switchboard),
-            workers: vec![],
-            health: None,
-            supervisor: None,
-        }
     }
 }
 
@@ -115,14 +89,8 @@ impl Runtime {
         let _ = self;
     }
     /// Helper: clone engine as 'static view (for admin thread usage).
-    #[cfg(feature = "router")]
     pub fn engine(&self) -> &Engine {
         &self.engine
-    }
-
-    #[cfg(not(feature = "router"))]
-    pub fn engine(&self) -> Result<(), anyhow::Error> {
-        anyhow::bail!("app built without `router` feature")
     }
     pub const fn bridge(&self) -> &Arc<Bridge> {
         &self.bridge
@@ -145,16 +113,10 @@ impl Runtime {
     }
 
     /// Create dummy engine for admin compatibility
-    #[cfg(feature = "router")]
     pub fn dummy_engine() -> Engine {
         use sb_config::ir::ConfigIR;
         let empty_ir = Arc::new(ConfigIR::default());
         Engine::new(empty_ir)
-    }
-
-    #[cfg(not(feature = "router"))]
-    pub fn dummy_engine() -> Result<(), anyhow::Error> {
-        anyhow::bail!("app built without `router` feature")
     }
 
     /// Create dummy bridge for admin compatibility

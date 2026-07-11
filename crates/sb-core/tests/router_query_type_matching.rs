@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 //! Integration tests for DNS query type matching
 //!
 //! Tests the routing engine's ability to route based on DNS record types.

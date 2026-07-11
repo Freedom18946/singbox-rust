@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_core::router::router_index_with_reload;
 use sb_core::runtime_options::RouterRuntimeOptions;
 use std::fs;

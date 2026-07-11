@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 #![allow(clippy::await_holding_lock)]
 
 use sb_core::dns::fakeip;

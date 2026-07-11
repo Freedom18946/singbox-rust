@@ -52,12 +52,10 @@ fn timeout_from_env() -> u64 {
     crate::runtime_options::DnsRuntimeOptions::default().timeout_ms
 }
 
-#[cfg(any(test, feature = "dev-cli"))]
 fn doh_url_from_env() -> String {
     crate::runtime_options::DnsRuntimeOptions::default().doh_url
 }
 
-#[cfg(any(test, feature = "dev-cli"))]
 fn dot_addr_from_env() -> Option<SocketAddr> {
     crate::runtime_options::DnsRuntimeOptions::default().dot_addr
 }
@@ -108,17 +106,14 @@ pub async fn resolve_all(host: &str, port: u16) -> Result<Vec<SocketAddr>> {
             QSel::AAAA => "aaaa",
             QSel::Auto => "auto",
         };
-        #[cfg(any(test, feature = "dev-cli"))]
+
         let backend_label = label(backend);
-        #[cfg(not(any(test, feature = "dev-cli")))]
-        let backend_label = "default";
         metrics::histogram!("dns_rtt_seconds", "backend"=>backend_label, "qtype"=>qtype_label)
             .record(dt);
     }
     Ok(out)
 }
 
-#[cfg(any(test, feature = "dev-cli"))]
 #[allow(dead_code)]
 fn label(b: DnsBackend) -> &'static str {
     match b {
@@ -182,10 +177,8 @@ async fn resolve_qsel_qtype(
             QSel::AAAA => "aaaa",
             QSel::Auto => "auto",
         };
-        #[cfg(any(test, feature = "dev-cli"))]
+
         let backend_label = label(backend);
-        #[cfg(not(any(test, feature = "dev-cli")))]
-        let backend_label = "default";
         metrics::counter!("dns_query_total", "backend"=>backend_label, "qtype"=>qtype_label)
             .increment(1);
     }
@@ -252,11 +245,9 @@ async fn dot_resolve_qtype(
     qtype: u16,
 ) -> Result<Vec<SocketAddr>> {
     use crate::dns::dot::query_dot_once;
-    #[cfg(any(test, feature = "dev-cli"))]
+
     let addr =
         dot_addr_from_env().unwrap_or_else(|| std::net::SocketAddr::from(([1, 1, 1, 1], 853)));
-    #[cfg(not(any(test, feature = "dev-cli")))]
-    let addr = std::net::SocketAddr::from(([1, 1, 1, 1], 853));
     let (ips, _ttl) = query_dot_once(addr, host, qtype, timeout_ms).await?;
     Ok(ips
         .into_iter()
@@ -292,10 +283,8 @@ async fn doh_resolve_qtype(
     qtype: u16,
 ) -> Result<Vec<SocketAddr>> {
     use crate::dns::doh::query_doh_once;
-    #[cfg(any(test, feature = "dev-cli"))]
+
     let url = doh_url_from_env();
-    #[cfg(not(any(test, feature = "dev-cli")))]
-    let url = "https://cloudflare-dns.com/dns-query".to_string();
     let (ips, _ttl) = query_doh_once(&url, host, qtype, timeout_ms).await?;
     Ok(ips
         .into_iter()
@@ -323,12 +312,10 @@ async fn doh_resolve(_host: &str, _port: u16, _timeout_ms: u64) -> Result<Vec<So
     Err(anyhow::anyhow!("dns_doh feature disabled"))
 }
 
-#[cfg(any(test, feature = "dev-cli"))]
 fn doq_addr_from_env() -> Option<SocketAddr> {
     crate::runtime_options::DnsRuntimeOptions::default().doq_addr
 }
 
-#[cfg(any(test, feature = "dev-cli"))]
 fn doq_server_name_from_env() -> Option<String> {
     crate::runtime_options::DnsRuntimeOptions::default().doq_server_name
 }
@@ -341,15 +328,11 @@ async fn doq_resolve_qtype(
     qtype: u16,
 ) -> Result<Vec<SocketAddr>> {
     use crate::dns::doq::query_doq_once;
-    #[cfg(any(test, feature = "dev-cli"))]
+
     let addr =
         doq_addr_from_env().unwrap_or_else(|| std::net::SocketAddr::from(([1, 1, 1, 1], 853)));
-    #[cfg(not(any(test, feature = "dev-cli")))]
-    let addr = std::net::SocketAddr::from(([1, 1, 1, 1], 853));
-    #[cfg(any(test, feature = "dev-cli"))]
+
     let sni = doq_server_name_from_env().unwrap_or_else(|| "cloudflare-dns.com".to_string());
-    #[cfg(not(any(test, feature = "dev-cli")))]
-    let sni = "cloudflare-dns.com".to_string();
     let (ips, _ttl) = query_doq_once(addr, &sni, host, qtype, timeout_ms).await?;
     Ok(ips
         .into_iter()

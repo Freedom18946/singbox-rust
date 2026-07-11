@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_core::router::router_build_index_from_str_with_options;
 use sb_core::runtime_options::RouterRuntimeOptions;
 use std::fs;

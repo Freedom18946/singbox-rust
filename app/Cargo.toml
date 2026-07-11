@@ -65,9 +65,9 @@ rate_limit = ["admin_envelope", "sb-api/rate_limit"]
 jwt = ["jsonwebtoken", "p256", "pkcs8", "sb-api/jwt"]  # JWT 提供者启用时再打开
 
 ## 路由/运行期与观测能力
-router  = ["sb-core", "sb-core/router", "sb-core/legacy_protocols", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "sb-core/v2ray_transport", "out_ss", "sb-transport", "sb-subscribe", "reqwest", "tokio-util"]
+router  = ["sb-core", "sb-core/v2ray_transport", "out_ss", "sb-transport", "sb-subscribe", "reqwest", "tokio-util"]
 observe = ["router", "sb-metrics", "sb-core/metrics", "sb-adapters/metrics"]
-out_ss = ["sb-core/out_ss"]
+out_ss = ["adapter-shadowsocks"]
 admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth", "tokio-util", "sb-api/debug"]
 ssh = ["sb-adapters/ssh"]
 tools = ["sb-core", "reqwest", "router", "adapters"]
@@ -180,7 +180,7 @@ adapters = [
 
 ## 新增组合预设（示例）
 cli_min = []                         # 仅 CLI，不拉业务依赖
-router_full = ["router", "sb-core/router"]         # 打开路由相关
+router_full = ["router"]         # 打开路由相关
 observe_full = ["observe", "sb-core/http_exporter"]  # 打开 metrics exporter
 full    = [
     "router_full",
@@ -197,7 +197,7 @@ clash_api        = ["sb-api", "sb-api/clash-api", "sb-api/provider-reload"]
 v2ray_api        = ["sb-core", "sb-api", "sb-api/v2ray-api"]
 hickory-proto = ["dep:hickory-proto"]
 adapter-http = ["sb-adapters/adapter-http"]
-out_tuic = ["sb-core/out_tuic"]
+out_tuic = ["adapter-tuic"]
 out_hysteria2 = ["adapter-hysteria2"]
 adapter-dns = ["sb-adapters/adapter-dns"]
 adapter-trojan = ["sb-adapters/adapter-trojan"]
@@ -438,7 +438,7 @@ loom = "0.7"
 criterion = { version = "0.5", default-features = false }
 uuid = { version = "1.0", features = ["v4"] }
 sb-admin-contract = { workspace = true }
-sb-core     = { path = "../crates/sb-core", features = ["router"] }
+sb-core     = { path = "../crates/sb-core" }
 sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "adapter-http", "http", "mixed", "tls_reality", "transport_ech", "transport_mux", "transport_tls", "adapter-anytls", "adapter-wireguard-endpoint", "router"] }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"

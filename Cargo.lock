@@ -7295,7 +7295,6 @@ dependencies = [
  "http 1.4.0",
  "httparse",
  "humantime",
- "hyper 0.14.32",
  "idna",
  "ipnet",
  "lazy_static",

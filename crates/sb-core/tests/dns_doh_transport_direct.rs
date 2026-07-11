@@ -1,9 +1,7 @@
-use hyper::service::{make_service_fn, service_fn};
-use hyper::{Body, Request, Response, Server, StatusCode};
 use sb_core::dns::transport::{DnsTransport, DohTransport};
-use std::convert::Infallible;
 use std::net::SocketAddr;
-
+use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::net::TcpListener;
 use tokio::sync::oneshot;
 
 fn build_dns_resp(id: u16, qname: &[u8], qtype: u16) -> Vec<u8> {
@@ -57,83 +55,95 @@ fn parse_query(pkt: &[u8]) -> Option<(u16, Vec<u8>, u16)> {
     Some((id, qname, qtype))
 }
 
-async fn handle_doh_request(req: Request<Body>) -> Result<Response<Body>, Infallible> {
-    if req.method() == hyper::Method::POST {
-        // Check content type
-        if let Some(ct) = req.headers().get("content-type") {
-            if ct != "application/dns-message" {
-                return Ok(Response::builder()
-                    .status(StatusCode::UNSUPPORTED_MEDIA_TYPE)
-                    .body(Body::empty())
-                    .unwrap());
-            }
-        }
+fn response_for_request(request: &[u8]) -> Option<Vec<u8>> {
+    let header_end = request.windows(4).position(|part| part == b"\r\n\r\n")? + 4;
+    let header = std::str::from_utf8(&request[..header_end]).ok()?;
+    let request_line = header.lines().next()?;
+    let mut parts = request_line.split_whitespace();
+    let method = parts.next()?;
+    let target = parts.next()?;
 
-        // Read body
-        let body_bytes = hyper::body::to_bytes(req.into_body()).await.unwrap();
+    let query = if method == "POST" {
+        request[header_end..].to_vec()
+    } else if method == "GET" {
+        let encoded = target
+            .split_once('?')?
+            .1
+            .split('&')
+            .find_map(|part| part.strip_prefix("dns="))?;
+        use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
+        URL_SAFE_NO_PAD.decode(encoded).ok()?
+    } else {
+        return None;
+    };
 
-        if let Some((id, qname, qtype)) = parse_query(&body_bytes) {
-            let resp = build_dns_resp(id, &qname, qtype);
-            return Ok(Response::builder()
-                .status(StatusCode::OK)
-                .header("content-type", "application/dns-message")
-                .body(Body::from(resp))
-                .unwrap());
-        }
-    } else if req.method() == hyper::Method::GET {
-        // Parse query param ?dns=...
-        if let Some(query) = req.uri().query() {
-            if let Some(dns_param) = query.split('&').find(|p| p.starts_with("dns=")) {
-                let encoded = &dns_param[4..];
-                use base64::{engine::general_purpose::URL_SAFE_NO_PAD, Engine};
-                if let Ok(decoded) = URL_SAFE_NO_PAD.decode(encoded) {
-                    if let Some((id, qname, qtype)) = parse_query(&decoded) {
-                        let resp = build_dns_resp(id, &qname, qtype);
-                        return Ok(Response::builder()
-                            .status(StatusCode::OK)
-                            .header("content-type", "application/dns-message")
-                            .body(Body::from(resp))
-                            .unwrap());
-                    }
-                }
-            }
-        }
-    }
-
-    Ok(Response::builder()
-        .status(StatusCode::BAD_REQUEST)
-        .body(Body::empty())
-        .unwrap())
+    let (id, qname, qtype) = parse_query(&query)?;
+    Some(build_dns_resp(id, &qname, qtype))
 }
 
 async fn start_mock_doh_server() -> Option<(SocketAddr, oneshot::Sender<()>)> {
-    let make_svc =
-        make_service_fn(|_conn| async { Ok::<_, Infallible>(service_fn(handle_doh_request)) });
-
     let addr = SocketAddr::from(([127, 0, 0, 1], 0));
-    let listener = match std::net::TcpListener::bind(addr) {
+    let listener = match TcpListener::bind(addr).await {
         Ok(listener) => listener,
         Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
             return None;
         }
         Err(err) => panic!("failed to bind DoH test server: {err}"),
     };
-    listener
-        .set_nonblocking(true)
-        .expect("failed to set nonblocking");
     let addr = listener.local_addr().expect("failed to get local addr");
-    let server = Server::from_tcp(listener)
-        .expect("failed to create server from listener")
-        .serve(make_svc);
-
-    let (tx, rx) = oneshot::channel();
-    let graceful = server.with_graceful_shutdown(async {
-        rx.await.ok();
-    });
+    let (tx, mut rx) = oneshot::channel();
 
     tokio::spawn(async move {
-        if let Err(e) = graceful.await {
-            eprintln!("server error: {}", e);
+        loop {
+            let accepted = tokio::select! {
+                _ = &mut rx => break,
+                accepted = listener.accept() => accepted,
+            };
+            let Ok((mut stream, _)) = accepted else {
+                break;
+            };
+            tokio::spawn(async move {
+                let mut request = Vec::new();
+                let mut buf = [0u8; 4096];
+                loop {
+                    let Ok(read) = stream.read(&mut buf).await else {
+                        return;
+                    };
+                    if read == 0 {
+                        return;
+                    }
+                    request.extend_from_slice(&buf[..read]);
+                    let Some(header_end) = request.windows(4).position(|p| p == b"\r\n\r\n") else {
+                        continue;
+                    };
+                    let header_end = header_end + 4;
+                    let header = String::from_utf8_lossy(&request[..header_end]);
+                    let content_length = header
+                        .lines()
+                        .find_map(|line| {
+                            line.to_ascii_lowercase()
+                                .strip_prefix("content-length:")
+                                .map(str::trim)
+                                .map(str::to_owned)
+                        })
+                        .and_then(|value| value.parse::<usize>().ok())
+                        .unwrap_or(0);
+                    if request.len() >= header_end + content_length {
+                        break;
+                    }
+                }
+
+                let (status, body) =
+                    response_for_request(&request).map_or((400, Vec::new()), |body| (200, body));
+                let response = format!(
+                    "HTTP/1.1 {status} {}\r\nContent-Type: application/dns-message\r\nContent-Length: {}\r\nConnection: close\r\n\r\n",
+                    if status == 200 { "OK" } else { "Bad Request" },
+                    body.len()
+                );
+                let _ = stream.write_all(response.as_bytes()).await;
+                let _ = stream.write_all(&body).await;
+                let _ = stream.shutdown().await;
+            });
         }
     });
 

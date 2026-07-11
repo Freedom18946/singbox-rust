@@ -480,7 +480,6 @@ pub struct EndpointContext {
     /// DNS resolver for internal name resolution (prevents DNS leaks).
     pub dns: Option<Arc<dyn crate::dns::Resolver>>,
     /// Router handle for policy checks.
-    #[cfg(feature = "router")]
     pub router: Option<Arc<crate::router::RouterHandle>>,
     // pub bridge: Arc<Bridge>,
 }
@@ -550,19 +549,17 @@ pub fn endpoint_registry() -> &'static EndpointRegistry {
     &ENDPOINT_REGISTRY
 }
 
-#[cfg(feature = "router")]
 pub mod handler;
 pub mod tailscale;
 pub mod wireguard;
 
 /// Register built-in endpoints.
 pub fn register_builtins() {
-    #[cfg(feature = "out_wireguard")]
     register_endpoint(
         sb_config::ir::EndpointType::Wireguard,
         wireguard::build_wireguard_endpoint,
     );
-    #[cfg(feature = "out_tailscale")]
+
     register_endpoint(
         sb_config::ir::EndpointType::Tailscale,
         tailscale::build_tailscale_endpoint,

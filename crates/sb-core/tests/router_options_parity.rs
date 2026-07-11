@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_config::ir::{ConfigIR, ExperimentalIR, OutboundIR, OutboundType};
 use sb_core::adapter::{Bridge, OutboundParam};
 use sb_core::context::Context;

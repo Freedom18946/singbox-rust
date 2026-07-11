@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_core::router::RouterHandle;
 use sb_core::runtime_options::RouterRuntimeOptions;
 use std::sync::Arc;

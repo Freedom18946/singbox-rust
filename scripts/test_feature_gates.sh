@@ -15,5 +15,5 @@ fi
 
 echo "[feature-matrix] Running smoke gate checks (set SB_FEATURE_MATRIX_MODE=full for full matrix)"
 cargo check -p app --features acceptance
-cargo check -p sb-core --features router
+cargo check -p sb-core --no-default-features
 cargo check -p sb-adapters --features "router,adapter-shadowsocks,shadowsocks"

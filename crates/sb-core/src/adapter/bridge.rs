@@ -7,7 +7,7 @@ use crate::adapter::{AnyTlsUserParam, Bridge, InboundParam, OutboundParam};
 use crate::context::Context;
 use crate::endpoint::{endpoint_registry, Endpoint, EndpointAsOutbound, EndpointContext};
 use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
-#[cfg(feature = "router")]
+
 use crate::router::RouterHandle;
 use crate::service::{service_registry, ServiceContext};
 use dashmap::DashMap;
@@ -96,7 +96,6 @@ pub fn publish_runtime_registries(br: &Bridge) {
     install_runtime_inbound_handle(br);
 }
 
-#[cfg(feature = "router")]
 fn router_handle_from_ir(
     cfg: &ConfigIR,
     runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
@@ -159,7 +158,6 @@ fn router_handle_from_ir(
     }
 }
 
-#[cfg(feature = "router")]
 #[allow(dead_code)]
 fn ir_to_router_rules_text(cfg: &ConfigIR) -> String {
     fn rule_outbound(rule: &sb_config::ir::RuleIR, cfg: &ConfigIR) -> String {
@@ -808,7 +806,6 @@ fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
     }
 }
 
-#[cfg(feature = "router")]
 pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Context) -> Bridge {
     crate::endpoint::register_builtins();
     crate::services::register_builtins();
@@ -827,10 +824,9 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
     // Extract dependency graph from IR (L2.9)
     br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
     let outbound_handle = outbound_registry_handle_from_bridge(&br);
-    #[cfg(feature = "router")]
+
     let router_handle = router_handle_from_ir(cfg, router_options);
 
-    #[cfg(feature = "router")]
     let endpoint_handler = {
         let stats = br.context.v2ray_server.as_ref().and_then(|s| s.stats());
         Some(Arc::new(
@@ -919,7 +915,6 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
     for endpoint_ir in &cfg.endpoints {
         let ctx = EndpointContext::default();
         if let Some(endpoint) = endpoint_registry().build(endpoint_ir, &ctx) {
-            #[cfg(feature = "router")]
             if let Some(handler) = endpoint_handler.as_ref() {
                 endpoint.set_connection_handler(handler.clone());
             }
@@ -956,107 +951,6 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
         } else {
             ctx
         };
-        if let Some(service) = service_registry().build(service_ir, &ctx) {
-            br.add_service(service);
-        } else {
-            tracing::warn!(
-                target: "sb_core::adapter",
-                service = %service_ir.tag.as_deref().unwrap_or("unknown"),
-                "service builder not found"
-            );
-        }
-    }
-
-    br
-}
-
-/// Assembles IR configuration into a Bridge (without router feature).
-///
-/// Placeholder version when router feature is disabled. Assembles outbounds and inbounds
-/// without routing engine dependencies.
-#[cfg(not(feature = "router"))]
-pub fn build_bridge(cfg: &ConfigIR, _engine: (), context: Context) -> Bridge {
-    crate::endpoint::register_builtins();
-    crate::services::register_builtins();
-    let mut br = Bridge::new(context);
-    let ctx_registry = crate::context::ContextRegistry::from(&br.context);
-
-    // Step 1 & 2: Outbounds and selectors
-    assemble_outbounds(cfg, &mut br);
-    assemble_selectors(cfg, &mut br);
-    // Extract dependency graph from IR (L2.9)
-    br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
-    let outbound_handle = outbound_registry_handle_from_bridge(&br);
-
-    // Step 3: Inbounds (without engine)
-    for ib in &cfg.inbounds {
-        let p = match to_inbound_param(ib, br.context.conn_tracker.clone()) {
-            Ok(p) => p,
-            Err(err) => {
-                tracing::warn!(
-                    target: "sb_core::adapter",
-                    inbound = %ib.ty.ty_str(),
-                    listen = %format!("{}:{}", ib.listen, ib.port),
-                    error = %err,
-                    "invalid inbound config; refusing to build adapter"
-                );
-                continue;
-            }
-        };
-        let adapter_ctx = registry::AdapterInboundContext {
-            bridge: Arc::new(br.clone()),
-            outbounds: outbound_handle.clone(),
-            // NOTE: DNS router integration available via with_dns_router() builder
-            dns_router: None,
-            context: ctx_registry.clone(),
-        };
-
-        if let Some(i) = try_adapter_inbound(&p, &adapter_ctx) {
-            br.add_canonical_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
-        } else {
-            if p.kind == "tun" {
-                br.startup_errors.push(format!(
-                    "tun inbound '{}' failed to prepare runtime backend",
-                    p.tag.as_deref().unwrap_or("tun")
-                ));
-            }
-            tracing::error!(
-                target: "sb_core::adapter",
-                inbound = %p.kind,
-                listen = %format!("{}:{}", p.listen, p.port),
-                "no inbound builder available for requested kind"
-            );
-        }
-    }
-
-    // Step 4: Endpoints
-    for endpoint_ir in &cfg.endpoints {
-        let ctx = EndpointContext::default();
-        if let Some(endpoint) = endpoint_registry().build(endpoint_ir, &ctx) {
-            add_endpoint_with_outbound(&mut br, endpoint);
-        } else {
-            tracing::warn!(
-                target: "sb_core::adapter",
-                endpoint = %endpoint_ir.tag.as_deref().unwrap_or("unknown"),
-                "endpoint builder not found"
-            );
-        }
-    }
-    refresh_outbound_registry_handle(&outbound_handle, &br);
-
-    let endpoints_map: Arc<std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>> =
-        Arc::new(
-            br.endpoints
-                .iter()
-                .map(|ep| (ep.tag().to_string(), ep.clone()))
-                .collect(),
-        );
-
-    // Step 5: Services
-    for service_ir in &cfg.services {
-        let ctx = ServiceContext::default()
-            .with_outbounds(outbound_handle.clone())
-            .with_endpoints(endpoints_map.clone());
         if let Some(service) = service_registry().build(service_ir, &ctx) {
             br.add_service(service);
         } else {

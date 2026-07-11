@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 //! Integration tests for GeoSite database support in routing engine
 
 use sb_core::router::{
@@ -270,9 +269,9 @@ fn test_enhanced_geosite_lookup_integration() {
         source_rules: vec![],
         dest_rules: vec![],
         user_agent_rules: vec![],
-        #[cfg(feature = "router_keyword")]
+
         keyword_rules: vec![],
-        #[cfg(feature = "router_keyword")]
+
         keyword_idx: None,
         rules: vec![],
         default: "direct",

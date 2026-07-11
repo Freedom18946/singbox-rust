@@ -1,9 +1,7 @@
 //! DNS facilities
 //! - 默认仅提供轻量 stub（不依赖 reqwest）
 
-use std::collections::HashMap;
-#[cfg(any(test, feature = "dns_cache", feature = "dev-cli"))]
-use std::collections::HashSet;
+use std::collections::{HashMap, HashSet};
 use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
@@ -17,7 +15,7 @@ use cache::{Key as CacheKey, QType as CacheQType};
 pub mod cache;
 pub mod cache_v2;
 pub mod client;
-#[cfg(feature = "router")]
+
 pub mod config_builder;
 #[cfg(feature = "dns_doh")]
 pub mod doh;
@@ -33,7 +31,7 @@ pub mod message;
 pub mod metrics;
 pub mod resolve;
 pub mod resolver;
-#[cfg(feature = "router")]
+
 pub mod rule_engine;
 pub mod strategy;
 pub mod stub;
@@ -241,16 +239,15 @@ pub struct ResolverHandle {
     static_ttl: Duration,
     ipv6_enabled: bool,
     // Prefetch
-    #[cfg(any(test, feature = "dev-cli"))]
     #[allow(dead_code)]
     prefetch_enabled: bool,
-    #[cfg(any(test, feature = "dev-cli"))]
+
     #[allow(dead_code)]
     prefetch_before: Duration,
-    #[cfg(any(test, feature = "dev-cli"))]
+
     #[allow(dead_code)]
     prefetch_sem: Arc<tokio::sync::Semaphore>,
-    #[cfg(any(test, feature = "dev-cli"))]
+
     #[allow(dead_code)]
     prefetch_inflight: Arc<std::sync::Mutex<HashSet<String>>>,
     // Upstream health
@@ -347,11 +344,11 @@ impl ResolverHandle {
         #[cfg(feature = "dns_cache")]
         let cache = crate::dns::cache::DnsCache::new(_cap);
         let sys = system::SystemResolver::new(default_ttl);
-        #[cfg(any(test, feature = "dev-cli"))]
+
         let prefetch_enabled = options.prefetch_enabled;
-        #[cfg(any(test, feature = "dev-cli"))]
+
         let prefetch_before = Duration::from_millis(options.prefetch_before_ms);
-        #[cfg(any(test, feature = "dev-cli"))]
+
         let prefetch_conc = options.prefetch_concurrency;
         let max_inflight = options.pool_max_inflight;
         let per_host = options.per_host_inflight;
@@ -364,13 +361,13 @@ impl ResolverHandle {
             static_map,
             static_ttl,
             ipv6_enabled,
-            #[cfg(any(test, feature = "dev-cli"))]
+
             prefetch_enabled,
-            #[cfg(any(test, feature = "dev-cli"))]
+
             prefetch_before,
-            #[cfg(any(test, feature = "dev-cli"))]
+
             prefetch_sem: Arc::new(tokio::sync::Semaphore::new(prefetch_conc)),
-            #[cfg(any(test, feature = "dev-cli"))]
+
             prefetch_inflight: Arc::new(std::sync::Mutex::new(HashSet::new())),
             up_health: Arc::new(std::sync::Mutex::new(HashMap::new())),
             inflight_global: Arc::new(tokio::sync::Semaphore::new(std::cmp::max(1, max_inflight))),
@@ -395,13 +392,13 @@ impl ResolverHandle {
             static_map: Default::default(),
             static_ttl: Duration::from_secs(300),
             ipv6_enabled: true,
-            #[cfg(any(test, feature = "dev-cli"))]
+
             prefetch_enabled: false,
-            #[cfg(any(test, feature = "dev-cli"))]
+
             prefetch_before: Duration::from_millis(200),
-            #[cfg(any(test, feature = "dev-cli"))]
+
             prefetch_sem: Arc::new(tokio::sync::Semaphore::new(0)),
-            #[cfg(any(test, feature = "dev-cli"))]
+
             prefetch_inflight: Arc::new(std::sync::Mutex::new(HashSet::new())),
             up_health: Arc::new(std::sync::Mutex::new(HashMap::new())),
             inflight_global: Arc::new(tokio::sync::Semaphore::new(64)),

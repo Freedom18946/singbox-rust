@@ -1,6 +1,5 @@
-#![cfg(feature = "router")]
 // Permanently disabled with an always-false cfg (no unknown features)
-#![cfg(not(any(feature = "router", not(feature = "router"))))]
+#![cfg(any())]
 use sb_config::Config;
 use sb_core::Router;
 

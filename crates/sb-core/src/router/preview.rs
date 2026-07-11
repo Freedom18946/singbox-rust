@@ -42,7 +42,7 @@ pub fn preview_decide_http(
             cache_status: None,
         };
     }
-    #[cfg(feature = "router_keyword")]
+
     {
         if let Some(index) = &idx.keyword_idx {
             if let Some(i) = index.find_idx(&host) {
@@ -115,7 +115,7 @@ pub fn preview_decide_udp(
             cache_status: None,
         };
     }
-    #[cfg(feature = "router_keyword")]
+
     {
         if let Some(index) = &idx.keyword_idx {
             if let Some(i) = index.find_idx(&host_norm) {

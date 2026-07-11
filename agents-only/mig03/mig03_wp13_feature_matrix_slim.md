@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # MIG-03 WP13 — feature 矩阵瘦身（103 → 目标 -30%），legacy out_* 退役
 
-Status: PLANNED
+Status: DONE（2026-07-11）
 Priority: P2
 Depends on: WP07（quinn/hyper 迁移完成）、WP12（影子模块/endpoint 门归位）
 Blocks: WP14
@@ -67,16 +67,16 @@ feature 组合空间无法全测（103 个 feature 的组合爆炸），空 feat
 
 ## Acceptance
 
-- [ ] `sed -n '/\[features\]/,$p' crates/sb-core/Cargo.toml | grep -c '='` ≤ 72
+- [x] `sed -n '/\[features\]/,$p' crates/sb-core/Cargo.toml | grep -c '='` ≤ 72
       （较 103 降 ≥30%）。
-- [ ] `grep -rn '#\[cfg(feature' crates/sb-core/src | wc -l` ≤ 807（降 ≥25%）。
-- [ ] `grep -rn 'feature = "out_' crates/sb-core/src` = 0（或仅剩 census 判定
+- [x] `grep -rn '#\[cfg(feature' crates/sb-core/src | wc -l` ≤ 807（降 ≥25%）。
+- [x] `grep -rn 'feature = "out_' crates/sb-core/src` = 0（或仅剩 census 判定
       保留的、有注释理由的项）。
-- [ ] feature census 无 TBD；Cargo.toml 每个保留 feature 有说明注释。
-- [ ] 七种构建组合全部通过（任务 5 清单，输出记录在包内）。
-- [ ] Makefile / scripts / xtests 中引用的 feature 名全部有效
+- [x] feature census 无 TBD；Cargo.toml 每个保留 feature 有说明注释。
+- [x] 七种构建组合全部通过（任务 5 清单，输出记录在包内）。
+- [x] Makefile / scripts / xtests 中引用的 feature 名全部有效
       （`grep -rn "features" Makefile scripts/ xtests/ | grep -oE 'out_[a-z0-9_]+'` 无失配）。
-- [ ] 全局验收门禁五连全绿。
+- [x] 全局验收门禁五连全绿。
 
 ## 验证命令
 
@@ -103,4 +103,21 @@ git diff --check
 
 ## 发现移交
 
-（执行时填写。）
+- 规划基线“103 feature”不可由 `[features]` 声明重放：立项提交实际 88，WP13 开工
+  实际 86。保留原固定验收上限，最终 65；详见 census 口径校正。
+- D16 已完整执行：sb-core router、suffix trie、keyword linear index、DNS runtime-option
+  路径常驻；app 外部 `router` profile 名保留但不再转发 core feature。
+- 退役 21 个 WP13 输入 feature；production hyper 从 sb-core 删除。DoH mock 使用 raw
+  Tokio HTTP server，避免为测试保留 hyper。
+- 新增 `scripts/tools/test_mig03_wp13_features.py`，锁定 feature/cfg budget、退役名、
+  purpose comment 与下游 forwarding；4 项测试通过。
+- 七构建：app `default`/`minimal`/`acceptance`/`gui_runtime`/`parity`、workspace
+  all-features、sb-core no-default-features 全通过。sb-core all-features 连续两轮通过；
+  app all-features lib 296 tests 与 WP13 相关 adapter/admin/DNS/DERP E2E 通过。验收还修复
+  DNS outbound fixture 缺少 server/port、DERP 外部 owner 未注册及 CLI snapshot 漂移；
+  FakeIP 全局状态测试增加串行锁，消除并行污染。
+- 全量 app `net_e2e` 在本机另暴露既有 Shadowsocks mux/mixed macOS loopback early-EOF/
+  hang；未伪装为 WP13 通过、未在本包修改协议实现。该问题不影响 WP13 七构建、feature
+  budget、owner boundary 或相关 E2E，移交独立 adapter quality 维护。
+- 最终指标：65 feature、787 个 source `cfg(feature)`、core `out_*` cfg 为 0；
+  boundaries 维持严格协议 owner 断言。本包不声明 parity/BHV/REALITY movement。

@@ -19,7 +19,7 @@ use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use once_cell::sync::Lazy;
 
 use crate::adapter::Bridge;
-#[cfg(feature = "router")]
+
 use crate::router::{Engine, Input};
 use crate::runtime::supervisor::Supervisor;
 use sb_config::ir::ConfigIR;
@@ -279,8 +279,8 @@ fn parse_path(line: &str) -> (&str, &str, &str) {
 
 fn handle(
     mut cli: TcpStream,
-    #[cfg(feature = "router")] engine: &Engine,
-    #[cfg(not(feature = "router"))] _engine: &(),
+
+    engine: &Engine,
     bridge: &Bridge,
     admin_token: Option<&str>,
     supervisor: Option<&Arc<Supervisor>>,
@@ -454,7 +454,7 @@ fn handle(
             let body = serde_json::to_string(&obj).unwrap_or_else(|_| "{}".into());
             write_json(&mut cli, 200, &body)
         }
-        #[cfg(feature = "router")]
+
         ("POST", "/explain") => {
             let body = match read_body(&mut cli, &headers, &lim) {
                 Ok(b) => b,
@@ -502,11 +502,6 @@ fn handle(
             });
             let body = serde_json::to_string(&obj).unwrap_or_else(|_| "{}".into());
             write_json(&mut cli, 200, &body)
-        }
-        #[cfg(not(feature = "router"))]
-        ("POST", "/explain") => {
-            let obj = json_err("not_available", "router feature not enabled");
-            write_json(&mut cli, 503, &obj)
         }
         ("POST", "/reload") => handle_reload(&mut cli, &headers, supervisor, rt_handle, &lim),
         _ => {
@@ -836,8 +831,8 @@ fn handle_reload(
 
 pub fn spawn_admin(
     listen: &str,
-    #[cfg(feature = "router")] engine: Engine,
-    #[cfg(not(feature = "router"))] _engine: (),
+
+    engine: Engine,
     bridge: Arc<Bridge>,
     admin_token: Option<String>,
     supervisor: Option<Arc<Supervisor>>,
@@ -872,10 +867,8 @@ pub fn spawn_admin(
                         },
                         None => None,
                     };
-                    #[cfg(feature = "router")]
+
                     let eng = engine.clone();
-                    #[cfg(not(feature = "router"))]
-                    let eng = ();
                     let brc = bridge.clone();
                     let tok = admin_token.clone();
                     let sup = supervisor.clone();

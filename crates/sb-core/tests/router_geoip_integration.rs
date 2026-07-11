@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 //! Integration tests for GeoIP database support in routing engine
 
 use sb_core::router::{

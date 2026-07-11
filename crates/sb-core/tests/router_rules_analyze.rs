@@ -1,4 +1,3 @@
-#![cfg(feature = "router")]
 use sb_core::router::analyze::analyze;
 
 #[test]

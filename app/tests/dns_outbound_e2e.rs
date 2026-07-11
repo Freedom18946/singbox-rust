@@ -518,7 +518,9 @@ fn test_dns_outbound_adapter_path() -> Result<()> {
         }],
         "outbounds": [{
             "type": "dns",
-            "tag": "dns-out"
+            "tag": "dns-out",
+            "server": "1.1.1.1",
+            "port": 53
         }],
         "dns": {
             "servers": [{
@@ -529,6 +531,17 @@ fn test_dns_outbound_adapter_path() -> Result<()> {
     });
 
     let ir = to_ir_v1(&cfg);
+    let dns_ir = ir
+        .outbounds
+        .iter()
+        .find(|outbound| outbound.name.as_deref() == Some("dns-out"))
+        .expect("dns outbound must exist in IR");
+    assert_eq!(dns_ir.server.as_deref(), Some("1.1.1.1"));
+    assert_eq!(dns_ir.port, Some(53));
+    assert!(
+        sb_core::registry::get_outbound("dns").is_some(),
+        "DNS adapter builder must be registered"
+    );
     let result = Bridge::new_from_config(&ir, sb_core::context::Context::new());
 
     // Verify Bridge can be created with DNS outbound

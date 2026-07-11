@@ -20,7 +20,7 @@ ring = "0.17"
 rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
 rustls-pemfile = "2"
 sb-config = { path = "../sb-config" }
-sb-core = { path = "../sb-core", default-features = false, features = ["router", "tls_rustls"] }
+sb-core = { path = "../sb-core", default-features = false, features = ["tls_rustls"] }
 sb-metrics = { path = "../sb-metrics" }
 sb-tls = { path = "../sb-tls", default-features = false, features = ["utls"] }
 sb-transport = { path = "../sb-transport", default-features = false, features = ["transport_tls"] }

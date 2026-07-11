@@ -133,7 +133,7 @@ fn bench_packet_parsing(c: &mut Criterion) {
 }
 
 /// Benchmark crypto operations (if enabled)
-#[cfg(all(feature = "bench", feature = "out_ss"))]
+#[cfg(feature = "bench")]
 fn bench_crypto_overhead(c: &mut Criterion) {
     let mut group = c.benchmark_group("crypto_overhead");
 
@@ -163,14 +163,11 @@ criterion_group!(
     bench_packet_parsing,
 );
 
-#[cfg(all(feature = "bench", feature = "out_ss"))]
+#[cfg(feature = "bench")]
 criterion_group!(crypto_benches, bench_crypto_overhead);
 
-#[cfg(all(feature = "bench", feature = "out_ss"))]
+#[cfg(feature = "bench")]
 criterion_main!(benches, crypto_benches);
-
-#[cfg(all(feature = "bench", not(feature = "out_ss")))]
-criterion_main!(benches);
 
 #[cfg(not(feature = "bench"))]
 fn main() {

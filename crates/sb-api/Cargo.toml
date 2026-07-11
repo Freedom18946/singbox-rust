@@ -64,7 +64,7 @@ prometheus = { version = "0.14", optional = true }
 http = "1.0"
 
 # Internal crates
-sb-core = { path = "../sb-core", features = ["router"] }
+sb-core = { path = "../sb-core" }
 sb-common = { path = "../sb-common" }
 sb-config = { path = "../sb-config" }
 sb-types = { path = "../sb-types" }
