@@ -19,7 +19,7 @@ use std::sync::{Arc, RwLock};
 /// Context passed to inbound adapter builders so they can access runtime components.
 pub struct AdapterInboundContext {
     #[cfg(feature = "router")]
-    pub engine: crate::routing::engine::Engine,
+    pub engine: crate::router::Engine,
     pub bridge: Arc<Bridge>,
     pub outbounds: Arc<OutboundRegistryHandle>,
     #[cfg(feature = "router")]

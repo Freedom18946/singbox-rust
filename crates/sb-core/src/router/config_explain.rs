@@ -1,6 +1,6 @@
 //! Canonical explain output with sha256-8 rule id and CIDR→Geo chain.
-use crate::routing::engine::{Engine, Input};
-use crate::routing::trace::Trace;
+use crate::router::config_engine::{Engine, Input};
+use crate::router::config_trace::Trace;
 use serde::Serialize;
 
 #[derive(Debug, Clone, Serialize)]
@@ -126,6 +126,10 @@ mod tests {
         let ee = ExplainEngine { engine };
         let r = ee.explain("example.com:443", false);
         assert_eq!(r.matched_rule.len(), 8);
+        assert_eq!(
+            serde_json::to_string(&r).expect("serialize explain result"),
+            r#"{"dest":"example.com:443","matched_rule":"00000000","chain":[],"outbound":"unresolved"}"#
+        );
         // chain is a Vec, so it's always valid
         assert!(r.trace.is_none());
         let r2 = ee.explain("example.com:443", true);

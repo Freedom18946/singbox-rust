@@ -11,7 +11,9 @@
 //! - Handle TXT record queries for verification/SPF differently
 //! - Implement DNS-based routing strategies
 
-use sb_core::router::rules::{Decision, DnsRecordType, Engine, RouteCtx, Rule, RuleKind};
+use sb_core::router::rules::{
+    Decision, DnsRecordType, RouteCtx, Rule, RuleEngine as Engine, RuleKind,
+};
 
 #[test]
 fn test_query_type_a_record() {

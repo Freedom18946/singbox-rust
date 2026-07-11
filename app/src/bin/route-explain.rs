@@ -5,7 +5,7 @@ use anyhow::{Context, Result};
 use app::cli::{output, Format, GlobalArgs};
 use app::config_loader;
 use clap::Parser;
-use sb_core::routing::ExplainEngine;
+use sb_core::router::ExplainEngine;
 use serde_json::Value;
 use std::path::Path;
 

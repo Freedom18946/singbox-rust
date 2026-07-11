@@ -3,7 +3,7 @@ use sb_config::ir::{
     ConfigIR, Credentials, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR,
 };
 use sb_core::adapter::bridge::build_bridge;
-use sb_core::routing::engine::Engine;
+use sb_core::router::Engine;
 use sb_core::runtime::{switchboard::OutboundSwitchboard, Runtime};
 use std::io::{Read, Write};
 use std::net::TcpListener;

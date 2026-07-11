@@ -23,8 +23,8 @@ fn engine_trace_matches_domain_and_port() {
         },
         ..Default::default()
     };
-    let eng = sb_core::routing::engine::Engine::new(std::sync::Arc::new(ir.clone()));
-    let input = sb_core::routing::engine::Input {
+    let eng = sb_core::router::Engine::new(std::sync::Arc::new(ir.clone()));
+    let input = sb_core::router::Input {
         host: "sub.example.com",
         port: 443,
         network: "tcp",
@@ -63,9 +63,9 @@ fn engine_uses_sniff_host_over_original_host() {
         },
         ..Default::default()
     };
-    let eng = sb_core::routing::engine::Engine::new(std::sync::Arc::new(ir.clone()));
+    let eng = sb_core::router::Engine::new(std::sync::Arc::new(ir.clone()));
     // original host is IP (won't match domain rule); sniff_host provides domain
-    let input = sb_core::routing::engine::Input {
+    let input = sb_core::router::Input {
         host: "1.2.3.4",
         port: 443,
         network: "tcp",

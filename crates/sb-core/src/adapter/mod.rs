@@ -361,7 +361,7 @@ impl Bridge {
         #[cfg(feature = "router")]
         let bridge = bridge::build_bridge(
             ir,
-            crate::routing::engine::Engine::new(Arc::new(ir.clone())),
+            crate::router::Engine::new(Arc::new(ir.clone())),
             context,
         );
         #[cfg(not(feature = "router"))]

@@ -12,6 +12,16 @@ use ipnet::{IpNet, Ipv4Net, Ipv6Net};
 use std::collections::{BTreeSet, HashSet};
 use std::net::IpAddr;
 
+/// Label-aware domain suffix match shared by route and DNS rule engines.
+/// `example.com` matches itself and subdomains, but not `evil-example.com`.
+#[inline]
+pub fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
+    domain == suffix
+        || (domain.len() > suffix.len()
+            && domain.as_bytes()[domain.len() - suffix.len() - 1] == b'.'
+            && domain.ends_with(suffix))
+}
+
 /// 域名规则集合
 #[derive(Debug, Default, Clone)]
 pub struct DomainRuleSet {
@@ -140,7 +150,7 @@ impl DomainRuleSet {
         for suf in self.suffix.iter() {
             // Subdomain match: "a.b.example.com".ends_with(".example.com")
             // Exact domain match: "example.com" == &".example.com"[1..]
-            if host.ends_with(suf.as_str()) || &suf[1..] == host {
+            if domain_matches_suffix(host, &suf[1..]) {
                 return true;
             }
         }
@@ -220,6 +230,13 @@ mod tests {
         assert!(r.matches_host("example.com"));
         assert!(r.matches_host("x.foo.bar"));
         assert!(!r.matches_host("evil-example.com"));
+    }
+
+    #[test]
+    fn shared_suffix_primitive_is_label_aware() {
+        assert!(domain_matches_suffix("example.com", "example.com"));
+        assert!(domain_matches_suffix("a.example.com", "example.com"));
+        assert!(!domain_matches_suffix("evil-example.com", "example.com"));
     }
 
     #[test]

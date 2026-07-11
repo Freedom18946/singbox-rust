@@ -10,7 +10,9 @@
 //! - Advanced domain filtering with regex power
 //! - Dynamic domain matching without pre-defining all domains
 
-use sb_core::router::rules::{Decision, DomainRegexMatcher, Engine, RouteCtx, Rule, RuleKind};
+use sb_core::router::rules::{
+    Decision, DomainRegexMatcher, RouteCtx, Rule, RuleEngine as Engine, RuleKind,
+};
 
 #[test]
 fn test_basic_regex_match() {

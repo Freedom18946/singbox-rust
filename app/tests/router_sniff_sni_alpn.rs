@@ -6,7 +6,7 @@
 
 use sb_config::ir::{ConfigIR, RouteIR, RuleIR};
 use sb_core::router::sniff::extract_sni_from_tls_client_hello;
-use sb_core::routing::engine::{Engine, Input};
+use sb_core::router::{Engine, Input};
 
 fn extract_alpn_from_tls_client_hello(buf: &[u8]) -> Option<String> {
     sb_core::router::sniff::sniff_tls_client_hello(buf).and_then(|info| info.alpn)

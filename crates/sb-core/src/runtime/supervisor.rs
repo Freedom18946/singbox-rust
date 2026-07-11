@@ -17,7 +17,7 @@ use crate::adapter::InboundTaskDriver;
 use crate::context::{Context, Startable, V2RayServer, V2RayServerActivePhase};
 use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 #[cfg(feature = "router")]
-use crate::routing::engine::Engine;
+use crate::router::Engine;
 use crate::service::{Service, StartStage as ServiceStage};
 use anyhow::{Context as AnyhowContext, Result};
 use sb_config::ir::diff::Diff;

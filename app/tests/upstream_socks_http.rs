@@ -2,7 +2,7 @@
 //! Fake upstream proxy servers to validate adapter registry outbound connectors.
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
 use sb_core::adapter::bridge::build_bridge;
-use sb_core::routing::engine::Engine;
+use sb_core::router::Engine;
 use sb_core::runtime::Runtime;
 use std::io::{self, Read, Write};
 use std::net::{TcpListener, TcpStream};

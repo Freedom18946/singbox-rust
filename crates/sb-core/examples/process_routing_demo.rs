@@ -5,7 +5,7 @@
 //! and how the routing engine prioritizes different rule types.
 
 use sb_core::router::process_router::ProcessRouter;
-use sb_core::router::rules::{parse_rules, Decision, Engine, Rule, RuleKind};
+use sb_core::router::rules::{parse_rules, Decision, Rule, RuleEngine as Engine, RuleKind};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 #[tokio::main]

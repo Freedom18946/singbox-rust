@@ -5,7 +5,9 @@
 //! to routing decision based on process name and path.
 
 use sb_core::router::process_router::ProcessRouter;
-use sb_core::router::rules::{Decision, Engine, ProcessPathRegexMatcher, RouteCtx, Rule, RuleKind};
+use sb_core::router::rules::{
+    Decision, ProcessPathRegexMatcher, RouteCtx, Rule, RuleEngine as Engine, RuleKind,
+};
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 
 #[tokio::test]

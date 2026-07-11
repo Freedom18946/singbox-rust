@@ -30,6 +30,7 @@
       },
       {
         "tag": "fakeip",
+        "type": "fakeip",
         "address": "fakeip"
       }
     ],

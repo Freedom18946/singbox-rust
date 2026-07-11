@@ -257,3 +257,27 @@
 - gui_runtime binary 40,764,944 → 40,522,992 bytes（-241,952，-0.59%）。
 
 **结果**: WP06 DONE；WP07 解锁。无 parity/BHV/REALITY/packaging denominator 移动。
+
+---
+
+## 2026-07-11 MIG-03 WP08 router stack merge
+
+**任务**: 合并 `router/` + `routing/`，统一 Engine、matcher、explain/trace 与热加载路径。
+
+**变更**:
+- ConfigIR engine/explain/trace 迁入 router；routing 收敛为 23 行 WP14 兼容 facade，删除
+  duplicate IR/matcher/router 实现；legacy bucket evaluator 更名 `RuleEngine`。
+- 消费方全切 `router::{Engine, Input, ExplainEngine}`；suffix 原语统一给 ConfigIR 与
+  RuleMatcher，DNS 继续复用 RuleMatcher；explain JSON 新增精确序列化锁。
+- rule-hot-reload 改用 canonical RouterHandle/RouterIndex 原子替换与正典配置流水线，新增
+  external rules 决策测试；同步 boundary 文件搬迁断言。
+- 闭合验收暴露的旧漂移：tools profile SSH 测试假设、ShadowTLS runtime registry 发布、
+  TUIC v5 password credential、FakeIP strict type fixture。
+
+**验证**:
+- global five gates；sb-core full/router/dns/hot-reload；app `router,tools` full；专项
+  router_options/tun_sni/explain；Python tools 232 PASS。
+- dual-kernel route/DNS 五 case 均 gate_score=0、zero mismatch。
+
+**结果**: WP08 DONE；routing 7 files/1487 LOC → 1 file/25 LOC；WP11 解锁。无新增
+parity/BHV/REALITY/packaging movement。

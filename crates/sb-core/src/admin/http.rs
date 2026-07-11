@@ -20,7 +20,7 @@ use once_cell::sync::Lazy;
 
 use crate::adapter::Bridge;
 #[cfg(feature = "router")]
-use crate::routing::engine::{Engine, Input};
+use crate::router::{Engine, Input};
 use crate::runtime::supervisor::Supervisor;
 use sb_config::ir::ConfigIR;
 use tokio::runtime::Handle;

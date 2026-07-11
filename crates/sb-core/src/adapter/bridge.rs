@@ -805,11 +805,7 @@ fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
 }
 
 #[cfg(feature = "router")]
-pub fn build_bridge(
-    cfg: &ConfigIR,
-    engine: crate::routing::engine::Engine,
-    context: Context,
-) -> Bridge {
+pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Context) -> Bridge {
     crate::endpoint::register_builtins();
     crate::services::register_builtins();
     let mut br = Bridge::new(context);

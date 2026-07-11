@@ -93,7 +93,7 @@ async fn start_ss_server_on(
     password: &str,
 ) -> Option<ShadowsocksServerHandle> {
     let rules = sb_core::router::rules::parse_rules("default=direct");
-    sb_core::router::rules::install_global(sb_core::router::rules::Engine::build(rules));
+    sb_core::router::rules::install_global(sb_core::router::rules::RuleEngine::build(rules));
 
     let listener = match TcpListener::bind(listen).await {
         Ok(listener) => listener,

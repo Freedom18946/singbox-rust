@@ -4,7 +4,7 @@ use sb_core::router::sniff::extract_sni_from_tls_client_hello;
 
 // Use the routing engine over ConfigIR rules
 use sb_config::ir::{ConfigIR, RouteIR, RuleIR};
-use sb_core::routing::engine::{Engine, Input};
+use sb_core::router::{Engine, Input};
 
 fn build_tls_client_hello_with_sni(host: &str) -> Vec<u8> {
     // Build minimal TLS 1.2 ClientHello with only server_name extension

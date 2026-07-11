@@ -1117,7 +1117,7 @@ impl CompositeRule {
         }
         if self.not_ip_is_private {
             if let Some(ip) = ctx.ip {
-                if Engine::is_private_ip(&ip) {
+                if RuleEngine::is_private_ip(&ip) {
                     return false;
                 }
             }
@@ -1223,7 +1223,7 @@ impl CompositeRule {
         }
         if self.source_ip_is_private {
             let matched = if let Some(ip) = ctx.source_ip {
-                Engine::is_private_ip(&ip)
+                RuleEngine::is_private_ip(&ip)
             } else {
                 false
             };
@@ -1418,7 +1418,7 @@ impl CompositeRule {
         }
         if self.ip_is_private {
             let matched = if let Some(ip) = ctx.ip {
-                Engine::is_private_ip(&ip)
+                RuleEngine::is_private_ip(&ip)
             } else {
                 false
             };
@@ -1740,7 +1740,7 @@ impl CompositeRule {
 }
 
 #[derive(Debug, Default)]
-pub struct Engine {
+pub struct RuleEngine {
     // 分桶存储，便于按优先级短路
     exact: Vec<Rule>,
     suffix: Vec<Rule>,
@@ -1760,13 +1760,13 @@ pub struct Engine {
     default: Option<Rule>,
 }
 
-impl Engine {
+impl RuleEngine {
     pub fn new() -> Self {
         Self::default()
     }
 
     pub fn build(rules: Vec<Rule>) -> Self {
-        let mut e = Engine::new();
+        let mut e = RuleEngine::new();
         for r in rules {
             match r.kind {
                 RuleKind::Exact(_) => e.exact.push(r),
@@ -2353,17 +2353,17 @@ impl Decision {
 }
 
 // ================== 全局安装（运行态接线：非侵入式） ==================
-static GLOBAL_RULES: OnceCell<Arc<Engine>> = OnceCell::new();
+static GLOBAL_RULES: OnceCell<Arc<RuleEngine>> = OnceCell::new();
 static ENABLED: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 /// 在进程内安装一次规则引擎（若多次调用，仅首次生效）
-pub fn install_global(engine: Engine) {
+pub fn install_global(engine: RuleEngine) {
     let _ = GLOBAL_RULES.set(Arc::new(engine));
     ENABLED.store(true, std::sync::atomic::Ordering::Relaxed);
 }
 
 /// 获取全局引擎（未启用或未安装则 None）
-pub fn global() -> Option<&'static Engine> {
+pub fn global() -> Option<&'static RuleEngine> {
     if !ENABLED.load(std::sync::atomic::Ordering::Relaxed) {
         return None;
     }
@@ -2397,7 +2397,7 @@ pub fn init_from_env() {
     };
     let rules = parse_rules(&txt);
     let n = rules.len();
-    let eng = Engine::build(rules);
+    let eng = RuleEngine::build(rules);
     install_global(eng);
     tracing::info!(enabled=%enable, rules=n, "router: global rules engine installed");
 }

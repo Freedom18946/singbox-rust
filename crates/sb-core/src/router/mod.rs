@@ -11,6 +11,9 @@
 
 // 重要：确保 engine 子模块对外可见，供 sb-core/src/lib.rs 重导出使用
 pub mod builder;
+pub mod config_engine;
+pub mod config_explain;
+pub mod config_trace;
 /// Connection manager (Go parity: route/conn.go)
 pub mod conn;
 pub mod dns;
@@ -99,6 +102,8 @@ pub use explain_bridge::rebuild_index;
 #[cfg(feature = "explain")]
 pub use explain_index::get_index;
 // 为了兼容历史导出路径：router::{RouterHandle,RouteCtx,Transport,Router,RouteDecision,RouteTarget,DnsResolve,DnsResult}
+pub use self::config_engine::{Engine, Input};
+pub use self::config_explain::ExplainEngine;
 pub use self::conn::{
     port_protocol, protocol_timeout, CloseHandler, ConnectionManager as RouteConnectionManager,
     Dialer, DirectDialer, InboundContext, TCP_CONNECT_TIMEOUT, UDP_TIMEOUT,
@@ -118,7 +123,6 @@ pub use self::route_connection::{ConnectionRouter, DirectRouter, RouteResult};
 pub use self::runtime_override::{runtime_override_http, runtime_override_udp};
 pub use self::shared_index::{router_index_from_env_with_reload, shared_index};
 pub use crate::outbound::RouteTarget;
-pub use crate::routing::engine::Input;
 
 /// Route decision result for hot reload compatibility.
 /// 热重载兼容的路由决策结果。

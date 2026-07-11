@@ -1,5 +1,7 @@
 #![cfg(feature = "router")]
 #[cfg(feature = "json")]
+use sb_core::router::rules::RuleEngine as Engine;
+#[cfg(feature = "json")]
 use sb_core::router::{json_bridge, rules::*};
 
 #[cfg(feature = "json")]

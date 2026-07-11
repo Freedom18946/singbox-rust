@@ -4,10 +4,10 @@
 use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use sb_adapters::inbound::shadowsocks::{serve, ShadowsocksInboundConfig, ShadowsocksUser};
 use sb_config::ir::{ConfigIR, OutboundIR, OutboundType};
-use sb_core::adapter::bridge::build_bridge;
+use sb_core::adapter::bridge::{build_bridge, publish_runtime_registries};
 use sb_core::adapter::registry::runtime_outbounds;
 use sb_core::outbound::{Endpoint, RouteTarget};
-use sb_core::routing::engine::Engine;
+use sb_core::router::Engine;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
@@ -22,7 +22,7 @@ fn install_rustls_provider() {
 
 fn install_direct_rules_engine() {
     let rules = sb_core::router::rules::parse_rules("default=direct");
-    let engine = sb_core::router::rules::Engine::build(rules);
+    let engine = sb_core::router::rules::RuleEngine::build(rules);
     sb_core::router::rules::install_global(engine);
 }
 
@@ -240,7 +240,8 @@ async fn config_bridge_builds_shadowtls_detour_chain_for_shadowsocks() {
     };
 
     let engine = Engine::new(std::sync::Arc::new(ir.clone()));
-    let _bridge = build_bridge(&ir, engine, sb_core::context::Context::default());
+    let bridge = build_bridge(&ir, engine, sb_core::context::Context::default());
+    publish_runtime_registries(&bridge);
     let outbounds = runtime_outbounds().expect("runtime outbounds should be installed");
 
     let mut stream = outbounds

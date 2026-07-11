@@ -2698,7 +2698,9 @@ fn build_tuic_outbound(
             );
         }
     };
-    let token = ir.token.as_ref()?.clone();
+    // Sing-box TUIC v5 configs call this credential `password`; retain the
+    // legacy `token` spelling as an explicit override for older Rust configs.
+    let token = ir.token.as_ref().or(ir.password.as_ref())?.clone();
 
     // Map UDP relay mode
     let udp_relay_mode = match ir.udp_relay_mode.as_deref() {

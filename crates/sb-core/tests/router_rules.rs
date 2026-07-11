@@ -1,4 +1,5 @@
 #![cfg(feature = "router")]
+use sb_core::router::rules::RuleEngine as Engine;
 use sb_core::router::rules::*;
 use std::net::{IpAddr, Ipv4Addr};
 

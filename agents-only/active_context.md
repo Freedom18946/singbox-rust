@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-11) - MIG-03 WP08 router stack merge DONE
+
+- **WP08 accepted:** `router/` is sole implementation home. `routing/` is a 25-line WP14
+  compatibility facade; ConfigIR engine/explain/trace moved under router, duplicate toy matcher,
+  IR, and reload router were deleted. Router-domain `pub struct Engine` count is one.
+- ConfigIR and rule-set paths share label-aware suffix matching; DNS continues through canonical
+  `RuleMatcher` with no local domain matcher. Explain JSON has an exact field-order/value lock;
+  rule-hot-reload now atomically replaces canonical `Arc<RouterIndex>` built through config pipeline.
+- Acceptance: workspace all-feature check/clippy, fmt, boundaries, diff-check, sb-core/app full and
+  focused router/DNS/hot-reload tests, and 232 Python tool tests pass. Five route/DNS dual-kernel
+  cases have `gate_score=0` and zero mismatches; no new S4 divergence.
+- **Authorized transition:** WP11 is unblocked on serialized WP06 → WP08 → WP11 lane. Next step:
+  inventory all sb-core `SB_*` reads, inject explicit runtime option structs from app composition root.
+- **Scope note:** structural ownership/dedup plus acceptance-drift repairs only. No parity/BHV,
+  packaging, or REALITY denominator movement is claimed.
+
 ## Resume (2026-07-11) - MIG-03 WP07 QUIC family relocation DONE
 
 - **WP07 accepted:** Hysteria v1/v2 inbound/outbound, Naive H2, and shared QUIC protocol code now

@@ -203,7 +203,7 @@ async fn main() -> Result<()> {
 
     // Build adapter-aware bridge and find outbound.
     let bridge = {
-        let engine = sb_core::routing::engine::Engine::new(std::sync::Arc::new(ir.clone()));
+        let engine = sb_core::router::Engine::new(std::sync::Arc::new(ir.clone()));
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default())
     };
 

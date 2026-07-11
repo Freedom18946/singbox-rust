@@ -1,5 +1,5 @@
 #![cfg(feature = "router_json")]
-use crate::router::rules::{self as r, Decision, Engine, Rule, RuleKind};
+use crate::router::rules::{self as r, Decision, Rule, RuleEngine as Engine, RuleKind};
 #[cfg(feature = "metrics")]
 use metrics::counter;
 use serde::Deserialize;

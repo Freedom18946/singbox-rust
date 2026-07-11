@@ -1,4 +1,4 @@
-use sb_core::router::rules::{parse_rules, Decision, Engine, RouteCtx};
+use sb_core::router::rules::{parse_rules, Decision, RouteCtx, RuleEngine as Engine};
 
 #[test]
 fn decide_with_meta_labels_buckets() {

@@ -3,7 +3,7 @@
 use crate::adapter::Bridge;
 use crate::health;
 #[cfg(feature = "router")]
-use crate::routing::engine::Engine;
+use crate::router::Engine;
 use crate::runtime::supervisor::{start_endpoints, start_services};
 #[cfg(feature = "router")]
 use sb_config::ir::ConfigIR;

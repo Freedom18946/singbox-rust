@@ -2,7 +2,7 @@
 use sb_config::ir::ConfigIR;
 use sb_config::validator::v2::to_ir_v1;
 use sb_core::adapter::bridge::build_bridge;
-use sb_core::routing::engine::Engine;
+use sb_core::router::Engine;
 use sb_core::runtime::Runtime;
 use serde_json::json;
 use std::io::{Read, Write};

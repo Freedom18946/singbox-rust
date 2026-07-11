@@ -117,7 +117,7 @@ fn test_route_ir_with_new_fields() {
 fn test_router_parsing_new_fields() {
     use sb_core::adapter::bridge::build_bridge;
     use sb_core::context::Context;
-    use sb_core::routing::engine::Engine;
+    use sb_core::router::Engine;
 
     let config = ConfigIR {
         route: RouteIR {

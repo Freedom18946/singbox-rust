@@ -10,7 +10,7 @@
 //! - Enterprise proxy with department-specific routing
 //! - Premium vs free user routing policies
 
-use sb_core::router::rules::{Decision, Engine, RouteCtx, Rule, RuleKind};
+use sb_core::router::rules::{Decision, RouteCtx, Rule, RuleEngine as Engine, RuleKind};
 use std::net::{IpAddr, Ipv4Addr};
 
 #[test]

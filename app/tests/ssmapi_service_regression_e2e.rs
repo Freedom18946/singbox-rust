@@ -6,7 +6,7 @@ use sb_config::ir::{
     ShadowsocksUserIR,
 };
 use sb_core::adapter::bridge::build_bridge;
-use sb_core::routing::engine::Engine;
+use sb_core::router::Engine;
 use sb_core::runtime::Runtime;
 use sb_types::{Session, TargetAddr};
 use serde_json::{json, Value};
@@ -137,7 +137,7 @@ fn ss_connector(ss_addr: SocketAddr, password: &str) -> ShadowsocksConnector {
 
 fn install_direct_rules_engine() {
     let rules = sb_core::router::rules::parse_rules("default=direct");
-    let engine = sb_core::router::rules::Engine::build(rules);
+    let engine = sb_core::router::rules::RuleEngine::build(rules);
     sb_core::router::rules::install_global(engine);
 }
 

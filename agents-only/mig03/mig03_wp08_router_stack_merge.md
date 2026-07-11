@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # MIG-03 WP08 — 路由双栈合并（router/ + routing/），matcher 原语共享给 DNS
 
-Status: PLANNED
+Status: DONE (2026-07-11)
 Priority: P1
 Depends on: WP06（共同触碰 bridge/registry，强制串行）
 Blocks: WP11
@@ -71,16 +71,16 @@ DNS 规则引擎复用同一套 matcher 原语，不再自带实现。
 
 ## Acceptance
 
-- [ ] `crates/sb-core/src/routing/` 只剩 ≤50 行 re-export 垫片（或已删除且
+- [x] `crates/sb-core/src/routing/` 只剩 ≤50 行 re-export 垫片（或已删除且
       全部调用方切换完成）。
-- [ ] 全仓只有一个 `pub struct Engine`（路由域内）与一套 matcher 原语；
+- [x] 全仓只有一个 `pub struct Engine`（路由域内）与一套 matcher 原语；
       `dns/rule_engine.rs` 不再含独立的 suffix/keyword/regex 匹配实现。
-- [ ] `router_options_parity_test.rs`、`tun_sni_routing.rs`、
+- [x] `router_options_parity_test.rs`、`tun_sni_routing.rs`、
       `rule-hot-reload` bin、`sb-explaind`/`route`/`preview` bins 全部编译且测试绿。
-- [ ] explain JSON 输出逐字段一致（快照测试证明）。
-- [ ] 全局验收门禁五连全绿；`cargo test -p sb-core router` +
+- [x] explain JSON 输出逐字段一致（快照测试证明）。
+- [x] 全局验收门禁五连全绿；`cargo test -p sb-core router` +
       `cargo test -p sb-core dns` 全绿。
-- [ ] 双核回归：route/dns 维度 interop case 无新增差分（S2/S3 定位、S4 归因）。
+- [x] 双核回归：route/dns 维度 interop case 无新增差分（S2/S3 定位、S4 归因）。
 
 ## 验证命令
 
@@ -108,4 +108,18 @@ git diff --check
 
 ## 发现移交
 
-（执行时填写。）
+- 测绘确认 `dns/rule_engine.rs` 在 WP08 前已通过 `router::ruleset::RuleMatcher` 共享
+  exact/suffix/keyword/regex；任务描述中的“本地第三套实现”是过期证据。本包没有为
+  删除数而虚构改动，只把底层 label-aware suffix 原语收敛到 `router::matcher`。
+- `routing/` 最终为 25 行兼容 facade；WP14 删除。合并后 `Engine::handle()` 的隐藏
+  `RouterHandle::from_env()` 构造点消失，剩余 env 读取仍按 WP11 接手。
+- `rule-hot-reload` 已切到 canonical `RouterHandle` + `Arc<RouterIndex>` 原子替换，并走
+  `sb_config::config_from_raw_value` 正典配置流水线；新增外部规则热加载决策测试。
+- 验收暴露两个既有测试/配置漂移并已闭合：tools 聚合 profile 已编译 SSH，旧 missing-
+  SSH 子进程测试会永久等待；ShadowTLS 测试需显式发布 runtime registry。另补 TUIC v5
+  `password` → auth token 兼容，令既有 upstream compatibility 套件恢复全绿。
+- FakeIP interop fixture 缺 strict `type: fakeip`，已补齐。最终五个 route/dns case
+  `gate_score=0` 且 mismatch 数均为 0：`p1_rust_core_dns_via_socks`、
+  `p1_dns_query_endpoint_contract`、`p1_fakeip_dns_query_contract`、
+  `p1_dns_cache_ttl_via_socks`、`p1_sniff_rule_action_tls`。
+- 度量与消费面终态见 `mig03_wp08_router_map.md`。未新增 BHV/divergence；WP11 解锁。

@@ -659,10 +659,7 @@ impl RuleMatcher {
 /// Zero-allocation domain suffix match: "a.example.com" matches suffix "example.com"
 #[inline]
 fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
-    domain == suffix
-        || (domain.len() > suffix.len()
-            && domain.as_bytes()[domain.len() - suffix.len() - 1] == b'.'
-            && domain.ends_with(suffix))
+    crate::router::matcher::domain_matches_suffix(domain, suffix)
 }
 
 fn is_private_ip(ip: &IpAddr) -> bool {

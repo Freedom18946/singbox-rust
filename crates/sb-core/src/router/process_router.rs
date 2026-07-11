@@ -3,7 +3,7 @@
 //! This module integrates process matching with the routing engine to enable
 //! routing decisions based on the process that initiated the connection.
 
-use crate::router::rules::{Decision, Engine, RouteCtx};
+use crate::router::rules::{Decision, RouteCtx, RuleEngine as Engine};
 use sb_platform::process::{
     ConnectionInfo, ProcessInfo, ProcessMatchError, ProcessMatcher, Protocol,
 };

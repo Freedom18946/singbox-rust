@@ -10,7 +10,7 @@
 //! - Implement split routing based on network scope
 //! - Optimize routing for local vs remote destinations
 
-use sb_core::router::rules::{Decision, Engine, RouteCtx, Rule, RuleKind};
+use sb_core::router::rules::{Decision, RouteCtx, Rule, RuleEngine as Engine, RuleKind};
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
 #[test]

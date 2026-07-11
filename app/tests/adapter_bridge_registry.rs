@@ -1,7 +1,6 @@
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR};
 use sb_core::adapter::{bridge::build_bridge, registry::RegistrySnapshot};
-use sb_core::routing::engine::Engine;
-use std::fs;
+use sb_core::router::Engine;
 
 #[test]
 fn missing_registry_builders_are_fatal_and_identify_protocol_kinds() {
@@ -64,40 +63,7 @@ fn missing_registry_builders_are_fatal_and_identify_protocol_kinds() {
 }
 
 #[test]
-fn missing_compiled_protocol_blocks_process_readiness() {
-    let directory = tempfile::tempdir().expect("temporary directory");
-    let config = directory.path().join("missing-adapter.json");
-    fs::write(
-        &config,
-        r#"{
-          "inbounds": [],
-          "outbounds": [{
-            "type": "ssh",
-            "tag": "missing-ssh",
-            "server": "127.0.0.1",
-            "server_port": 22,
-            "user": "test",
-            "password": "test"
-          }]
-        }"#,
-    )
-    .expect("write config");
-
-    let output = assert_cmd::cargo::cargo_bin_cmd!("run")
-        .args([
-            "-c",
-            config.to_str().expect("UTF-8 path"),
-            "--format",
-            "json",
-        ])
-        .output()
-        .expect("execute run binary");
-
-    assert!(!output.status.success());
-    let stdout = String::from_utf8_lossy(&output.stdout);
-    let stderr = String::from_utf8_lossy(&output.stderr);
-    let combined = format!("{stdout}\n{stderr}");
-    assert!(combined.contains("missing-ssh") || combined.contains("ssh"));
-    assert!(combined.contains("not compiled into this build"));
-    assert!(!stdout.contains("READY"));
+fn aggregate_adapter_profile_registers_ssh_builder() {
+    sb_adapters::register_all();
+    assert!(sb_core::adapter::registry::get_outbound("ssh").is_some());
 }

@@ -1,7 +1,7 @@
 //! Rule engine over ConfigIR with support for positive/negative dimensions.
 //! Inputs: host (domain or ip), port, network ("tcp"|"udp"), protocol ("socks"|"http"|..)
 //! Output: outbound name (or type) + trace steps (for opt-in explain).
-use crate::routing::trace::{canonicalize_rule_text, sha8, Step, Trace};
+use crate::router::config_trace::{canonicalize_rule_text, sha8, Step, Trace};
 use sb_config::ir::{ConfigIR, RuleIR};
 use serde::Serialize;
 use std::net::IpAddr;
@@ -102,11 +102,6 @@ impl Engine {
         }
     }
 
-    /// Convert/Get RouterHandle for legacy/compat usage
-    pub fn handle(&self) -> std::sync::Arc<crate::router::RouterHandle> {
-        std::sync::Arc::new(crate::router::RouterHandle::from_env())
-    }
-
     fn host_is_ip(host: &str) -> Option<IpAddr> {
         host.parse::<IpAddr>().ok()
     }
@@ -121,10 +116,7 @@ impl Engine {
                 return true;
             }
             let v_lower = v.to_ascii_lowercase();
-            if needle_lower == v_lower {
-                return true;
-            }
-            if needle_lower.ends_with(&format!(".{}", v_lower)) {
+            if crate::router::matcher::domain_matches_suffix(&needle_lower, &v_lower) {
                 return true;
             }
         }

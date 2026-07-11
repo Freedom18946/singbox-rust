@@ -162,7 +162,7 @@ async fn connect_tcp(
     // Build bridge through required adapter registries.
     #[cfg(feature = "router")]
     let bridge = {
-        let engine = sb_core::routing::engine::Engine::new(std::sync::Arc::new(ir.clone()));
+        let engine = sb_core::router::Engine::new(std::sync::Arc::new(ir.clone()));
         sb_core::adapter::bridge::build_bridge(&ir, engine, sb_core::context::Context::default())
     };
     #[cfg(not(feature = "router"))]
@@ -238,7 +238,7 @@ async fn connect_udp(
         // Build bridge using adapter-aware path
         #[cfg(feature = "router")]
         let bridge = {
-            let engine = sb_core::routing::engine::Engine::new(std::sync::Arc::new(ir.clone()));
+            let engine = sb_core::router::Engine::new(std::sync::Arc::new(ir.clone()));
             sb_core::adapter::bridge::build_bridge(
                 &ir,
                 engine,

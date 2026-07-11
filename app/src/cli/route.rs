@@ -2,7 +2,7 @@ use crate::cli::{output, Format, GlobalArgs};
 use crate::config_loader;
 use anyhow::{Context, Result};
 use clap::Parser;
-use sb_core::routing::ExplainEngine;
+use sb_core::router::ExplainEngine;
 
 #[derive(Parser, Debug, Clone)]
 pub struct RouteArgs {

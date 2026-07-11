@@ -37,7 +37,7 @@ fn init_crypto() {
 
 fn install_direct_rules_engine() {
     let rules = sb_core::router::rules::parse_rules("default=direct");
-    let engine = sb_core::router::rules::Engine::build(rules);
+    let engine = sb_core::router::rules::RuleEngine::build(rules);
     sb_core::router::rules::install_global(engine);
 }
 

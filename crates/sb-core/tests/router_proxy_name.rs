@@ -163,7 +163,7 @@ fn test_router_proxy_name_with_whitespace() {
 
 #[test]
 fn test_router_engine_proxy_name_decisions() {
-    use sb_core::router::rules::{Engine, RouteCtx};
+    use sb_core::router::rules::{RouteCtx, RuleEngine as Engine};
 
     let rules_text = r#"
         exact:pool.example.com = proxy:specialPool

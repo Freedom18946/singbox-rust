@@ -100,7 +100,7 @@ async fn start_trojan_server_with_users(
     key_pem: String,
 ) -> Option<(SocketAddr, mpsc::Sender<()>, NamedTempFile, NamedTempFile)> {
     let rules = sb_core::router::rules::parse_rules("default=direct");
-    sb_core::router::rules::install_global(sb_core::router::rules::Engine::build(rules));
+    sb_core::router::rules::install_global(sb_core::router::rules::RuleEngine::build(rules));
 
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
@@ -382,7 +382,7 @@ async fn test_binary_protocol_backward_compat() {
     key_file.write_all(key.as_bytes()).unwrap();
 
     let rules = sb_core::router::rules::parse_rules("default=direct");
-    sb_core::router::rules::install_global(sb_core::router::rules::Engine::build(rules));
+    sb_core::router::rules::install_global(sb_core::router::rules::RuleEngine::build(rules));
 
     // Test backward compatibility with single password
     #[allow(deprecated)]

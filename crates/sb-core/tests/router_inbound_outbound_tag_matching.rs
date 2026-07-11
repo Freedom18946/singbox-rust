@@ -11,7 +11,7 @@
 //! - Block or allow traffic based on outbound selection
 //! - Implement inbound-specific routing policies
 
-use sb_core::router::rules::{Decision, Engine, RouteCtx, Rule, RuleKind};
+use sb_core::router::rules::{Decision, RouteCtx, Rule, RuleEngine as Engine, RuleKind};
 
 #[test]
 fn test_inbound_tag_exact_match() {
