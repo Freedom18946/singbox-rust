@@ -10,6 +10,23 @@
 
 ---
 
+## Resume (2026-07-11) - MIG-03 WP07 QUIC family relocation DONE
+
+- **WP07 accepted:** Hysteria v1/v2 inbound/outbound, Naive H2, and shared QUIC protocol code now
+  live in sb-adapters. sb-core has no hysteria*/quic/naive_h2 outbound module or protocol reference;
+  Hysteria2 IR construction moved from switchboard into adapter registration.
+- Hysteria2 canonical outbound retains TCP plus relocated UDP PacketConn behavior and full transport
+  fields (Brutal, CA path/PEM, ALPN/SNI, 0-RTT, obfs/salamander). Opt-in app UDP loopback passes with
+  a real authenticated QUIC association; Hysteria v1 E2E, integration tests, and Criterion bench pass.
+- Acceptance: core+adapters tests, workspace all-feature check, strict workspace clippy, fmt,
+  boundaries, diff-check, and focused feature-isolation checks pass. sb-core source drops 4,708 Rust
+  lines. Remaining quinn/hyper users are DNS/DERP/dev or compatibility-feature paths assigned to
+  WP09/WP13, not WP07 protocol ownership.
+- **Authorized transition:** WP08 is next on the serialized WP06 → WP08 → WP11 lane; WP13 remains
+  responsible for legacy feature/dependency edge retirement after its prerequisites.
+- **Scope note:** structural ownership relocation plus preservation/verification of existing
+  protocol behavior only. No parity/BHV, packaging, or REALITY denominator movement is claimed.
+
 ## Resume (2026-07-11) - MIG-03 WP06 scaffold retirement DONE
 
 - **WP06 accepted:** bridge/runtime/switchboard now consume only canonical sb-adapters registry
@@ -138,10 +155,9 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 
 ## Current Build And Gate
 
-- 2026-07-11 WP06 final: workspace all-target/all-feature check, strict clippy, fmt,
-  boundaries, diff-check, and sb-core/sb-adapters/app tests **PASS**.
-- Registry fatal/no-READY contract, SS/Trojan net-e2e, release gui_runtime build and mixed→direct
-  traffic smoke **PASS**. Interop classification and existing non-WP06 failures: WP06 package.
+- 2026-07-11 WP07 final: workspace all-feature check, strict workspace clippy, fmt, boundaries,
+  diff-check, core+adapters tests, Hysteria v1 E2E, Hysteria2 integration/UDP E2E, and benchmark
+  execution **PASS**. Exact evidence and dependency handoffs: WP07 package.
 
 ## T3 ClientHello Fingerprint Parity — T3-0…T3-2 DONE (2026-06-08)
 

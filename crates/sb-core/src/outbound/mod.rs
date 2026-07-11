@@ -48,19 +48,6 @@ pub mod p3_selector;
 // Encrypted outbound protocols
 pub mod address;
 pub mod crypto_types;
-#[cfg(feature = "out_naive")]
-pub mod naive_h2;
-// QUIC types are included in crypto_types
-#[cfg(feature = "out_quic")]
-pub mod quic {
-    pub mod common;
-    pub mod io;
-}
-#[cfg(feature = "out_hysteria")]
-pub mod hysteria;
-#[cfg(feature = "out_hysteria2")]
-pub mod hysteria2;
-
 // Performance optimizations for P0 protocols
 pub mod optimizations;
 

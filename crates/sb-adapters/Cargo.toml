@@ -83,6 +83,7 @@ tokio-rustls = { version = "0.26", optional = true, default-features = false, fe
 # HTTP/2 server dependency for Naive
 h2 = { version = "0.3", optional = true }
 http = { version = "0.2", optional = true }
+hyper = { version = "0.14", features = ["client", "http1", "http2", "tcp"], optional = true }
 
 # Constant-time comparison for authentication
 subtle = "2.5"
@@ -186,8 +187,8 @@ adapter-shadowsocks = ["shadowsocks", "dep:sb-transport", "sb-transport/transpor
 adapter-trojan = ["trojan", "dep:sb-transport", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
 adapter-vmess = ["vmess", "dep:sb-transport", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde"]
 adapter-vless = ["vless", "dep:sb-transport", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
-adapter-hysteria = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile", "dep:sb-tls", "sb-core/out_hysteria"]
-adapter-hysteria2 = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile", "dep:sb-tls", "dep:sb-transport", "sb-core/out_hysteria2"]
+adapter-hysteria = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile", "dep:sb-tls"]
+adapter-hysteria2 = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile", "dep:sb-tls", "dep:sb-transport"]
 adapter-shadowtls = ["shadowtls", "dep:sb-tls", "dep:rustls", "dep:tokio-rustls", "dep:webpki-roots", "dep:sb-transport", "sb-transport/transport_tls"]
 adapter-ssh = ["ssh"]
 adapter-tuic = ["tuic", "dep:sb-tls", "dep:sb-transport"]
@@ -196,7 +197,7 @@ adapter-wireguard = ["out_wireguard"]
 adapter-wireguard-outbound = ["sb-transport", "sb-transport/transport_wireguard"]
 adapter-wireguard-endpoint = ["dep:boringtun", "dep:tun"]
 adapter-tailscale-endpoint = []
-adapter-naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http"]
+adapter-naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http", "dep:hyper", "dep:rustls", "dep:tokio-rustls", "dep:sb-tls"]
 adapter-dns = []
 adapter-tun = ["tun"]
 adapter-redirect = []
@@ -234,6 +235,11 @@ libtailscale = []
 [[bench]]
 name = "adapters_conn"
 harness = false
+
+[[bench]]
+name = "hysteria2_bench"
+harness = false
+required-features = ["bench", "adapter-hysteria2"]
 
 [dev-dependencies]
 sb-test-utils = { path = "../sb-test-utils" }

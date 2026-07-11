@@ -23,6 +23,16 @@ pub struct Hysteria2AdapterConfig {
     pub down_mbps: Option<u32>,
     pub obfs: Option<String>,
     pub salamander: Option<String>,
+    pub brutal: Option<Hysteria2BrutalConfig>,
+    pub tls_ca_paths: Vec<String>,
+    pub tls_ca_pem: Vec<String>,
+    pub zero_rtt_handshake: bool,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct Hysteria2BrutalConfig {
+    pub up_mbps: u32,
+    pub down_mbps: u32,
 }
 
 impl Default for Hysteria2AdapterConfig {
@@ -40,6 +50,10 @@ impl Default for Hysteria2AdapterConfig {
             down_mbps: None,
             obfs: None,
             salamander: None,
+            brutal: None,
+            tls_ca_paths: Vec::new(),
+            tls_ca_pem: Vec::new(),
+            zero_rtt_handshake: false,
         }
     }
 }
@@ -85,16 +99,50 @@ impl Hysteria2Connector {
     }
 }
 
-crate::impl_canonical_outbound!(
-    Hysteria2Connector,
-    "hysteria2",
-    |this: &Hysteria2Connector| this
-        .cfg
-        .tag
-        .clone()
-        .unwrap_or_else(|| "hysteria2".to_string()),
-    &[sb_types::NetworkKind::Tcp]
-);
+impl sb_types::Outbound for Hysteria2Connector {
+    fn r#type(&self) -> &str {
+        "hysteria2"
+    }
+
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new(
+            self.cfg
+                .tag
+                .clone()
+                .unwrap_or_else(|| "hysteria2".to_string()),
+        )
+    }
+
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
+
+    fn dial<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async move {
+            use tokio_util::compat::TokioAsyncReadCompatExt;
+
+            let stream = Hysteria2Connector::dial(self, session)
+                .await
+                .map_err(|error| crate::outbound::core_error(error, session))?;
+            Ok(Box::new(stream.compat()) as sb_types::BoxedStream)
+        })
+    }
+
+    fn listen_packet<'a>(
+        &'a self,
+        session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async move {
+            let inner = Hysteria2Inner::new(&self.cfg)
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            let packet = inner.open_packet(session.packet.idle_timeout).await?;
+            Ok(Box::new(packet) as sb_types::BoxedPacketConn)
+        })
+    }
+}
 
 // ---------------------------------------------------------------------------
 // Full protocol implementation (feature-gated)
@@ -111,6 +159,7 @@ mod proto {
     use std::future::Future;
     use std::io;
     use std::pin::Pin;
+    use std::sync::atomic::{AtomicBool, Ordering};
     use std::sync::Arc;
     use std::task::{Context, Poll};
     use std::time::{Duration, Instant};
@@ -389,6 +438,196 @@ mod proto {
         bandwidth_limiter: Option<Arc<BandwidthLimiter>>,
     }
 
+    #[derive(Debug)]
+    pub(super) struct Hysteria2PacketConn {
+        connection: Connection,
+        session_id: [u8; 8],
+        bandwidth_limiter: Option<Arc<BandwidthLimiter>>,
+        idle_timeout: Duration,
+        deadlines: SyncMutex<(Option<Instant>, Option<Instant>)>,
+        closed: AtomicBool,
+    }
+
+    impl Hysteria2PacketConn {
+        fn ensure_open(&self) -> Result<(), sb_types::CoreError> {
+            if self.closed.load(Ordering::Acquire) {
+                Err(sb_types::CoreError::connect(
+                    sb_types::ConnectErrorKind::Reset,
+                    "packet connection closed",
+                ))
+            } else {
+                Ok(())
+            }
+        }
+
+        fn operation_timeout(&self, read: bool) -> (Instant, Duration) {
+            let deadlines = self.deadlines.lock();
+            let explicit = if read { deadlines.0 } else { deadlines.1 };
+            let now = Instant::now();
+            let duration = explicit
+                .map(|deadline| deadline.saturating_duration_since(now))
+                .unwrap_or(self.idle_timeout);
+            (now + duration, duration)
+        }
+
+        fn check_bandwidth(
+            limiter: &Option<Arc<BandwidthLimiter>>,
+            upload: bool,
+            bytes: usize,
+        ) -> io::Result<()> {
+            let Some(limiter) = limiter else {
+                return Ok(());
+            };
+            let permit = if upload {
+                limiter.permit_up(bytes)
+            } else {
+                limiter.permit_down(bytes)
+            };
+            if permit.allowed < bytes {
+                return Err(io::Error::new(
+                    io::ErrorKind::WouldBlock,
+                    "Hysteria2 bandwidth limit exceeded",
+                ));
+            }
+            if upload {
+                limiter.consume_up(bytes);
+            } else {
+                limiter.consume_down(bytes);
+            }
+            Ok(())
+        }
+
+        async fn send_datagram(
+            &self,
+            data: &[u8],
+            destination: &sb_types::TargetAddr,
+        ) -> io::Result<()> {
+            Self::check_bandwidth(&self.bandwidth_limiter, true, data.len())?;
+            let mut packet = Vec::with_capacity(data.len() + 32);
+            packet.extend_from_slice(&self.session_id);
+            encode_target(&mut packet, destination)?;
+            packet.extend_from_slice(data);
+            self.connection
+                .send_datagram(packet.into())
+                .map_err(|error| io::Error::other(format!("UDP send failed: {error}")))
+        }
+
+        async fn receive_datagram(&self) -> io::Result<(Vec<u8>, sb_types::TargetAddr)> {
+            let datagram = self
+                .connection
+                .read_datagram()
+                .await
+                .map_err(|error| io::Error::other(format!("UDP recv failed: {error}")))?;
+            let data = datagram.as_ref();
+            if data.len() < 9 || data[..8] != self.session_id {
+                return Err(io::Error::new(
+                    io::ErrorKind::InvalidData,
+                    "invalid Hysteria2 UDP session id",
+                ));
+            }
+            let (source, payload_offset) = decode_target(data, 8)?;
+            let payload = data[payload_offset..].to_vec();
+            Self::check_bandwidth(&self.bandwidth_limiter, false, payload.len())?;
+            Ok((payload, source))
+        }
+    }
+
+    pub(super) fn encode_target(
+        packet: &mut Vec<u8>,
+        target: &sb_types::TargetAddr,
+    ) -> io::Result<()> {
+        match target {
+            sb_types::TargetAddr::Socket(address) => match address.ip() {
+                std::net::IpAddr::V4(ip) => {
+                    packet.push(0x01);
+                    packet.extend_from_slice(&ip.octets());
+                }
+                std::net::IpAddr::V6(ip) => {
+                    packet.push(0x04);
+                    packet.extend_from_slice(&ip.octets());
+                }
+            },
+            sb_types::TargetAddr::Domain(host, _) => {
+                let length = u8::try_from(host.len()).map_err(|_| {
+                    io::Error::new(io::ErrorKind::InvalidInput, "domain name too long")
+                })?;
+                packet.push(0x03);
+                packet.push(length);
+                packet.extend_from_slice(host.as_bytes());
+            }
+        }
+        packet.extend_from_slice(&target.port().to_be_bytes());
+        Ok(())
+    }
+
+    pub(super) fn decode_target(
+        packet: &[u8],
+        mut offset: usize,
+    ) -> io::Result<(sb_types::TargetAddr, usize)> {
+        let atyp = *packet
+            .get(offset)
+            .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "missing address type"))?;
+        offset += 1;
+        match atyp {
+            0x01 => {
+                let address = packet.get(offset..offset + 4).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "short IPv4 address")
+                })?;
+                offset += 4;
+                let port = read_port(packet, &mut offset)?;
+                Ok((
+                    sb_types::TargetAddr::Socket(std::net::SocketAddr::from((
+                        std::net::Ipv4Addr::new(address[0], address[1], address[2], address[3]),
+                        port,
+                    ))),
+                    offset,
+                ))
+            }
+            0x04 => {
+                let address = packet.get(offset..offset + 16).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "short IPv6 address")
+                })?;
+                let mut octets = [0u8; 16];
+                octets.copy_from_slice(address);
+                offset += 16;
+                let port = read_port(packet, &mut offset)?;
+                Ok((
+                    sb_types::TargetAddr::Socket(std::net::SocketAddr::from((
+                        std::net::Ipv6Addr::from(octets),
+                        port,
+                    ))),
+                    offset,
+                ))
+            }
+            0x03 => {
+                let length = *packet.get(offset).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "missing domain length")
+                })? as usize;
+                offset += 1;
+                let host = packet.get(offset..offset + length).ok_or_else(|| {
+                    io::Error::new(io::ErrorKind::InvalidData, "short domain address")
+                })?;
+                offset += length;
+                let host = std::str::from_utf8(host)
+                    .map_err(|_| io::Error::new(io::ErrorKind::InvalidData, "invalid domain"))?;
+                let port = read_port(packet, &mut offset)?;
+                Ok((sb_types::TargetAddr::domain(host, port), offset))
+            }
+            _ => Err(io::Error::new(
+                io::ErrorKind::InvalidData,
+                "unsupported address type",
+            )),
+        }
+    }
+
+    fn read_port(packet: &[u8], offset: &mut usize) -> io::Result<u16> {
+        let bytes = packet.get(*offset..*offset + 2).ok_or_else(|| {
+            io::Error::new(io::ErrorKind::InvalidData, "missing destination port")
+        })?;
+        *offset += 2;
+        Ok(u16::from_be_bytes([bytes[0], bytes[1]]))
+    }
+
     impl std::fmt::Debug for Hysteria2Inner {
         fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
             f.debug_struct("Hysteria2Inner")
@@ -411,16 +650,27 @@ mod proto {
                 .with_alpn(alpn)
                 .with_allow_insecure(cfg.skip_cert_verify)
                 .with_sni(cfg.sni.clone())
-                .with_enable_0rtt(false);
+                .with_extra_ca_paths(cfg.tls_ca_paths.clone())
+                .with_extra_ca_pem(cfg.tls_ca_pem.clone())
+                .with_enable_0rtt(cfg.zero_rtt_handshake);
 
             // Determine congestion control algorithm
             let congestion_control = match cfg.congestion_control.as_deref() {
                 Some("cubic") => CongestionControl::Cubic,
                 Some("newreno") => CongestionControl::NewReno,
                 Some("brutal") => {
-                    // Brutal requires explicit bandwidth settings
-                    let up = cfg.up_mbps.unwrap_or(100);
-                    let down = cfg.down_mbps.unwrap_or(100);
+                    let up = cfg
+                        .brutal
+                        .as_ref()
+                        .map(|brutal| brutal.up_mbps)
+                        .or(cfg.up_mbps)
+                        .unwrap_or(100);
+                    let down = cfg
+                        .brutal
+                        .as_ref()
+                        .map(|brutal| brutal.down_mbps)
+                        .or(cfg.down_mbps)
+                        .unwrap_or(100);
                     CongestionControl::Brutal(BrutalConfig {
                         up_mbps: up,
                         down_mbps: down,
@@ -765,6 +1015,98 @@ mod proto {
                 self.bandwidth_limiter.clone(),
             ))
         }
+
+        pub(super) async fn open_packet(
+            &self,
+            idle_timeout: Duration,
+        ) -> Result<Hysteria2PacketConn, sb_types::CoreError> {
+            let connection = self
+                .get_connection()
+                .await
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            let session_id: [u8; 8] = rand::thread_rng().gen();
+            let mut initialization = Vec::with_capacity(9);
+            initialization.push(0x03);
+            initialization.extend_from_slice(&session_id);
+            self.apply_obfuscation(&mut initialization);
+            connection
+                .send_datagram(initialization.into())
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+            Ok(Hysteria2PacketConn {
+                connection,
+                session_id,
+                bandwidth_limiter: self.bandwidth_limiter.clone(),
+                idle_timeout,
+                deadlines: SyncMutex::new((None, None)),
+                closed: AtomicBool::new(false),
+            })
+        }
+    }
+
+    impl sb_types::PacketConn for Hysteria2PacketConn {
+        fn send_to<'a>(
+            &'a self,
+            data: &'a [u8],
+            destination: &'a sb_types::TargetAddr,
+        ) -> sb_types::BoxFuture<'a, Result<usize, sb_types::CoreError>> {
+            Box::pin(async move {
+                self.ensure_open()?;
+                let (deadline, duration) = self.operation_timeout(false);
+                tokio::time::timeout_at(
+                    tokio::time::Instant::from_std(deadline),
+                    self.send_datagram(data, destination),
+                )
+                .await
+                .map_err(|_| sb_types::CoreError::timeout("packet-send", duration))?
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+                Ok(data.len())
+            })
+        }
+
+        fn recv_from<'a>(
+            &'a self,
+            buffer: &'a mut [u8],
+        ) -> sb_types::BoxFuture<'a, Result<(usize, sb_types::TargetAddr), sb_types::CoreError>>
+        {
+            Box::pin(async move {
+                self.ensure_open()?;
+                let (deadline, duration) = self.operation_timeout(true);
+                let (data, source) = tokio::time::timeout_at(
+                    tokio::time::Instant::from_std(deadline),
+                    self.receive_datagram(),
+                )
+                .await
+                .map_err(|_| sb_types::CoreError::timeout("packet-recv", duration))?
+                .map_err(|error| sb_types::CoreError::io(error.to_string()))?;
+                let size = data.len().min(buffer.len());
+                buffer[..size].copy_from_slice(&data[..size]);
+                Ok((size, source))
+            })
+        }
+
+        fn close(&self) -> sb_types::BoxFuture<'_, Result<(), sb_types::CoreError>> {
+            self.closed.store(true, Ordering::Release);
+            Box::pin(async { Ok(()) })
+        }
+
+        fn local_addr(&self) -> Option<sb_types::TargetAddr> {
+            None
+        }
+
+        fn set_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+            *self.deadlines.lock() = (deadline, deadline);
+            Ok(())
+        }
+
+        fn set_read_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+            self.deadlines.lock().0 = deadline;
+            Ok(())
+        }
+
+        fn set_write_deadline(&self, deadline: Option<Instant>) -> Result<(), sb_types::CoreError> {
+            self.deadlines.lock().1 = deadline;
+            Ok(())
+        }
     }
 }
 
@@ -843,5 +1185,32 @@ mod tests {
         assert_eq!(down.allowed, one_megabit_per_sec);
         limiter.consume_down(one_megabit_per_sec);
         assert_eq!(limiter.permit_down(1).allowed, 0);
+    }
+
+    #[cfg(feature = "adapter-hysteria2")]
+    #[test]
+    fn canonical_connector_advertises_tcp_and_udp() {
+        let connector = Hysteria2Connector::default();
+        assert_eq!(
+            connector.network(),
+            &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+        );
+    }
+
+    #[cfg(feature = "adapter-hysteria2")]
+    #[test]
+    fn packet_address_codec_roundtrips_all_address_types() {
+        let targets = [
+            sb_types::TargetAddr::Socket("127.0.0.1:53".parse().unwrap()),
+            sb_types::TargetAddr::Socket("[::1]:443".parse().unwrap()),
+            sb_types::TargetAddr::domain("example.com", 8443),
+        ];
+        for target in targets {
+            let mut packet = Vec::new();
+            proto::encode_target(&mut packet, &target).unwrap();
+            let (decoded, offset) = proto::decode_target(&packet, 0).unwrap();
+            assert_eq!(decoded, target);
+            assert_eq!(offset, packet.len());
+        }
     }
 }

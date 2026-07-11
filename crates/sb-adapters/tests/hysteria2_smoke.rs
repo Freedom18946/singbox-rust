@@ -21,6 +21,10 @@ async fn hysteria2_dial_closed_port_returns_error() {
         down_mbps: None,
         obfs: None,
         salamander: None,
+        brutal: None,
+        tls_ca_paths: Vec::new(),
+        tls_ca_pem: Vec::new(),
+        zero_rtt_handshake: false,
     };
     let conn = Hysteria2Connector::new(cfg);
     let target = TargetAddr::from_host_port("example.com", 443);

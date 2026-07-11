@@ -180,48 +180,6 @@ impl Default for SwitchboardBuilder {
 // IR -> Config mapping helpers (for reuse and contract tests)
 // -----------------------------------------------------------------------------
 
-#[cfg(all(feature = "out_hysteria2", test))]
-fn hysteria2_from_ir(
-    ir: &sb_config::ir::OutboundIR,
-) -> AdapterResult<Option<crate::outbound::hysteria2::Hysteria2Config>> {
-    use crate::outbound::hysteria2::{BrutalConfig, Hysteria2Config};
-    let server = match &ir.server {
-        Some(s) if !s.is_empty() => s.clone(),
-        _ => return Ok(None),
-    };
-    let port = ir
-        .port
-        .ok_or(AdapterError::InvalidConfig("hysteria2.port is required"))?;
-    let password = ir.password.clone().ok_or(AdapterError::InvalidConfig(
-        "hysteria2.password is required",
-    ))?;
-    let brutal = match (ir.brutal_up_mbps, ir.brutal_down_mbps) {
-        (Some(up), Some(down)) => Some(BrutalConfig {
-            up_mbps: up,
-            down_mbps: down,
-        }),
-        _ => None,
-    };
-    let alpn_list = ir.tls_alpn.clone();
-    Ok(Some(Hysteria2Config {
-        server,
-        port,
-        password,
-        congestion_control: ir.congestion_control.clone(),
-        up_mbps: ir.up_mbps,
-        down_mbps: ir.down_mbps,
-        obfs: ir.obfs.clone(),
-        skip_cert_verify: ir.skip_cert_verify.unwrap_or(false),
-        sni: ir.tls_sni.clone(),
-        alpn: alpn_list,
-        salamander: ir.salamander.clone(),
-        brutal,
-        tls_ca_paths: ir.tls_ca_paths.clone(),
-        tls_ca_pem: ir.tls_ca_pem.clone(),
-        zero_rtt_handshake: ir.zero_rtt_handshake.unwrap_or(false),
-    }))
-}
-
 #[cfg(test)]
 mod tests {
     #[allow(unused_imports)]
@@ -250,27 +208,5 @@ mod tests {
         };
         let error = SwitchboardBuilder::from_config_ir(&ir).expect_err("legacy path must fail");
         assert!(error.to_string().contains("adapter::bridge::build_bridge"));
-    }
-
-    #[cfg(feature = "out_hysteria2")]
-    #[test]
-    fn hysteria2_mapping_defaults_and_alpn_split() {
-        let ob = sb_config::ir::OutboundIR {
-            ty: sb_config::ir::OutboundType::Hysteria2,
-            name: Some("hy1".into()),
-            server: Some("hy.example".into()),
-            port: Some(8443),
-            password: Some("pw".into()),
-            tls_alpn: Some(vec!["h3".to_string(), "hysteria2".to_string()]),
-            ..Default::default()
-        };
-
-        let cfg = hysteria2_from_ir(&ob).expect("ok").expect("some");
-        assert_eq!(cfg.server, "hy.example");
-        assert_eq!(cfg.port, 8443);
-        assert!(!cfg.skip_cert_verify);
-        assert!(!cfg.zero_rtt_handshake);
-        let alpn = cfg.alpn.unwrap();
-        assert_eq!(alpn, vec!["h3".to_string(), "hysteria2".to_string()]);
     }
 }

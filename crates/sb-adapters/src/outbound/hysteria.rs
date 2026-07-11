@@ -19,6 +19,43 @@ pub struct HysteriaAdapterConfig {
     pub sni: Option<String>,
 }
 
+/// Relocated protocol-level configuration retained for direct protocol tests.
+#[derive(Debug, Clone)]
+pub struct HysteriaV1Config {
+    pub server: String,
+    pub port: u16,
+    pub protocol: String,
+    pub up_mbps: u32,
+    pub down_mbps: u32,
+    pub obfs: Option<String>,
+    pub auth: Option<String>,
+    pub alpn: Vec<String>,
+    pub recv_window_conn: Option<u64>,
+    pub recv_window: Option<u64>,
+    pub skip_cert_verify: bool,
+    pub sni: Option<String>,
+}
+
+impl From<HysteriaV1Config> for HysteriaAdapterConfig {
+    fn from(config: HysteriaV1Config) -> Self {
+        Self {
+            tag: None,
+            server: config.server,
+            port: config.port,
+            protocol: config.protocol,
+            up_mbps: config.up_mbps,
+            down_mbps: config.down_mbps,
+            obfs: config.obfs,
+            auth: config.auth,
+            alpn: config.alpn,
+            recv_window_conn: config.recv_window_conn,
+            recv_window: config.recv_window,
+            skip_cert_verify: config.skip_cert_verify,
+            sni: config.sni,
+        }
+    }
+}
+
 impl Default for HysteriaAdapterConfig {
     fn default() -> Self {
         Self {
@@ -43,6 +80,34 @@ impl Default for HysteriaAdapterConfig {
 #[derive(Debug, Clone, Default)]
 pub struct HysteriaConnector {
     cfg: HysteriaAdapterConfig,
+}
+
+/// Protocol-level client façade backed by the canonical adapter connector.
+#[derive(Debug, Clone)]
+pub struct HysteriaV1Outbound {
+    inner: HysteriaConnector,
+}
+
+impl HysteriaV1Outbound {
+    pub fn new(config: HysteriaV1Config) -> anyhow::Result<Self> {
+        Ok(Self {
+            inner: HysteriaConnector::new(config.into()),
+        })
+    }
+
+    pub async fn connect(
+        &self,
+        target: &sb_core::outbound::types::HostPort,
+    ) -> std::io::Result<BoxedStream> {
+        let session = sb_types::Session::outbound(sb_types::TargetAddr::from_host_port(
+            target.host.clone(),
+            target.port,
+        ));
+        self.inner
+            .dial(&session)
+            .await
+            .map_err(|error| std::io::Error::other(error.to_string()))
+    }
 }
 
 impl HysteriaConnector {

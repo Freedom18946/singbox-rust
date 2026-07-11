@@ -19,9 +19,14 @@ use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::sync::Notify;
 
 #[cfg(feature = "adapter-hysteria2")]
-use sb_core::outbound::hysteria2::inbound::{
-    Hysteria2Inbound as CoreInbound, Hysteria2ServerConfig, Hysteria2Stream, Hysteria2User,
-    MasqueradeConfig as CoreMasqueradeConfig,
+#[path = "hysteria2_protocol.rs"]
+mod protocol;
+#[cfg(feature = "adapter-hysteria2")]
+use protocol::inbound::Hysteria2Inbound as CoreInbound;
+#[cfg(feature = "adapter-hysteria2")]
+pub use protocol::inbound::{
+    Hysteria2Inbound as ProtocolInbound, Hysteria2ServerConfig, Hysteria2Stream,
+    Hysteria2UdpSession, Hysteria2User, MasqueradeConfig,
 };
 
 /// Hysteria v2 inbound configuration
@@ -38,7 +43,7 @@ pub struct Hysteria2InboundConfig {
     pub stats: Option<Arc<StatsManager>>,
     pub conn_tracker: Arc<sb_common::conntrack::ConnTracker>,
     #[cfg(feature = "adapter-hysteria2")]
-    pub masquerade: Option<CoreMasqueradeConfig>,
+    pub masquerade: Option<MasqueradeConfig>,
     pub router: Arc<router::RouterHandle>,
     pub outbounds: Arc<OutboundRegistryHandle>,
 }
@@ -124,7 +129,7 @@ impl Hysteria2Inbound {
 
     #[cfg(feature = "adapter-hysteria2")]
     pub async fn start_server(&self) -> Result<()> {
-        use sb_core::outbound::hysteria2::inbound::Hysteria2Inbound as CoreInbound;
+        use protocol::inbound::Hysteria2Inbound as CoreInbound;
 
         let cfg = self.config.clone();
         let core_config = Hysteria2ServerConfig {

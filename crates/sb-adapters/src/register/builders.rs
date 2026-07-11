@@ -1913,24 +1913,26 @@ fn build_hysteria2_inbound(
         let masquerade = if let Some(json) = &param.masquerade {
             match serde_json::from_str::<sb_config::ir::MasqueradeIR>(json) {
                 Ok(ir) => match ir.type_.as_str() {
-                    "string" => ir.string.map(|s| {
-                        sb_core::outbound::hysteria2::inbound::MasqueradeConfig::String {
-                            content: s.content,
-                            headers: s.headers.unwrap_or_default().into_iter().collect(),
-                            status_code: s.status_code,
-                        }
-                    }),
-                    "file" => ir.file.map(|f| {
-                        sb_core::outbound::hysteria2::inbound::MasqueradeConfig::File {
+                    "string" => {
+                        ir.string
+                            .map(|s| crate::inbound::hysteria2::MasqueradeConfig::String {
+                                content: s.content,
+                                headers: s.headers.unwrap_or_default().into_iter().collect(),
+                                status_code: s.status_code,
+                            })
+                    }
+                    "file" => ir
+                        .file
+                        .map(|f| crate::inbound::hysteria2::MasqueradeConfig::File {
                             directory: f.directory,
-                        }
-                    }),
-                    "proxy" => ir.proxy.map(|p| {
-                        sb_core::outbound::hysteria2::inbound::MasqueradeConfig::Proxy {
-                            url: p.url,
-                            rewrite_host: p.rewrite_host,
-                        }
-                    }),
+                        }),
+                    "proxy" => {
+                        ir.proxy
+                            .map(|p| crate::inbound::hysteria2::MasqueradeConfig::Proxy {
+                                url: p.url,
+                                rewrite_host: p.rewrite_host,
+                            })
+                    }
                     _ => {
                         warn!("Unknown masquerade type: {}", ir.type_);
                         None
@@ -2740,20 +2742,17 @@ fn build_tuic_outbound(
 }
 
 #[cfg(feature = "adapter-hysteria2")]
-fn build_hysteria2_outbound(
+fn hysteria2_adapter_config(
     param: &OutboundParam,
     ir: &OutboundIR,
-    _ctx: &registry::AdapterOutboundContext,
-) -> CanonicalOutboundBuilderResult {
-    use crate::outbound::hysteria2::{Hysteria2AdapterConfig, Hysteria2Connector};
+) -> Option<crate::outbound::hysteria2::Hysteria2AdapterConfig> {
+    use crate::outbound::hysteria2::{Hysteria2AdapterConfig, Hysteria2BrutalConfig};
 
-    // Extract required fields
     let server = ir.server.as_ref().or(param.server.as_ref())?;
     let port = ir.port.or(param.port)?;
     let password = ir.password.as_ref()?.clone();
 
-    // Build adapter config
-    let cfg = Hysteria2AdapterConfig {
+    Some(Hysteria2AdapterConfig {
         tag: ir.name.clone().or_else(|| param.name.clone()),
         server: server.clone(),
         port,
@@ -2766,9 +2765,25 @@ fn build_hysteria2_outbound(
         down_mbps: ir.down_mbps,
         obfs: ir.obfs.clone(),
         salamander: ir.salamander.clone(),
-    };
+        brutal: match (ir.brutal_up_mbps, ir.brutal_down_mbps) {
+            (Some(up_mbps), Some(down_mbps)) => Some(Hysteria2BrutalConfig { up_mbps, down_mbps }),
+            _ => None,
+        },
+        tls_ca_paths: ir.tls_ca_paths.clone(),
+        tls_ca_pem: ir.tls_ca_pem.clone(),
+        zero_rtt_handshake: ir.zero_rtt_handshake.unwrap_or(false),
+    })
+}
 
-    let connector = Hysteria2Connector::new(cfg);
+#[cfg(feature = "adapter-hysteria2")]
+fn build_hysteria2_outbound(
+    param: &OutboundParam,
+    ir: &OutboundIR,
+    _ctx: &registry::AdapterOutboundContext,
+) -> CanonicalOutboundBuilderResult {
+    use crate::outbound::hysteria2::Hysteria2Connector;
+
+    let connector = Hysteria2Connector::new(hysteria2_adapter_config(param, ir)?);
     let connector_arc = Arc::new(connector);
 
     Some(connector_arc)
@@ -2998,6 +3013,39 @@ mod tests {
         assert_eq!(ir.obfs, Some("test_obfs".to_string()));
         assert_eq!(ir.brutal_up_mbps, Some(100));
         assert_eq!(ir.brutal_down_mbps, Some(100));
+    }
+
+    #[cfg(feature = "adapter-hysteria2")]
+    #[test]
+    fn hysteria2_outbound_mapping_preserves_transport_fields() {
+        let param = OutboundParam {
+            name: Some("hy2-edge".to_string()),
+            ..Default::default()
+        };
+        let ir = OutboundIR {
+            ty: sb_config::ir::OutboundType::Hysteria2,
+            server: Some("hy2.example.com".to_string()),
+            port: Some(8443),
+            password: Some("secret".to_string()),
+            tls_alpn: Some(vec!["h3".to_string(), "hysteria2".to_string()]),
+            tls_ca_paths: vec!["/tmp/ca.pem".to_string()],
+            tls_ca_pem: vec!["PEM".to_string()],
+            brutal_up_mbps: Some(50),
+            brutal_down_mbps: Some(100),
+            zero_rtt_handshake: Some(true),
+            ..Default::default()
+        };
+
+        let config = hysteria2_adapter_config(&param, &ir).expect("valid hysteria2 config");
+        assert_eq!(config.tag.as_deref(), Some("hy2-edge"));
+        assert_eq!(config.server, "hy2.example.com");
+        assert_eq!(config.port, 8443);
+        assert_eq!(config.tls_ca_paths, ["/tmp/ca.pem"]);
+        assert_eq!(config.tls_ca_pem, ["PEM"]);
+        assert!(config.zero_rtt_handshake);
+        let brutal = config.brutal.expect("brutal config");
+        assert_eq!(brutal.up_mbps, 50);
+        assert_eq!(brutal.down_mbps, 100);
     }
 
     #[test]

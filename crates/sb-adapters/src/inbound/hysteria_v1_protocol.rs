@@ -1,256 +1,12 @@
-//! Hysteria v1 protocol implementation
-//!
-//! Hysteria v1 is a QUIC-based proxy protocol with custom congestion control
-//! and UDP relay support.
+//! Hysteria v1 server protocol relocated from sb-core.
 
-use bytes::{BufMut, BytesMut};
-use quinn::{Connection, Endpoint, RecvStream, SendStream};
+use quinn::{Endpoint, RecvStream, SendStream};
 use std::io;
 use std::net::SocketAddr;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::io::{AsyncRead, AsyncWrite};
 use tokio::sync::Mutex;
-
-use super::super::quic::common::{connect as quic_connect, QuicConfig};
-use super::super::types::HostPort;
-
-/// Hysteria v1 configuration
-#[derive(Clone, Debug)]
-pub struct HysteriaV1Config {
-    pub server: String,
-    pub port: u16,
-    pub protocol: String, // "udp", "wechat-video", "faketcp"
-    pub up_mbps: u32,
-    pub down_mbps: u32,
-    pub obfs: Option<String>,
-    pub auth: Option<String>,
-    pub alpn: Vec<String>,
-    pub recv_window_conn: Option<u64>,
-    pub recv_window: Option<u64>,
-    pub skip_cert_verify: bool,
-    pub sni: Option<String>,
-}
-
-impl Default for HysteriaV1Config {
-    fn default() -> Self {
-        Self {
-            server: "127.0.0.1".to_string(),
-            port: 443,
-            protocol: "udp".to_string(),
-            up_mbps: 10,
-            down_mbps: 50,
-            obfs: None,
-            auth: None,
-            alpn: vec!["hysteria".to_string()],
-            recv_window_conn: None,
-            recv_window: None,
-            skip_cert_verify: false,
-            sni: None,
-        }
-    }
-}
-
-/// Hysteria v1 outbound connector
-#[derive(Debug)]
-pub struct HysteriaV1Outbound {
-    config: HysteriaV1Config,
-    quic_config: QuicConfig,
-    connection_pool: Arc<Mutex<Option<Connection>>>,
-}
-
-/// Helper: Encode target address into BytesMut buffer
-fn encode_target_address(buffer: &mut BytesMut, target: &HostPort) -> io::Result<()> {
-    if let Ok(ip) = target.host.parse::<std::net::IpAddr>() {
-        match ip {
-            std::net::IpAddr::V4(v4) => {
-                buffer.put_u8(0x01); // IPv4
-                buffer.put_slice(&v4.octets());
-            }
-            std::net::IpAddr::V6(v6) => {
-                buffer.put_u8(0x04); // IPv6
-                buffer.put_slice(&v6.octets());
-            }
-        }
-    } else {
-        buffer.put_u8(0x03); // Domain
-        let domain_bytes = target.host.as_bytes();
-        if domain_bytes.len() > 255 {
-            return Err(io::Error::new(
-                io::ErrorKind::InvalidInput,
-                "Domain name too long",
-            ));
-        }
-        buffer.put_u8(domain_bytes.len() as u8);
-        buffer.put_slice(domain_bytes);
-    }
-    buffer.put_u16(target.port);
-    Ok(())
-}
-
-impl HysteriaV1Outbound {
-    pub fn new(config: HysteriaV1Config) -> anyhow::Result<Self> {
-        // Build QUIC configuration with default ALPN if needed
-        let alpn_bytes: Vec<Vec<u8>> = if config.alpn.is_empty() {
-            vec![b"hysteria".to_vec()]
-        } else {
-            config.alpn.iter().map(|s| s.as_bytes().to_vec()).collect()
-        };
-
-        let quic_config = QuicConfig::new(config.server.clone(), config.port)
-            .with_alpn(alpn_bytes)
-            .with_allow_insecure(config.skip_cert_verify);
-
-        Ok(Self {
-            config,
-            quic_config,
-            connection_pool: Arc::new(Mutex::new(None)),
-        })
-    }
-
-    /// Get or create a QUIC connection
-    async fn get_connection(&self) -> io::Result<Connection> {
-        // Check if we have a healthy connection
-        let existing_conn = self.connection_pool.lock().await.clone();
-        if let Some(conn) = existing_conn {
-            if conn.close_reason().is_none() {
-                return Ok(conn);
-            }
-        }
-
-        // Create new connection
-        self.create_new_connection().await
-    }
-
-    /// Create a new QUIC connection
-    async fn create_new_connection(&self) -> io::Result<Connection> {
-        let connection = quic_connect(&self.quic_config)
-            .await
-            .map_err(|e| io::Error::other(format!("QUIC connection failed: {}", e)))?;
-
-        // Perform Hysteria v1 handshake
-        self.hysteria_handshake(&connection).await?;
-
-        // Store in pool
-        let mut pool = self.connection_pool.lock().await;
-        *pool = Some(connection.clone());
-
-        Ok(connection)
-    }
-
-    /// Perform Hysteria v1 handshake
-    async fn hysteria_handshake(&self, connection: &Connection) -> io::Result<()> {
-        // Open handshake stream
-        let (mut send_stream, mut recv_stream) = connection
-            .open_bi()
-            .await
-            .map_err(|e| io::Error::other(format!("Failed to open handshake stream: {}", e)))?;
-
-        // Build handshake packet
-        let mut handshake = BytesMut::new();
-
-        // Protocol version (v1)
-        handshake.put_u8(0x01);
-
-        // Bandwidth configuration
-        handshake.put_u32(self.config.up_mbps);
-        handshake.put_u32(self.config.down_mbps);
-
-        // Authentication
-        if let Some(ref auth) = self.config.auth {
-            handshake.put_u8(auth.len() as u8);
-            handshake.put_slice(auth.as_bytes());
-        } else {
-            handshake.put_u8(0);
-        }
-
-        // Obfuscation
-        if let Some(ref obfs) = self.config.obfs {
-            handshake.put_u8(obfs.len() as u8);
-            handshake.put_slice(obfs.as_bytes());
-        } else {
-            handshake.put_u8(0);
-        }
-
-        // Send handshake
-        send_stream
-            .write_all(&handshake)
-            .await
-            .map_err(|e| io::Error::other(format!("Handshake write failed: {}", e)))?;
-
-        send_stream
-            .finish()
-            .map_err(|e| io::Error::other(format!("Handshake finish failed: {}", e)))?;
-
-        // Read handshake response
-        let mut response = [0u8; 2];
-        recv_stream
-            .read_exact(&mut response)
-            .await
-            .map_err(|e| io::Error::other(format!("Handshake response read failed: {}", e)))?;
-
-        // Check response
-        match response[0] {
-            0x00 => Ok(()),
-            0x01 => Err(io::Error::new(
-                io::ErrorKind::PermissionDenied,
-                "Hysteria v1 authentication failed",
-            )),
-            code => Err(io::Error::other(format!(
-                "Hysteria v1 handshake failed with code: {}",
-                code
-            ))),
-        }
-    }
-
-    /// Create TCP tunnel through Hysteria v1
-    async fn create_tcp_tunnel(
-        &self,
-        connection: &Connection,
-        target: &HostPort,
-    ) -> io::Result<(SendStream, RecvStream)> {
-        // Open bidirectional stream
-        let (mut send_stream, recv_stream) = connection
-            .open_bi()
-            .await
-            .map_err(|e| io::Error::other(format!("Failed to open tunnel stream: {}", e)))?;
-
-        // Build connect request
-        let mut request = BytesMut::new();
-        request.put_u8(0x01); // Command: TCP connect
-
-        // Encode target address
-        encode_target_address(&mut request, target)?;
-
-        // Send connect request
-        send_stream
-            .write_all(&request)
-            .await
-            .map_err(|e| io::Error::other(format!("Connect request write failed: {}", e)))?;
-
-        Ok((send_stream, recv_stream))
-    }
-}
-
-impl HysteriaV1Outbound {
-    pub const fn protocol_name(&self) -> &'static str {
-        "hysteria"
-    }
-
-    pub async fn connect(&self, target: &HostPort) -> io::Result<HysteriaV1Stream> {
-        self.connect_tunnel(target).await
-    }
-
-    pub async fn connect_tunnel(&self, target: &HostPort) -> io::Result<HysteriaV1Stream> {
-        let connection = self.get_connection().await?;
-        let (send_stream, recv_stream) = self.create_tcp_tunnel(&connection, target).await?;
-
-        Ok(HysteriaV1Stream {
-            send: send_stream,
-            recv: recv_stream,
-        })
-    }
-}
 
 /// Hysteria v1 stream wrapper
 pub struct HysteriaV1Stream {
@@ -345,7 +101,7 @@ impl HysteriaV1Inbound {
             .ok_or_else(|| io::Error::new(io::ErrorKind::InvalidData, "No private key found"))?;
 
         // Build TLS config
-        crate::tls::ensure_rustls_crypto_provider();
+        sb_tls::ensure_crypto_provider();
 
         let mut tls_config = rustls::ServerConfig::builder()
             .with_no_client_auth()
@@ -566,7 +322,6 @@ pub struct HysteriaV1ServerConfig {
     pub recv_window: Option<u64>,
 }
 
-/// UDP session for Hysteria v1
 #[derive(Clone, Debug)]
 pub struct UdpSession {
     pub session_id: u32,
@@ -575,7 +330,6 @@ pub struct UdpSession {
     pub last_activity: std::time::Instant,
 }
 
-/// UDP session manager
 pub struct UdpSessionManager {
     sessions: Arc<Mutex<std::collections::HashMap<u32, UdpSession>>>,
     timeout: Duration,
@@ -595,8 +349,7 @@ impl UdpSessionManager {
         client_addr: SocketAddr,
         target_addr: SocketAddr,
     ) {
-        let mut sessions = self.sessions.lock().await;
-        sessions.insert(
+        self.sessions.lock().await.insert(
             session_id,
             UdpSession {
                 session_id,
@@ -608,17 +361,14 @@ impl UdpSessionManager {
     }
 
     pub async fn get_session(&self, session_id: u32) -> Option<UdpSession> {
-        let sessions = self.sessions.lock().await;
-        sessions.get(&session_id).cloned()
+        self.sessions.lock().await.get(&session_id).cloned()
     }
 
     pub async fn cleanup_expired(&self) {
-        let mut sessions = self.sessions.lock().await;
         let now = std::time::Instant::now();
-        sessions.retain(|_, session| now.duration_since(session.last_activity) < self.timeout);
+        self.sessions
+            .lock()
+            .await
+            .retain(|_, session| now.duration_since(session.last_activity) < self.timeout);
     }
 }
-
-#[cfg(test)]
-#[path = "v1_tests.rs"]
-mod tests;

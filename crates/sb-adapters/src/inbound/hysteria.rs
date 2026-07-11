@@ -5,7 +5,14 @@ use crate::traits::BoxedStream;
 use std::net::SocketAddr;
 
 #[cfg(feature = "adapter-hysteria")]
-use sb_core::outbound::hysteria::v1::{HysteriaV1Inbound as CoreInbound, HysteriaV1ServerConfig};
+#[path = "hysteria_v1_protocol.rs"]
+mod protocol;
+#[cfg(feature = "adapter-hysteria")]
+use protocol::HysteriaV1Inbound as CoreInbound;
+#[cfg(feature = "adapter-hysteria")]
+pub use protocol::{
+    HysteriaV1Inbound, HysteriaV1ServerConfig, HysteriaV1Stream, UdpSession, UdpSessionManager,
+};
 
 /// Hysteria v1 user configuration
 #[derive(Debug, Clone)]
@@ -79,7 +86,7 @@ impl HysteriaInbound {
 
     #[cfg(feature = "adapter-hysteria")]
     pub async fn start_server(&self) -> Result<()> {
-        use sb_core::outbound::hysteria::v1::HysteriaV1Inbound as CoreInbound;
+        use protocol::HysteriaV1Inbound as CoreInbound;
 
         // Use first user's auth for single-user mode
         let auth = if !self.config.users.is_empty() {
@@ -181,5 +188,26 @@ impl sb_core::adapter::InboundTaskDriver for HysteriaInbound {
                 Err(_) => Err(std::io::Error::other("No tokio runtime available")),
             }
         }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn relocated_inbound_requires_user_auth() {
+        let error = HysteriaInbound::new(HysteriaInboundConfig::default())
+            .expect_err("empty user list must be rejected");
+        assert!(error.to_string().contains("at least one user"));
+
+        let inbound = HysteriaInbound::new(HysteriaInboundConfig {
+            users: vec![HysteriaUserConfig {
+                name: "alice".to_string(),
+                auth: "secret".to_string(),
+            }],
+            ..Default::default()
+        });
+        assert!(inbound.is_ok());
     }
 }

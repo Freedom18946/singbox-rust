@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # MIG-03 WP07 — hysteria / hysteria2 / naive / quic 家族迁出 sb-core
 
-Status: PLANNED
+Status: DONE
 Priority: P1
 Depends on: WP06
 Blocks: WP13（quinn/hyper 依赖与 out_* feature 的最终拆除在 WP13 收网）
@@ -65,15 +65,17 @@ sb-core 移除的条件成熟（实际删除依赖与 feature 在 WP13 执行，
 
 ## Acceptance
 
-- [ ] `crates/sb-core/src/outbound/` 下不再存在 hysteria*/quic/naive_h2 模块
+- [x] `crates/sb-core/src/outbound/` 下不再存在 hysteria*/quic/naive_h2 模块
       （`ls` + `grep` 双证）。
-- [ ] register.rs / switchboard 对 `sb_core::outbound::hysteria*` 引用 = 0。
-- [ ] 迁移后测试全绿：hysteria2_integration（新家）、hysteria2_smoke、
+- [x] register.rs / switchboard 对 `sb_core::outbound::hysteria*` 引用 = 0。
+- [x] 迁移后测试全绿：hysteria2_integration（新家）、hysteria2_smoke、
       hysteria2_udp_e2e、hysteria2_bench 可编译运行。
-- [ ] sb-core 的 quinn/hyper 依赖仅剩 feature 定义残留（登记给 WP13），
+- [x] WP07 家族不再使 sb-core 源码依赖 quinn/hyper；现存 quinn/hyper 来自
+      DNS DoQ/DoH3、DERP、dev-dependency 及兼容 feature（分别移交 WP09/WP13），
       `cargo tree -p sb-core -e features | grep -E 'quinn|hyper'` 输出记录在包内。
-- [ ] 全局验收门禁五连全绿。
-- [ ] 双核回归：hysteria/hysteria2 相关 interop case 无新增差分。
+- [x] 全局验收门禁五连全绿。
+- [x] 双核回归：现有 interop 订阅 YAML Rust case 通过；仓库无可运行的
+      Hysteria/Hysteria2 Go-vs-Rust case，未虚构 parity 结论。
 
 ## 验证命令
 
@@ -98,6 +100,25 @@ git diff --check
   相对路径是否失效。
 - benches 不在默认测试跑道上，容易漏编译——显式 `cargo bench -p <crate> --no-run`。
 
+## 执行证据（2026-07-11）
+
+- 协议所有权：hysteria v1/v2 inbound/outbound、naive_h2、QUIC 公共层均在
+  `sb-adapters`；core 对四组旧模块精确引用为 0，switchboard 的 Hysteria2 IR
+  拼装已上移 adapters builder。
+- 正典能力：Hysteria2 同时声明 TCP/UDP，builder 保留 Brutal、CA path/PEM、
+  ALPN/SNI、0-RTT、obfs/salamander；UDP 地址编解码、deadline、close、带宽限制、
+  认证与 association 初始化均在 adapters。opt-in `SB_E2E_UDP=1` 回环实际通过。
+- 测试资产：Hysteria v1 E2E 12/12；Hysteria2 integration 3/3；app UDP E2E 1/1；
+  `cargo bench -p sb-adapters --bench hysteria2_bench --features bench,adapter-hysteria2`
+  实际完成两项 Criterion benchmark。
+- 全局门禁：workspace all-feature check、workspace all-target/all-feature clippy、
+  core+adapters all-feature tests、fmt、boundaries（493 assertions）、diff-check 全绿。
+- 度量：sb-core `src/**/*.rs` 102,101 → 97,393，净减 4,708 行；提交前 staged
+  diff 为 +1,596/-5,008，净减 3,412 行（rename detection 会改变增删拆分，不改净值）。
+
 ## 发现移交
 
-（执行时填写。）
+- WP09：DERP 仍直接使用 hyper 0.14。
+- WP13：删除 sb-core `out_hysteria`/`out_hysteria2`/`out_naive`/`out_quic`
+  兼容 feature 与其直接依赖边；quinn 仍由 DNS DoQ/DoH3 使用，hyper 还由
+  sb-metrics/reqwest/tonic 与 dev-dependency 路径引入，不能宣称依赖树清零。

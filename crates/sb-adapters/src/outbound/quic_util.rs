@@ -165,6 +165,20 @@ pub async fn quic_connect(cfg: &QuicConfig) -> anyhow::Result<quinn::Connection>
     Err(last_err.unwrap_or_else(|| anyhow::anyhow!("QUIC connect: no addresses")))
 }
 
+/// Parse a comma-separated ALPN list from an environment variable.
+#[allow(dead_code)]
+pub fn alpn_from_env(env_var: &str) -> Vec<Vec<u8>> {
+    std::env::var(env_var)
+        .ok()
+        .map(|value| {
+            value
+                .split(',')
+                .map(|protocol| protocol.trim().as_bytes().to_vec())
+                .collect()
+        })
+        .unwrap_or_default()
+}
+
 /// Wrapper for Quinn bidirectional stream that implements AsyncRead + AsyncWrite
 pub(crate) struct QuicBidiStream {
     recv: quinn::RecvStream,
@@ -237,5 +251,16 @@ mod tests {
         assert!(!config.allow_insecure);
         assert_eq!(config.sni, Some("sni.example.com".to_string()));
         assert!(config.enable_0rtt);
+    }
+
+    #[test]
+    fn parses_alpn_from_environment() {
+        let key = format!("SB_ADAPTERS_QUIC_ALPN_TEST_{}", std::process::id());
+        std::env::set_var(&key, "h3,hysteria2");
+        assert_eq!(
+            alpn_from_env(&key),
+            vec![b"h3".to_vec(), b"hysteria2".to_vec()]
+        );
+        std::env::remove_var(key);
     }
 }

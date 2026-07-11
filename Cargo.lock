@@ -7089,6 +7089,7 @@ dependencies = [
  "hmac 0.12.1",
  "http 0.2.12",
  "humantime",
+ "hyper 0.14.32",
  "ipnet",
  "libc",
  "md-5",

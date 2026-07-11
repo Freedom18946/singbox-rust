@@ -4,10 +4,10 @@
 
 #[cfg(test)]
 mod tests {
-    use sb_core::outbound::hysteria::v1::{
-        HysteriaV1Config, HysteriaV1Inbound, HysteriaV1Outbound, HysteriaV1ServerConfig,
-        UdpSessionManager,
+    use sb_adapters::inbound::hysteria::{
+        HysteriaV1Inbound, HysteriaV1ServerConfig, UdpSessionManager,
     };
+    use sb_adapters::outbound::hysteria::{HysteriaV1Config, HysteriaV1Outbound};
     use sb_core::outbound::types::HostPort;
     use std::io;
     use std::net::SocketAddr;

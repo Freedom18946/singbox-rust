@@ -315,6 +315,8 @@ pub mod http;
 pub mod hysteria;
 #[cfg(feature = "adapter-hysteria2")]
 pub mod hysteria2;
+#[cfg(feature = "adapter-naive")]
+pub mod naive_h2;
 #[cfg(feature = "adapter-shadowsocks")]
 pub mod shadowsocks;
 #[cfg(feature = "legacy_shadowsocksr")]
@@ -644,6 +646,10 @@ impl TryFrom<&sb_config::ir::OutboundIR> for hysteria2::Hysteria2Connector {
             down_mbps: None,
             obfs: None,
             salamander: None,
+            brutal: None,
+            tls_ca_paths: ir.tls_ca_paths.clone(),
+            tls_ca_pem: ir.tls_ca_pem.clone(),
+            zero_rtt_handshake: ir.zero_rtt_handshake.unwrap_or(false),
         };
 
         Ok(Self::new(cfg))
