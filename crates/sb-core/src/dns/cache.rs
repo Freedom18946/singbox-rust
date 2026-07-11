@@ -180,33 +180,22 @@ pub struct DnsCache {
 impl DnsCache {
     /// 创建新的 DNS 缓存
     pub fn new(max_entries: usize) -> Self {
-        let negative_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_NEGATIVE_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(300),
-        );
+        Self::with_options(
+            max_entries,
+            &crate::runtime_options::DnsRuntimeOptions::default(),
+        )
+    }
 
-        let min_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_MIN_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5),
-        );
-
-        let max_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_MAX_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(3600),
-        );
-
+    pub fn with_options(
+        max_entries: usize,
+        options: &crate::runtime_options::DnsRuntimeOptions,
+    ) -> Self {
         Self {
             cache: Arc::new(Mutex::new(HashMap::new())),
             max_entries,
-            negative_ttl,
-            min_ttl,
-            max_ttl,
+            negative_ttl: Duration::from_secs(options.answer_cache_negative_ttl_s),
+            min_ttl: Duration::from_secs(options.answer_cache_min_ttl_s),
+            max_ttl: Duration::from_secs(options.answer_cache_max_ttl_s),
             disable_expire: false,
         }
     }
@@ -448,13 +437,10 @@ pub struct CacheManager {
 impl CacheManager {
     /// 创建新的缓存管理器
     pub fn new(cache: Arc<DnsCache>) -> Self {
-        let cleanup_interval = Duration::from_secs(
-            std::env::var("SB_DNS_CACHE_CLEANUP_INTERVAL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(300),
-        );
+        Self::with_interval(cache, Duration::from_secs(300))
+    }
 
+    pub fn with_interval(cache: Arc<DnsCache>, cleanup_interval: Duration) -> Self {
         Self {
             cache,
             cleanup_interval,
@@ -511,9 +497,17 @@ mod tests {
         }
     }
 
+    fn test_cache(capacity: usize) -> DnsCache {
+        let options = crate::runtime_options::DnsRuntimeOptions {
+            answer_cache_min_ttl_s: 0,
+            ..crate::runtime_options::DnsRuntimeOptions::default()
+        };
+        DnsCache::with_options(capacity, &options)
+    }
+
     #[test]
     fn test_cache_basic_operations() {
-        let cache = DnsCache::new(10);
+        let cache = test_cache(10);
         let key = make_key("example.com");
 
         // 缓存未命中
@@ -531,7 +525,7 @@ mod tests {
 
     #[test]
     fn test_negative_cache() {
-        let cache = DnsCache::new(10);
+        let cache = test_cache(10);
         let key = make_key("nonexistent.com");
 
         // 存入负缓存
@@ -545,9 +539,8 @@ mod tests {
     #[test]
     fn test_cache_expiration() {
         // 设置较小的 min_ttl 用于测试
-        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
 
-        let cache = DnsCache::new(10);
+        let cache = test_cache(10);
         let key = make_key("example.com");
 
         // 存入短 TTL 的条目
@@ -561,12 +554,11 @@ mod tests {
         assert!(cache.get(&key).is_none());
 
         // 清理环境变量
-        std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
 
     #[test]
     fn test_cache_stats() {
-        let cache = DnsCache::new(10);
+        let cache = test_cache(10);
 
         // 添加一些条目
         for i in 0..5 {
@@ -593,9 +585,8 @@ mod tests {
     #[tokio::test]
     async fn test_cache_manager() {
         // 设置较小的 min_ttl 用于测试
-        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
 
-        let cache = Arc::new(DnsCache::new(10));
+        let cache = Arc::new(test_cache(10));
         let _manager = CacheManager::new(cache.clone());
 
         // 添加一个短 TTL 的条目
@@ -620,7 +611,6 @@ mod tests {
         assert!(cache.get(&key).is_none());
 
         // 清理环境变量
-        std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
 
     // =========================================================================
@@ -629,7 +619,7 @@ mod tests {
 
     #[test]
     fn test_independent_cache_different_transport_tags_are_separate() {
-        let cache = DnsCache::new(100);
+        let cache = test_cache(100);
 
         // Same domain, same qtype, but different transport tags.
         let key_upstream_a = make_key_with_transport("example.com", "google-dns");
@@ -651,7 +641,7 @@ mod tests {
 
     #[test]
     fn test_independent_cache_none_tag_separate_from_tagged() {
-        let cache = DnsCache::new(100);
+        let cache = test_cache(100);
 
         // Key without transport_tag (shared cache mode)
         let key_shared = make_key("example.com");
@@ -673,7 +663,7 @@ mod tests {
 
     #[test]
     fn test_independent_cache_same_tag_shares() {
-        let cache = DnsCache::new(100);
+        let cache = test_cache(100);
 
         let key1 = make_key_with_transport("example.com", "upstream-1");
         let key2 = make_key_with_transport("example.com", "upstream-1");
@@ -688,7 +678,7 @@ mod tests {
 
     #[test]
     fn test_independent_cache_stats_counts_all_entries() {
-        let cache = DnsCache::new(100);
+        let cache = test_cache(100);
 
         // Insert same domain with two different transport tags.
         let key_a = make_key_with_transport("example.com", "dns-a");
@@ -709,9 +699,8 @@ mod tests {
     #[test]
     fn test_disable_expire_entries_never_expire() {
         // Use min_ttl=0 so the short TTL isn't clamped up.
-        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
 
-        let cache = DnsCache::new(10).with_disable_expire(true);
+        let cache = test_cache(10).with_disable_expire(true);
         assert!(cache.disable_expire());
 
         let key = make_key("example.com");
@@ -731,15 +720,11 @@ mod tests {
         assert_eq!(cached.ips, answer.ips);
         // TTL should be the original value, not a decremented one.
         assert_eq!(cached.ttl, Duration::from_millis(10));
-
-        std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
 
     #[test]
     fn test_disable_expire_false_entries_still_expire() {
-        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
-
-        let cache = DnsCache::new(10).with_disable_expire(false);
+        let cache = test_cache(10).with_disable_expire(false);
         assert!(!cache.disable_expire());
 
         let key = make_key("expire-test.com");
@@ -750,15 +735,11 @@ mod tests {
 
         // Should expire normally.
         assert!(cache.get(&key).is_none());
-
-        std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
 
     #[test]
     fn test_disable_expire_cleanup_is_noop() {
-        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
-
-        let cache = DnsCache::new(10).with_disable_expire(true);
+        let cache = test_cache(10).with_disable_expire(true);
 
         let key = make_key("cleanup-test.com");
         let answer = make_answer(6, Duration::from_millis(10));
@@ -781,16 +762,12 @@ mod tests {
 
         // Entry should still be accessible.
         assert!(cache.get(&key).is_some());
-
-        std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
 
     #[test]
     fn test_disable_expire_lru_eviction_still_works() {
-        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
-
         // Cache with capacity of 2.
-        let cache = DnsCache::new(2).with_disable_expire(true);
+        let cache = test_cache(2).with_disable_expire(true);
 
         let key1 = make_key("first.com");
         let key2 = make_key("second.com");
@@ -817,15 +794,11 @@ mod tests {
             cache.get(&key3).is_some(),
             "newly inserted entry should exist"
         );
-
-        std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
 
     #[test]
     fn test_disable_expire_peek_remaining_returns_original_ttl() {
-        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
-
-        let cache = DnsCache::new(10).with_disable_expire(true);
+        let cache = test_cache(10).with_disable_expire(true);
 
         let key = make_key("peek-test.com");
         let ttl = Duration::from_millis(10);
@@ -840,8 +813,6 @@ mod tests {
             "peek_remaining should return Some when disable_expire is true"
         );
         assert_eq!(remaining.unwrap(), ttl);
-
-        std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
 
     // =========================================================================
@@ -850,9 +821,7 @@ mod tests {
 
     #[test]
     fn test_independent_cache_with_disable_expire() {
-        std::env::set_var("SB_DNS_MIN_TTL_S", "0");
-
-        let cache = DnsCache::new(100).with_disable_expire(true);
+        let cache = test_cache(100).with_disable_expire(true);
 
         let key_a = make_key_with_transport("example.com", "dns-a");
         let key_b = make_key_with_transport("example.com", "dns-b");
@@ -869,7 +838,5 @@ mod tests {
 
         let cached_b = cache.get(&key_b).unwrap();
         assert_eq!(cached_b.ips[0], IpAddr::V4(Ipv4Addr::new(1, 2, 3, 2)));
-
-        std::env::remove_var("SB_DNS_MIN_TTL_S");
     }
 }

@@ -7,13 +7,17 @@ pub fn try_override(
 ) -> Option<(String, String)> {
     if let Some(host) = _q.host.as_ref().or(_q.sni.as_ref()) {
         let host_norm = super::normalize_host(host);
-        if let Some((decision, reason)) = super::runtime_override_http(&host_norm, Some(_q.port)) {
+        if let Some((decision, reason)) = super::runtime_override_http_with_raw(
+            _r.runtime_options().runtime_override.as_deref(),
+            &host_norm,
+            Some(_q.port),
+        ) {
             return Some((decision.to_string(), reason.to_string()));
         }
     }
 
     if let Some(domain) = &_q.sni {
-        if let Ok(domain_overrides) = std::env::var("SB_ROUTER_DOMAIN_OVERRIDES") {
+        if let Some(domain_overrides) = _r.runtime_options().domain_overrides.as_deref() {
             for override_rule in domain_overrides.split(',') {
                 if let Some((pattern, decision)) = override_rule.split_once('=') {
                     if domain.contains(pattern.trim()) {
@@ -188,16 +192,19 @@ pub fn try_exact(_r: &RouterHandle, sni: &str) -> Option<(String, String)> {
 mod tests {
     use super::{try_override, RouterHandle};
     use crate::router::{explain::ExplainQuery, router_build_index_from_str};
-    use crate::testutil::EnvVarGuard;
+    use crate::runtime_options::RouterRuntimeOptions;
+    use std::sync::Arc;
 
     #[test]
     fn try_override_uses_runtime_override_query_seam() {
-        let _override = EnvVarGuard::set(
-            "SB_ROUTER_OVERRIDE",
-            "exact:api.example.com=proxy;default=reject",
-        );
         let idx = router_build_index_from_str("default=unresolved", 64).expect("router index");
-        let handle = RouterHandle::from_index(idx);
+        let handle = RouterHandle::from_index_with_options(
+            idx,
+            Arc::new(RouterRuntimeOptions {
+                runtime_override: Some("exact:api.example.com=proxy;default=reject".into()),
+                ..Default::default()
+            }),
+        );
         let query = ExplainQuery {
             sni: Some("api.example.com".into()),
             host: None,

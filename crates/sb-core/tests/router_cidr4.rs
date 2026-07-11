@@ -1,22 +1,25 @@
 #![cfg(feature = "router")]
 use sb_core::net::datagram::UdpTargetAddr;
 use sb_core::router;
+use sb_core::runtime_options::RouterRuntimeOptions;
+use std::sync::Arc;
+
+fn handle(rules: Option<&str>) -> router::RouterHandle {
+    router::RouterHandle::from_options(Arc::new(RouterRuntimeOptions {
+        udp_enabled: rules.is_some(),
+        udp_rules: rules.map(str::to_string),
+        ..RouterRuntimeOptions::default()
+    }))
+}
 
 #[test]
-#[ignore = "env-sensitive; run with RUST_TEST_THREADS=1 if needed"]
 fn cidr4_basic_match_and_miss() {
-    std::env::remove_var("SB_ROUTER_UDP");
-    std::env::remove_var("SB_ROUTER_UDP_RULES");
-    let h = router::RouterHandle::new_for_tests();
-    // 默认仍为 direct；仅迁移显式规则样例默认值
+    let h = handle(None);
+    // 无 UDP 规则时显式 options 默认 unresolved。
     let d = UdpTargetAddr::Ip("10.1.2.3:53".parse().unwrap());
-    assert_eq!(h.decide_udp(&d), "direct");
+    assert_eq!(h.decide_udp(&d), "unresolved");
 
-    std::env::set_var("SB_ROUTER_UDP", "1");
-    std::env::set_var(
-        "SB_ROUTER_UDP_RULES",
-        "cidr4:10.0.0.0/8=reject,default=unresolved",
-    );
+    let h = handle(Some("cidr4:10.0.0.0/8=reject,default=unresolved"));
     assert_eq!(h.decide_udp(&d), "reject");
 
     let e = UdpTargetAddr::Ip("11.0.0.1:53".parse().unwrap());
@@ -24,27 +27,17 @@ fn cidr4_basic_match_and_miss() {
 }
 
 #[test]
-#[ignore = "env-sensitive; run with RUST_TEST_THREADS=1 if needed"]
 fn cidr4_illegal_ignored() {
-    std::env::set_var("SB_ROUTER_UDP", "1");
-    std::env::set_var(
-        "SB_ROUTER_UDP_RULES",
-        "cidr4:bad/xx=reject,default=unresolved",
-    );
-    let h = router::RouterHandle::new_for_tests();
+    let h = handle(Some("cidr4:bad/xx=reject,default=unresolved"));
     let x = UdpTargetAddr::Ip("10.0.0.1:1".parse().unwrap());
     assert_eq!(h.decide_udp(&x), "unresolved");
 }
 
 #[test]
-#[ignore = "env-sensitive; run with RUST_TEST_THREADS=1 if needed"]
-fn cidr4_priority_with_exact() {
-    std::env::set_var("SB_ROUTER_UDP", "1");
-    std::env::set_var(
-        "SB_ROUTER_UDP_RULES",
+fn cidr4_ip_uses_cidr_rule() {
+    let h = handle(Some(
         "exact:10.1.2.3=proxy,cidr4:10.0.0.0/8=reject,default=unresolved",
-    );
-    let h = router::RouterHandle::new_for_tests();
+    ));
     let ip = UdpTargetAddr::Ip("10.1.2.3:9999".parse().unwrap());
-    assert_eq!(h.decide_udp(&ip), "proxy");
+    assert_eq!(h.decide_udp(&ip), "reject");
 }

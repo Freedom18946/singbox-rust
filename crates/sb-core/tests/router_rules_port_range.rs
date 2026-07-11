@@ -1,5 +1,7 @@
 #![cfg(feature = "router")]
-use sb_core::router::decide_http;
+use sb_core::router::RouterHandle;
+use sb_core::runtime_options::RouterRuntimeOptions;
+use std::sync::Arc;
 
 #[test]
 fn http_port_range_matches_first_wins() {
@@ -8,17 +10,16 @@ fn http_port_range_matches_first_wins() {
     portrange:1500-1600=reject
     default=unresolved
     "#;
-    std::env::set_var("SB_ROUTER_RULES", rules);
+    let h = RouterHandle::from_options(Arc::new(RouterRuntimeOptions {
+        rules_inline: rules.into(),
+        ..RouterRuntimeOptions::default()
+    }));
 
     // 1500 命中首条 portrange -> proxy
-    let decision = decide_http("no.match:1500");
-    assert_eq!(decision.target, "proxy");
+    assert_eq!(h.decide_http("no.match:1500"), "proxy");
     // 边界值 1000/2000
-    let decision = decide_http("no.match:1000");
-    assert_eq!(decision.target, "proxy");
-    let decision = decide_http("no.match:2000");
-    assert_eq!(decision.target, "proxy");
+    assert_eq!(h.decide_http("no.match:1000"), "proxy");
+    assert_eq!(h.decide_http("no.match:2000"), "proxy");
     // 区间外 -> 默认
-    let decision = decide_http("no.match:2020");
-    assert_eq!(decision.target, "unresolved");
+    assert_eq!(h.decide_http("no.match:2020"), "unresolved");
 }

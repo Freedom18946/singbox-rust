@@ -17,7 +17,11 @@ pub async fn greet_noauth(stream: &mut TcpStream) -> anyhow::Result<()> {
 }
 
 /// UDP ASSOCIATE, returns the UDP relay endpoint (BND.ADDR/BND.PORT).
-pub async fn udp_associate(stream: &mut TcpStream, bind: SocketAddr) -> anyhow::Result<SocketAddr> {
+pub async fn udp_associate(
+    stream: &mut TcpStream,
+    bind: SocketAddr,
+    resolve_bound_domain: bool,
+) -> anyhow::Result<SocketAddr> {
     // VER=5, CMD=3(UDP ASSOC), RSV=0, ATYP/ADDR/PORT = client bind (hint; many servers ignore and return their addr)
     let mut req = vec![0x05, 0x03, 0x00];
     match bind.ip() {
@@ -70,10 +74,7 @@ pub async fn udp_associate(stream: &mut TcpStream, bind: SocketAddr) -> anyhow::
             stream.read_exact(&mut p).await?;
             let dom = String::from_utf8_lossy(&d).to_string();
             let port = u16::from_be_bytes(p);
-            let enable = std::env::var("SB_SOCKS_UDP_RESOLVE_BND")
-                .ok()
-                .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-            if enable {
+            if resolve_bound_domain {
                 if let Ok(mut it) = tokio::net::lookup_host(format!("{dom}:{port}")).await {
                     if let Some(sa) = it.next() {
                         sa

@@ -21,73 +21,57 @@ pub struct DnsIntegrationConfig {
 
 impl Default for DnsIntegrationConfig {
     fn default() -> Self {
+        Self::from_options(&crate::runtime_options::RouterRuntimeOptions::default())
+    }
+}
+
+impl DnsIntegrationConfig {
+    #[must_use]
+    pub fn from_options(options: &crate::runtime_options::RouterRuntimeOptions) -> Self {
         Self {
-            enabled: router_dns_from_env(),
-            timeout_ms: router_dns_timeout_ms_from_env(),
+            enabled: options.dns_enabled,
+            timeout_ms: options.dns_integration_timeout_ms,
             enhanced_metrics: true,
             resolver_name: "default".to_string(),
         }
     }
 }
 
-fn parse_router_dns_env(value: Option<&str>) -> Result<bool, Arc<str>> {
-    match value {
-        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
-        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
-        Some(raw) => Err(format!(
-            "router env 'SB_ROUTER_DNS' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
-        )
-        .into()),
-        None => Ok(false),
-    }
-}
-
-fn router_dns_from_env() -> bool {
-    let raw = std::env::var("SB_ROUTER_DNS").ok();
-    match parse_router_dns_env(raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default false");
-            false
-        }
-    }
-}
-
-fn parse_router_dns_timeout_ms_env(value: Option<&str>) -> Result<u64, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<u64>().map_err(|err| {
-            format!(
-                "router env 'SB_ROUTER_DNS_TIMEOUT_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(5000),
-    }
-}
-
-fn router_dns_timeout_ms_from_env() -> u64 {
-    let raw = std::env::var("SB_ROUTER_DNS_TIMEOUT_MS").ok();
-    match parse_router_dns_timeout_ms_env(raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default 5000");
-            5000
-        }
-    }
-}
-
 /// Set up DNS-enabled routing with the default DNS resolver
 pub fn setup_dns_routing() -> RouterHandle {
-    setup_dns_routing_with_config(DnsIntegrationConfig::default())
+    setup_dns_routing_with_runtime_options(Arc::new(
+        crate::runtime_options::CoreRuntimeOptions::default(),
+    ))
+}
+
+#[must_use]
+pub fn setup_dns_routing_with_runtime_options(
+    runtime_options: Arc<crate::runtime_options::CoreRuntimeOptions>,
+) -> RouterHandle {
+    let config = DnsIntegrationConfig::from_options(&runtime_options.router);
+    setup_dns_routing_with_config_and_options(config, runtime_options)
 }
 
 /// Set up DNS-enabled routing with custom configuration
 pub fn setup_dns_routing_with_config(config: DnsIntegrationConfig) -> RouterHandle {
-    let mut router = RouterHandle::from_env();
+    setup_dns_routing_with_config_and_options(
+        config,
+        Arc::new(crate::runtime_options::CoreRuntimeOptions::default()),
+    )
+}
+
+fn setup_dns_routing_with_config_and_options(
+    config: DnsIntegrationConfig,
+    runtime_options: Arc<crate::runtime_options::CoreRuntimeOptions>,
+) -> RouterHandle {
+    let mut router = RouterHandle::from_options(Arc::new(runtime_options.router.clone()));
 
     if config.enabled {
-        let dns_resolver: Arc<dyn Resolver> = crate::dns::global::get()
-            .unwrap_or_else(|| Arc::new(ResolverHandle::from_env_or_default()));
+        let dns_resolver: Arc<dyn Resolver> = crate::dns::global::get().unwrap_or_else(|| {
+            Arc::new(ResolverHandle::from_options(Arc::new(
+                runtime_options.dns.clone(),
+            )))
+        });
 
         if config.enhanced_metrics {
             let enhanced_resolver =
@@ -106,7 +90,9 @@ pub fn setup_dns_routing_with_resolver(
     resolver: Arc<dyn Resolver>,
     config: DnsIntegrationConfig,
 ) -> RouterHandle {
-    let mut router = RouterHandle::from_env();
+    let mut router = RouterHandle::from_options(Arc::new(
+        crate::runtime_options::RouterRuntimeOptions::default(),
+    ));
 
     if config.enabled {
         if config.enhanced_metrics {
@@ -122,11 +108,7 @@ pub fn setup_dns_routing_with_resolver(
 
 /// Validate DNS integration setup
 pub fn validate_dns_integration(router: &RouterHandle) -> Result<(), String> {
-    // Check if DNS is enabled in environment
-    let dns_enabled = std::env::var("SB_ROUTER_DNS")
-        .ok()
-        .map(|v| v == "1")
-        .unwrap_or(false);
+    let dns_enabled = router.runtime_options().dns_enabled;
 
     if dns_enabled && !router.has_dns_resolver() {
         return Err("DNS routing is enabled but no DNS resolver is configured".to_string());
@@ -209,41 +191,7 @@ mod tests {
 
     #[test]
     fn test_validate_dns_integration_no_resolver() {
-        // When SB_ROUTER_DNS is not set, a router without resolver should be valid
-        // Note: We can't reliably test env-var-dependent behavior in parallel tests,
-        // so we only test the case where no resolver is configured and DNS is not
-        // explicitly enabled (the common default case).
         let router = RouterHandle::from_env();
-        // If SB_ROUTER_DNS happens to be "1" (set by another test), this would fail,
-        // but in practice, validation just checks consistency.
-        // Test the direct logic: router without resolver and dns not enabled = ok
-        if std::env::var("SB_ROUTER_DNS")
-            .ok()
-            .map(|v| v == "1")
-            .unwrap_or(false)
-        {
-            // Another test set the env var; skip this assertion
-            assert!(validate_dns_integration(&router).is_err());
-        } else {
-            assert!(validate_dns_integration(&router).is_ok());
-        }
-    }
-
-    #[test]
-    fn invalid_router_dns_env_reports_explicitly() {
-        let err = super::parse_router_dns_env(Some("on"))
-            .expect_err("unrecognized boolean env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_DNS"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_router_dns_timeout_ms_env_reports_explicitly() {
-        let err = super::parse_router_dns_timeout_ms_env(Some("bad-ms"))
-            .expect_err("invalid timeout env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_DNS_TIMEOUT_MS"));
-        assert!(msg.contains("silent parse fallback is disabled"));
+        assert!(validate_dns_integration(&router).is_ok());
     }
 }

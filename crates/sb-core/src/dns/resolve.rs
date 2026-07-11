@@ -23,9 +23,8 @@ enum QSel {
 }
 
 fn qsel_from_env() -> QSel {
-    match std::env::var("SB_DNS_QTYPE")
-        .unwrap_or_else(|_| "auto".into())
-        .to_ascii_lowercase()
+    match crate::runtime_options::DnsRuntimeOptions::default()
+        .qtype
         .as_str()
     {
         "a" => QSel::A,
@@ -35,9 +34,8 @@ fn qsel_from_env() -> QSel {
 }
 
 fn backend_from_env() -> DnsBackend {
-    match std::env::var("SB_DNS_MODE")
-        .unwrap_or_else(|_| "system".into())
-        .to_ascii_lowercase()
+    match crate::runtime_options::DnsRuntimeOptions::default()
+        .mode
         .as_str()
     {
         "system" => DnsBackend::System,
@@ -51,23 +49,17 @@ fn backend_from_env() -> DnsBackend {
 }
 
 fn timeout_from_env() -> u64 {
-    std::env::var("SB_DNS_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(1500)
+    crate::runtime_options::DnsRuntimeOptions::default().timeout_ms
 }
 
 #[cfg(any(test, feature = "dev-cli"))]
 fn doh_url_from_env() -> String {
-    std::env::var("SB_DNS_DOH_URL")
-        .unwrap_or_else(|_| "https://cloudflare-dns.com/dns-query".into())
+    crate::runtime_options::DnsRuntimeOptions::default().doh_url
 }
 
 #[cfg(any(test, feature = "dev-cli"))]
 fn dot_addr_from_env() -> Option<SocketAddr> {
-    std::env::var("SB_DNS_DOT_ADDR")
-        .ok()
-        .and_then(|s| s.parse::<SocketAddr>().ok())
+    crate::runtime_options::DnsRuntimeOptions::default().dot_addr
 }
 
 /// 统一解析入口：返回 (IP 列表, 可选 TTL 秒)
@@ -229,9 +221,7 @@ async fn udp_resolve_qtype(
         use crate::dns::udp::{build_query, parse_answers};
         use std::time::Duration;
         let q = build_query(_host, _qtype)?;
-        let svr = std::env::var("SB_DNS_UDP_SERVER")
-            .unwrap_or_else(|_| "1.1.1.1:53".into())
-            .parse::<SocketAddr>()?;
+        let svr = crate::runtime_options::DnsRuntimeOptions::default().udp_server;
         let sock = tokio::net::UdpSocket::bind("0.0.0.0:0").await?;
         sock.send_to(&q, svr).await?;
         let mut buf = [0u8; 1500];
@@ -335,14 +325,12 @@ async fn doh_resolve(_host: &str, _port: u16, _timeout_ms: u64) -> Result<Vec<So
 
 #[cfg(any(test, feature = "dev-cli"))]
 fn doq_addr_from_env() -> Option<SocketAddr> {
-    std::env::var("SB_DNS_DOQ_ADDR")
-        .ok()
-        .and_then(|s| s.parse::<SocketAddr>().ok())
+    crate::runtime_options::DnsRuntimeOptions::default().doq_addr
 }
 
 #[cfg(any(test, feature = "dev-cli"))]
 fn doq_server_name_from_env() -> Option<String> {
-    std::env::var("SB_DNS_DOQ_SERVER_NAME").ok()
+    crate::runtime_options::DnsRuntimeOptions::default().doq_server_name
 }
 
 #[cfg(feature = "dns_doq")]
@@ -407,27 +395,17 @@ pub async fn resolve_all_compat(host: &str, port: u16) -> std::io::Result<Vec<So
 
 #[cfg(feature = "dns_cache")]
 fn cache_enabled() -> bool {
-    std::env::var("SB_DNS_CACHE_ENABLE")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false)
+    crate::runtime_options::DnsRuntimeOptions::default().cache_enabled
 }
 
 #[cfg(feature = "dns_cache")]
 fn cache_params() -> (usize, u64, u64) {
-    let cap = std::env::var("SB_DNS_CACHE_CAP")
-        .ok()
-        .and_then(|v| v.parse::<usize>().ok())
-        .unwrap_or(4096);
-    let neg = std::env::var("SB_DNS_CACHE_NEG_TTL_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(20_000);
-    let stale = std::env::var("SB_DNS_CACHE_STALE_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(0);
-    (cap, neg, stale)
+    let options = crate::runtime_options::DnsRuntimeOptions::default();
+    (
+        options.resolve_cache_capacity,
+        options.cache_negative_ttl_ms,
+        options.cache_stale_ms,
+    )
 }
 
 #[cfg(feature = "dns_cache")]
@@ -552,10 +530,7 @@ where
     if res.is_empty() {
         cache.put_negative(cache_key.clone());
     } else {
-        let ttl = std::env::var("SB_DNS_CACHE_TTL_SEC")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(60);
+        let ttl = crate::runtime_options::DnsRuntimeOptions::default().cache_ttl_s as u32;
         let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
         let answer = super::DnsAnswer::new(
             ips,
@@ -646,10 +621,7 @@ async fn resolve_cached_qtype(
         cache.put_negative(cache_key.clone());
     } else {
         // TTL：保守取 60s；如后端提供 TTL，可在 udp/dot/doh 解析处带回真实 TTL
-        let ttl = std::env::var("SB_DNS_CACHE_TTL_SEC")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(60);
+        let ttl = crate::runtime_options::DnsRuntimeOptions::default().cache_ttl_s as u32;
         let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
         let answer = super::DnsAnswer::new(
             ips,
@@ -694,10 +666,7 @@ async fn refresh_cached_qtype(
     if res.is_empty() {
         cache.put_negative(ck.clone());
     } else {
-        let ttl = std::env::var("SB_DNS_CACHE_TTL_SEC")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(60);
+        let ttl = crate::runtime_options::DnsRuntimeOptions::default().cache_ttl_s as u32;
         let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
         let answer = super::DnsAnswer::new(
             ips,
@@ -739,10 +708,7 @@ where
     if res.is_empty() {
         cache.put_negative(ck.clone());
     } else {
-        let ttl = std::env::var("SB_DNS_CACHE_TTL_SEC")
-            .ok()
-            .and_then(|v| v.parse::<u32>().ok())
-            .unwrap_or(60);
+        let ttl = crate::runtime_options::DnsRuntimeOptions::default().cache_ttl_s as u32;
         let ips: Vec<std::net::IpAddr> = res.iter().map(|sa| sa.ip()).collect();
         let answer = super::DnsAnswer::new(
             ips,
@@ -786,10 +752,8 @@ mod tests {
     }
 
     #[test]
-    fn test_timeout_from_env_fallback() {
-        // If env var is not set or invalid, should use default 1500ms
-        std::env::remove_var("SB_DNS_TIMEOUT_MS");
+    fn test_timeout_default() {
         let timeout = timeout_from_env();
-        assert_eq!(timeout, 1500, "should use default timeout when env not set");
+        assert_eq!(timeout, 1500);
     }
 }

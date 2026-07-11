@@ -81,8 +81,8 @@ pub fn global_status() -> Option<&'static HealthStatus> {
     STATUS.get()
 }
 
-pub async fn spawn_if_enabled() {
-    if !enabled() {
+pub async fn spawn_if_enabled(options: &crate::runtime_options::ServiceRuntimeOptions) {
+    if !options.proxy_health_enabled {
         return;
     }
     let registry = registry::global();
@@ -91,22 +91,23 @@ pub async fn spawn_if_enabled() {
     }
     let st = STATUS.get_or_init(HealthStatus::new).clone();
     let _ = STATES.get_or_init(DashMap::new);
-    let interval_ms = interval_ms();
+    let interval = options.proxy_health_interval;
+    let timeout = options.proxy_health_timeout;
 
     tokio::spawn(async move {
         loop {
-            tokio::time::sleep(Duration::from_millis(interval_ms)).await;
+            tokio::time::sleep(interval).await;
             if let Some(reg) = registry::global() {
                 // Check default endpoint
                 if let Some(ep) = reg.default.clone() {
-                    let _ = one_check(&st, &ep).await;
-                    let _ = one_check_ep("default", &ep).await;
+                    let _ = one_check(&st, &ep, timeout).await;
+                    let _ = one_check_ep("default", &ep, timeout).await;
                 }
                 // Check pool endpoints
                 for pool in reg.pools.values() {
                     for (i, ep) in pool.endpoints.iter().enumerate() {
                         let key = format!("{}#{}", pool.name, i);
-                        let _ = one_check_ep(&key, ep).await;
+                        let _ = one_check_ep(&key, ep, timeout).await;
                     }
                 }
             }
@@ -114,12 +115,12 @@ pub async fn spawn_if_enabled() {
     });
 }
 
-async fn one_check(st: &HealthStatus, ep: &ProxyEndpoint) -> anyhow::Result<()> {
+async fn one_check(st: &HealthStatus, ep: &ProxyEndpoint, timeout: Duration) -> anyhow::Result<()> {
     let t0 = Instant::now();
     let _ = label(ep.kind);
     let check_result = match ep.kind {
-        ProxyKind::Http => check_http(ep.clone()).await,
-        ProxyKind::Socks5 => check_socks5(ep.clone()).await,
+        ProxyKind::Http => check_http(ep.clone(), timeout).await,
+        ProxyKind::Socks5 => check_socks5(ep.clone(), timeout).await,
     };
 
     *st.last_check.lock() = Some(Instant::now());
@@ -163,12 +164,12 @@ async fn one_check(st: &HealthStatus, ep: &ProxyEndpoint) -> anyhow::Result<()> 
     Ok(())
 }
 
-async fn one_check_ep(key: &str, ep: &ProxyEndpoint) -> anyhow::Result<()> {
+async fn one_check_ep(key: &str, ep: &ProxyEndpoint, timeout: Duration) -> anyhow::Result<()> {
     let t0 = Instant::now();
     let _ = label(ep.kind);
     let check_result = match ep.kind {
-        ProxyKind::Http => check_http(ep.clone()).await,
-        ProxyKind::Socks5 => check_socks5(ep.clone()).await,
+        ProxyKind::Http => check_http(ep.clone(), timeout).await,
+        ProxyKind::Socks5 => check_socks5(ep.clone(), timeout).await,
     };
 
     let Some(states) = STATES.get() else {
@@ -229,7 +230,7 @@ async fn one_check_ep(key: &str, ep: &ProxyEndpoint) -> anyhow::Result<()> {
     Ok(())
 }
 
-async fn check_http(ep: ProxyEndpoint) -> anyhow::Result<()> {
+async fn check_http(ep: ProxyEndpoint, timeout: Duration) -> anyhow::Result<()> {
     use anyhow::Context;
     let mut s = TcpStream::connect(ep.addr).await.context("tcp connect")?;
 
@@ -238,7 +239,7 @@ async fn check_http(ep: ProxyEndpoint) -> anyhow::Result<()> {
     s.write_all(req).await?;
 
     let mut buf = [0u8; 128];
-    let n = tokio::time::timeout(Duration::from_millis(timeout_ms()), s.read(&mut buf)).await??;
+    let n = tokio::time::timeout(timeout, s.read(&mut buf)).await??;
 
     // Parse HTTP response line properly instead of using magic indices
     let response = std::str::from_utf8(&buf[..n]).unwrap_or("");
@@ -271,39 +272,19 @@ fn parse_http_status_line(line: &str) -> Option<(&str, u16)> {
     None
 }
 
-async fn check_socks5(ep: ProxyEndpoint) -> anyhow::Result<()> {
+async fn check_socks5(ep: ProxyEndpoint, timeout: Duration) -> anyhow::Result<()> {
     use anyhow::Context;
     let mut s = TcpStream::connect(ep.addr).await.context("tcp connect")?;
 
     // SOCKS5 method selection: NOAUTH
     s.write_all(&[0x05, 0x01, 0x00]).await?;
     let mut buf = [0u8; 2];
-    tokio::time::timeout(Duration::from_millis(timeout_ms()), s.read_exact(&mut buf)).await??;
+    tokio::time::timeout(timeout, s.read_exact(&mut buf)).await??;
 
     if buf == [0x05, 0x00] {
         return Ok(());
     }
     Err(anyhow::anyhow!("socks5 method negotiation failed"))
-}
-
-fn enabled() -> bool {
-    std::env::var("SB_PROXY_HEALTH_ENABLE")
-        .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-}
-
-fn interval_ms() -> u64 {
-    std::env::var("SB_PROXY_HEALTH_INTERVAL_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(3000)
-}
-
-fn timeout_ms() -> u64 {
-    std::env::var("SB_PROXY_HEALTH_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(800)
 }
 
 const fn label(k: ProxyKind) -> &'static str {

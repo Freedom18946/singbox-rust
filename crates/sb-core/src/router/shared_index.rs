@@ -1,8 +1,6 @@
-use super::{
-    router_build_index_from_str, router_rules_max_from_env, spawn_rules_hot_reload, RouterIndex,
-};
+use super::{router_build_index_from_str, spawn_rules_hot_reload, RouterIndex};
 use crate::router::decision_intern::intern_decision;
-use once_cell::sync::Lazy;
+use crate::runtime_options::RouterRuntimeOptions;
 use std::sync::{Arc, RwLock};
 
 pub(crate) fn empty_router_index(default: &str) -> Arc<RouterIndex> {
@@ -37,21 +35,21 @@ pub(crate) fn empty_router_index(default: &str) -> Arc<RouterIndex> {
         default: intern_decision(default),
         gen: 0,
         checksum: [0; 32],
+        suffix_strict: false,
+        suffix_trie_enabled: false,
         rules: vec![],
     })
 }
 
-fn router_rules_from_env_sync() -> String {
-    let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
-    if inline.is_empty() {
-        if let Ok(path) = std::env::var("SB_ROUTER_RULES_FILE") {
-            std::fs::read_to_string(path).unwrap_or_default()
-        } else {
-            String::new()
-        }
-    } else {
-        inline
+fn rules_text(options: &RouterRuntimeOptions) -> String {
+    if !options.rules_inline.is_empty() {
+        return options.rules_inline.clone();
     }
+    options
+        .rules_file
+        .as_ref()
+        .and_then(|path| std::fs::read_to_string(path).ok())
+        .unwrap_or_default()
 }
 
 fn build_router_index_or_unresolved(text: &str, max_rules: usize) -> Arc<RouterIndex> {
@@ -59,66 +57,58 @@ fn build_router_index_or_unresolved(text: &str, max_rules: usize) -> Arc<RouterI
         .unwrap_or_else(|_| empty_router_index("unresolved"))
 }
 
-fn load_router_index_from_env_sync() -> Arc<RouterIndex> {
-    let max_rules = router_rules_max_from_env();
-    let text = router_rules_from_env_sync();
-    build_router_index_or_unresolved(&text, max_rules)
+#[must_use]
+pub fn shared_index_with_options(options: &RouterRuntimeOptions) -> Arc<RwLock<Arc<RouterIndex>>> {
+    Arc::new(RwLock::new(build_router_index_or_unresolved(
+        &rules_text(options),
+        options.rules_max,
+    )))
 }
 
-pub(crate) fn shared_hot_reload_enabled_from_env() -> bool {
-    let file = std::env::var("SB_ROUTER_RULES_FILE").unwrap_or_default();
-    !file.is_empty() && super::router_rules_hot_reload_ms_from_env() > 0
+#[must_use]
+pub fn shared_index() -> Arc<RwLock<Arc<RouterIndex>>> {
+    shared_index_with_options(&RouterRuntimeOptions::default())
 }
 
-pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>> {
-    let max_rules = router_rules_max_from_env();
-    let init_rules = if let Ok(path) = std::env::var("SB_ROUTER_RULES_FILE") {
-        tokio::fs::read_to_string(&path).await.unwrap_or_default()
+pub async fn router_index_with_reload(
+    options: Arc<RouterRuntimeOptions>,
+) -> Arc<RwLock<Arc<RouterIndex>>> {
+    let initial = if let Some(path) = options.rules_file.as_ref() {
+        tokio::fs::read_to_string(path).await.unwrap_or_default()
     } else {
-        std::env::var("SB_ROUTER_RULES").unwrap_or_default()
+        options.rules_inline.clone()
     };
-    let idx = build_router_index_or_unresolved(&init_rules, max_rules);
-    let shared = Arc::new(RwLock::new(idx));
-    let _ = spawn_rules_hot_reload(shared.clone()).await;
+    let shared = Arc::new(RwLock::new(build_router_index_or_unresolved(
+        &initial,
+        options.rules_max,
+    )));
+    let _ = spawn_rules_hot_reload(shared.clone(), options).await;
     shared
 }
 
-static SHARED_INDEX: Lazy<Arc<RwLock<Arc<RouterIndex>>>> =
-    Lazy::new(|| Arc::new(RwLock::new(load_router_index_from_env_sync())));
-
-static SHARED_INDEX_ENV_CACHE: Lazy<RwLock<Option<String>>> = Lazy::new(|| RwLock::new(None));
-
-fn refresh_shared_index_from_env_if_needed() {
-    let max_rules = router_rules_max_from_env();
-    let inline = std::env::var("SB_ROUTER_RULES").unwrap_or_default();
-    let file = std::env::var("SB_ROUTER_RULES_FILE").unwrap_or_default();
-
-    let key = format!("max_rules={max_rules}\nfile={file}\ninline={inline}");
-    {
-        let mut cache = SHARED_INDEX_ENV_CACHE
-            .write()
-            .unwrap_or_else(|e| e.into_inner());
-        if cache.as_deref() == Some(&key) {
-            return;
-        }
-        *cache = Some(key);
-    }
-
-    let idx = load_router_index_from_env_sync();
-    let mut shared = SHARED_INDEX.write().unwrap_or_else(|e| e.into_inner());
-    *shared = idx;
+pub async fn router_index_from_env_with_reload() -> Arc<RwLock<Arc<RouterIndex>>> {
+    router_index_with_reload(Arc::new(RouterRuntimeOptions::default())).await
 }
 
-pub fn shared_index() -> Arc<RwLock<Arc<RouterIndex>>> {
-    refresh_shared_index_from_env_if_needed();
-    if tokio::runtime::Handle::try_current().is_ok() && shared_hot_reload_enabled_from_env() {
-        static STARTED: Lazy<std::sync::Once> = Lazy::new(std::sync::Once::new);
-        STARTED.call_once(|| {
-            let shared = SHARED_INDEX.clone();
-            tokio::spawn(async move {
-                let _ = spawn_rules_hot_reload(shared).await;
-            });
-        });
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn options_build_isolated_indexes() {
+        let first = RouterRuntimeOptions {
+            rules_inline: "exact:a.example=direct\ndefault=reject".into(),
+            ..RouterRuntimeOptions::default()
+        };
+        let second = RouterRuntimeOptions {
+            rules_inline: "exact:b.example=proxy\ndefault=unresolved".into(),
+            ..RouterRuntimeOptions::default()
+        };
+        let first = shared_index_with_options(&first);
+        let second = shared_index_with_options(&second);
+        assert_ne!(
+            first.read().unwrap().checksum,
+            second.read().unwrap().checksum
+        );
     }
-    SHARED_INDEX.clone()
 }

@@ -1,4 +1,3 @@
-use std::time::Duration;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::TcpStream;
 
@@ -14,21 +13,19 @@ pub async fn connect_direct(authority: &str) -> anyhow::Result<TcpStream> {
 }
 
 /// 通过 HTTP 代理建立 CONNECT 隧道
-pub async fn connect_via_http_proxy(authority: &str) -> anyhow::Result<TcpStream> {
-    let proxy = std::env::var("SB_TCP_PROXY_HTTP")
-        .map_err(|_| anyhow::anyhow!("SB_TCP_PROXY_HTTP not set"))?;
-    let timeout_ms = std::env::var("SB_TCP_PROXY_TIMEOUT_MS")
-        .ok()
-        .and_then(|v| v.parse::<u64>().ok())
-        .unwrap_or(8000);
+pub async fn connect_via_http_proxy(
+    authority: &str,
+    options: &crate::runtime_options::NetworkRuntimeOptions,
+) -> anyhow::Result<TcpStream> {
+    let proxy = options
+        .tcp_proxy_http
+        .as_deref()
+        .ok_or_else(|| anyhow::anyhow!("HTTP proxy address not configured"))?;
     let req = format!(
         "CONNECT {authority} HTTP/1.1\r\nHost: {authority}\r\nProxy-Connection: Keep-Alive\r\n\r\n"
     );
-    let mut s = tokio::time::timeout(
-        Duration::from_millis(timeout_ms),
-        TcpStream::connect(&proxy),
-    )
-    .await??;
+    let mut s =
+        tokio::time::timeout(options.tcp_proxy_timeout, TcpStream::connect(proxy)).await??;
     s.write_all(req.as_bytes()).await?;
     let mut buf = Vec::with_capacity(512);
     read_until_double_crlf(&mut s, &mut buf).await?;
@@ -50,11 +47,18 @@ pub async fn connect_via_http_proxy(authority: &str) -> anyhow::Result<TcpStream
     Ok(s)
 }
 
-/// 选择：当 router 决策为 "proxy" 且设置了 `SB_TCP_PROXY_MODE=http` 时走代理，否则直连。
-pub async fn connect_auto(authority: &str, decision: &str) -> anyhow::Result<TcpStream> {
-    let mode = std::env::var("SB_TCP_PROXY_MODE").unwrap_or_default();
-    if decision == "proxy" && mode.eq_ignore_ascii_case("http") {
-        connect_via_http_proxy(authority).await
+pub async fn connect_auto(
+    authority: &str,
+    decision: &str,
+    options: &crate::runtime_options::NetworkRuntimeOptions,
+) -> anyhow::Result<TcpStream> {
+    if decision == "proxy"
+        && options
+            .tcp_proxy_mode
+            .as_deref()
+            .is_some_and(|mode| mode.eq_ignore_ascii_case("http"))
+    {
+        connect_via_http_proxy(authority, options).await
     } else {
         connect_direct(authority).await
     }

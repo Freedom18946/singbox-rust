@@ -73,9 +73,16 @@ impl std::fmt::Debug for UdpConntrackMeta {
 }
 
 /// 简单 NAT 表：单进程内共享；避免引入新的第三方依赖
-#[derive(Debug, Default)]
+#[derive(Debug)]
 pub struct UdpNatMap {
     inner: Mutex<HashMap<UdpNatKey, UdpNatEntry>>,
+    capacity: usize,
+}
+
+impl Default for UdpNatMap {
+    fn default() -> Self {
+        Self::new(None)
+    }
 }
 
 impl UdpNatMap {
@@ -88,6 +95,15 @@ impl UdpNatMap {
     {
         Self {
             inner: Mutex::new(HashMap::new()),
+            capacity: crate::runtime_options::NetworkRuntimeOptions::default().udp_nat_max,
+        }
+    }
+
+    #[must_use]
+    pub fn with_options(options: &crate::runtime_options::NetworkRuntimeOptions) -> Self {
+        Self {
+            inner: Mutex::new(HashMap::new()),
+            capacity: options.udp_nat_max,
         }
     }
 
@@ -184,7 +200,7 @@ impl UdpNatMap {
         }
     }
 
-    /// Guarded upsert with capacity check from env `SB_UDP_NAT_MAX` (default 65536).
+    /// Guarded upsert with application-injected capacity.
     /// Returns true if inserted or updated; false if rejected due to capacity.
     pub async fn upsert_guarded(&self, k: UdpNatKey, upstream: Arc<UdpSocket>) -> bool {
         self.upsert_upstream_guarded(k, UdpNatUpstream::Socket(upstream))
@@ -193,12 +209,8 @@ impl UdpNatMap {
 
     /// Guarded upsert for any supported upstream handle.
     pub async fn upsert_upstream_guarded(&self, k: UdpNatKey, upstream: UdpNatUpstream) -> bool {
-        let max = std::env::var("SB_UDP_NAT_MAX")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(65536);
         let mut g = self.inner.lock().await;
-        if !g.contains_key(&k) && g.len() >= max {
+        if !g.contains_key(&k) && g.len() >= self.capacity {
             #[cfg(feature = "metrics")]
             metrics::counter!("udp_nat_reject_total", "reason"=>"capacity").increment(1);
             return false;

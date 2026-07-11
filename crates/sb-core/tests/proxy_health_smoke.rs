@@ -79,9 +79,6 @@ async fn test_health_disabled_no_panic() {
     // Test that spawning with health disabled doesn't panic
     // and doesn't create global status when disabled
 
-    // Ensure environment is clean
-    std::env::remove_var("SB_PROXY_HEALTH_ENABLE");
-
     // Install a registry with a proxy
     let ep = ProxyEndpoint::parse("http://127.0.0.1:1").unwrap();
     registry::install_global(registry::Registry {
@@ -90,29 +87,22 @@ async fn test_health_disabled_no_panic() {
     });
 
     // Spawn should not panic and should not start health checking
-    health::spawn_if_enabled().await;
+    health::spawn_if_enabled(&sb_core::runtime_options::ServiceRuntimeOptions::default()).await;
 
     // Global status should be None since health checking is disabled
     // Note: This test may be flaky if health system was previously enabled
     // in the same test process, but it demonstrates the basic functionality
-
-    // Clean up
-    std::env::remove_var("SB_ROUTER_DEFAULT_PROXY");
 }
 
 #[test]
-fn test_environment_variable_parsing() {
-    // Test interval parsing
-    std::env::set_var("SB_PROXY_HEALTH_INTERVAL_MS", "5000");
-    // Note: We can't directly test the private functions, but we can test
-    // that invalid values don't crash the system
-
-    std::env::set_var("SB_PROXY_HEALTH_TIMEOUT_MS", "invalid");
-    // This should fall back to default without panicking
-
-    // Clean up
-    std::env::remove_var("SB_PROXY_HEALTH_INTERVAL_MS");
-    std::env::remove_var("SB_PROXY_HEALTH_TIMEOUT_MS");
+fn test_health_runtime_options() {
+    let options = sb_core::runtime_options::ServiceRuntimeOptions {
+        proxy_health_interval: std::time::Duration::from_millis(5000),
+        proxy_health_timeout: std::time::Duration::from_millis(800),
+        ..Default::default()
+    };
+    assert_eq!(options.proxy_health_interval.as_millis(), 5000);
+    assert_eq!(options.proxy_health_timeout.as_millis(), 800);
 }
 
 #[tokio::test]

@@ -127,21 +127,21 @@ fn parse_runtime_override(raw: &str) -> RuntimeOverride {
     }
 }
 
-fn runtime_override() -> Option<Arc<RuntimeOverride>> {
-    let raw = match std::env::var("SB_ROUTER_OVERRIDE") {
-        Ok(raw) if !raw.trim().is_empty() => raw,
-        _ => return None,
-    };
+fn runtime_override(raw: Option<&str>) -> Option<Arc<RuntimeOverride>> {
+    let raw = raw?.trim();
+    if raw.is_empty() {
+        return None;
+    }
     if let Ok(cache) = RUNTIME_OVERRIDE_CACHE.read() {
         if let Some((cached, parsed)) = &*cache {
-            if cached == &raw {
+            if cached == raw {
                 return Some(Arc::clone(parsed));
             }
         }
     }
-    let parsed = Arc::new(parse_runtime_override(&raw));
+    let parsed = Arc::new(parse_runtime_override(raw));
     if let Ok(mut cache) = RUNTIME_OVERRIDE_CACHE.write() {
-        *cache = Some((raw, Arc::clone(&parsed)));
+        *cache = Some((raw.to_string(), Arc::clone(&parsed)));
     }
     Some(parsed)
 }
@@ -150,7 +150,15 @@ pub fn runtime_override_http(
     host_norm: &str,
     port: Option<u16>,
 ) -> Option<(&'static str, &'static str)> {
-    let override_rules = runtime_override()?;
+    runtime_override_http_with_raw(None, host_norm, port)
+}
+
+pub fn runtime_override_http_with_raw(
+    raw: Option<&str>,
+    host_norm: &str,
+    port: Option<u16>,
+) -> Option<(&'static str, &'static str)> {
+    let override_rules = runtime_override(raw)?;
     if let Some(decision) = override_rules.exact.get(host_norm) {
         return Some((*decision, "override"));
     }
@@ -201,7 +209,14 @@ pub fn runtime_override_http(
 }
 
 pub fn runtime_override_udp(host_norm: &str) -> Option<(&'static str, &'static str)> {
-    let override_rules = runtime_override()?;
+    runtime_override_udp_with_raw(None, host_norm)
+}
+
+pub fn runtime_override_udp_with_raw(
+    raw: Option<&str>,
+    host_norm: &str,
+) -> Option<(&'static str, &'static str)> {
+    let override_rules = runtime_override(raw)?;
     if let Some(decision) = override_rules.exact.get(host_norm) {
         return Some((*decision, "override"));
     }
@@ -242,7 +257,11 @@ pub fn runtime_override_udp(host_norm: &str) -> Option<(&'static str, &'static s
 }
 
 pub(crate) fn runtime_override_ip(ip: IpAddr) -> Option<&'static str> {
-    let override_rules = runtime_override()?;
+    runtime_override_ip_with_raw(None, ip)
+}
+
+pub(crate) fn runtime_override_ip_with_raw(raw: Option<&str>, ip: IpAddr) -> Option<&'static str> {
+    let override_rules = runtime_override(raw)?;
     match ip {
         IpAddr::V4(ipv4) => {
             for mask in (0..=32).rev() {

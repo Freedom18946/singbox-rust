@@ -17,7 +17,7 @@ use anyhow::{anyhow, Result};
 use sb_core::adapter::InboundTaskDriver;
 use sb_core::net::metered;
 use sb_core::net::rate_limit_metrics;
-use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
+use sb_core::net::tcp_rate_limit::TcpRateLimiter;
 use sb_core::outbound::{registry, selector::PoolSelector};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
@@ -152,7 +152,7 @@ pub async fn serve(cfg: TrojanInboundConfig, mut stop_rx: mpsc::Receiver<()>) ->
     let actual = listener.local_addr().unwrap_or(cfg.listen);
 
     // Initialize rate limiter
-    let rate_limiter = TcpRateLimiter::new(TcpRateLimitConfig::from_env());
+    let rate_limiter = TcpRateLimiter::new(super::tcp_rate_limit_config_from_env());
 
     // Note: Multiplex support for Trojan inbound is configured but not yet fully implemented
     // Trojan typically uses TLS directly, and multiplex integration would require

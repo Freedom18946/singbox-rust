@@ -61,7 +61,7 @@ pub async fn serve_mixed(
         cfg,
         stop_rx,
         ready_tx,
-        TcpRateLimiter::new(TcpRateLimitConfig::from_env()),
+        TcpRateLimiter::new(super::tcp_rate_limit_config_from_env()),
     )
     .await
 }

@@ -1,49 +1,43 @@
 #![cfg(feature = "router")]
 #![allow(clippy::await_holding_lock)]
-use sb_core::router::{decide_http, RouterHandle};
-use std::sync::{Mutex, OnceLock};
+use sb_core::router::RouterHandle;
+use sb_core::runtime_options::RouterRuntimeOptions;
+use std::sync::Arc;
 
-fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
+fn handle(rules: &str) -> RouterHandle {
+    RouterHandle::from_options(Arc::new(RouterRuntimeOptions {
+        rules_inline: rules.into(),
+        udp_enabled: true,
+        udp_rules: Some(rules.into()),
+        ..RouterRuntimeOptions::default()
+    }))
 }
 
 #[test]
 fn http_port_rule_applies_when_host_not_matched() {
-    let _serial = serial_guard();
     let rules = r#"
     port:443=proxy
     default=unresolved
     "#;
-    std::env::set_var("SB_ROUTER_RULES", rules);
-    // host 无匹配，端口 443 命中 -> proxy
-    let decision = decide_http("no.match:443");
-    assert_eq!(decision.target, "proxy");
+    assert_eq!(handle(rules).decide_http("no.match:443"), "proxy");
 }
 
 #[test]
 fn http_transport_tcp_as_fallback() {
-    let _serial = serial_guard();
     let rules = r#"
     transport:tcp=reject
     default=unresolved
     "#;
-    std::env::set_var("SB_ROUTER_RULES", rules);
-    let decision = decide_http("no.match");
-    assert_eq!(decision.target, "reject");
+    assert_eq!(handle(rules).decide_http("no.match"), "reject");
 }
 
 #[tokio::test]
 async fn udp_transport_udp_as_fallback() {
-    let _serial = serial_guard();
     let rules = r#"
     transport:udp=proxy
     default=unresolved
     "#;
-    std::env::set_var("SB_ROUTER_RULES", rules);
-    let h = RouterHandle::from_env();
+    let h = handle(rules);
     let d = h.decide_udp_async("no.match").await;
     assert_eq!(d, "proxy");
 }

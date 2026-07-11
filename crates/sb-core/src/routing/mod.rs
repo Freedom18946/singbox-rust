@@ -18,8 +18,8 @@ pub mod trace {
     pub use crate::router::config_trace::*;
 }
 
-#[deprecated(note = "use crate::router::{Engine, Input}; scheduled for WP14 removal")]
-pub use crate::router::{Engine, Input};
 pub use crate::router::config_explain::{ExplainDto, ExplainEngine, ExplainResult};
 pub use crate::router::config_trace::Trace;
 pub use crate::router::sniff;
+#[deprecated(note = "use crate::router::{Engine, Input}; scheduled for WP14 removal")]
+pub use crate::router::{Engine, Input};

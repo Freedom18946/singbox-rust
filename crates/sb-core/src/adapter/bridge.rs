@@ -103,12 +103,16 @@ pub fn publish_runtime_registries(br: &Bridge) {
 }
 
 #[cfg(feature = "router")]
-fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
+fn router_handle_from_ir(
+    cfg: &ConfigIR,
+    runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
+) -> Arc<RouterHandle> {
     // Use direct IR builder to support complex/logical rules (P1 parity)
     match crate::router::builder::build_index_from_ir(cfg).map_err(crate::router::BuildError::Rule)
     {
         Ok(idx) => {
-            let mut handle = RouterHandle::from_index(idx.clone());
+            let mut handle =
+                RouterHandle::from_index_with_options(idx.clone(), runtime_options.clone());
 
             // Populate RuleSetDb
             if !cfg.route.rule_set.is_empty() {
@@ -132,7 +136,7 @@ fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
                         path = %path,
                         "failed to load GeoIP database from route.geoip_path"
                     );
-                    RouterHandle::from_index(idx.clone())
+                    RouterHandle::from_index_with_options(idx.clone(), runtime_options.clone())
                 });
             }
 
@@ -144,7 +148,7 @@ fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
                         path = %path,
                         "failed to load Geosite database from route.geosite_path"
                     );
-                    RouterHandle::from_index(idx.clone())
+                    RouterHandle::from_index_with_options(idx.clone(), runtime_options.clone())
                 });
             }
 
@@ -154,9 +158,9 @@ fn router_handle_from_ir(cfg: &ConfigIR) -> Arc<RouterHandle> {
             tracing::warn!(
                 target: "sb_core::adapter",
                 error = %e,
-                "router index build from ConfigIR failed; falling back to env handle"
+                "router index build from ConfigIR failed; using injected runtime rules"
             );
-            Arc::new(RouterHandle::from_env())
+            Arc::new(RouterHandle::from_options(runtime_options))
         }
     }
 }
@@ -625,7 +629,11 @@ fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
 
         if let Some(o) = try_adapter_outbound(&p, ob, br) {
             // Optionally wrap with circuit breaker
-            let outbound = maybe_wrap_with_cb(name.as_str(), o.outbound);
+            let outbound = maybe_wrap_with_cb(
+                name.as_str(),
+                o.outbound,
+                br.context.runtime_options.services.circuit_breaker_enabled,
+            );
             br.add_outbound(name.clone(), kind, outbound);
         } else {
             let message = unavailable_protocol_error("outbound", &kind, &name);
@@ -733,11 +741,8 @@ impl sb_types::Outbound for CbConnector {
 fn maybe_wrap_with_cb(
     name: &str,
     inner: Arc<dyn sb_types::Outbound>,
+    enabled: bool,
 ) -> Arc<dyn sb_types::Outbound> {
-    // Default disabled; enable with SB_CB_ENABLE=1
-    let enabled = std::env::var("SB_CB_ENABLE")
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
     if !enabled {
         return inner;
     }
@@ -753,6 +758,7 @@ fn maybe_wrap_with_cb(
 fn maybe_wrap_with_cb(
     _name: &str,
     inner: Arc<dyn sb_types::Outbound>,
+    _enabled: bool,
 ) -> Arc<dyn sb_types::Outbound> {
     // Circuit breaker requires v2ray_transport feature
     inner
@@ -787,7 +793,11 @@ fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
             let kind = p.kind.clone();
 
             if let Some(o) = try_adapter_outbound(&p, ob, br) {
-                let outbound = maybe_wrap_with_cb(name.as_str(), o.outbound);
+                let outbound = maybe_wrap_with_cb(
+                    name.as_str(),
+                    o.outbound,
+                    br.context.runtime_options.services.circuit_breaker_enabled,
+                );
                 br.add_outbound(name.clone(), kind, outbound);
             } else {
                 let message = unavailable_protocol_error("outbound", &kind, &name);
@@ -812,7 +822,8 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
     let ctx_registry = crate::context::ContextRegistry::from(&br.context);
 
     // Initialize RouterHandle and attach to Bridge
-    let handle = router_handle_from_ir(cfg);
+    let router_options = Arc::new(br.context.runtime_options.router.clone());
+    let handle = router_handle_from_ir(cfg, router_options.clone());
     br.router = Some(handle);
     br.experimental = cfg.experimental.clone();
 
@@ -823,7 +834,7 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
     br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
     let outbound_handle = outbound_registry_handle_from_bridge(&br);
     #[cfg(feature = "router")]
-    let router_handle = router_handle_from_ir(cfg);
+    let router_handle = router_handle_from_ir(cfg, router_options);
 
     #[cfg(feature = "router")]
     let endpoint_handler = {
@@ -843,13 +854,24 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
     let connection_manager = Arc::new(
         crate::router::RouteConnectionManager::new()
             .with_stats(stats)
-            .with_conn_tracker(br.context.conn_tracker.clone()),
+            .with_conn_tracker(br.context.conn_tracker.clone())
+            .with_public_suffix_list(
+                br.context
+                    .runtime_options
+                    .router
+                    .public_suffix_list
+                    .as_deref(),
+            ),
     );
 
     // Build DNS components for inbound context
-    let (_, dns_router) = crate::dns::config_builder::build_dns_components(cfg, None)
-        .ok()
-        .unzip();
+    let (_, dns_router) = crate::dns::config_builder::build_dns_components_with_options(
+        cfg,
+        None,
+        Arc::new(br.context.runtime_options.dns.clone()),
+    )
+    .ok()
+    .unzip();
     let dns_router = dns_router.flatten(); // Option<Option<Arc>> -> Option<Arc>
 
     for ib in &cfg.inbounds {

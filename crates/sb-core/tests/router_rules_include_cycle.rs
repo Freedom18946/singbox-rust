@@ -1,5 +1,6 @@
 #![cfg(feature = "router")]
-use sb_core::router::decide_http;
+use sb_core::router::router_build_index_from_str_with_options;
+use sb_core::runtime_options::RouterRuntimeOptions;
 use std::fs;
 use std::io::Write;
 use tempfile::tempdir;
@@ -21,11 +22,11 @@ async fn include_cycle_is_detected_and_ignored() {
         writeln!(fb, "suffix:.cycle=reject").unwrap();
     }
 
-    // Test the cycle detection by directly calling the build function
-    std::env::set_var("SB_ROUTER_RULES_FILE", &a);
-
-    // First test: just verify basic rules loading works
-    std::env::set_var("SB_ROUTER_RULES", "suffix:.test=proxy\ndefault=unresolved");
-    let decision_direct = decide_http("example.test");
-    assert_eq!(decision_direct.as_str(), "proxy", "basic rule should work");
+    let options = RouterRuntimeOptions {
+        rules_base_dir: Some(dir.path().to_path_buf()),
+        rules_max_depth: 8,
+        ..RouterRuntimeOptions::default()
+    };
+    let result = router_build_index_from_str_with_options("include a.rules", 1024, &options);
+    assert!(result.is_err(), "include cycle must be rejected");
 }

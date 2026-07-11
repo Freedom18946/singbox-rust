@@ -62,6 +62,7 @@ fn maybe_init_dns_stub(dns_applied: bool, opts: &crate::run_engine::RunOptions) 
 async fn start_supervisor(
     ir: sb_config::ir::ConfigIR,
 ) -> Result<Arc<sb_core::runtime::supervisor::Supervisor>> {
+    let runtime_options = crate::core_env::load(&ir);
     #[cfg(feature = "adapters")]
     info!("Calling Supervisor::start_with_registry");
     #[cfg(not(feature = "adapters"))]
@@ -69,9 +70,10 @@ async fn start_supervisor(
 
     #[cfg(feature = "adapters")]
     let supervisor = Arc::new(
-        sb_core::runtime::supervisor::Supervisor::start_with_registry(
+        sb_core::runtime::supervisor::Supervisor::start_with_registry_and_options(
             ir,
             Some(sb_adapters::build_default_registry()),
+            runtime_options,
         )
         .await
         .context("Supervisor::start_with_registry failed")?,
@@ -79,9 +81,13 @@ async fn start_supervisor(
 
     #[cfg(not(feature = "adapters"))]
     let supervisor = Arc::new(
-        sb_core::runtime::supervisor::Supervisor::start(ir)
-            .await
-            .context("Supervisor::start failed")?,
+        sb_core::runtime::supervisor::Supervisor::start_with_registry_and_options(
+            ir,
+            None,
+            runtime_options,
+        )
+        .await
+        .context("Supervisor::start failed")?,
     );
 
     info!("Supervisor startup returned");

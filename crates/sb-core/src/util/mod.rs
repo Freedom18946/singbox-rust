@@ -2,7 +2,6 @@
 #![allow(dead_code)]
 use std::time::Duration;
 
-pub mod env;
 #[cfg(feature = "chaos")]
 pub mod failpoint;
 pub mod fs_atomic;

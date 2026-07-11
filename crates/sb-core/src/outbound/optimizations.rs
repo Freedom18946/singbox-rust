@@ -64,32 +64,6 @@ impl BufferPool {
     }
 }
 
-#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
-fn protocol_buffer_pool() -> &'static BufferPool {
-    static POOL: once_cell::sync::Lazy<BufferPool> = once_cell::sync::Lazy::new(|| {
-        let max_size = opt_env_usize("SB_BUFFER_POOL_SIZE").unwrap_or(100);
-        let max_capacity = opt_env_usize("SB_BUFFER_POOL_MAX_CAPACITY").unwrap_or(1024 * 1024); // 1MB
-
-        BufferPool::new(max_size, max_capacity)
-    });
-    &POOL
-}
-
-#[cfg_attr(not(feature = "metrics"), allow(dead_code))]
-fn opt_env_usize(name: &str) -> Option<usize> {
-    let raw = std::env::var(name).ok()?;
-    match raw.trim().parse::<usize>() {
-        Ok(v) => Some(v),
-        Err(err) => {
-            tracing::warn!(
-                "env '{name}' value '{raw}' is not a valid usize; \
-                 silent parse fallback is disabled: {err}"
-            );
-            None
-        }
-    }
-}
-
 /// Fast bandwidth limiter using atomic operations
 ///
 /// Avoids lock contention by using atomic operations for token management.
@@ -386,10 +360,10 @@ pub mod metrics {
     use super::*;
 
     /// Record buffer pool metrics
-    pub fn record_buffer_pool_metrics() {
+    pub fn record_buffer_pool_metrics(pool: &BufferPool) {
         use ::metrics::gauge;
 
-        let size = protocol_buffer_pool().size();
+        let size = pool.size();
         gauge!("buffer_pool_size").set(size as f64);
     }
 

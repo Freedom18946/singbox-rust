@@ -1,4 +1,5 @@
 use sb_core::net::datagram::{UdpNatKey, UdpNatMap, UdpTargetAddr};
+use sb_core::runtime_options::NetworkRuntimeOptions;
 use std::sync::Arc;
 
 async fn bind_or_skip(addr: &str) -> Option<Arc<tokio::net::UdpSocket>> {
@@ -17,8 +18,11 @@ async fn bind_or_skip(addr: &str) -> Option<Arc<tokio::net::UdpSocket>> {
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
 async fn nat_capacity_and_ttl() {
     // capacity = 2
-    std::env::set_var("SB_UDP_NAT_MAX", "2");
-    let map = Arc::new(UdpNatMap::new(None));
+    let options = NetworkRuntimeOptions {
+        udp_nat_max: 2,
+        ..Default::default()
+    };
+    let map = Arc::new(UdpNatMap::with_options(&options));
     // dummy sockets
     let s1 = match bind_or_skip("127.0.0.1:0").await {
         Some(sock) => sock,

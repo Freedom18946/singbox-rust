@@ -8,6 +8,7 @@ use std::time::Duration;
 use tokio::time::sleep;
 
 use sb_core::router::{DnsResolve, DnsResult, RouterHandle};
+use sb_core::runtime_options::RouterRuntimeOptions;
 
 fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
@@ -52,13 +53,13 @@ impl DnsResolve for FakeResolverTimeout {
 async fn resolver_route_hits_cidr_then_returns_decision() {
     let _serial = serial_guard();
     // 规则：11.0.0.0/8 → proxy，默认 unresolved
-    let rules = r#"
-    cidr4:11.0.0.0/8=proxy
-    default=unresolved
-    "#;
-    std::env::set_var("SB_ROUTER_RULES", rules);
-    std::env::set_var("SB_ROUTER_DNS", "1");
-    let h = RouterHandle::from_env().with_resolver(Arc::new(FakeResolverOk));
+    let rules = "cidr4:11.0.0.0/8=proxy\ndefault=unresolved";
+    let h = RouterHandle::from_options(Arc::new(RouterRuntimeOptions {
+        rules_inline: rules.into(),
+        dns_enabled: true,
+        ..Default::default()
+    }))
+    .with_resolver(Arc::new(FakeResolverOk));
     let d = h.decide_udp_async("example.com").await;
     assert_eq!(d, "proxy");
 }
@@ -66,13 +67,13 @@ async fn resolver_route_hits_cidr_then_returns_decision() {
 #[tokio::test]
 async fn resolver_timeout_or_error_falls_back_to_default() {
     let _serial = serial_guard();
-    let rules = r#"
-    suffix:example.com=proxy
-    default=unresolved
-    "#;
-    std::env::set_var("SB_ROUTER_RULES", rules);
-    std::env::set_var("SB_ROUTER_DNS", "1");
-    let h = RouterHandle::from_env().with_resolver(Arc::new(FakeResolverTimeout));
+    let rules = "suffix:example.com=proxy\ndefault=unresolved";
+    let h = RouterHandle::from_options(Arc::new(RouterRuntimeOptions {
+        rules_inline: rules.into(),
+        dns_enabled: true,
+        ..Default::default()
+    }))
+    .with_resolver(Arc::new(FakeResolverTimeout));
     // host 不匹配任何 suffix，解析又失败，应回退默认
     let d = h.decide_udp_async("nomatch.invalid").await;
     assert_eq!(d, "unresolved");

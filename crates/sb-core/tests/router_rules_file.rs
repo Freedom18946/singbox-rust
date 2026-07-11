@@ -1,6 +1,8 @@
 #![cfg(feature = "router")]
-use sb_core::router::router_index_from_env_with_reload;
+use sb_core::router::router_index_with_reload;
+use sb_core::runtime_options::RouterRuntimeOptions;
 use std::fs;
+use std::sync::Arc;
 use std::time::Duration;
 use tempfile::NamedTempFile;
 use tokio::time::sleep;
@@ -9,9 +11,12 @@ use tokio::time::sleep;
 async fn hot_reload_success_and_failure_do_not_break() {
     let f = NamedTempFile::new().unwrap();
     fs::write(f.path(), b"suffix:example.com=proxy\ndefault=unresolved\n").unwrap();
-    std::env::set_var("SB_ROUTER_RULES_FILE", f.path());
-    std::env::set_var("SB_ROUTER_RULES_HOT_RELOAD_MS", "50");
-    let shared = router_index_from_env_with_reload().await;
+    let shared = router_index_with_reload(Arc::new(RouterRuntimeOptions {
+        rules_file: Some(f.path().to_path_buf()),
+        rules_hot_reload_ms: 50,
+        ..RouterRuntimeOptions::default()
+    }))
+    .await;
     {
         let idx = shared.read().unwrap().clone();
         assert_eq!(

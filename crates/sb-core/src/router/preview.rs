@@ -10,7 +10,7 @@ use super::dsl_plus::expand_dsl_plus;
 
 /// 从 DSL 文本构建 RouterIndex；失败返回 Err 字符串
 pub fn build_index_from_rules(text: &str) -> Result<Arc<RouterIndex>, String> {
-    let max = super::router_rules_max_from_env();
+    let max = crate::runtime_options::RouterRuntimeOptions::default().rules_max;
     match router_build_index_from_str(text, max) {
         Ok(idx) => Ok(idx),
         Err(e) => Err(format!("{:?}", e)),

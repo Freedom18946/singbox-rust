@@ -1,5 +1,6 @@
 #![cfg(feature = "router")]
 use sb_core::dns::ResolverHandle;
+use sb_core::runtime_options::DnsRuntimeOptions;
 use std::{
     io::ErrorKind,
     net::SocketAddr,
@@ -52,14 +53,15 @@ async fn dns_inflight_global_and_per_host_gate() {
     });
 
     // 配置：启用 DNS、使用单并发门控、短超时
-    std::env::set_var("SB_DNS_ENABLE", "1");
-    std::env::set_var("SB_DNS_POOL", format!("udp:{}", addr));
-    std::env::set_var("SB_DNS_POOL_MAX_INFLIGHT", "1");
-    std::env::set_var("SB_DNS_PER_HOST_INFLIGHT", "1");
-    std::env::set_var("SB_DNS_UDP_TIMEOUT_MS", "60");
-    std::env::set_var("SB_DNS_HE_RACE_MS", "30");
-
-    let h = ResolverHandle::from_env_or_default();
+    let h = ResolverHandle::from_options(Arc::new(DnsRuntimeOptions {
+        enabled: true,
+        pool: format!("udp:{addr}"),
+        pool_max_inflight: 1,
+        per_host_inflight: 1,
+        udp_timeout_ms: 60,
+        happy_eyeballs_race_ms: 30,
+        ..Default::default()
+    }));
     let started = Instant::now();
     let t1 = tokio::spawn({
         let h = h.clone();

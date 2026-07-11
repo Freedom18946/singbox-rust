@@ -20,7 +20,6 @@ use crate::net::metered::TrafficRecorder;
 use crate::services::v2ray_api::StatsManager;
 use sb_common::conntrack::ConnTracker;
 
-use once_cell::sync::Lazy;
 use publicsuffix::{List, Psl};
 
 #[cfg(unix)]
@@ -104,8 +103,8 @@ struct TlsServerName {
     name: String,
 }
 
-fn load_public_suffix_list() -> List {
-    if let Ok(path) = std::env::var("SB_PUBLIC_SUFFIX_LIST") {
+fn load_public_suffix_list(path: Option<&std::path::Path>) -> List {
+    if let Some(path) = path {
         if let Ok(bytes) = std::fs::read(path) {
             if let Ok(list) = List::from_bytes(&bytes) {
                 return list;
@@ -142,12 +141,11 @@ fn is_valid_dns_name(name: &str) -> bool {
     true
 }
 
-fn has_public_suffix(name: &str) -> bool {
-    static PUBLIC_SUFFIX_LIST: Lazy<List> = Lazy::new(load_public_suffix_list);
+fn has_public_suffix(list: &List, name: &str) -> bool {
     if !is_valid_dns_name(name) {
         return false;
     }
-    PUBLIC_SUFFIX_LIST.suffix(name.as_bytes()).is_some()
+    list.suffix(name.as_bytes()).is_some()
 }
 
 fn index_tls_server_name(payload: &[u8]) -> Option<TlsServerName> {
@@ -371,6 +369,7 @@ pub struct ConnectionManager {
     stats: Option<Arc<StatsManager>>,
     /// Explicit conntrack dependency for active connection registration.
     conn_tracker: Arc<ConnTracker>,
+    public_suffix_list: Arc<List>,
 }
 
 impl std::fmt::Debug for ConnectionManager {
@@ -421,6 +420,7 @@ impl ConnectionManager {
             next_id: AtomicU64::new(1),
             stats: None,
             conn_tracker: Arc::new(ConnTracker::new()),
+            public_suffix_list: Arc::new(load_public_suffix_list(None)),
         }
     }
 
@@ -431,6 +431,11 @@ impl ConnectionManager {
 
     pub fn with_conn_tracker(mut self, conn_tracker: Arc<ConnTracker>) -> Self {
         self.conn_tracker = conn_tracker;
+        self
+    }
+
+    pub fn with_public_suffix_list(mut self, path: Option<&std::path::Path>) -> Self {
+        self.public_suffix_list = Arc::new(load_public_suffix_list(path));
         self
     }
 
@@ -592,6 +597,7 @@ impl ConnectionManager {
         let download_ctr = download_counter.clone();
         let cancel_up = cancel_token.clone();
         let cancel_down = cancel_token.clone();
+        let public_suffix_list = self.public_suffix_list.clone();
 
         let upload = tokio::spawn(async move {
             #[cfg(unix)]
@@ -606,6 +612,7 @@ impl ConnectionManager {
                         copy_with_tls_fragment(
                             &mut local_reader,
                             &mut remote_writer,
+                            &public_suffix_list,
                             TlsFragmentCopyOpts {
                                 split_packet: tls_fragment,
                                 split_record: tls_record_fragment,
@@ -985,13 +992,13 @@ impl ConnectionManager {
     }
 }
 
-fn tls_split_indexes(server_name: &TlsServerName) -> Vec<usize> {
+fn tls_split_indexes(server_name: &TlsServerName, public_suffix_list: &List) -> Vec<usize> {
     if server_name.name.is_empty() {
         return Vec::new();
     }
     let mut splits: Vec<&str> = server_name.name.split('.').collect();
     let dot_count = server_name.name.matches('.').count();
-    if dot_count > 0 && has_public_suffix(&server_name.name) {
+    if dot_count > 0 && has_public_suffix(public_suffix_list, &server_name.name) {
         let keep = splits.len().saturating_sub(dot_count);
         if keep > 0 && keep < splits.len() {
             splits.truncate(keep);
@@ -1124,6 +1131,7 @@ async fn write_tls_fragments<W: AsyncWrite + Unpin>(
 async fn copy_with_tls_fragment<R, W>(
     reader: &mut R,
     writer: &mut W,
+    public_suffix_list: &List,
     opts: TlsFragmentCopyOpts,
 ) -> io::Result<u64>
 where
@@ -1143,7 +1151,7 @@ where
         if first {
             first = false;
             if let Some(server_name) = index_tls_server_name(&buf[..n]) {
-                let indexes = tls_split_indexes(&server_name);
+                let indexes = tls_split_indexes(&server_name, public_suffix_list);
                 if !indexes.is_empty() {
                     write_tls_fragments(
                         writer,
@@ -1477,14 +1485,14 @@ mod tests {
             index: 0,
             name: "github.com".to_string(),
         };
-        let known_indexes = tls_split_indexes(&known);
+        let known_indexes = tls_split_indexes(&known, &load_public_suffix_list(None));
         assert_eq!(known_indexes.len(), 1);
 
         let unknown = TlsServerName {
             index: 0,
             name: "bad domain.example".to_string(),
         };
-        let unknown_indexes = tls_split_indexes(&unknown);
+        let unknown_indexes = tls_split_indexes(&unknown, &load_public_suffix_list(None));
         assert_eq!(unknown_indexes.len(), 2);
     }
 
@@ -1496,8 +1504,14 @@ mod tests {
         assert!(!is_valid_dns_name("bad-.example"));
         assert!(!is_valid_dns_name("bad..example"));
 
-        assert!(has_public_suffix("github.com"));
-        assert!(!has_public_suffix("bad domain.example"));
+        assert!(has_public_suffix(
+            &load_public_suffix_list(None),
+            "github.com"
+        ));
+        assert!(!has_public_suffix(
+            &load_public_suffix_list(None),
+            "bad domain.example"
+        ));
     }
 
     #[tokio::test]
@@ -1623,7 +1637,7 @@ mod tests {
             index: 0,
             name: String::new(),
         };
-        let indexes = tls_split_indexes(&empty);
+        let indexes = tls_split_indexes(&empty, &load_public_suffix_list(None));
         assert!(indexes.is_empty());
     }
 
@@ -1633,7 +1647,7 @@ mod tests {
             index: 0,
             name: "localhost".to_string(),
         };
-        let indexes = tls_split_indexes(&single);
+        let indexes = tls_split_indexes(&single, &load_public_suffix_list(None));
         // Single label should produce one split index within the name
         assert_eq!(indexes.len(), 1);
         assert!(indexes[0] < single.name.len());
@@ -1646,7 +1660,7 @@ mod tests {
             index: 10, // Offset in original TLS payload
             name: "www.example.com".to_string(),
         };
-        let indexes = tls_split_indexes(&multi);
+        let indexes = tls_split_indexes(&multi, &load_public_suffix_list(None));
 
         // Should produce multiple split indexes for multi-label domain
         assert!(

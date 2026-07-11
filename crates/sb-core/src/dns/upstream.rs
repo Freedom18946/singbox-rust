@@ -33,54 +33,9 @@ use crate::dns::transport::{DnsTransport, LocalTransport};
 #[cfg(feature = "service_resolved")]
 use crate::dns::transport::resolved::{ResolvedTransport, ResolvedTransportConfig};
 
-// Helper: parse EDNS0 Client Subnet from env (global default)
-fn parse_client_subnet_env() -> Option<(u16, u8, u8, Vec<u8>)> {
-    let s = std::env::var("SB_DNS_CLIENT_SUBNET").ok()?;
-    let s = s.trim();
-    if s.is_empty() {
-        return None;
-    }
-    let (ip_str, prefix_opt) = if let Some((a, p)) = s.split_once('/') {
-        (a, p.parse::<u8>().ok())
-    } else {
-        (s, None)
-    };
-    if let Ok(ipv4) = ip_str.parse::<std::net::Ipv4Addr>() {
-        let prefix = prefix_opt.unwrap_or(24).min(32);
-        let mut b = ipv4.octets();
-        mask_prefix(&mut b, prefix);
-        let addr_len = (prefix as usize).div_ceil(8);
-        return Some((1, prefix, 0, b[..addr_len].to_vec()));
-    }
-    if let Ok(ipv6) = ip_str.parse::<std::net::Ipv6Addr>() {
-        let prefix = prefix_opt.unwrap_or(56).min(128);
-        let mut b = ipv6.octets();
-        mask_prefix(&mut b, prefix);
-        let addr_len = (prefix as usize).div_ceil(8);
-        return Some((2, prefix, 0, b[..addr_len].to_vec()));
-    }
-    None
-}
-
-fn mask_prefix(bytes: &mut [u8], prefix: u8) {
-    let full = (prefix / 8) as usize;
-    let rem = (prefix % 8) as usize;
-    if full < bytes.len() {
-        for item in bytes.iter_mut().skip(full + 1) {
-            *item = 0;
-        }
-        if rem > 0 {
-            let mask = (!0u8) << (8 - rem);
-            bytes[full] &= mask;
-        }
-    }
-}
-
 #[cfg(feature = "dns_dhcp")]
 fn parse_dhcp_spec(spec: &str) -> (Option<String>, PathBuf) {
-    let mut path = std::env::var("SB_DNS_DHCP_RESOLV_CONF")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(DhcpUpstream::DEFAULT_RESOLV_PATH));
+    let mut path = PathBuf::from(DhcpUpstream::DEFAULT_RESOLV_PATH);
 
     if spec.eq_ignore_ascii_case("dhcp") {
         return (None, path);
@@ -134,9 +89,7 @@ fn parse_dhcp_spec(spec: &str) -> (Option<String>, PathBuf) {
 
 #[cfg(feature = "dns_resolved")]
 fn parse_resolved_spec(spec: &str) -> PathBuf {
-    let mut path = std::env::var("SB_DNS_RESOLVED_STUB")
-        .map(PathBuf::from)
-        .unwrap_or_else(|_| PathBuf::from(ResolvedUpstream::DEFAULT_STUB));
+    let mut path = PathBuf::from(ResolvedUpstream::DEFAULT_STUB);
 
     if spec.eq_ignore_ascii_case("resolved") {
         return path;
@@ -201,6 +154,7 @@ fn parse_nameserver_addr(token: &str) -> Option<SocketAddr> {
 pub(crate) fn parse_tailscale_spec(
     spec: &str,
     tag: Option<&str>,
+    fallback: &[SocketAddr],
 ) -> Result<(String, Vec<SocketAddr>)> {
     let mut raw = Vec::new();
     let name = tag
@@ -227,14 +181,7 @@ pub(crate) fn parse_tailscale_spec(
     }
 
     if raw.is_empty() {
-        if let Ok(env_value) = std::env::var("SB_TAILSCALE_DNS_ADDRS") {
-            raw.extend(
-                env_value
-                    .split(',')
-                    .map(|s| s.trim().to_string())
-                    .filter(|s| !s.is_empty()),
-            );
-        }
+        raw.extend(fallback.iter().map(ToString::to_string));
     }
 
     let addrs: Vec<SocketAddr> = raw
@@ -247,13 +194,12 @@ pub(crate) fn parse_tailscale_spec(
             target: "sb_core::dns",
             upstream = %name,
             spec = spec,
-            env = %std::env::var("SB_TAILSCALE_DNS_ADDRS").unwrap_or_default(),
-            "tailscale DNS upstream requires explicit address (e.g. tailscale://100.64.0.2:53) or env SB_TAILSCALE_DNS_ADDRS"
+            "tailscale DNS upstream requires explicit address"
         );
         #[cfg(feature = "metrics")]
         metrics::inc_resolve_err("tailscale_no_addrs");
         Err(anyhow::anyhow!(
-            "tailscale DNS upstream requires explicit address (e.g. tailscale://100.64.0.2:53) or env SB_TAILSCALE_DNS_ADDRS"
+            "tailscale DNS upstream requires explicit address (e.g. tailscale://100.64.0.2:53)"
         ))
     } else {
         Ok((name, addrs))
@@ -277,22 +223,10 @@ pub struct UdpUpstream {
 impl UdpUpstream {
     /// 创建新的 UDP 上游
     pub fn new(server: SocketAddr) -> Self {
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_UDP_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(2000),
-        );
-
-        let retries = std::env::var("SB_DNS_UDP_RETRIES")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(2);
-
         Self {
             server,
-            timeout,
-            retries,
+            timeout: Duration::from_millis(2000),
+            retries: 2,
             name: format!("udp://{server}"),
             client_subnet: None,
         }
@@ -379,11 +313,7 @@ impl UdpUpstream {
         packet.extend_from_slice(&1u16.to_be_bytes()); // IN class
 
         // Optional EDNS0 Client Subnet:
-        // - prefer per-upstream ECS, else fall back to global env.
-        let ecs = self
-            .client_subnet
-            .clone()
-            .or_else(|| std::env::var("SB_DNS_CLIENT_SUBNET").ok());
+        let ecs = self.client_subnet.clone();
         if let Some(ecs) = ecs {
             let _ = inject_edns0_client_subnet(&mut packet, ecs.trim());
         }
@@ -937,12 +867,12 @@ impl DnsUpstream for StaticMultiUpstream {
                 target: "sb_core::dns",
                 upstream = %self.name,
                 kind = "tailscale",
-                "tailscale upstream has no members; set SB_TAILSCALE_DNS_ADDRS or use tailscale://host:port"
+                "tailscale upstream has no members; configure tailscale://host:port"
             );
             #[cfg(feature = "metrics")]
             metrics::inc_resolve_err("tailscale_empty");
             return Err(anyhow::anyhow!(
-                "tailscale upstream {} has no nameserver addresses (set SB_TAILSCALE_DNS_ADDRS or configure tailscale://host:port)",
+                "tailscale upstream {} has no nameserver addresses; configure tailscale://host:port",
                 self.name
             ));
         }
@@ -1295,12 +1225,7 @@ impl DotUpstream {
         skip_verify: bool,
         transport: Option<Arc<dyn DnsTransport>>,
     ) -> Self {
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_DOT_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let timeout = Duration::from_millis(5000);
 
         Self {
             server,
@@ -1512,28 +1437,8 @@ impl DotUpstream {
         packet.extend_from_slice(&qtype.to_be_bytes());
         packet.extend_from_slice(&1u16.to_be_bytes()); // IN class
 
-        // Optional EDNS0 Client Subnet (global env-driven)
-        if let Some((family, src_prefix, scope_prefix, addr_bytes)) = parse_client_subnet_env() {
-            // Increase ARCOUNT to 1
-            packet[10] = 0;
-            packet[11] = 1;
-            // OPT RR
-            packet.push(0); // NAME root
-            packet.extend_from_slice(&41u16.to_be_bytes()); // TYPE=OPT
-            packet.extend_from_slice(&4096u16.to_be_bytes()); // CLASS=udp size
-            packet.extend_from_slice(&0u32.to_be_bytes()); // TTL
-                                                           // ECS option
-            let mut opt = Vec::new();
-            opt.extend_from_slice(&8u16.to_be_bytes()); // OPTION-CODE=8
-            let data_len = 4u16 + (addr_bytes.len() as u16);
-            opt.extend_from_slice(&data_len.to_be_bytes());
-            opt.extend_from_slice(&family.to_be_bytes());
-            opt.push(src_prefix);
-            opt.push(scope_prefix);
-            opt.extend_from_slice(&addr_bytes);
-            // RDLEN + OPT data
-            packet.extend_from_slice(&(opt.len() as u16).to_be_bytes());
-            packet.extend_from_slice(&opt);
+        if let Some(client_subnet) = self.ecs.as_deref() {
+            let _ = inject_edns0_client_subnet(&mut packet, client_subnet);
         }
 
         Ok(packet)
@@ -1668,12 +1573,7 @@ impl DoqUpstream {
         skip_verify: bool,
         transport: Option<Arc<dyn DnsTransport>>,
     ) -> Self {
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_DOQ_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let timeout = Duration::from_millis(5000);
         Self {
             server,
             server_name: server_name.clone(),
@@ -1819,12 +1719,7 @@ impl DohUpstream {
         ca_pem: Vec<String>,
         skip_verify: bool,
     ) -> Result<Self> {
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_DOH_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let timeout = Duration::from_millis(5000);
 
         #[cfg(feature = "dns_doh")]
         let client = {
@@ -2019,12 +1914,7 @@ impl Doh3Upstream {
         _ca_pem: Vec<String>,
         _skip_verify: bool,
     ) -> Result<Self> {
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_DOH3_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let timeout = Duration::from_millis(5000);
 
         #[cfg(feature = "dns_doh3")]
         let transport = {
@@ -2057,20 +1947,6 @@ impl Doh3Upstream {
         self.ecs = ecs;
         self
     }
-}
-
-/// Load a TTL in seconds from the first non-empty environment variable in `candidates`.
-/// Falls back to `default_secs` when none are set or parsing fails.
-fn ttl_from_env(candidates: &[&str], default_secs: u64) -> Duration {
-    for var in candidates {
-        if let Ok(raw) = std::env::var(var) {
-            if let Ok(secs) = raw.trim().parse::<u64>() {
-                return Duration::from_secs(secs);
-            }
-        }
-    }
-
-    Duration::from_secs(default_secs)
 }
 
 #[async_trait]
@@ -2164,10 +2040,8 @@ pub struct SystemUpstream {
 impl SystemUpstream {
     /// 创建新的系统解析器上游
     pub fn new() -> Self {
-        let default_ttl = ttl_from_env(&["SB_DNS_SYSTEM_TTL_S"], 60);
-
         Self {
-            default_ttl,
+            default_ttl: Duration::from_secs(60),
             name: "system".to_string(),
         }
     }
@@ -2237,7 +2111,7 @@ impl LocalUpstream {
             transport: LocalTransport::new(),
             helper,
             fallback: SystemUpstream::new(),
-            ttl: ttl_from_env(&["SB_DNS_LOCAL_TTL_S", "SB_DNS_SYSTEM_TTL_S"], 60),
+            ttl: Duration::from_secs(60),
         }
     }
 
@@ -2403,7 +2277,7 @@ impl DnsUpstream for TailscaleLocalUpstream {
 pub struct FakeIpUpstream {
     tag_name: String,
     // Kept for introspection/debugging and to make config->runtime mapping observable.
-    // Range overrides are applied via env vars in `new()`.
+    // Range overrides are applied by DNS composition before construction.
     inet4_range: Option<String>,
     inet6_range: Option<String>,
 }
@@ -2414,19 +2288,6 @@ impl FakeIpUpstream {
     /// If inet4_range/inet6_range are provided, they override the global defaults.
     /// The FakeIP pool itself is managed by `crate::dns::fakeip`.
     pub fn new(tag: String, inet4_range: Option<String>, inet6_range: Option<String>) -> Self {
-        // Apply range overrides to global FakeIP pool if provided
-        if let Some(ref v4) = inet4_range {
-            if let Some((base, mask)) = parse_cidr_v4(v4) {
-                std::env::set_var("SB_FAKEIP_V4_BASE", base.to_string());
-                std::env::set_var("SB_FAKEIP_V4_MASK", mask.to_string());
-            }
-        }
-        if let Some(ref v6) = inet6_range {
-            if let Some((base, mask)) = parse_cidr_v6(v6) {
-                std::env::set_var("SB_FAKEIP_V6_BASE", base.to_string());
-                std::env::set_var("SB_FAKEIP_V6_MASK", mask.to_string());
-            }
-        }
         Self {
             tag_name: tag,
             inet4_range,
@@ -3070,39 +2931,29 @@ nameserver 2001:4860:4860::8888
 
     #[test]
     fn parse_tailscale_spec_with_inline_servers() {
-        let (name, addrs) = parse_tailscale_spec("tailscale://100.64.0.2:53", Some("ts")).unwrap();
+        let (name, addrs) =
+            parse_tailscale_spec("tailscale://100.64.0.2:53", Some("ts"), &[]).unwrap();
         assert_eq!(name, "tailscale::ts");
         assert_eq!(addrs.len(), 1);
         assert_eq!(addrs[0], "100.64.0.2:53".parse::<SocketAddr>().unwrap());
     }
 
     #[test]
-    fn parse_tailscale_spec_uses_env_fallback() {
-        let old = std::env::var("SB_TAILSCALE_DNS_ADDRS").ok();
-        std::env::set_var("SB_TAILSCALE_DNS_ADDRS", "100.64.0.10");
-        let (_, addrs) = parse_tailscale_spec("tailscale://", None).unwrap();
+    fn parse_tailscale_spec_uses_injected_fallback() {
+        let fallback = ["100.64.0.10:53".parse().unwrap()];
+        let (_, addrs) = parse_tailscale_spec("tailscale://", None, &fallback).unwrap();
         assert_eq!(addrs.len(), 1);
         assert_eq!(addrs[0], "100.64.0.10:53".parse::<SocketAddr>().unwrap());
-        if let Some(val) = old {
-            std::env::set_var("SB_TAILSCALE_DNS_ADDRS", val);
-        } else {
-            std::env::remove_var("SB_TAILSCALE_DNS_ADDRS");
-        }
     }
 
     #[test]
     fn parse_tailscale_spec_errors_without_addrs() {
-        let old = std::env::var("SB_TAILSCALE_DNS_ADDRS").ok();
-        std::env::remove_var("SB_TAILSCALE_DNS_ADDRS");
-        let err = parse_tailscale_spec("tailscale://", Some("ts")).unwrap_err();
+        let err = parse_tailscale_spec("tailscale://", Some("ts"), &[]).unwrap_err();
         let msg = err.to_string();
         assert!(
-            msg.contains("SB_TAILSCALE_DNS_ADDRS"),
-            "error should hint env configuration, got: {msg}"
+            msg.contains("explicit address"),
+            "error should hint address configuration, got: {msg}"
         );
-        if let Some(val) = old {
-            std::env::set_var("SB_TAILSCALE_DNS_ADDRS", val);
-        }
     }
 
     #[tokio::test]
@@ -3114,8 +2965,8 @@ nameserver 2001:4860:4860::8888
             .expect_err("tailscale upstream should error when empty");
         let msg = err.to_string();
         assert!(
-            msg.contains("SB_TAILSCALE_DNS_ADDRS"),
-            "error should hint env configuration, got: {msg}"
+            msg.contains("configure tailscale://host:port"),
+            "error should hint address configuration, got: {msg}"
         );
         assert!(
             msg.contains("tailscale upstream tailscale::test"),

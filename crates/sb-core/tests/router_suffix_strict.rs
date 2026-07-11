@@ -1,19 +1,23 @@
 #![cfg(feature = "router")]
 use sb_core::router::{
-    normalize_host, router_build_index_from_str, router_index_decide_exact_suffix,
+    normalize_host, router_build_index_from_str_with_options, router_index_decide_exact_suffix,
 };
+use sb_core::runtime_options::RouterRuntimeOptions;
 
 #[test]
 fn suffix_strict_only_uses_label_tail_map() {
     // 开启严格模式
-    std::env::set_var("SB_ROUTER_SUFFIX_STRICT", "1");
     let rules = r#"
     suffix:.example.com=proxy
     # "非标签边界"的 weird 后缀
     suffix:mple.com=reject
     default=unresolved
     "#;
-    let idx = router_build_index_from_str(rules, 8192).expect("build");
+    let options = RouterRuntimeOptions {
+        suffix_strict: true,
+        ..RouterRuntimeOptions::default()
+    };
+    let idx = router_build_index_from_str_with_options(rules, 8192, &options).expect("build");
     let h1 = normalize_host("api.example.com");
     assert_eq!(
         router_index_decide_exact_suffix(&idx, &h1).unwrap(),
@@ -25,6 +29,4 @@ fn suffix_strict_only_uses_label_tail_map() {
         router_index_decide_exact_suffix(&idx, &h2).unwrap_or(idx.default),
         "unresolved"
     );
-    // 关闭严格模式以不影响其他测试
-    std::env::remove_var("SB_ROUTER_SUFFIX_STRICT");
 }

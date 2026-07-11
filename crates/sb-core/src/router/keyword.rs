@@ -24,35 +24,9 @@ pub struct Index {
     pub ac: Option<aho_corasick::AhoCorasick>,
 }
 
-use std::sync::Arc;
-
-/// 读取 ENV 决定是否启用 AC（在 router_keyword_ac 打开时才生效）
+/// Return whether Aho-Corasick should be enabled for the default threshold.
 pub fn should_enable_ac(count: usize) -> bool {
-    let th = keyword_ac_min_from_env();
-    count >= th
-}
-
-fn parse_keyword_ac_min_env(value: Option<&str>) -> Result<usize, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<usize>().map_err(|err| {
-            format!(
-                "router env 'SB_ROUTER_KEYWORD_AC_MIN' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(64),
-    }
-}
-
-fn keyword_ac_min_from_env() -> usize {
-    let raw = std::env::var("SB_ROUTER_KEYWORD_AC_MIN").ok();
-    match parse_keyword_ac_min_env(raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default 64");
-            64
-        }
-    }
+    count >= 64
 }
 
 impl Index {
@@ -82,6 +56,13 @@ pub(crate) fn build_index<'a, I>(pairs: I) -> Option<Index>
 where
     I: IntoIterator<Item = (&'a str, &'a str)>,
 {
+    build_index_with_threshold(pairs, 64)
+}
+
+pub(crate) fn build_index_with_threshold<'a, I>(pairs: I, threshold: usize) -> Option<Index>
+where
+    I: IntoIterator<Item = (&'a str, &'a str)>,
+{
     let mut pats = Vec::new();
     let mut decs = Vec::new();
     for (k, v) in pairs {
@@ -93,7 +74,7 @@ where
     }
     #[cfg(feature = "router_keyword_ac")]
     {
-        let ac = if should_enable_ac(pats.len()) {
+        let ac = if pats.len() >= threshold {
             aho_corasick::AhoCorasick::new(&pats).ok()
         } else {
             None
@@ -103,19 +84,5 @@ where
     #[cfg(not(feature = "router_keyword_ac"))]
     {
         return Some(Index { pats, decs });
-    }
-}
-
-#[cfg(test)]
-mod tests {
-    use super::parse_keyword_ac_min_env;
-
-    #[test]
-    fn invalid_keyword_ac_min_env_reports_explicitly() {
-        let err = parse_keyword_ac_min_env(Some("bad-min"))
-            .expect_err("invalid keyword ac min env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_KEYWORD_AC_MIN"));
-        assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

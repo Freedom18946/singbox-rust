@@ -121,7 +121,10 @@ pub use self::hot_reload_cli::{
 };
 pub use self::route_connection::{ConnectionRouter, DirectRouter, RouteResult};
 pub use self::runtime_override::{runtime_override_http, runtime_override_udp};
-pub use self::shared_index::{router_index_from_env_with_reload, shared_index};
+pub use self::shared_index::{
+    router_index_from_env_with_reload, router_index_with_reload, shared_index,
+    shared_index_with_options,
+};
 pub use crate::outbound::RouteTarget;
 
 /// Route decision result for hot reload compatibility.
@@ -224,7 +227,6 @@ impl<'a> Default for RouteCtx<'a> {
 }
 
 use blake3::Hasher as Blake3;
-use once_cell::sync::Lazy;
 #[cfg(feature = "json")]
 use serde::Serialize;
 use std::fs as sfs;
@@ -244,11 +246,10 @@ use std::{
 use tokio::fs as tfs;
 use tokio::time::sleep;
 
-pub(crate) use self::runtime_override::runtime_override_ip;
+pub(crate) use self::runtime_override::{
+    runtime_override_http_with_raw, runtime_override_ip_with_raw, runtime_override_udp_with_raw,
+};
 pub(crate) use self::shared_index::empty_router_index;
-#[cfg(test)]
-pub(crate) use self::shared_index::shared_hot_reload_enabled_from_env;
-
 #[cfg(feature = "metrics")]
 #[inline]
 fn incr_counter(name: &'static str, kv: &[(&'static str, &'static str)]) {
@@ -336,6 +337,8 @@ pub struct RouterIndex {
     /// Checksum for hot reload "change detection" (blake3 of text).
     /// 用于热重载"变更检测"的校验和（blake3 of 文本）。
     pub checksum: [u8; 32],
+    pub suffix_strict: bool,
+    pub suffix_trie_enabled: bool,
 }
 
 /// 用于 JSON 摘要导出的只读视图（保持字段名稳定以便运维接入）
@@ -406,7 +409,7 @@ impl RouterIndex {
 // R15: 试验性后缀 Trie 支持（仅当启用 feature="suffix_trie" 时暴露）
 #[cfg(feature = "suffix_trie")]
 impl RouterIndex {
-    /// 当环境变量 `SB_ROUTER_SUFFIX_TRIE=1` 时，使用 Trie 查询后缀命中
+    /// 注入的 suffix-trie 选项启用时，使用 Trie 查询后缀命中。
     pub fn trial_decide_by_suffix(&self, host: &str) -> Option<&'static str> {
         use std::sync::{
             atomic::{AtomicU64, Ordering},
@@ -428,7 +431,7 @@ impl RouterIndex {
             *trie.lock().unwrap_or_else(|e| e.into_inner()) = t;
             ver.store(cur, Ordering::Relaxed);
         }
-        if router_suffix_trie_from_env() {
+        if self.suffix_trie_enabled {
             {
                 let guard = trie.lock().unwrap_or_else(|e| e.into_inner());
                 guard.query(host)
@@ -449,10 +452,24 @@ impl RouterIndex {
     }
 
     pub fn decide_http_explain(&self, host_norm: &str) -> crate::router::engine::DecisionExplain {
-        // exact、suffix ...
+        let host_norm = normalize_host(host_norm);
+        if let Some(decision) = router_index_decide_exact_suffix(self, &host_norm) {
+            let reason_kind = if self.exact.contains_key(&host_norm) {
+                "exact"
+            } else {
+                "suffix"
+            };
+            return crate::router::engine::DecisionExplain {
+                decision: decision.to_string(),
+                reason: format!("{reason_kind} matched host={host_norm}"),
+                reason_kind: reason_kind.to_string(),
+                #[cfg(feature = "router_cache_explain")]
+                cache_status: None,
+            };
+        }
         #[cfg(feature = "router_keyword")]
         if let Some(idx) = &self.keyword_idx {
-            if let Some(i) = idx.find_idx(host_norm) {
+            if let Some(i) = idx.find_idx(&host_norm) {
                 let dec = idx
                     .decs
                     .get(i)
@@ -571,6 +588,18 @@ pub fn router_build_index_from_str(
     rules: &str,
     max: usize,
 ) -> Result<Arc<RouterIndex>, BuildError> {
+    router_build_index_from_str_with_options(
+        rules,
+        max,
+        &crate::runtime_options::RouterRuntimeOptions::default(),
+    )
+}
+
+pub fn router_build_index_from_str_with_options(
+    rules: &str,
+    max: usize,
+    runtime_options: &crate::runtime_options::RouterRuntimeOptions,
+) -> Result<Arc<RouterIndex>, BuildError> {
     #[cfg(feature = "metrics")]
     let build_start = Instant::now();
     // 现有索引容器
@@ -611,13 +640,13 @@ pub fn router_build_index_from_str(
 
     let mut count = 0usize;
 
-    // R5/R10: include_glob 支持（相对路径以 SB_ROUTER_RULES_BASEDIR 或当前目录为基准）
+    // R5/R10: include_glob 支持（相对路径以注入的规则基目录或当前目录为基准）
     // 策略：预扫描，将 include_glob 展开为内联文本后再进入主解析循环；带深度/循环守卫
-    let basedir = std::env::var("SB_ROUTER_RULES_BASEDIR")
-        .ok()
-        .map(PathBuf::from)
+    let basedir = runtime_options
+        .rules_base_dir
+        .clone()
         .unwrap_or_else(|| std::env::current_dir().unwrap_or_else(|_| PathBuf::from(".")));
-    let max_depth = router_rules_max_depth_from_env();
+    let max_depth = runtime_options.rules_max_depth;
     let expanded = expand_include_glob_and_vars_prepass(rules, &basedir, &mut vars, 0, max_depth)?;
     let mut lines = expanded.lines();
 
@@ -1045,7 +1074,7 @@ pub fn router_build_index_from_str(
     }
 
     // R5 守门：在开关启用时强制要求显式 default
-    let require_default = router_rules_require_default_from_env();
+    let require_default = runtime_options.rules_require_default;
     if require_default && default.is_none() {
         #[cfg(feature = "metrics")]
         incr_counter(
@@ -1094,6 +1123,8 @@ pub fn router_build_index_from_str(
         default: default.unwrap_or("unresolved"),
         gen: 0,
         checksum,
+        suffix_strict: runtime_options.suffix_strict,
+        suffix_trie_enabled: runtime_options.suffix_trie,
         rules: vec![],
     };
     #[cfg(not(feature = "router_keyword"))]
@@ -1128,16 +1159,19 @@ pub fn router_build_index_from_str(
         default: default.unwrap_or("unresolved"),
         gen: 0,
         checksum,
+        suffix_strict: runtime_options.suffix_strict,
+        suffix_trie_enabled: runtime_options.suffix_trie,
         rules: vec![],
     };
     // 可选：构建完成后的收尾操作
     #[cfg(feature = "router_keyword")]
     {
         use crate::router::keyword;
-        idx.keyword_idx = keyword::build_index(
+        idx.keyword_idx = keyword::build_index_with_threshold(
             idx.keyword_rules
                 .iter()
                 .map(|(k, v)| (k.as_str(), v.as_str())),
+            runtime_options.keyword_ac_min,
         );
         // finalize 时把原 rules 决策也做一次驻留，供旧 &'static 路径复用
         for (_k, v) in &idx.keyword_rules {
@@ -1504,7 +1538,7 @@ pub fn router_index_decide_exact_suffix(idx: &RouterIndex, host: &str) -> Option
         }
     }
     // 3) 旧语义兜底：无边界 ends_with 线扫，保障"不破坏用户空间"
-    if !*SUFFIX_STRICT {
+    if !idx.suffix_strict {
         for (s, d) in &idx.suffix {
             if host.ends_with(s) {
                 return Some(*d);
@@ -1513,9 +1547,6 @@ pub fn router_index_decide_exact_suffix(idx: &RouterIndex, host: &str) -> Option
     }
     None
 }
-
-/// 控制是否开启严格后缀模式（仅标签边界直查）
-static SUFFIX_STRICT: Lazy<bool> = Lazy::new(router_suffix_strict_from_env);
 
 /// 基于端口/传输的后置兜底（只在 host/IP 未命中时尝试）
 pub fn router_index_decide_transport_port(
@@ -1753,14 +1784,14 @@ async fn read_rules_file(path: &Path) -> Result<String, std::io::Error> {
 /// 递归展开 include 指令，支持两种形式：
 // - `include path/to/file.rules`
 // - `@include path/to/file.rules`
-/// 相对路径基于父文件目录；深度由 `SB_ROUTER_RULES_INCLUDE_DEPTH` 控制（默认 4）
+/// 相对路径基于父文件目录；深度由注入选项控制（默认 4）。
 fn read_rules_with_includes<'a>(
     root: &'a Path,
     depth: usize,
     visited: &'a mut HashSet<PathBuf>,
+    max_depth: usize,
 ) -> Pin<Box<dyn Future<Output = Result<String, std::io::Error>> + Send + 'a>> {
     Box::pin(async move {
-        let max_depth = router_rules_include_depth_from_env();
         if depth > max_depth {
             return Ok(String::new());
         }
@@ -1793,7 +1824,14 @@ fn read_rules_with_includes<'a>(
                 } else {
                     base.join(inc_path)
                 };
-                match Box::pin(read_rules_with_includes(&full, depth + 1, visited)).await {
+                match Box::pin(read_rules_with_includes(
+                    &full,
+                    depth + 1,
+                    visited,
+                    max_depth,
+                ))
+                .await
+                {
                     Ok(s) => {
                         #[cfg(feature = "metrics")]
                         metrics::counter!("router_rules_include_total", "result"=>"success")
@@ -1824,10 +1862,13 @@ pub struct HotReloader {
     path: PathBuf,
     // ...
     last_ok_checksum: [u8; 32],
-    // R5: 失败退避（毫秒），成功后复位；上限由 SB_ROUTER_RULES_BACKOFF_MAX_MS 控制
+    // R5: 失败退避（毫秒），成功后复位；上限由注入选项控制。
     backoff_ms: u64,
     // R9/R10: 周期抖动（毫秒上限）；默认 0=关闭
     jitter_ms: u64,
+    max_rules: usize,
+    backoff_max_ms: u64,
+    runtime_options: crate::runtime_options::RouterRuntimeOptions,
 }
 
 impl HotReloader {
@@ -1836,7 +1877,7 @@ impl HotReloader {
         tracing::info!("Router hot reloader configured for path: {:?}", path);
 
         // 检查是否启用热重载
-        if std::env::var("SB_ROUTER_HOT_RELOAD").is_ok() {
+        if router_handle.runtime_options().hot_reload {
             tracing::info!("Hot reload enabled for router configuration");
 
             // 创建热重载实例并启动监控任务
@@ -1844,7 +1885,10 @@ impl HotReloader {
                 path: path.clone(),
                 last_ok_checksum: [0; 32], // 初始为空checksum，首次reload会检测
                 backoff_ms: 0,
-                jitter_ms: 0,
+                jitter_ms: router_handle.runtime_options().rules_jitter_ms,
+                max_rules: router_handle.runtime_options().rules_max,
+                backoff_max_ms: router_handle.runtime_options().rules_backoff_max_ms,
+                runtime_options: router_handle.runtime_options().clone(),
             };
 
             // 在后台异步任务中运行热重载逻辑
@@ -1853,7 +1897,7 @@ impl HotReloader {
                 reloader.run_with_router_handle(router_handle).await;
             });
         } else {
-            tracing::debug!("Hot reload not enabled (set SB_ROUTER_HOT_RELOAD=1 to enable)");
+            tracing::debug!("router hot reload disabled by injected runtime options");
             // RouterHandle在热重载未启用时不需要使用，但保留接口一致性
             // 未来如果有其他用途（如手动重载API）可以在这里处理
         }
@@ -1863,9 +1907,6 @@ impl HotReloader {
     /// Run hot reload loop with RouterHandle integration
     async fn run_with_router_handle(mut self, router_handle: RouterHandle) {
         let mut interval = tokio::time::interval(Duration::from_millis(1000));
-        let jitter_cap = router_rules_jitter_ms_from_env();
-        self.jitter_ms = jitter_cap;
-
         loop {
             interval.tick().await;
             #[cfg(feature = "rand")]
@@ -1902,7 +1943,7 @@ impl HotReloader {
                 Err(e) => {
                     // 失败：记录并退避
                     tracing::error!("router reload failed: {}", e);
-                    let cap = router_rules_backoff_max_ms_from_env();
+                    let cap = self.backoff_max_ms;
 
                     self.backoff_ms = std::cmp::min(
                         if self.backoff_ms == 0 {
@@ -1927,14 +1968,12 @@ impl HotReloader {
     async fn try_reload_once(&mut self) -> Result<Option<Arc<RouterIndex>>, BuildError> {
         // 读取文件, mtime + checksum 判定是否变更；变更则构建
         let s = sfs::read_to_string(&self.path)?;
-        let max_rules = router_rules_max_from_env();
-        let idx = router_build_index_from_str(&s, max_rules)?;
+        let idx =
+            router_build_index_from_str_with_options(&s, self.max_rules, &self.runtime_options)?;
         if idx.checksum == self.last_ok_checksum {
             return Ok(None);
         }
         // 原子切换
-        let shared = shared_index();
-        *shared.write().unwrap_or_else(|e| e.into_inner()) = idx.clone();
         #[cfg(feature = "metrics")]
         incr_counter("router_rules_reload_total", &[("result", "success")]);
         Ok(Some(idx))
@@ -1955,19 +1994,22 @@ pub mod bench_api {
 /// 原子热重载：成功才替换；失败仅计数不切换
 pub async fn spawn_rules_hot_reload(
     shared: Arc<RwLock<Arc<RouterIndex>>>,
+    runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
 ) -> Result<tokio::task::JoinHandle<()>, BuildError> {
-    let file = std::env::var("SB_ROUTER_RULES_FILE").unwrap_or_default();
-    let interval_ms = router_rules_hot_reload_ms_from_env();
-    if file.is_empty() || interval_ms == 0 {
+    let Some(path) = runtime_options.rules_file.clone() else {
         // 热重载未启用，直接返回一个 no-op handle
         return Ok(tokio::spawn(async move {}));
+    };
+    let interval_ms = runtime_options.rules_hot_reload_ms;
+    if interval_ms == 0 {
+        return Ok(tokio::spawn(async move {}));
     }
-    let path = PathBuf::from(&file);
-    let max_rules = router_rules_max_from_env();
+    let max_rules = runtime_options.rules_max;
+    let include_depth = runtime_options.rules_include_depth;
     let h = tokio::spawn(async move {
         loop {
             let mut visited = HashSet::new();
-            match read_rules_with_includes(&path, 0, &mut visited).await {
+            match read_rules_with_includes(&path, 0, &mut visited, include_depth).await {
                 Ok(text) => {
                     // 与当前 checksum 比较，避免无谓切换（同时覆盖 include 文件变化）
                     let cur_sum = { shared.read().unwrap_or_else(|e| e.into_inner()).checksum };
@@ -1981,7 +2023,11 @@ pub async fn spawn_rules_hot_reload(
                     } else {
                         #[cfg(feature = "metrics")]
                         let build_start = Instant::now();
-                        match router_build_index_from_str(&text, max_rules) {
+                        match router_build_index_from_str_with_options(
+                            &text,
+                            max_rules,
+                            &runtime_options,
+                        ) {
                             Ok(new_idx) => {
                                 #[cfg(feature = "metrics")]
                                 let elapsed = build_start.elapsed().as_millis() as f64;
@@ -2059,215 +2105,6 @@ pub async fn spawn_rules_hot_reload(
         }
     });
     Ok(h)
-}
-
-fn parse_router_rules_max_env(value: Option<&str>) -> Result<usize, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<usize>().map_err(|err| {
-            format!(
-                "router env 'SB_ROUTER_RULES_MAX' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(8192),
-    }
-}
-
-pub(crate) fn router_rules_max_from_env() -> usize {
-    let raw = std::env::var("SB_ROUTER_RULES_MAX").ok();
-    match parse_router_rules_max_env(raw.as_deref()) {
-        Ok(max_rules) => max_rules,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default 8192");
-            8192
-        }
-    }
-}
-
-fn parse_router_rules_hot_reload_ms_env(value: Option<&str>) -> Result<u64, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<u64>().map_err(|err| {
-            format!(
-                "router env 'SB_ROUTER_RULES_HOT_RELOAD_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(0),
-    }
-}
-
-fn router_rules_hot_reload_ms_from_env() -> u64 {
-    let raw = std::env::var("SB_ROUTER_RULES_HOT_RELOAD_MS").ok();
-    match parse_router_rules_hot_reload_ms_env(raw.as_deref()) {
-        Ok(interval_ms) => interval_ms,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default 0");
-            0
-        }
-    }
-}
-
-fn parse_router_rules_jitter_ms_env(value: Option<&str>) -> Result<u64, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<u64>().map_err(|err| {
-            format!(
-                "router env 'SB_ROUTER_RULES_JITTER_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(0),
-    }
-}
-
-fn router_rules_jitter_ms_from_env() -> u64 {
-    let raw = std::env::var("SB_ROUTER_RULES_JITTER_MS").ok();
-    match parse_router_rules_jitter_ms_env(raw.as_deref()) {
-        Ok(jitter_ms) => jitter_ms,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default 0");
-            0
-        }
-    }
-}
-
-fn parse_router_rules_max_depth_env(value: Option<&str>) -> Result<usize, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<usize>().map_err(|err| {
-            format!(
-                "router env 'SB_ROUTER_RULES_MAX_DEPTH' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(3),
-    }
-}
-
-fn router_rules_max_depth_from_env() -> usize {
-    let raw = std::env::var("SB_ROUTER_RULES_MAX_DEPTH").ok();
-    match parse_router_rules_max_depth_env(raw.as_deref()) {
-        Ok(max_depth) => max_depth,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default 3");
-            3
-        }
-    }
-}
-
-fn parse_router_rules_include_depth_env(value: Option<&str>) -> Result<usize, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<usize>().map_err(|err| {
-            format!(
-                "router env 'SB_ROUTER_RULES_INCLUDE_DEPTH' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(4),
-    }
-}
-
-fn router_rules_include_depth_from_env() -> usize {
-    let raw = std::env::var("SB_ROUTER_RULES_INCLUDE_DEPTH").ok();
-    match parse_router_rules_include_depth_env(raw.as_deref()) {
-        Ok(include_depth) => include_depth,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default 4");
-            4
-        }
-    }
-}
-
-fn parse_router_rules_backoff_max_ms_env(value: Option<&str>) -> Result<u64, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<u64>().map_err(|err| {
-            format!(
-                "router env 'SB_ROUTER_RULES_BACKOFF_MAX_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(30000),
-    }
-}
-
-fn router_rules_backoff_max_ms_from_env() -> u64 {
-    let raw = std::env::var("SB_ROUTER_RULES_BACKOFF_MAX_MS").ok();
-    match parse_router_rules_backoff_max_ms_env(raw.as_deref()) {
-        Ok(backoff_max_ms) => backoff_max_ms,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default 30000");
-            30000
-        }
-    }
-}
-
-fn parse_router_rules_require_default_env(value: Option<&str>) -> Result<bool, Arc<str>> {
-    match value {
-        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
-        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
-        Some(raw) => Err(format!(
-            "router env 'SB_ROUTER_RULES_REQUIRE_DEFAULT' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
-        )
-        .into()),
-        None => Ok(false),
-    }
-}
-
-fn router_rules_require_default_from_env() -> bool {
-    let raw = std::env::var("SB_ROUTER_RULES_REQUIRE_DEFAULT").ok();
-    match parse_router_rules_require_default_env(raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default false");
-            false
-        }
-    }
-}
-
-fn parse_router_suffix_strict_env(value: Option<&str>) -> Result<bool, Arc<str>> {
-    match value {
-        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
-        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
-        Some(raw) => Err(format!(
-            "router env 'SB_ROUTER_SUFFIX_STRICT' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
-        )
-        .into()),
-        None => Ok(false),
-    }
-}
-
-fn router_suffix_strict_from_env() -> bool {
-    let raw = std::env::var("SB_ROUTER_SUFFIX_STRICT").ok();
-    match parse_router_suffix_strict_env(raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default false");
-            false
-        }
-    }
-}
-
-#[allow(dead_code)]
-fn parse_router_suffix_trie_env(value: Option<&str>) -> Result<bool, Arc<str>> {
-    match value {
-        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
-        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
-        Some(raw) => Err(format!(
-            "router env 'SB_ROUTER_SUFFIX_TRIE' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
-        )
-        .into()),
-        None => Ok(false),
-    }
-}
-
-#[allow(dead_code)]
-fn router_suffix_trie_from_env() -> bool {
-    let raw = std::env::var("SB_ROUTER_SUFFIX_TRIE").ok();
-    match parse_router_suffix_trie_env(raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default false");
-            false
-        }
-    }
 }
 
 /// —— 快照摘要导出（JSON 字符串；feature=json 才返回 JSON，否则返回人类可读文本）———
@@ -2556,6 +2393,8 @@ pub fn decide_udp_with_rules(host_or_ip: &str, _use_geoip: bool, rules: &str) ->
             default: "unresolved",
             gen: 0,
             checksum: [0; 32],
+            suffix_strict: false,
+            suffix_trie_enabled: false,
             rules: vec![],
         })
     });
@@ -2608,6 +2447,8 @@ pub fn decide_udp_with_rules_and_handle(
             default: "unresolved",
             gen: 0,
             checksum: [0; 32],
+            suffix_strict: false,
+            suffix_trie_enabled: false,
             rules: vec![],
         })
     });
@@ -2672,6 +2513,8 @@ pub fn decide_udp_with_rules_and_ips_v46(
             default: "unresolved",
             gen: 0,
             checksum: [0; 32],
+            suffix_strict: false,
+            suffix_trie_enabled: false,
             rules: vec![],
         })
     });
@@ -2743,6 +2586,8 @@ pub fn decide_udp_with_rules_and_ips(
             default: "unresolved",
             gen: 0,
             checksum: [0; 32],
+            suffix_strict: false,
+            suffix_trie_enabled: false,
             rules: vec![],
         })
     });
@@ -2772,145 +2617,17 @@ pub use cache_wire::{register_router_decision_cache_adapter, register_router_hot
 
 #[cfg(test)]
 mod migration_tests {
-    use super::{
-        parse_router_rules_backoff_max_ms_env, parse_router_rules_hot_reload_ms_env,
-        parse_router_rules_include_depth_env, parse_router_rules_jitter_ms_env,
-        parse_router_rules_max_depth_env, parse_router_rules_max_env,
-        parse_router_rules_require_default_env, parse_router_suffix_strict_env,
-        parse_router_suffix_trie_env, shared_index,
-    };
-    use std::sync::{Mutex, OnceLock};
-
-    fn serial_env_guard() -> std::sync::MutexGuard<'static, ()> {
-        static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| Mutex::new(()))
-            .lock()
-            .unwrap_or_else(|e| e.into_inner())
-    }
-
-    #[test]
-    fn invalid_router_rules_max_env_reports_explicitly() {
-        let err = parse_router_rules_max_env(Some("bad-max"))
-            .expect_err("invalid router rules max env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_RULES_MAX"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_router_rules_hot_reload_ms_env_reports_explicitly() {
-        let err = parse_router_rules_hot_reload_ms_env(Some("bad-ms"))
-            .expect_err("invalid hot reload env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_RULES_HOT_RELOAD_MS"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn shared_hot_reload_requires_file_and_positive_interval() {
-        let _file = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_FILE", "");
-        let _interval = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_HOT_RELOAD_MS", "10");
-        assert!(!super::shared_hot_reload_enabled_from_env());
-
-        let _file = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_FILE", "/tmp/router.rules");
-        let _interval = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_HOT_RELOAD_MS", "0");
-        assert!(!super::shared_hot_reload_enabled_from_env());
-
-        let _file = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_FILE", "/tmp/router.rules");
-        let _interval = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES_HOT_RELOAD_MS", "10");
-        assert!(super::shared_hot_reload_enabled_from_env());
-    }
-
-    #[test]
-    fn shared_index_refreshes_when_router_rules_env_changes() {
-        let _serial = serial_env_guard();
-        let _rules_file = crate::testutil::EnvVarGuard::remove("SB_ROUTER_RULES_FILE");
-        let _rules = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES", "exact:a.example=proxy");
-
-        let first = shared_index();
-        let first = first.read().unwrap_or_else(|e| e.into_inner()).clone();
-        assert_eq!(first.exact.get("a.example").copied(), Some("proxy"));
-
-        let _rules = crate::testutil::EnvVarGuard::set("SB_ROUTER_RULES", "exact:b.example=reject");
-        let second = shared_index();
-        let second = second.read().unwrap_or_else(|e| e.into_inner()).clone();
-        assert_eq!(second.exact.get("a.example"), None);
-        assert_eq!(second.exact.get("b.example").copied(), Some("reject"));
-    }
-
     #[test]
     fn router_shared_state_owner_lives_in_dedicated_modules() {
         let shared_source = include_str!("shared_index.rs");
         let override_source = include_str!("runtime_override.rs");
         let mod_source = include_str!("mod.rs");
 
-        assert!(shared_source.contains("static SHARED_INDEX"));
+        assert!(shared_source.contains("pub fn shared_index_with_options"));
+        assert!(!shared_source.contains("static SHARED_INDEX"));
         assert!(override_source.contains("static RUNTIME_OVERRIDE_CACHE"));
         assert!(mod_source.contains("mod shared_index;"));
         assert!(mod_source.contains("mod runtime_override;"));
-    }
-
-    #[test]
-    fn invalid_router_rules_jitter_ms_env_reports_explicitly() {
-        let err = parse_router_rules_jitter_ms_env(Some("bad-jitter"))
-            .expect_err("invalid jitter env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_RULES_JITTER_MS"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_router_rules_backoff_max_ms_env_reports_explicitly() {
-        let err = parse_router_rules_backoff_max_ms_env(Some("bad-backoff"))
-            .expect_err("invalid backoff env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_RULES_BACKOFF_MAX_MS"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_router_rules_max_depth_env_reports_explicitly() {
-        let err = parse_router_rules_max_depth_env(Some("bad-depth"))
-            .expect_err("invalid max depth env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_RULES_MAX_DEPTH"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_router_rules_include_depth_env_reports_explicitly() {
-        let err = parse_router_rules_include_depth_env(Some("bad-include-depth"))
-            .expect_err("invalid include depth env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_RULES_INCLUDE_DEPTH"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_router_rules_require_default_env_reports_explicitly() {
-        let err = parse_router_rules_require_default_env(Some("yes-please"))
-            .expect_err("unrecognized boolean env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_RULES_REQUIRE_DEFAULT"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_router_suffix_strict_env_reports_explicitly() {
-        let err = parse_router_suffix_strict_env(Some("on"))
-            .expect_err("unrecognized boolean env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_SUFFIX_STRICT"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_router_suffix_trie_env_reports_explicitly() {
-        let err = parse_router_suffix_trie_env(Some("enable"))
-            .expect_err("unrecognized boolean env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_SUFFIX_TRIE"));
-        assert!(msg.contains("silent parse fallback is disabled"));
     }
 }
 

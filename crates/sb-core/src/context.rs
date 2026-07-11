@@ -79,6 +79,7 @@ impl Startable for crate::service::ServiceManager {
 /// Global runtime context containing registries and managers.
 #[derive(Clone, Debug)]
 pub struct Context {
+    pub runtime_options: crate::runtime_options::SharedCoreRuntimeOptions,
     pub network: Arc<NetworkManager>,
     pub connections: Arc<ConnectionManager>,
     pub conn_tracker: Arc<ConnTracker>,
@@ -102,6 +103,7 @@ pub struct Context {
 /// Global registry exposing runtime managers for components that need late binding.
 #[derive(Clone, Debug)]
 pub struct ContextRegistry {
+    pub runtime_options: crate::runtime_options::SharedCoreRuntimeOptions,
     pub network: Arc<NetworkManager>,
     pub connections: Arc<ConnectionManager>,
     pub conn_tracker: Arc<ConnTracker>,
@@ -125,6 +127,7 @@ pub struct ContextRegistry {
 impl From<&Context> for ContextRegistry {
     fn from(ctx: &Context) -> Self {
         Self {
+            runtime_options: ctx.runtime_options.clone(),
             network: ctx.network.clone(),
             connections: ctx.connections.clone(),
             conn_tracker: ctx.conn_tracker.clone(),
@@ -149,8 +152,17 @@ impl From<&Context> for ContextRegistry {
 
 impl Context {
     pub fn new() -> Self {
+        Self::with_runtime_options(Arc::new(
+            crate::runtime_options::CoreRuntimeOptions::default(),
+        ))
+    }
+
+    pub fn with_runtime_options(
+        runtime_options: crate::runtime_options::SharedCoreRuntimeOptions,
+    ) -> Self {
         let conn_tracker = Arc::new(ConnTracker::new());
         Self {
+            runtime_options,
             network: Arc::new(NetworkManager::new()),
             connections: Arc::new(ConnectionManager::new()),
             conn_tracker,

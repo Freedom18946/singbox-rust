@@ -6,7 +6,6 @@ use crate::net::RateLimiter;
 use anyhow::{Context, Result};
 use std::io;
 use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
-use std::sync::OnceLock;
 use std::time::Duration;
 use tokio::net::UdpSocket;
 
@@ -54,29 +53,16 @@ fn classify_io_error(e: &std::io::Error) -> &'static str {
     }
 }
 
-fn udp_limiter() -> Option<&'static RateLimiter> {
-    static LIM: OnceLock<Option<RateLimiter>> = OnceLock::new();
-    LIM.get_or_init(RateLimiter::from_env_udp).as_ref()
-}
-
-/// 可选解析辅助：当目标是域名且 `SB_DNS_ENABLE=1` 时，使用进程级 DNS 客户端解析一个可用地址。
-/// 默认（未启用）则与现状保持一致（交给系统解析器或由调用方自行解析）。
 pub async fn resolve_target_socketaddr(
     dst: &UdpTargetAddr,
+    options: &crate::runtime_options::DnsRuntimeOptions,
 ) -> anyhow::Result<std::net::SocketAddr> {
     match dst {
         UdpTargetAddr::Ip(sa) => Ok(*sa),
         UdpTargetAddr::Domain { host, port } => {
-            if std::env::var("SB_DNS_ENABLE")
-                .ok()
-                .as_deref()
-                .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            {
-                // 进程级 DNS client（TTL 60s）
-                static DNS: OnceLock<DnsClient> = OnceLock::new();
-                let cli = DNS
-                    .get_or_init(|| DnsClient::new(Duration::from_secs(60)))
-                    .clone();
+            if options.enabled {
+                let cli =
+                    DnsClient::from_options(Duration::from_secs(options.default_ttl_s), options);
                 let list = cli.resolve(host, *port).await?;
                 list.into_iter()
                     .next()
@@ -116,8 +102,13 @@ pub async fn direct_udp_socket_for(dst: &UdpTargetAddr) -> Result<UdpSocket> {
 // - `sock`：入站绑定的 UdpSocket（共享同一 socket，便于回流）
 // - `dst`：目标（域名或 IP）
 // - `payload`：要发送的负载
-pub async fn direct_sendto(sock: &UdpSocket, dst: &UdpTargetAddr, payload: &[u8]) -> Result<usize> {
-    if let Some(l) = udp_limiter() {
+pub async fn direct_sendto(
+    sock: &UdpSocket,
+    dst: &UdpTargetAddr,
+    payload: &[u8],
+    network_options: &crate::runtime_options::NetworkRuntimeOptions,
+) -> Result<usize> {
+    if let Some(l) = RateLimiter::from_options(network_options) {
         if let Err(reason) = l.allow(payload.len()) {
             #[cfg(feature = "metrics")]
             metrics::counter!(

@@ -9,6 +9,29 @@
 //! Each submodule corresponds to a specific protocol or inbound type.
 //! 每个子模块对应一个特定的协议或入站类型。
 
+fn tcp_rate_limit_config_from_env() -> sb_core::net::tcp_rate_limit::TcpRateLimitConfig {
+    let defaults = sb_core::runtime_options::NetworkRuntimeOptions::default();
+    let parse = |key: &str, default: usize| {
+        std::env::var(key)
+            .ok()
+            .and_then(|value| value.trim().parse().ok())
+            .unwrap_or(default)
+    };
+    let mut options = defaults;
+    options.inbound_rate_limit_per_ip = parse(
+        "SB_INBOUND_RATE_LIMIT_PER_IP",
+        options.inbound_rate_limit_per_ip,
+    );
+    options.inbound_rate_limit_window = std::time::Duration::from_secs(parse(
+        "SB_INBOUND_RATE_LIMIT_WINDOW_SEC",
+        options.inbound_rate_limit_window.as_secs() as usize,
+    ) as u64);
+    options.inbound_rate_limit_qps = std::env::var("SB_INBOUND_RATE_LIMIT_QPS")
+        .ok()
+        .and_then(|value| value.trim().parse().ok());
+    sb_core::net::tcp_rate_limit::TcpRateLimitConfig::from_options(&options)
+}
+
 #[cfg(feature = "http")]
 pub mod http;
 

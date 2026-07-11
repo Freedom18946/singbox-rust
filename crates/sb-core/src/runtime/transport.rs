@@ -241,20 +241,21 @@ pub mod map {
 
     /// Convenience: build a `TransportBuilder` from OutboundIR directly.
     #[must_use]
-    pub fn builder_from_ir(ob: &OutboundIR) -> TransportBuilder {
+    pub fn builder_from_ir(
+        ob: &OutboundIR,
+        options: &crate::runtime_options::NetworkRuntimeOptions,
+    ) -> TransportBuilder {
         // Build per-outbound TLS config override if needed (skip verify, client auth, custom CA)
         let tls_cfg_override = tls_override_from_ob(ob);
 
         // Best-effort SNI fallback: if not explicitly set, and hints imply TLS (h2/grpc),
         // use server host as SNI when it looks like a domain name. Controlled by
-        // SB_TRANSPORT_SNI_FALLBACK (default: enabled).
+        // application-owned runtime option (default: enabled).
         fn looks_like_domain(s: &str) -> bool {
             // A minimal heuristic: has a dot and not a valid IPv4/IPv6 literal
             s.contains('.') && s.parse::<std::net::IpAddr>().is_err()
         }
-        let sni_fallback_enabled = std::env::var("SB_TRANSPORT_SNI_FALLBACK")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(true);
+        let sni_fallback_enabled = options.transport_sni_fallback;
         let h2_hint = ob.h2_path.is_some() || ob.h2_host.is_some();
         let grpc_hint = ob.grpc_service.is_some() || ob.grpc_method.is_some();
         let computed_tls_sni: Option<&str> =

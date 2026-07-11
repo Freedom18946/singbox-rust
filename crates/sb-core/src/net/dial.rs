@@ -1,12 +1,11 @@
 //! Unified dialing helpers: DNS → `SocketAddr` list → connect with per-attempt timeout & fallback.
 use crate::dns::resolve::{resolve_all_compat as resolve_all, resolve_socketaddr};
-use crate::util::env::{env_bool, env_duration_ms};
 use std::io;
 use std::time::Duration;
 use tokio::net::TcpStream;
 use tokio::time::timeout;
 
-/// 解析一个地址并尝试连接（单地址路径）；`SB_DNS_CACHE_ENABLE=1` 时走缓存解析。
+/// 解析一个地址并尝试连接（单地址路径）。
 pub async fn dial_hostport(host: &str, port: u16, per_attempt: Duration) -> io::Result<TcpStream> {
     let sa = resolve_socketaddr(host, port).await?;
     timeout(per_attempt, TcpStream::connect(sa))
@@ -65,15 +64,17 @@ where
     Err(last_err.unwrap_or_else(|| io::Error::new(io::ErrorKind::NotFound, "no address to dial")))
 }
 
-/// 统一读取"每次拨号超时"（毫秒）。默认 4000ms。测试/排障可通过 `SB_DIAL_TIMEOUT_MS` 调整。
-pub fn per_attempt_timeout() -> Duration {
-    env_duration_ms("SB_DIAL_TIMEOUT_MS", 4000)
+pub fn per_attempt_timeout(options: &crate::runtime_options::NetworkRuntimeOptions) -> Duration {
+    options.dial_timeout
 }
 
-/// 便捷拨号：当 `SB_DIAL_USE_ALL=1` 时走 `dial_all`，否则走 `dial_hostport`。
-pub async fn dial_pref(host: &str, port: u16) -> io::Result<TcpStream> {
-    let t = per_attempt_timeout();
-    if env_bool("SB_DIAL_USE_ALL") {
+pub async fn dial_pref(
+    host: &str,
+    port: u16,
+    options: &crate::runtime_options::NetworkRuntimeOptions,
+) -> io::Result<TcpStream> {
+    let t = per_attempt_timeout(options);
+    if options.dial_use_all {
         dial_all(host, port, t).await
     } else {
         dial_hostport(host, port, t).await
@@ -89,7 +90,6 @@ mod tests {
     #[tokio::test]
     async fn resolve_localhost_works_without_cache() {
         // 不依赖外网，只要本机解析 localhost 就能过
-        std::env::remove_var("SB_DNS_CACHE_ENABLE");
         let sa = resolve_socketaddr("localhost", 80)
             .await
             .expect("resolve localhost");

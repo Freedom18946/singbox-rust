@@ -15,70 +15,15 @@ use once_cell::sync::Lazy;
 
 use crate::router::{
     empty_router_index, normalize_host, router_index_decide_exact_suffix, router_index_decide_ip,
-    runtime_override_http, runtime_override_udp, shared_index, RouteTarget, RouterIndex,
+    shared_index, shared_index_with_options, RouteTarget, RouterIndex,
 };
 
 type UdpRulesCacheEntry = Option<(String, Arc<RouterIndex>)>;
 static UDP_RULES_CACHE: Lazy<RwLock<UdpRulesCacheEntry>> = Lazy::new(|| RwLock::new(None));
 
 fn parse_udp_rules_index(raw: &str) -> Result<Arc<RouterIndex>, Arc<str>> {
-    crate::router::router_build_index_from_str(raw, 8192).map_err(|err| {
-        format!(
-            "router udp rules env 'SB_ROUTER_UDP_RULES' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-        )
-        .into()
-    })
-}
-
-#[cfg(feature = "geoip_mmdb")]
-fn parse_geoip_cache_cap_env(value: Option<&str>) -> Result<usize, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<usize>().map_err(|err| {
-            format!(
-                "geoip env 'SB_GEOIP_CACHE' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(8192),
-    }
-}
-
-#[cfg(feature = "geoip_mmdb")]
-fn parse_geoip_ttl_env(value: Option<&str>) -> Result<std::time::Duration, Arc<str>> {
-    match value {
-        Some(raw) => humantime::parse_duration(raw).map_err(|err| {
-            format!(
-                "geoip env 'SB_GEOIP_TTL' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(std::time::Duration::from_secs(600)),
-    }
-}
-
-#[cfg(feature = "router_cache_lru_demo")]
-fn parse_decision_cache_env(value: Option<&str>) -> Result<bool, Arc<str>> {
-    match value {
-        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
-        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
-        Some(raw) => Err(format!(
-            "router env 'SB_ROUTER_DECISION_CACHE' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
-        )
-        .into()),
-        None => Ok(false),
-    }
-}
-
-#[cfg(feature = "router_cache_lru_demo")]
-fn decision_cache_from_env() -> bool {
-    let raw = std::env::var("SB_ROUTER_DECISION_CACHE").ok();
-    match parse_decision_cache_env(raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default false");
-            false
-        }
-    }
+    crate::router::router_build_index_from_str(raw, 8192)
+        .map_err(|err| format!("injected router UDP rules are invalid: {err}").into())
 }
 
 #[cfg(feature = "router_cache_lru_demo")]
@@ -86,96 +31,13 @@ fn router_cache_capacity(cap: usize) -> std::num::NonZeroUsize {
     std::num::NonZeroUsize::new(cap.max(1)).unwrap_or(std::num::NonZeroUsize::MIN)
 }
 
-#[cfg(feature = "router_cache_lru_demo")]
-fn parse_decision_cache_cap_env(value: Option<&str>) -> Result<usize, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<usize>().map_err(|err| {
-            format!(
-                "router env 'SB_ROUTER_DECISION_CACHE_CAP' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Ok(1024),
-    }
-}
-
-#[cfg(feature = "router_cache_lru_demo")]
-fn decision_cache_cap_from_env() -> usize {
-    let raw = std::env::var("SB_ROUTER_DECISION_CACHE_CAP").ok();
-    match parse_decision_cache_cap_env(raw.as_deref()) {
-        Ok(cap) => cap,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default 1024");
-            1024
-        }
-    }
-}
-
-fn decide_budget_ms_from_env() -> u64 {
-    match std::env::var("SB_ROUTER_DECIDE_BUDGET_MS").ok() {
-        Some(raw) => match raw.parse::<u64>() {
-            Ok(v) => v,
-            Err(err) => {
-                tracing::warn!(
-                    "router env 'SB_ROUTER_DECIDE_BUDGET_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}; using default 100"
-                );
-                100
-            }
-        },
-        None => 100,
-    }
-}
-
-fn router_dns_enabled_from_env() -> bool {
-    let raw = std::env::var("SB_ROUTER_DNS").ok();
-    match raw.as_deref() {
-        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => true,
-        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => false,
-        Some(raw) => {
-            tracing::warn!(
-                "router env 'SB_ROUTER_DNS' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'; using default false"
-            );
-            false
-        }
-        None => false,
-    }
-}
-
-fn router_dns_timeout_ms_from_env() -> u64 {
-    match std::env::var("SB_ROUTER_DNS_TIMEOUT_MS").ok() {
-        Some(raw) => match raw.parse::<u64>() {
-            Ok(v) => v,
-            Err(err) => {
-                tracing::warn!(
-                    "router env 'SB_ROUTER_DNS_TIMEOUT_MS' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}; using default 300"
-                );
-                300
-            }
-        },
-        None => 300,
-    }
-}
-
-fn geoip_enabled_from_env() -> bool {
-    let raw = std::env::var("SB_GEOIP_ENABLE").ok();
-    match raw.as_deref() {
-        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => true,
-        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => false,
-        Some(raw) => {
-            tracing::warn!(
-                "router env 'SB_GEOIP_ENABLE' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'; using default false"
-            );
-            false
-        }
-        None => false,
-    }
-}
-
-fn udp_rules_index_from_env() -> Option<Arc<RouterIndex>> {
-    if !crate::util::env::env_bool("SB_ROUTER_UDP") {
+fn udp_rules_index_from_options(
+    options: &crate::runtime_options::RouterRuntimeOptions,
+) -> Option<Arc<RouterIndex>> {
+    if !options.udp_enabled {
         return None;
     }
-    let raw = std::env::var("SB_ROUTER_UDP_RULES").ok()?;
+    let raw = options.udp_rules.as_ref()?;
     let raw = raw.trim();
     if raw.is_empty() {
         return None;
@@ -211,6 +73,7 @@ fn compat_router_index_from_default(default: &str) -> Arc<RouterIndex> {
 
 /// 兼容历史导出：在大多数调用场景里只使用 `RouterHandle`
 pub struct RouterHandle {
+    runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
     idx: Arc<RwLock<Arc<RouterIndex>>>,
     resolver: Option<Arc<dyn DnsResolve>>,
     /// 决策缓存（可选）：(观测到的 generation, LRU)
@@ -281,13 +144,22 @@ impl RouterHandle {
     /// 同步构造：为了避免在非 async 语境阻塞，这里仅基于 ENV 内联规则初始化；
     /// 若存在文件热重载需求，请直接调用 `router_index_from_env_with_reload().await` 在上层注入。
     pub fn from_env() -> Self {
+        Self::from_options(Arc::new(
+            crate::runtime_options::RouterRuntimeOptions::default(),
+        ))
+    }
+
+    #[must_use]
+    pub fn from_options(
+        runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
+    ) -> Self {
         // 复用共享索引（内部含一次性初始化与可选热重载）
-        let shared = shared_index();
+        let shared = shared_index_with_options(&runtime_options);
         // 可选缓存开关
         #[cfg(feature = "router_cache_lru_demo")]
         let cache = {
-            let use_cache = decision_cache_from_env();
-            let cap = decision_cache_cap_from_env();
+            let use_cache = runtime_options.decision_cache;
+            let cap = runtime_options.decision_cache_capacity;
             if use_cache {
                 Some(Mutex::new((
                     0u64,
@@ -301,6 +173,7 @@ impl RouterHandle {
         let cache = None;
         #[cfg(feature = "geoip_mmdb")]
         let mut handle = Self {
+            runtime_options: runtime_options.clone(),
             idx: shared,
             resolver: None,
             cache,
@@ -322,6 +195,7 @@ impl RouterHandle {
         };
         #[cfg(not(feature = "geoip_mmdb"))]
         let handle = Self {
+            runtime_options,
             idx: shared,
             resolver: None,
             cache,
@@ -342,7 +216,7 @@ impl RouterHandle {
             rule_set_db: None,
         };
         #[cfg(feature = "geoip_mmdb")]
-        handle.init_geoip_if_env();
+        handle.init_geoip_from_options();
         handle
     }
 
@@ -351,6 +225,21 @@ impl RouterHandle {
         let mut handle = Self::from_env();
         handle.idx = Arc::new(RwLock::new(idx));
         handle
+    }
+
+    #[must_use]
+    pub fn from_index_with_options(
+        idx: Arc<RouterIndex>,
+        runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
+    ) -> Self {
+        let mut handle = Self::from_options(runtime_options);
+        handle.idx = Arc::new(RwLock::new(idx));
+        handle
+    }
+
+    #[must_use]
+    pub fn runtime_options(&self) -> &crate::runtime_options::RouterRuntimeOptions {
+        &self.runtime_options
     }
 
     #[cfg(all(test, feature = "geoip_mmdb"))]
@@ -745,6 +634,7 @@ impl RouterHandle {
         let mock_index = compat_router_index_from_default("direct");
 
         Self {
+            runtime_options: Arc::new(crate::runtime_options::RouterRuntimeOptions::default()),
             idx: Arc::new(RwLock::new(mock_index)),
             resolver: None,
             #[cfg(feature = "router_cache_lru_demo")]
@@ -930,7 +820,7 @@ impl RouterHandle {
 
     /// UDP 决策：基于 UdpTargetAddr 进行路由，同步版本
     pub fn decide_udp(&self, target: &crate::net::datagram::UdpTargetAddr) -> String {
-        if let Some(idx) = udp_rules_index_from_env() {
+        if let Some(idx) = udp_rules_index_from_options(&self.runtime_options) {
             let (host, ip) = match target {
                 crate::net::datagram::UdpTargetAddr::Ip(addr) => (None, Some(addr.ip())),
                 crate::net::datagram::UdpTargetAddr::Domain { host, .. } => {
@@ -1007,7 +897,7 @@ impl RouterHandle {
     /// 基于当前索引快照进行 UDP 决策（最小可用版）
     #[allow(unused_variables)]
     pub async fn decide_udp_async(&self, host: &str) -> String {
-        if let Some(idx) = udp_rules_index_from_env() {
+        if let Some(idx) = udp_rules_index_from_options(&self.runtime_options) {
             let host_norm: String = normalize_host(host);
             let ip_opt = host_norm.parse::<IpAddr>().ok();
 
@@ -1028,8 +918,8 @@ impl RouterHandle {
         }
 
         let started = Instant::now();
-        // NOTE: Budget reserved for future timeout control via SB_ROUTER_DECIDE_BUDGET_MS env var
-        let _budget_ms = decide_budget_ms_from_env();
+        // Budget reserved for future timeout control through injected runtime options.
+        let _budget_ms = self.runtime_options.decide_budget_ms;
         let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         let host_norm: String = normalize_host(host);
         let ip_opt = host_norm.parse::<IpAddr>().ok();
@@ -1047,7 +937,10 @@ impl RouterHandle {
         let cache_key = format!("udp|{}", host_norm);
         // 运行时覆盖（仅调试）
         if let Some(domain) = fake_domain_norm.as_deref() {
-            if let Some((d, _tag)) = runtime_override_udp(domain) {
+            if let Some((d, _tag)) = crate::router::runtime_override_udp_with_raw(
+                self.runtime_options.runtime_override.as_deref(),
+                domain,
+            ) {
                 #[cfg(feature = "metrics")]
                 metrics::counter!("router_decide_reason_total", "kind"=>_tag).increment(1);
                 #[cfg(feature = "metrics")]
@@ -1056,7 +949,10 @@ impl RouterHandle {
                 return d.to_string();
             }
         }
-        if let Some((d, _tag)) = runtime_override_udp(&host_norm) {
+        if let Some((d, _tag)) = crate::router::runtime_override_udp_with_raw(
+            self.runtime_options.runtime_override.as_deref(),
+            &host_norm,
+        ) {
             #[cfg(feature = "metrics")]
             metrics::counter!("router_decide_reason_total", "kind"=>_tag).increment(1);
             #[cfg(feature = "metrics")]
@@ -1091,7 +987,10 @@ impl RouterHandle {
 
         // 2) If target is a literal IP (or FakeIP fallback), apply IP rules.
         if let Some(ip) = ip_opt {
-            if let Some(d) = crate::router::runtime_override_ip(ip) {
+            if let Some(d) = crate::router::runtime_override_ip_with_raw(
+                self.runtime_options.runtime_override.as_deref(),
+                ip,
+            ) {
                 let d_str = d.to_string();
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
@@ -1104,15 +1003,18 @@ impl RouterHandle {
         }
 
         // 3) DNS -> IP -> IP rules (only when enabled, and only for real domains).
-        let try_dns = fake_domain_norm.is_none() && router_dns_enabled_from_env();
+        let try_dns = fake_domain_norm.is_none() && self.runtime_options.dns_enabled;
         if try_dns {
-            let timeout_ms = router_dns_timeout_ms_from_env();
+            let timeout_ms = self.runtime_options.dns_timeout_ms;
             if let DnsResult::Ok(ips) = self
                 .resolve_with_fallback(host_for_domain, timeout_ms)
                 .await
             {
                 for ip in ips {
-                    if let Some(d) = crate::router::runtime_override_ip(ip) {
+                    if let Some(d) = crate::router::runtime_override_ip_with_raw(
+                        self.runtime_options.runtime_override.as_deref(),
+                        ip,
+                    ) {
                         let d_str = d.to_string();
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
@@ -1153,8 +1055,8 @@ impl RouterHandle {
 
         #[cfg_attr(not(feature = "metrics"), allow(unused_variables))]
         let started = Instant::now();
-        // NOTE: Budget reserved for future timeout control via SB_ROUTER_DECIDE_BUDGET_MS env var
-        let _budget_ms = decide_budget_ms_from_env();
+        // Budget reserved for future timeout control through injected runtime options.
+        let _budget_ms = self.runtime_options.decide_budget_ms;
         let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
         let host_norm: String = normalize_host(host_raw);
         let ip_opt = host_norm.parse::<IpAddr>().ok();
@@ -1175,7 +1077,11 @@ impl RouterHandle {
         };
 
         if let Some(domain) = fake_domain_norm.as_deref() {
-            if let Some((d, _tag)) = runtime_override_http(domain, port_opt) {
+            if let Some((d, _tag)) = crate::router::runtime_override_http_with_raw(
+                self.runtime_options.runtime_override.as_deref(),
+                domain,
+                port_opt,
+            ) {
                 #[cfg(feature = "metrics")]
                 metrics::counter!("router_decide_reason_total", "kind"=>_tag).increment(1);
                 #[cfg(feature = "metrics")]
@@ -1184,7 +1090,11 @@ impl RouterHandle {
                 return d.to_string();
             }
         }
-        if let Some((d, _tag)) = runtime_override_http(&host_norm, port_opt) {
+        if let Some((d, _tag)) = crate::router::runtime_override_http_with_raw(
+            self.runtime_options.runtime_override.as_deref(),
+            &host_norm,
+            port_opt,
+        ) {
             #[cfg(feature = "metrics")]
             metrics::counter!("router_decide_reason_total", "kind"=>_tag).increment(1);
             #[cfg(feature = "metrics")]
@@ -1216,7 +1126,10 @@ impl RouterHandle {
         }
 
         if let Some(ip) = ip_opt {
-            if let Some(d) = crate::router::runtime_override_ip(ip) {
+            if let Some(d) = crate::router::runtime_override_ip_with_raw(
+                self.runtime_options.runtime_override.as_deref(),
+                ip,
+            ) {
                 let d_str = d.to_string();
                 self.cache_put(&cache_key, &d_str);
                 return d_str;
@@ -1228,15 +1141,18 @@ impl RouterHandle {
             }
         }
 
-        let try_dns = fake_domain_norm.is_none() && router_dns_enabled_from_env();
+        let try_dns = fake_domain_norm.is_none() && self.runtime_options.dns_enabled;
         if try_dns {
-            let timeout_ms = router_dns_timeout_ms_from_env();
+            let timeout_ms = self.runtime_options.dns_timeout_ms;
             if let DnsResult::Ok(ips) = self
                 .resolve_with_fallback(host_for_domain, timeout_ms)
                 .await
             {
                 for ip in ips {
-                    if let Some(d) = crate::router::runtime_override_ip(ip) {
+                    if let Some(d) = crate::router::runtime_override_ip_with_raw(
+                        self.runtime_options.runtime_override.as_deref(),
+                        ip,
+                    ) {
                         let d_str = d.to_string();
                         self.cache_put(&cache_key, &d_str);
                         return d_str;
@@ -1625,11 +1541,11 @@ impl RouterHandle {
             }
         }
 
-        // Runtime override view (best-effort, parsed from SB_ROUTER_OVERRIDE)
+        // Runtime override view (best-effort, parsed from injected options).
         let mut ov_exact = Vec::new();
         let mut ov_suffix = Vec::new();
         let mut ov_default: Option<String> = None;
-        if let Ok(raw) = std::env::var("SB_ROUTER_OVERRIDE") {
+        if let Some(raw) = self.runtime_options.runtime_override.as_deref() {
             if !raw.trim().is_empty() {
                 for seg in raw.split([',', ';']) {
                     let s = seg.trim();
@@ -1969,7 +1885,7 @@ pub fn decide_http_explain(target: &str) -> DecisionExplain {
 }
 
 pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> DecisionExplain {
-    let idx = {
+    let idx = udp_rules_index_from_options(&handle.runtime_options).unwrap_or_else(|| {
         handle
             .idx
             .read()
@@ -1978,7 +1894,7 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
                 e.into_inner()
             })
             .clone()
-    };
+    });
     let host_norm = normalize_host(host);
     if let Some(d) = crate::router::router_index_decide_exact_suffix(&idx, &host_norm) {
         let k = if idx.exact.contains_key(&host_norm) {
@@ -2025,10 +1941,10 @@ pub async fn decide_udp_async_explain(handle: &RouterHandle, host: &str) -> Deci
         }
     }
     // DNS → IP → 规则/GeoIP（若开启）
-    let try_dns = router_dns_enabled_from_env();
-    let try_geoip = geoip_enabled_from_env();
+    let try_dns = handle.runtime_options.dns_enabled;
+    let try_geoip = handle.runtime_options.geoip_enabled;
     if try_dns {
-        let timeout_ms = router_dns_timeout_ms_from_env();
+        let timeout_ms = handle.runtime_options.dns_timeout_ms;
         match handle.resolve_with_fallback(&host_norm, timeout_ms).await {
             DnsResult::Ok(ips) => {
                 for ip in &ips {
@@ -2102,31 +2018,17 @@ impl RouterHandle {
 
 #[cfg(feature = "geoip_mmdb")]
 impl RouterHandle {
-    pub(crate) fn init_geoip_if_env(&mut self) {
-        self.geoip_mux = crate::geoip::multi::GeoMux::from_env().ok();
+    pub(crate) fn init_geoip_from_options(&mut self) {
+        self.geoip_mux = None;
         self.geoip = None;
         self.geoip_source = None;
-        if let Ok(path) = std::env::var("SB_GEOIP_MMDB") {
-            let cap_env = std::env::var("SB_GEOIP_CACHE").ok();
-            let cap = match parse_geoip_cache_cap_env(cap_env.as_deref()) {
-                Ok(cap) => cap,
-                Err(reason) => {
-                    warn!("{reason}; using default 8192");
-                    8192
-                }
-            };
-            let ttl_env = std::env::var("SB_GEOIP_TTL").ok();
-            let ttl = match parse_geoip_ttl_env(ttl_env.as_deref()) {
-                Ok(ttl) => ttl,
-                Err(reason) => {
-                    warn!("{reason}; using default 600s");
-                    std::time::Duration::from_secs(600)
-                }
-            };
+        if let Some(path) = self.runtime_options.geoip_mmdb.as_ref() {
+            let cap = self.runtime_options.geoip_cache_capacity;
+            let ttl = self.runtime_options.geoip_ttl;
             match crate::geoip::mmdb::GeoIp::open(std::path::Path::new(&path), cap, ttl) {
                 Ok(geo) => {
                     self.geoip = Some(std::sync::Arc::new(geo));
-                    self.geoip_source = Some(path);
+                    self.geoip_source = Some(path.display().to_string());
                 }
                 Err(err) => {
                     tracing::warn!("failed to open mmdb: {:?} at {:?}", err, path)
@@ -2194,14 +2096,13 @@ mod migration_tests {
         let err = parse_udp_rules_index("let bad-name=1")
             .expect_err("invalid udp rules env should be rejected explicitly");
         let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_UDP_RULES"));
-        assert!(msg.contains("silent parse fallback is disabled"));
+        assert!(msg.contains("injected router UDP rules are invalid"));
     }
 }
 
 #[cfg(all(test, feature = "geoip_mmdb"))]
 mod geoip_migration_tests {
-    use super::{parse_geoip_cache_cap_env, parse_geoip_ttl_env, RouterHandle};
+    use super::RouterHandle;
     use crate::geoip::{GeoInfo, GeoIpProvider};
     use crate::router::router_build_index_from_str;
     use std::net::{IpAddr, Ipv4Addr};
@@ -2228,24 +2129,6 @@ mod geoip_migration_tests {
     }
 
     #[test]
-    fn invalid_geoip_cache_env_reports_explicitly() {
-        let err = parse_geoip_cache_cap_env(Some("bad-cache"))
-            .expect_err("invalid geoip cache env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_GEOIP_CACHE"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_geoip_ttl_env_reports_explicitly() {
-        let err = parse_geoip_ttl_env(Some("bad-ttl"))
-            .expect_err("invalid geoip ttl env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_GEOIP_TTL"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
     fn enhanced_geoip_lookup_uses_router_local_provider_without_global_service() {
         let idx = router_build_index_from_str("geoip:US=direct\ndefault=block", 1024)
             .expect("router index should build");
@@ -2263,28 +2146,5 @@ mod geoip_migration_tests {
         let decision =
             handle.enhanced_geoip_lookup(IpAddr::V4(Ipv4Addr::new(203, 0, 113, 7)), &idx);
         assert_eq!(decision, Some("direct"));
-    }
-}
-
-#[cfg(all(test, feature = "router_cache_lru_demo"))]
-mod decision_cache_migration_tests {
-    use super::{parse_decision_cache_cap_env, parse_decision_cache_env};
-
-    #[test]
-    fn invalid_decision_cache_env_reports_explicitly() {
-        let err = parse_decision_cache_env(Some("on"))
-            .expect_err("unrecognized boolean env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_DECISION_CACHE"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_decision_cache_cap_env_reports_explicitly() {
-        let err = parse_decision_cache_cap_env(Some("big"))
-            .expect_err("invalid cache cap env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ROUTER_DECISION_CACHE_CAP"));
-        assert!(msg.contains("silent parse fallback is disabled"));
     }
 }

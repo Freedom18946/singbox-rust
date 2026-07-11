@@ -26,12 +26,7 @@ pub struct DohTransport {
 impl DohTransport {
     /// 创建新的 `DoH` 传输
     pub fn new(url: String) -> Result<Self> {
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_DOH_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let timeout = Duration::from_millis(5000);
 
         // 创建 HTTP 客户端
         let client = reqwest::Client::builder()

@@ -26,6 +26,7 @@ pub struct DnsResolver {
     stats: Arc<DnsStats>,
     /// 解析策略
     strategy: super::DnsStrategy,
+    options: Arc<crate::runtime_options::DnsRuntimeOptions>,
 }
 
 /// DNS 解析器统计信息
@@ -44,19 +45,23 @@ pub struct DnsStats {
 impl DnsResolver {
     /// 创建新的 DNS 解析器
     pub fn new(upstreams: Vec<Arc<dyn DnsUpstream>>) -> Self {
-        let default_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_DEFAULT_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(60),
-        );
+        Self::from_options(
+            upstreams,
+            Arc::new(crate::runtime_options::DnsRuntimeOptions::default()),
+        )
+    }
 
+    pub fn from_options(
+        upstreams: Vec<Arc<dyn DnsUpstream>>,
+        options: Arc<crate::runtime_options::DnsRuntimeOptions>,
+    ) -> Self {
         Self {
             upstreams,
-            default_ttl,
+            default_ttl: Duration::from_secs(options.default_ttl_s),
             name: "dns_resolver".to_string(),
             stats: Arc::new(DnsStats::default()),
             strategy: super::DnsStrategy::default(),
+            options,
         }
     }
 
@@ -234,20 +239,12 @@ impl Resolver for DnsResolver {
 
         // FakeIP short-circuit (IPv4): allocate and return a fake address
         if crate::dns::fakeip::enabled() {
-            let use_v6 = std::env::var("SB_DNS_FAKEIP_V6")
-                .ok()
-                .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-            let ip = if use_v6 {
+            let ip = if self.options.fakeip_v6 {
                 crate::dns::fakeip::allocate_v6(domain)
             } else {
                 crate::dns::fakeip::allocate_v4(domain)
             };
-            let ttl = std::time::Duration::from_secs(
-                std::env::var("SB_DNS_FAKEIP_TTL_S")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(300),
-            );
+            let ttl = std::time::Duration::from_secs(self.options.fakeip_ttl_s);
             return Ok(DnsAnswer::new(
                 vec![ip],
                 ttl,
@@ -257,10 +254,7 @@ impl Resolver for DnsResolver {
         }
 
         // Global timeout for resolve to avoid hangs; cancel concurrent tasks via select
-        let timeout_ms = std::env::var("SB_DNS_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(2_000);
+        let timeout_ms = self.options.resolver_timeout_ms;
         let timeout_dur = Duration::from_millis(timeout_ms);
 
         let result = tokio::select! {
@@ -337,15 +331,13 @@ impl DnsResolver {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::EnvVarGuard;
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
-    fn disable_fakeip_env() -> (EnvVarGuard, EnvVarGuard, EnvVarGuard) {
-        (
-            EnvVarGuard::remove("SB_DNS_FAKEIP_ENABLE"),
-            EnvVarGuard::remove("SB_DNS_FAKEIP_V6"),
-            EnvVarGuard::remove("SB_DNS_FAKEIP_TTL_S"),
-        )
+    fn disable_fakeip_env() {
+        crate::dns::fakeip::configure(
+            &sb_config::ir::DnsIR::default(),
+            &crate::runtime_options::DnsRuntimeOptions::default(),
+        );
     }
 
     // Mock upstream for testing
@@ -462,7 +454,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolver_success() {
-        let _guards = disable_fakeip_env();
+        disable_fakeip_env();
         let upstream = Arc::new(
             MockUpstream::new("test")
                 .with_response(
@@ -498,7 +490,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolver_fallback() {
-        let _guards = disable_fakeip_env();
+        disable_fakeip_env();
         let unhealthy_upstream = Arc::new(MockUpstream::new("unhealthy").set_healthy(false));
         let healthy_upstream = Arc::new(MockUpstream::new("healthy").with_response(
             "example.com",
@@ -520,7 +512,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_resolver_no_records() {
-        let _guards = disable_fakeip_env();
+        disable_fakeip_env();
         let upstream = Arc::new(MockUpstream::new("test"));
         let resolver = DnsResolver::new(vec![upstream]);
 
@@ -532,7 +524,7 @@ mod tests {
     async fn test_resolver_stats_tracking() {
         use std::sync::atomic::Ordering;
 
-        let _guards = disable_fakeip_env();
+        disable_fakeip_env();
 
         // Provide both A and AAAA responses to avoid spurious failures from
         // concurrent resolve_both_records() which queries both record types

@@ -81,6 +81,8 @@ fn test_geosite_rules_with_router_handle() {
         default: "direct",
         gen: 0,
         checksum: [0; 32],
+        suffix_strict: false,
+        suffix_trie_enabled: false,
     };
 
     // Test GeoSite lookup through RouterHandle

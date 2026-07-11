@@ -2371,35 +2371,39 @@ pub fn global() -> Option<&'static RuleEngine> {
 }
 
 /// 从 ENV 初始化（可选）：
-// - SB_ROUTER_RULES_ENABLE=1 开关
-// - SB_ROUTER_RULES_FILE=/path/to/rules  或  SB_ROUTER_RULES_TEXT=内联文本
+// - 显式 rules-enabled 开关
+// - 注入规则文件路径或内联文本
 pub fn init_from_env() {
-    let enable = std::env::var("SB_ROUTER_RULES_ENABLE")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    if !enable {
+    init_from_options(&crate::runtime_options::RouterRuntimeOptions::default());
+}
+
+pub fn init_from_options(options: &crate::runtime_options::RouterRuntimeOptions) {
+    if !options.rules_enabled {
         return;
     }
-    let txt = if let Ok(p) = std::env::var("SB_ROUTER_RULES_FILE") {
-        match fs::read_to_string(&p) {
+    let txt = if let Some(p) = options.rules_file.as_ref() {
+        match fs::read_to_string(p) {
             Ok(s) => s,
             Err(e) => {
-                tracing::warn!(path=%p, error=%e, "router: read rules file failed");
+                tracing::warn!(path=%p.display(), error=%e, "router: read rules file failed");
                 return;
             }
         }
-    } else if let Ok(t) = std::env::var("SB_ROUTER_RULES_TEXT") {
-        t
+    } else if let Some(t) = options.rules_text.as_ref() {
+        t.clone()
     } else {
-        tracing::warn!("router: enabled but no rules provided (set SB_ROUTER_RULES_FILE or SB_ROUTER_RULES_TEXT)");
+        tracing::warn!("router: enabled but no injected rules were provided");
         return;
     };
     let rules = parse_rules(&txt);
     let n = rules.len();
     let eng = RuleEngine::build(rules);
     install_global(eng);
-    tracing::info!(enabled=%enable, rules=n, "router: global rules engine installed");
+    tracing::info!(
+        enabled = true,
+        rules = n,
+        "router: global rules engine installed"
+    );
 }
 
 #[cfg(test)]

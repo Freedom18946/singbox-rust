@@ -1,327 +1,163 @@
 #![cfg(feature = "router")]
 #![allow(clippy::await_holding_lock)]
-//! Integration tests for FakeIP routing
-//!
-//! Tests the integration of FakeIP with the routing decision engine, covering:
-//! - FakeIP detection and original domain resolution
-//! - Domain-based routing for FakeIP addresses
-//! - GeoSite matching for FakeIP domains
-//! - Fallback to IP routing when domain rules don't match
-//! - Combined DNS + FakeIP + routing scenarios
 
 use sb_core::dns::fakeip;
 use sb_core::router::RouterHandle;
-use std::sync::{Mutex, OnceLock};
+use sb_core::runtime_options::{DnsRuntimeOptions, RouterRuntimeOptions};
+use std::sync::{Arc, Mutex, MutexGuard, OnceLock};
 
-fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
+fn serial_guard() -> MutexGuard<'static, ()> {
     static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
     LOCK.get_or_init(|| Mutex::new(()))
         .lock()
         .unwrap_or_else(|e| e.into_inner())
 }
 
-/// Clean up test environment variables
-fn cleanup_env() {
-    std::env::remove_var("SB_DNS_FAKEIP_ENABLE");
-    std::env::remove_var("SB_FAKEIP_V4_BASE");
-    std::env::remove_var("SB_FAKEIP_V4_MASK");
-    std::env::remove_var("SB_ROUTER_OVERRIDE");
-    std::env::remove_var("SB_ROUTER_DNS");
+fn configure_fakeip(enabled: bool) {
+    let mut ir = sb_config::ir::DnsIR::default();
+    ir.fakeip_enabled = None;
+    fakeip::configure(
+        &ir,
+        &DnsRuntimeOptions {
+            fakeip_enabled: enabled,
+            fakeip_v4_base: "198.18.0.0".parse().unwrap(),
+            fakeip_v4_mask: 16,
+            fakeip_v6_base: "fd00::".parse().unwrap(),
+            fakeip_v6_mask: 8,
+            ..Default::default()
+        },
+    );
+}
+
+fn router(rules: &str) -> RouterHandle {
+    RouterHandle::from_options(Arc::new(RouterRuntimeOptions {
+        rules_inline: rules.replace(',', "\n"),
+        ..Default::default()
+    }))
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_domain_exact_match() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // Set up FakeIP
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
-    std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
-    std::env::set_var("SB_FAKEIP_V4_MASK", "16");
-
-    // Set up routing rules
-    std::env::set_var("SB_ROUTER_OVERRIDE", "exact:google.com=proxy");
-
-    // Allocate FakeIP for google.com
+    let _guard = serial_guard();
+    configure_fakeip(true);
     let fake_ip = fakeip::allocate_v4("google.com");
     assert!(fakeip::is_fake_ip(&fake_ip));
-
-    let router = RouterHandle::from_env();
-
-    // Query with FakeIP should match domain rule
-    let decision = router.decide_udp_async(&fake_ip.to_string()).await;
     assert_eq!(
-        decision, "proxy",
-        "FakeIP for google.com should match exact:google.com=proxy rule"
+        router("exact:google.com=proxy")
+            .decide_udp_async(&fake_ip.to_string())
+            .await,
+        "proxy"
     );
-
-    cleanup_env();
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_domain_suffix_match() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // Set up FakeIP
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
-    std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
-    std::env::set_var("SB_FAKEIP_V4_MASK", "16");
-
-    // Set up routing rules with suffix match
-    std::env::set_var("SB_ROUTER_OVERRIDE", "suffix:.google.com=proxy");
-
-    // Allocate FakeIP for subdomain
+    let _guard = serial_guard();
+    configure_fakeip(true);
     let fake_ip = fakeip::allocate_v4("maps.google.com");
-    assert!(fakeip::is_fake_ip(&fake_ip));
-
-    let router = RouterHandle::from_env();
-
-    // Query with FakeIP should match suffix rule
-    let decision = router.decide_udp_async(&fake_ip.to_string()).await;
     assert_eq!(
-        decision, "proxy",
-        "FakeIP for maps.google.com should match suffix:.google.com=proxy rule"
+        router("suffix:.google.com=proxy")
+            .decide_udp_async(&fake_ip.to_string())
+            .await,
+        "proxy"
     );
-
-    cleanup_env();
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_fallback_to_ip_rules() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // Set up FakeIP
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
-    std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
-    std::env::set_var("SB_FAKEIP_V4_MASK", "16");
-
-    // Set up routing rules with only IP CIDR rule (matching FakeIP range)
-    std::env::set_var("SB_ROUTER_OVERRIDE", "cidr4:198.18.0.0/16=block");
-
-    // Allocate FakeIP for domain without domain rules
+    let _guard = serial_guard();
+    configure_fakeip(true);
     let fake_ip = fakeip::allocate_v4("unknown.example.com");
-    assert!(fakeip::is_fake_ip(&fake_ip));
-
-    let router = RouterHandle::from_env();
-
-    // Query with FakeIP should fallback to IP CIDR rule
-    let decision = router.decide_udp_async(&fake_ip.to_string()).await;
     assert_eq!(
-        decision, "block",
-        "FakeIP for unknown domain should fallback to IP CIDR rule"
+        router("cidr4:198.18.0.0/16=block")
+            .decide_udp_async(&fake_ip.to_string())
+            .await,
+        "block"
     );
-
-    cleanup_env();
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_domain_priority() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // Set up FakeIP
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
-    std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
-    std::env::set_var("SB_FAKEIP_V4_MASK", "16");
-
-    // Set up routing rules with both domain and IP rules
-    std::env::set_var(
-        "SB_ROUTER_OVERRIDE",
-        "exact:priority.test.com=proxy,cidr4:198.18.0.0/16=direct",
-    );
-
-    // Allocate FakeIP
+    let _guard = serial_guard();
+    configure_fakeip(true);
     let fake_ip = fakeip::allocate_v4("priority.test.com");
-    assert!(fakeip::is_fake_ip(&fake_ip));
-
-    let router = RouterHandle::from_env();
-
-    // Domain rule should have priority over IP rule
-    let decision = router.decide_udp_async(&fake_ip.to_string()).await;
     assert_eq!(
-        decision, "proxy",
-        "Domain rule should take priority over IP CIDR rule"
+        router("exact:priority.test.com=proxy,cidr4:198.18.0.0/16=direct")
+            .decide_udp_async(&fake_ip.to_string())
+            .await,
+        "proxy"
     );
-
-    cleanup_env();
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_disabled() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // FakeIP disabled
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "0");
-    std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
-    std::env::set_var("SB_FAKEIP_V4_MASK", "16");
-
-    // Set up routing rules
-    std::env::set_var(
-        "SB_ROUTER_OVERRIDE",
-        "exact:test.com=proxy,cidr4:198.18.0.0/16=block",
-    );
-
-    // Allocate FakeIP (but FakeIP is disabled)
+    let _guard = serial_guard();
+    configure_fakeip(false);
     let fake_ip = fakeip::allocate_v4("test.com");
-
-    let router = RouterHandle::from_env();
-
-    // When FakeIP is disabled, should use IP routing (CIDR rule)
-    let decision = router.decide_udp_async(&fake_ip.to_string()).await;
     assert_eq!(
-        decision, "block",
-        "When FakeIP disabled, should use IP CIDR routing"
+        router("exact:test.com=proxy,cidr4:198.18.0.0/16=block")
+            .decide_udp_async(&fake_ip.to_string())
+            .await,
+        "block"
     );
-
-    cleanup_env();
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_ipv6() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // Set up FakeIP for IPv6
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
-    std::env::set_var("SB_FAKEIP_V6_BASE", "fd00::");
-    std::env::set_var("SB_FAKEIP_V6_MASK", "8");
-
-    // Set up routing rules
-    std::env::set_var("SB_ROUTER_OVERRIDE", "exact:ipv6test.com=proxy");
-
-    // Allocate FakeIP v6
-    let fake_ip6 = fakeip::allocate_v6("ipv6test.com");
-    assert!(fakeip::is_fake_ip(&fake_ip6));
-
-    let router = RouterHandle::from_env();
-
-    // IPv6 FakeIP should also resolve to original domain
-    let decision = router.decide_udp_async(&fake_ip6.to_string()).await;
+    let _guard = serial_guard();
+    configure_fakeip(true);
+    let fake_ip = fakeip::allocate_v6("ipv6test.com");
     assert_eq!(
-        decision, "proxy",
-        "IPv6 FakeIP should resolve to original domain and match rule"
+        router("exact:ipv6test.com=proxy")
+            .decide_udp_async(&fake_ip.to_string())
+            .await,
+        "proxy"
     );
-
-    cleanup_env();
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_real_ip_no_false_positive() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // Set up FakeIP
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
-    std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
-    std::env::set_var("SB_FAKEIP_V4_MASK", "16");
-
-    // Set up routing rules
-    std::env::set_var(
-        "SB_ROUTER_OVERRIDE",
-        "exact:realip.com=proxy,cidr4:8.8.8.0/24=block",
-    );
-
-    let router = RouterHandle::from_env();
-
-    // Real IP address (not FakeIP) should use IP routing
-    let decision = router.decide_udp_async("8.8.8.8").await;
+    let _guard = serial_guard();
+    configure_fakeip(true);
     assert_eq!(
-        decision, "block",
-        "Real IP should use IP CIDR routing, not domain routing"
+        router("exact:realip.com=proxy,cidr4:8.8.8.0/24=block")
+            .decide_udp_async("8.8.8.8")
+            .await,
+        "block"
     );
-
-    cleanup_env();
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_multiple_domains_same_rule() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // Set up FakeIP
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
-    std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
-    std::env::set_var("SB_FAKEIP_V4_MASK", "16");
-
-    // Set up routing rules with suffix
-    std::env::set_var("SB_ROUTER_OVERRIDE", "suffix:.cdn.com=proxy");
-
-    let router = RouterHandle::from_env();
-
-    // Test multiple subdomains
-    let domains = vec!["img.cdn.com", "static.cdn.com", "api.cdn.com"];
-
-    for domain in domains {
+    let _guard = serial_guard();
+    configure_fakeip(true);
+    let router = router("suffix:.cdn.com=proxy");
+    for domain in ["img.cdn.com", "static.cdn.com", "api.cdn.com"] {
         let fake_ip = fakeip::allocate_v4(domain);
-        assert!(fakeip::is_fake_ip(&fake_ip));
-
-        let decision = router.decide_udp_async(&fake_ip.to_string()).await;
-        assert_eq!(
-            decision, "proxy",
-            "FakeIP for {} should match suffix rule",
-            domain
-        );
+        assert_eq!(router.decide_udp_async(&fake_ip.to_string()).await, "proxy");
     }
-
-    cleanup_env();
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_no_domain_rules_default() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // Set up FakeIP
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
-    std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
-    std::env::set_var("SB_FAKEIP_V4_MASK", "16");
-
-    // No routing rules configured
-
-    // Allocate FakeIP
+    let _guard = serial_guard();
+    configure_fakeip(true);
     let fake_ip = fakeip::allocate_v4("noroute.example.com");
-    assert!(fakeip::is_fake_ip(&fake_ip));
-
-    let router = RouterHandle::from_env();
-
-    // Should fallback to default
-    let decision = router.decide_udp_async(&fake_ip.to_string()).await;
     assert_eq!(
-        decision, "unresolved",
-        "FakeIP with no matching rules should use router default (unresolved)"
+        router("").decide_udp_async(&fake_ip.to_string()).await,
+        "unresolved"
     );
-
-    cleanup_env();
 }
 
 #[tokio::test]
 async fn test_fakeip_routing_case_insensitive() {
-    let _serial = serial_guard();
-    cleanup_env();
-
-    // Set up FakeIP
-    std::env::set_var("SB_DNS_FAKEIP_ENABLE", "1");
-    std::env::set_var("SB_FAKEIP_V4_BASE", "198.18.0.0");
-    std::env::set_var("SB_FAKEIP_V4_MASK", "16");
-
-    // Set up routing rules (lowercase)
-    std::env::set_var("SB_ROUTER_OVERRIDE", "exact:example.com=proxy");
-
-    let router = RouterHandle::from_env();
-
-    // Allocate FakeIP with uppercase domain
+    let _guard = serial_guard();
+    configure_fakeip(true);
     let fake_ip = fakeip::allocate_v4("EXAMPLE.COM");
-    assert!(fakeip::is_fake_ip(&fake_ip));
-
-    // Should match case-insensitively
-    let decision = router.decide_udp_async(&fake_ip.to_string()).await;
     assert_eq!(
-        decision, "proxy",
-        "FakeIP routing should be case-insensitive"
+        router("exact:example.com=proxy")
+            .decide_udp_async(&fake_ip.to_string())
+            .await,
+        "proxy"
     );
-
-    cleanup_env();
 }

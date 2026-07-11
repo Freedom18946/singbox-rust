@@ -1,11 +1,11 @@
 //! Enhanced DNS Client with Router Integration
 //!
 //! This module provides a minimal DNS client that integrates with the router system
-//! and provides essential DNS resolution services behind the `SB_DNS_ENABLE=1` flag.
+//! and provides essential DNS resolution services behind an explicit runtime option.
 
 use anyhow::{anyhow, Result};
 use std::collections::HashMap;
-use std::net::{IpAddr, SocketAddr};
+use std::net::IpAddr;
 use std::sync::Arc;
 use std::time::{Duration, Instant};
 use tokio::sync::RwLock;
@@ -59,27 +59,16 @@ pub struct EnhancedDnsClient {
 impl EnhancedDnsClient {
     /// Create new enhanced DNS client
     pub fn new() -> Self {
-        let default_ttl = std::env::var("SB_DNS_TTL")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .map_or(Duration::from_secs(300), Duration::from_secs); // 5 minutes default
+        Self::from_options(&crate::runtime_options::DnsRuntimeOptions::default())
+    }
 
-        let max_cache_size = std::env::var("SB_DNS_CACHE_MAX")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1024);
-
-        let enabled = std::env::var("SB_DNS_ENABLE")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-
-        let fallback_enabled = std::env::var("SB_DNS_FALLBACK")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(true);
-
-        // Configure DNS servers from environment
-        let servers = Self::parse_dns_servers();
-        let transport = Arc::new(EnhancedUdpTransport::new(servers));
+    pub fn from_options(options: &crate::runtime_options::DnsRuntimeOptions) -> Self {
+        let default_ttl = Duration::from_secs(options.legacy_ttl_s);
+        let max_cache_size = options.cache_max;
+        let enabled = options.enabled;
+        let fallback_enabled = options.fallback_enabled;
+        let servers = options.servers.clone();
+        let transport = Arc::new(EnhancedUdpTransport::from_options(servers, options));
 
         Self {
             transport,
@@ -89,27 +78,6 @@ impl EnhancedDnsClient {
             enabled,
             fallback_enabled,
         }
-    }
-
-    /// Parse DNS servers from environment variables
-    fn parse_dns_servers() -> Vec<SocketAddr> {
-        let servers_str =
-            std::env::var("SB_DNS_SERVERS").unwrap_or_else(|_| "8.8.8.8:53,1.1.1.1:53".to_string());
-
-        servers_str
-            .split(',')
-            .filter_map(|s| {
-                let trimmed = s.trim();
-                if let Ok(addr) = trimmed.parse::<SocketAddr>() {
-                    Some(addr)
-                } else if let Ok(ip) = trimmed.parse::<IpAddr>() {
-                    Some(SocketAddr::new(ip, 53))
-                } else {
-                    tracing::warn!("Invalid DNS server address: {}", trimmed);
-                    None
-                }
-            })
-            .collect()
     }
 
     /// Check if DNS client is enabled
@@ -362,7 +330,7 @@ impl EnhancedDnsClient {
     /// Resolve hostname to IP addresses
     pub async fn resolve(&self, hostname: &str) -> Result<Vec<IpAddr>> {
         if !self.enabled {
-            return Err(anyhow!("DNS client disabled via SB_DNS_ENABLE"));
+            return Err(anyhow!("DNS client disabled by runtime options"));
         }
 
         // Check cache first

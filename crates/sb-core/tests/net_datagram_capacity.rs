@@ -1,4 +1,5 @@
 use sb_core::net::datagram::{UdpNatKey, UdpNatMap, UdpTargetAddr};
+use sb_core::runtime_options::NetworkRuntimeOptions;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
@@ -27,11 +28,13 @@ async fn bind_socket_or_skip() -> Option<Arc<UdpSocket>> {
 #[tokio::test]
 async fn nat_capacity_evicts_and_counts() {
     // 小容量与短 TTL
-    std::env::set_var("SB_UDP_NAT_MAX", "4");
-
     let capacity = 4usize;
     let ttl_ms = 50u64;
-    let map = UdpNatMap::new(None);
+    let options = NetworkRuntimeOptions {
+        udp_nat_max: capacity,
+        ..Default::default()
+    };
+    let map = UdpNatMap::with_options(&options);
 
     // 塞满
     for i in 0..capacity {

@@ -125,11 +125,14 @@ async fn dns_parallel_a_aaaa() -> anyhow::Result<()> {
         }
     };
     // 开启并发 UDP DNS
-    std::env::set_var("SB_DNS_ENABLE", "1");
-    std::env::set_var("SB_DNS_MODE", "udp");
-    std::env::set_var("SB_DNS_UPSTREAM", upstream.to_string());
-    std::env::set_var("SB_DNS_PARALLEL", "1");
-    let c = DnsClient::new(Duration::from_secs(5));
+    let options = sb_core::runtime_options::DnsRuntimeOptions {
+        enabled: true,
+        mode: "udp".into(),
+        upstream: Some(upstream.to_string()),
+        parallel: true,
+        ..Default::default()
+    };
+    let c = DnsClient::from_options(Duration::from_secs(5), &options);
     let addrs = match c.resolve("example.test", 853).await {
         Ok(addrs) => addrs,
         Err(err) => {

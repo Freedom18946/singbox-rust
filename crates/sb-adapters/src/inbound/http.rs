@@ -22,6 +22,12 @@ use tokio::{
 use std::time::Instant;
 use tracing::{debug, info, warn};
 
+fn access_log_enabled() -> bool {
+    std::env::var("SB_ACCESS_LOG")
+        .ok()
+        .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+}
+
 // NOTE: mainline defaults to off; can be temporarily enabled via env for acceptance/troubleshooting (lazy load).
 // NOTE: mainline 默认关闭；验收/排障时可通过环境变量临时开启（惰性读取）。
 // SB_HTTP_SMOKE_405=1    -> Return 405 directly after accept (Smoke Mode)
@@ -517,6 +523,7 @@ where
         }
         sb_core::metrics::http::inc_405_responses();
         access::log(
+            access_log_enabled(),
             "http_bad_method",
             &[("proto", "http".into()), ("method", method.to_string())],
         );
@@ -527,6 +534,7 @@ where
         Ok(forward) => forward,
         Err(e) => {
             access::log(
+                access_log_enabled(),
                 "http_bad_forward_request",
                 &[("proto", "http".into()), ("reason", e.to_string())],
             );

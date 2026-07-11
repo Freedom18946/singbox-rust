@@ -52,23 +52,12 @@ impl UdpProcessor {
         }
     }
 
-    /// Create with env overrides: `SB_UDP_TTL_MS`, `SB_UDP_GC_MS` (ms), `SB_UDP_NAT_MAX`
-    pub fn from_env() -> (Self, Duration) {
-        let ttl_ms = std::env::var("SB_UDP_TTL_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(300_000);
-        let max = std::env::var("SB_UDP_NAT_MAX")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1000);
-        let gc_ms = std::env::var("SB_UDP_GC_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(5_000);
+    pub fn from_options(
+        options: &crate::runtime_options::NetworkRuntimeOptions,
+    ) -> (Self, Duration) {
         (
-            Self::new(max, Duration::from_millis(ttl_ms)),
-            Duration::from_millis(gc_ms),
+            Self::new(options.udp_nat_max, options.udp_ttl),
+            options.udp_gc_interval,
         )
     }
 
@@ -383,14 +372,14 @@ mod tests {
     }
 
     #[test]
-    fn env_overrides_readable() {
-        std::env::set_var("SB_UDP_TTL_MS", "1234");
-        std::env::set_var("SB_UDP_GC_MS", "77");
-        std::env::set_var("SB_UDP_NAT_MAX", "42");
-        let (_p, gc) = UdpProcessor::from_env();
+    fn options_are_applied() {
+        let options = crate::runtime_options::NetworkRuntimeOptions {
+            udp_ttl: Duration::from_millis(1234),
+            udp_gc_interval: Duration::from_millis(77),
+            udp_nat_max: 42,
+            ..crate::runtime_options::NetworkRuntimeOptions::default()
+        };
+        let (_p, gc) = UdpProcessor::from_options(&options);
         assert_eq!(gc, Duration::from_millis(77));
-        std::env::remove_var("SB_UDP_TTL_MS");
-        std::env::remove_var("SB_UDP_GC_MS");
-        std::env::remove_var("SB_UDP_NAT_MAX");
     }
 }

@@ -155,7 +155,7 @@ impl Dialer for SystemDialer {
     }
 
     async fn resolve_host(&self, host: &str, port: u16) -> Result<Vec<SocketAddr>> {
-        // 现在统一走 dns::resolve::resolve_all（内部根据 SB_DNS_MODE 选择/回退）
+        // 现在统一走 dns::resolve::resolve_all（内部根据注入的 DNS 模式选择/回退）
         dns_resolve::resolve_all(host, port)
             .await
             .with_context(|| format!("dns.resolve_all {host}:{port}"))

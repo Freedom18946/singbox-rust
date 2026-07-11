@@ -15,10 +15,14 @@ impl ProxyChoice {
     }
 }
 
-/// 从环境变量解析默认代理（内部解析函数，供测试使用）
+/// Parse default proxy from injected runtime options.
 pub fn parse_proxy_from_env() -> ProxyChoice {
+    parse_proxy(&crate::runtime_options::RouterRuntimeOptions::default())
+}
+
+pub fn parse_proxy(options: &crate::runtime_options::RouterRuntimeOptions) -> ProxyChoice {
     let mut choice = ProxyChoice::Direct;
-    if let Ok(v) = std::env::var("SB_ROUTER_DEFAULT_PROXY") {
+    if let Some(v) = options.default_proxy.as_deref() {
         let s = v.trim();
         if s.eq_ignore_ascii_case("direct") {
             choice = ProxyChoice::Direct;
@@ -27,13 +31,13 @@ pub fn parse_proxy_from_env() -> ProxyChoice {
         } else if let Some(addr) = s.strip_prefix("socks5://") {
             choice = ProxyChoice::Socks5(addr.to_string());
         }
-    } else if let (Ok(kind), Ok(addr)) = (
-        std::env::var("SB_ROUTER_DEFAULT_PROXY_KIND"),
-        std::env::var("SB_ROUTER_DEFAULT_PROXY_ADDR"),
+    } else if let (Some(kind), Some(addr)) = (
+        options.default_proxy_kind.as_deref(),
+        options.default_proxy_addr.as_deref(),
     ) {
         match kind.to_ascii_lowercase().as_str() {
-            "http" => choice = ProxyChoice::Http(addr),
-            "socks5" => choice = ProxyChoice::Socks5(addr),
+            "http" => choice = ProxyChoice::Http(addr.to_string()),
+            "socks5" => choice = ProxyChoice::Socks5(addr.to_string()),
             "direct" => choice = ProxyChoice::Direct,
             _ => {}
         }

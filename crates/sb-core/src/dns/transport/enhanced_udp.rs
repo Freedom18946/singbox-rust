@@ -27,25 +27,21 @@ pub struct EnhancedUdpTransport {
 impl EnhancedUdpTransport {
     /// Create new enhanced UDP transport
     pub fn new(servers: Vec<SocketAddr>) -> Self {
-        let timeout = std::env::var("SB_DNS_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .map_or(Duration::from_millis(2000), Duration::from_millis);
+        Self::from_options(
+            servers,
+            &crate::runtime_options::DnsRuntimeOptions::default(),
+        )
+    }
 
-        let retries = std::env::var("SB_DNS_RETRIES")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(2);
-
-        let enabled = std::env::var("SB_DNS_ENABLE")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
-
+    pub fn from_options(
+        servers: Vec<SocketAddr>,
+        options: &crate::runtime_options::DnsRuntimeOptions,
+    ) -> Self {
         Self {
             servers,
-            timeout,
-            retries,
-            enabled,
+            timeout: Duration::from_millis(options.timeout_ms),
+            retries: options.retries,
+            enabled: options.enabled,
         }
     }
 
@@ -126,7 +122,7 @@ impl EnhancedUdpTransport {
 impl DnsTransport for EnhancedUdpTransport {
     async fn query(&self, packet: &[u8]) -> Result<Vec<u8>> {
         if !self.enabled {
-            return Err(anyhow!("DNS transport disabled via SB_DNS_ENABLE"));
+            return Err(anyhow!("DNS transport disabled by runtime options"));
         }
 
         if self.servers.is_empty() {

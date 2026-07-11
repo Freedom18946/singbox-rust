@@ -16,22 +16,12 @@ pub struct NtpConfig {
 
 impl Default for NtpConfig {
     fn default() -> Self {
+        let options = crate::runtime_options::ServiceRuntimeOptions::default();
         Self {
             enabled: false,
-            server: std::env::var("SB_NTP_SERVER")
-                .unwrap_or_else(|_| "time.google.com:123".to_string()),
-            interval: Duration::from_secs(
-                std::env::var("SB_NTP_INTERVAL_S")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(1800),
-            ),
-            timeout: Duration::from_millis(
-                std::env::var("SB_NTP_TIMEOUT_MS")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(1500),
-            ),
+            server: options.ntp_server,
+            interval: options.ntp_interval,
+            timeout: options.ntp_timeout,
         }
     }
 }

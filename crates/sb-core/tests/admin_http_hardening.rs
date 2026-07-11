@@ -8,39 +8,15 @@
 
 use std::io::{Read, Write};
 use std::net::{TcpListener, TcpStream};
-use std::sync::{Mutex, OnceLock};
+use std::sync::Arc;
 use std::thread;
 use std::time::Duration;
 
+use sb_core::adapter::Bridge;
 use sb_core::admin::http::spawn_admin;
+use sb_core::context::Context;
 use sb_core::runtime::Runtime;
-
-fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(())).lock().unwrap()
-}
-
-struct EnvVarGuard {
-    key: &'static str,
-    prev: Option<std::ffi::OsString>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let prev = std::env::var_os(key);
-        std::env::set_var(key, value);
-        Self { key, prev }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match self.prev.as_ref() {
-            Some(v) => std::env::set_var(self.key, v),
-            None => std::env::remove_var(self.key),
-        }
-    }
-}
+use sb_core::runtime_options::{CoreRuntimeOptions, DebugRuntimeOptions};
 
 fn connect(addr: &str) -> TcpStream {
     let mut tries = 0;
@@ -56,7 +32,7 @@ fn connect(addr: &str) -> TcpStream {
     }
 }
 
-fn start_admin() -> Option<String> {
+fn start_admin(debug: DebugRuntimeOptions) -> Option<String> {
     let l = match TcpListener::bind("127.0.0.1:0") {
         Ok(listener) => listener,
         Err(err) if err.kind() == std::io::ErrorKind::PermissionDenied => {
@@ -68,15 +44,13 @@ fn start_admin() -> Option<String> {
     let addr = l.local_addr().unwrap();
     drop(l);
     let h = format!("{}:{}", addr.ip(), addr.port());
-    let _jh = spawn_admin(
-        &h,
-        Runtime::dummy_engine(),
-        Runtime::dummy_bridge(),
-        None,
-        None,
-        None,
-    )
-    .expect("spawn admin");
+    let options = Arc::new(CoreRuntimeOptions {
+        debug,
+        ..Default::default()
+    });
+    let bridge = Arc::new(Bridge::new(Context::with_runtime_options(options)));
+    let _jh =
+        spawn_admin(&h, Runtime::dummy_engine(), bridge, None, None, None).expect("spawn admin");
     // give it a moment
     thread::sleep(Duration::from_millis(50));
     Some(h)
@@ -84,9 +58,11 @@ fn start_admin() -> Option<String> {
 
 #[test]
 fn large_header_is_rejected() {
-    let _serial = serial_guard();
-    let _env = EnvVarGuard::set("SB_ADMIN_MAX_HEADER_BYTES", "1024");
-    let Some(addr) = start_admin() else {
+    let debug = DebugRuntimeOptions {
+        admin_max_header_bytes: 1024,
+        ..Default::default()
+    };
+    let Some(addr) = start_admin(debug) else {
         return;
     };
     let mut s = connect(&addr);
@@ -107,9 +83,11 @@ fn large_header_is_rejected() {
 
 #[test]
 fn large_body_is_rejected() {
-    let _serial = serial_guard();
-    let _env = EnvVarGuard::set("SB_ADMIN_MAX_BODY_BYTES", "1024");
-    let Some(addr) = start_admin() else {
+    let debug = DebugRuntimeOptions {
+        admin_max_body_bytes: 1024,
+        ..Default::default()
+    };
+    let Some(addr) = start_admin(debug) else {
         return;
     };
     let mut s = connect(&addr);
@@ -131,9 +109,11 @@ fn large_body_is_rejected() {
 
 #[test]
 fn first_byte_timeout_closes_conn() {
-    let _serial = serial_guard();
-    let _env = EnvVarGuard::set("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS", "100");
-    let Some(addr) = start_admin() else {
+    let debug = DebugRuntimeOptions {
+        admin_first_byte_timeout: Duration::from_millis(100),
+        ..Default::default()
+    };
+    let Some(addr) = start_admin(debug) else {
         return;
     };
     let mut s = connect(&addr);
@@ -171,10 +151,12 @@ fn first_byte_timeout_closes_conn() {
 
 #[test]
 fn per_ip_concurrency_is_limited() {
-    let _serial = serial_guard();
-    let _env1 = EnvVarGuard::set("SB_ADMIN_MAX_CONN_PER_IP", "1");
-    let _env2 = EnvVarGuard::set("SB_ADMIN_FIRSTLINE_TIMEOUT_MS", "300");
-    let Some(addr) = start_admin() else {
+    let debug = DebugRuntimeOptions {
+        admin_max_connections_per_ip: 1,
+        admin_first_line_timeout: Duration::from_millis(300),
+        ..Default::default()
+    };
+    let Some(addr) = start_admin(debug) else {
         return;
     };
 

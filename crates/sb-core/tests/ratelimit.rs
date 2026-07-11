@@ -1,30 +1,29 @@
-use sb_core::net::ratelimit::maybe_drop_udp;
+use sb_core::net::ratelimit::UdpRateLimiter;
+use sb_core::runtime_options::NetworkRuntimeOptions;
 
 #[test]
-#[ignore = "env-sensitive (global OnceLock); run in isolation"]
 fn ratelimit_bps_pps_basic() {
-    // configure low limits
-    std::env::set_var("SB_UDP_OUTBOUND_BPS_MAX", "100"); // ~10 bytes per 100ms slice
-    std::env::set_var("SB_UDP_OUTBOUND_PPS_MAX", "2"); // 2 pkts per slice
-                                                       // ensure we start at a fresh slice
+    let options = NetworkRuntimeOptions {
+        udp_outbound_bytes_per_second: 100,
+        udp_outbound_packets_per_second: 20,
+        ..NetworkRuntimeOptions::default()
+    };
+    let limiter = UdpRateLimiter::from_options(&options);
     std::thread::sleep(std::time::Duration::from_millis(120));
-    // First packet 8 bytes: ok
-    assert_eq!(maybe_drop_udp(8), None);
-    // Second packet 8 bytes: pps hits 2 → this is allowed (second)
-    assert_eq!(maybe_drop_udp(8), None);
-    // Third packet should hit pps
-    assert_eq!(maybe_drop_udp(1), Some("pps"));
+    assert_eq!(limiter.maybe_drop_udp(4), None);
+    assert_eq!(limiter.maybe_drop_udp(4), None);
+    assert_eq!(limiter.maybe_drop_udp(1), Some("pps"));
 }
 
 #[test]
-#[ignore = "env-sensitive (global OnceLock); run in isolation"]
 fn ratelimit_rollover_and_burst_after_idle() {
-    std::env::set_var("SB_UDP_OUTBOUND_BPS_MAX", "100");
-    std::env::set_var("SB_UDP_OUTBOUND_PPS_MAX", "0");
+    let options = NetworkRuntimeOptions {
+        udp_outbound_bytes_per_second: 100,
+        ..NetworkRuntimeOptions::default()
+    };
+    let limiter = UdpRateLimiter::from_options(&options);
     std::thread::sleep(std::time::Duration::from_millis(120));
-    assert_eq!(maybe_drop_udp(12), Some("bps")); // over 10 bytes slice
-                                                 // sleep to next slice
+    assert_eq!(limiter.maybe_drop_udp(12), Some("bps"));
     std::thread::sleep(std::time::Duration::from_millis(120));
-    // Now should pass
-    assert_eq!(maybe_drop_udp(8), None);
+    assert_eq!(limiter.maybe_drop_udp(8), None);
 }

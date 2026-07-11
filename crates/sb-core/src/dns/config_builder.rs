@@ -3,6 +3,8 @@ use std::sync::Arc;
 
 use anyhow::Result;
 
+use crate::runtime_options::DnsRuntimeOptions;
+
 use crate::dns::{
     cache::{DnsCache, Key as CacheKey, QType as CacheQType},
     resolver::DnsResolver,
@@ -58,7 +60,7 @@ struct DnsServerManager {
 }
 
 impl DnsServerManager {
-    fn build(dns: &sb_config::ir::DnsIR) -> Result<Self> {
+    fn build(dns: &sb_config::ir::DnsIR, options: &DnsRuntimeOptions) -> Result<Self> {
         let registry = Arc::new(crate::dns::transport::TransportRegistry::new());
         let mut upstreams = HashMap::<String, Arc<dyn DnsUpstream>>::new();
         let mut ordered_tags = Vec::<String>::new();
@@ -90,7 +92,7 @@ impl DnsServerManager {
                     .push(dep.clone());
             }
 
-            let upstream = build_upstream_from_server(server, &registry)?
+            let upstream = build_upstream_from_server_with_options(server, &registry, options)?
                 .ok_or_else(|| unknown_dns_transport_error(server))?;
             upstreams.insert(server.tag.clone(), upstream);
             ordered_tags.push(server.tag.clone());
@@ -258,13 +260,21 @@ pub fn build_dns_components(
     ir: &sb_config::ir::ConfigIR,
     cache_file: Option<Arc<dyn crate::context::CacheFile>>,
 ) -> Result<DnsComponents> {
+    build_dns_components_with_options(ir, cache_file, Arc::new(DnsRuntimeOptions::default()))
+}
+
+/// Build DNS components with immutable options supplied by application composition root.
+pub fn build_dns_components_with_options(
+    ir: &sb_config::ir::ConfigIR,
+    cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+    options: Arc<DnsRuntimeOptions>,
+) -> Result<DnsComponents> {
     let dns_ir = ir
         .dns
         .as_ref()
         .ok_or_else(|| anyhow::anyhow!("DNS configuration missing"))?;
-    let dns = hydrate_dns_ir_from_env(dns_ir);
-    // Apply IR-level global knobs to env for compatibility with existing components
-    apply_env_from_ir(&dns);
+    let dns = hydrate_dns_ir_from_options(dns_ir, &options);
+    crate::dns::fakeip::configure(&dns, &options);
 
     // Wire FakeIP persistence (mapping + metadata) if cache file is enabled.
     // Must happen after FakeIP env knobs are applied so restored pointers can be range-validated.
@@ -286,7 +296,7 @@ pub fn build_dns_components(
         crate::dns::DnsStrategy::default()
     };
 
-    let manager = DnsServerManager::build(&dns)?;
+    let manager = DnsServerManager::build(&dns, &options)?;
 
     // Load GeoIP
     let geoip_db = if let Some(path) = &ir.route.geoip_path {
@@ -368,8 +378,7 @@ pub fn build_dns_components(
             let cap = dns
                 .cache_capacity
                 .map(|v| v as usize)
-                .or_else(|| env_u64("SB_DNS_CACHE_SIZE").map(|v| v as usize))
-                .unwrap_or(1024);
+                .unwrap_or(options.cache_capacity);
             Some(Arc::new(
                 DnsCache::new(cap).with_disable_expire(dns.disable_expire.unwrap_or(false)),
             ))
@@ -417,12 +426,12 @@ pub fn build_dns_components(
     // 3) No rules: use simple DnsResolver over all upstreams
     let list: Vec<Arc<dyn DnsUpstream>> = manager.ordered_upstreams();
     let base: Arc<dyn Resolver> = Arc::new(
-        DnsResolver::new(list)
+        DnsResolver::from_options(list, options.clone())
             .with_name("dns_ir".to_string())
             .with_strategy(strategy),
     );
     let overlay = maybe_wrap_hosts_overlay(&dns, base.clone());
-    let cached = maybe_wrap_cache(&dns, overlay);
+    let cached = maybe_wrap_cache(&dns, overlay, &options);
     Ok((cached, None))
 }
 
@@ -457,7 +466,7 @@ pub fn build_upstream(
         return Ok(Some(build_dhcp_dns_upstream(a, None)?));
     }
     if a.eq_ignore_ascii_case("tailscale") || a.starts_with("tailscale://") {
-        return Ok(Some(build_tailscale_dns_upstream(a, None)?));
+        return Ok(Some(build_tailscale_dns_upstream(a, None, &[])?));
     }
     if a.eq_ignore_ascii_case("resolved")
         || a.eq_ignore_ascii_case("system")
@@ -532,6 +541,14 @@ pub fn build_upstream(
 pub fn build_upstream_from_server(
     srv: &sb_config::ir::DnsServerIR,
     _registry: &crate::dns::transport::TransportRegistry,
+) -> Result<Option<Arc<dyn DnsUpstream>>> {
+    build_upstream_from_server_with_options(srv, _registry, &DnsRuntimeOptions::default())
+}
+
+fn build_upstream_from_server_with_options(
+    srv: &sb_config::ir::DnsServerIR,
+    _registry: &crate::dns::transport::TransportRegistry,
+    options: &DnsRuntimeOptions,
 ) -> Result<Option<Arc<dyn DnsUpstream>>> {
     // L2.10.11: Check server_type first (GUI generates "type" field)
     if let Some(ref st) = srv.server_type {
@@ -615,7 +632,11 @@ pub fn build_upstream_from_server(
         return Ok(Some(build_dhcp_dns_upstream(a, Some(&srv.tag))?));
     }
     if a.eq_ignore_ascii_case("tailscale") || a.starts_with("tailscale://") {
-        return Ok(Some(build_tailscale_dns_upstream(a, Some(&srv.tag))?));
+        return Ok(Some(build_tailscale_dns_upstream(
+            a,
+            Some(&srv.tag),
+            &options.tailscale_addrs,
+        )?));
     }
     if a.eq_ignore_ascii_case("resolved")
         || a.eq_ignore_ascii_case("system")
@@ -626,6 +647,8 @@ pub fn build_upstream_from_server(
     if let Some(rest) = a.strip_prefix("udp://") {
         let sa = normalize_host_port(rest, 53)?;
         let up = crate::dns::upstream::UdpUpstream::new(sa)
+            .with_timeout(std::time::Duration::from_millis(options.udp_timeout_ms))
+            .with_retries(options.udp_retries)
             .with_client_subnet(srv.client_subnet.clone());
         return Ok(Some(Arc::new(up)));
     }
@@ -909,8 +932,12 @@ fn build_dhcp_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn Dn
 }
 
 #[cfg(feature = "dns_tailscale")]
-fn build_tailscale_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
-    let (name, addrs) = crate::dns::upstream::parse_tailscale_spec(spec, tag)?;
+fn build_tailscale_dns_upstream(
+    spec: &str,
+    tag: Option<&str>,
+    fallback: &[std::net::SocketAddr],
+) -> Result<Arc<dyn DnsUpstream>> {
+    let (name, addrs) = crate::dns::upstream::parse_tailscale_spec(spec, tag, fallback)?;
     if addrs.is_empty() {
         Ok(Arc::new(crate::dns::upstream::TailscaleLocalUpstream::new(
             tag,
@@ -923,7 +950,11 @@ fn build_tailscale_dns_upstream(spec: &str, tag: Option<&str>) -> Result<Arc<dyn
 }
 
 #[cfg(not(feature = "dns_tailscale"))]
-fn build_tailscale_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dyn DnsUpstream>> {
+fn build_tailscale_dns_upstream(
+    _spec: &str,
+    _tag: Option<&str>,
+    _fallback: &[std::net::SocketAddr],
+) -> Result<Arc<dyn DnsUpstream>> {
     Err(anyhow::anyhow!(
         "tailscale DNS upstream requires the `dns_tailscale` feature; rebuild with `--features sb-core/dns_tailscale`"
     ))
@@ -1073,7 +1104,11 @@ impl Resolver for HostsOverlayResolver {
     }
 }
 
-fn maybe_wrap_cache(dns: &sb_config::ir::DnsIR, base: Arc<dyn Resolver>) -> Arc<dyn Resolver> {
+fn maybe_wrap_cache(
+    dns: &sb_config::ir::DnsIR,
+    base: Arc<dyn Resolver>,
+    options: &DnsRuntimeOptions,
+) -> Arc<dyn Resolver> {
     if dns.disable_cache.unwrap_or(false) {
         return base;
     }
@@ -1081,8 +1116,7 @@ fn maybe_wrap_cache(dns: &sb_config::ir::DnsIR, base: Arc<dyn Resolver>) -> Arc<
     let cap = dns
         .cache_capacity
         .map(|v| v as usize)
-        .or_else(|| env_u64("SB_DNS_CACHE_SIZE").map(|v| v as usize))
-        .unwrap_or(1024);
+        .unwrap_or(options.cache_capacity);
     let cache =
         Arc::new(DnsCache::new(cap).with_disable_expire(dns.disable_expire.unwrap_or(false)));
 
@@ -1134,185 +1168,65 @@ impl Resolver for CachedResolver {
     }
 }
 
-fn apply_env_from_ir(dns: &sb_config::ir::DnsIR) {
-    fn set_if_unset(k: &str, v: &str) {
-        if std::env::var(k).is_err() {
-            std::env::set_var(k, v);
-        }
-    }
-    if let Some(ms) = dns.timeout_ms {
-        set_if_unset("SB_DNS_UDP_TIMEOUT_MS", &ms.to_string());
-        set_if_unset("SB_DNS_DOT_TIMEOUT_MS", &ms.to_string());
-        set_if_unset("SB_DNS_DOH_TIMEOUT_MS", &ms.to_string());
-        set_if_unset("SB_DNS_DOQ_TIMEOUT_MS", &ms.to_string());
-    }
-    if let Some(s) = dns.ttl_default_s {
-        set_if_unset("SB_DNS_DEFAULT_TTL_S", &s.to_string());
-    }
-    if let Some(s) = dns.ttl_min_s {
-        set_if_unset("SB_DNS_MIN_TTL_S", &s.to_string());
-    }
-    if let Some(s) = dns.ttl_max_s {
-        set_if_unset("SB_DNS_MAX_TTL_S", &s.to_string());
-    }
-    if let Some(s) = dns.ttl_neg_s {
-        set_if_unset("SB_DNS_NEG_TTL_S", &s.to_string());
-    }
-    if dns.fakeip_enabled.unwrap_or(false) {
-        set_if_unset("SB_DNS_FAKEIP_ENABLE", "1");
-    }
-    if let Some(v) = dns.fakeip_v4_base.as_ref() {
-        set_if_unset("SB_FAKEIP_V4_BASE", v);
-    }
-    if let Some(v) = dns.fakeip_v4_mask {
-        set_if_unset("SB_FAKEIP_V4_MASK", &v.to_string());
-    }
-    if let Some(v) = dns.fakeip_v6_base.as_ref() {
-        set_if_unset("SB_FAKEIP_V6_BASE", v);
-    }
-    if let Some(v) = dns.fakeip_v6_mask {
-        set_if_unset("SB_FAKEIP_V6_MASK", &v.to_string());
-    }
-    if let Some(v) = dns.pool_strategy.as_ref() {
-        set_if_unset("SB_DNS_POOL_STRATEGY", v);
-    }
-    if let Some(v) = dns.pool_race_window_ms {
-        set_if_unset("SB_DNS_RACE_WINDOW_MS", &v.to_string());
-    }
-    if let Some(v) = dns.pool_he_race_ms {
-        set_if_unset("SB_DNS_HE_RACE_MS", &v.to_string());
-    }
-    if let Some(v) = dns.pool_he_order.as_ref() {
-        set_if_unset("SB_DNS_HE_ORDER", v);
-    }
-    if let Some(v) = dns.pool_max_inflight {
-        set_if_unset("SB_DNS_POOL_MAX_INFLIGHT", &v.to_string());
-    }
-    if let Some(v) = dns.pool_per_host_inflight {
-        set_if_unset("SB_DNS_PER_HOST_INFLIGHT", &v.to_string());
-    }
-    if let Some(v) = dns.client_subnet.as_ref() {
-        set_if_unset("SB_DNS_CLIENT_SUBNET", v);
-    }
-    if let Some(v) = dns.cache_capacity {
-        set_if_unset("SB_DNS_CACHE_SIZE", &v.to_string());
-    }
-}
-
-fn hydrate_dns_ir_from_env(dns: &sb_config::ir::DnsIR) -> sb_config::ir::DnsIR {
+fn hydrate_dns_ir_from_options(
+    dns: &sb_config::ir::DnsIR,
+    options: &DnsRuntimeOptions,
+) -> sb_config::ir::DnsIR {
     let mut hydrated = dns.clone();
 
-    hydrated.timeout_ms = hydrated.timeout_ms.or_else(|| {
-        env_u64("SB_DNS_UDP_TIMEOUT_MS")
-            .or_else(|| env_u64("SB_DNS_TIMEOUT_MS"))
-            .or_else(|| env_u64("SB_DNS_DOH_TIMEOUT_MS"))
-    });
-    hydrated.ttl_default_s = hydrated
-        .ttl_default_s
-        .or_else(|| env_u64("SB_DNS_DEFAULT_TTL_S"));
-    hydrated.ttl_min_s = hydrated.ttl_min_s.or_else(|| env_u64("SB_DNS_MIN_TTL_S"));
-    hydrated.ttl_max_s = hydrated.ttl_max_s.or_else(|| env_u64("SB_DNS_MAX_TTL_S"));
-    hydrated.ttl_neg_s = hydrated.ttl_neg_s.or_else(|| env_u64("SB_DNS_NEG_TTL_S"));
+    hydrated.timeout_ms = hydrated.timeout_ms.or(Some(options.udp_timeout_ms));
+    hydrated.ttl_default_s = hydrated.ttl_default_s.or(Some(options.default_ttl_s));
+    hydrated.ttl_min_s = hydrated.ttl_min_s.or(Some(options.min_ttl_s));
+    hydrated.ttl_max_s = hydrated.ttl_max_s.or(Some(options.max_ttl_s));
+    hydrated.ttl_neg_s = hydrated.ttl_neg_s.or(Some(options.negative_ttl_s));
 
     if hydrated.fakeip_enabled.is_none() {
-        hydrated.fakeip_enabled = env_bool("SB_DNS_FAKEIP_ENABLE");
+        hydrated.fakeip_enabled = Some(options.fakeip_enabled);
     }
     if hydrated.fakeip_v4_base.is_none() {
-        hydrated.fakeip_v4_base = env_string("SB_FAKEIP_V4_BASE");
+        hydrated.fakeip_v4_base = Some(options.fakeip_v4_base.to_string());
     }
     if hydrated.fakeip_v4_mask.is_none() {
-        hydrated.fakeip_v4_mask = env_u8("SB_FAKEIP_V4_MASK");
+        hydrated.fakeip_v4_mask = Some(options.fakeip_v4_mask);
     }
     if hydrated.fakeip_v6_base.is_none() {
-        hydrated.fakeip_v6_base = env_string("SB_FAKEIP_V6_BASE");
+        hydrated.fakeip_v6_base = Some(options.fakeip_v6_base.to_string());
     }
     if hydrated.fakeip_v6_mask.is_none() {
-        hydrated.fakeip_v6_mask = env_u8("SB_FAKEIP_V6_MASK");
+        hydrated.fakeip_v6_mask = Some(options.fakeip_v6_mask);
     }
 
     if hydrated.pool_strategy.is_none() {
-        hydrated.pool_strategy = env_string("SB_DNS_POOL_STRATEGY");
+        hydrated.pool_strategy = Some(options.pool_strategy.clone());
     }
     hydrated.pool_race_window_ms = hydrated
         .pool_race_window_ms
-        .or_else(|| env_u64("SB_DNS_RACE_WINDOW_MS"));
+        .or(Some(options.race_window_ms));
     hydrated.pool_he_race_ms = hydrated
         .pool_he_race_ms
-        .or_else(|| env_u64("SB_DNS_HE_RACE_MS"));
+        .or(Some(options.happy_eyeballs_race_ms));
     if hydrated.pool_he_order.is_none() {
-        hydrated.pool_he_order = env_string("SB_DNS_HE_ORDER");
+        hydrated.pool_he_order = Some(options.happy_eyeballs_order.clone());
     }
     hydrated.pool_max_inflight = hydrated
         .pool_max_inflight
-        .or_else(|| env_u64("SB_DNS_POOL_MAX_INFLIGHT"));
+        .or(Some(options.pool_max_inflight as u64));
     hydrated.pool_per_host_inflight = hydrated
         .pool_per_host_inflight
-        .or_else(|| env_u64("SB_DNS_PER_HOST_INFLIGHT"));
+        .or(Some(options.per_host_inflight as u64));
 
     if hydrated.client_subnet.is_none() {
-        hydrated.client_subnet = env_string("SB_DNS_CLIENT_SUBNET");
+        hydrated.client_subnet.clone_from(&options.client_subnet);
     }
     hydrated.cache_capacity = hydrated
         .cache_capacity
-        .or_else(|| env_u64("SB_DNS_CACHE_SIZE").map(|v| v as u32));
+        .or(Some(options.cache_capacity as u32));
 
     if hydrated.hosts_ttl_s.is_none() {
-        hydrated.hosts_ttl_s = env_u64("SB_DNS_STATIC_TTL_S");
+        hydrated.hosts_ttl_s = Some(options.static_ttl_s);
     }
 
     hydrated
-}
-
-fn env_u64(key: &str) -> Option<u64> {
-    let raw = std::env::var(key).ok()?;
-    let trimmed = raw.trim();
-    match trimmed.parse::<u64>() {
-        Ok(v) => Some(v),
-        Err(err) => {
-            tracing::warn!(
-                "dns env '{key}' value '{trimmed}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            );
-            None
-        }
-    }
-}
-
-fn env_u8(key: &str) -> Option<u8> {
-    let raw = std::env::var(key).ok()?;
-    let trimmed = raw.trim();
-    match trimmed.parse::<u8>() {
-        Ok(v) => Some(v),
-        Err(err) => {
-            tracing::warn!(
-                "dns env '{key}' value '{trimmed}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            );
-            None
-        }
-    }
-}
-
-fn env_bool(key: &str) -> Option<bool> {
-    let raw = std::env::var(key).ok()?;
-    match raw.trim().to_ascii_lowercase().as_str() {
-        "1" | "true" | "yes" => Some(true),
-        "0" | "false" | "no" | "" => Some(false),
-        other => {
-            tracing::warn!(
-                "dns env '{key}' value '{other}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true'/'yes' or '0'/'false'/'no'"
-            );
-            None
-        }
-    }
-}
-
-fn env_string(key: &str) -> Option<String> {
-    let val = std::env::var(key).ok()?;
-    let trimmed = val.trim();
-    if trimmed.is_empty() {
-        None
-    } else {
-        Some(trimmed.to_string())
-    }
 }
 
 fn build_ruleset_from_rule(
@@ -1527,7 +1441,6 @@ fn build_resolved_dns_upstream(_spec: &str, _tag: Option<&str>) -> Result<Arc<dy
 mod tests {
     use super::*;
     use crate::dns::DnsAnswer;
-    use crate::testutil::EnvVarGuard;
 
     fn dns_server(tag: &str, address: &str) -> sb_config::ir::DnsServerIR {
         sb_config::ir::DnsServerIR {
@@ -1542,6 +1455,10 @@ mod tests {
             servers,
             ..Default::default()
         }
+    }
+
+    fn build_manager(dns: &sb_config::ir::DnsIR) -> Result<DnsServerManager> {
+        DnsServerManager::build(dns, &DnsRuntimeOptions::default())
     }
 
     #[test]
@@ -1627,7 +1544,7 @@ mod tests {
         ]);
         dns.default = Some("local".to_string());
 
-        let manager = DnsServerManager::build(&dns).expect("manager should build");
+        let manager = build_manager(&dns).expect("manager should build");
         assert_eq!(manager.default_tag, "local");
         assert!(manager.upstreams.contains_key("tcp"));
         assert_eq!(manager.fakeip_tags, vec!["fakeip".to_string()]);
@@ -1638,7 +1555,7 @@ mod tests {
         let mut dns = dns_ir(vec![dns_server("local", "local")]);
         dns.default = Some("ghost".to_string());
 
-        let err = DnsServerManager::build(&dns)
+        let err = build_manager(&dns)
             .err()
             .expect("manager should reject missing default")
             .to_string();
@@ -1650,7 +1567,7 @@ mod tests {
         let mut dns = dns_ir(vec![dns_server("fakeip", "fakeip")]);
         dns.servers[0].server_type = Some("fakeip".to_string());
         dns.default = Some("fakeip".to_string());
-        let err = DnsServerManager::build(&dns)
+        let err = build_manager(&dns)
             .err()
             .expect("manager should reject fakeip default")
             .to_string();
@@ -1660,7 +1577,7 @@ mod tests {
         second.server_type = Some("fakeip".to_string());
         dns.servers.push(second);
         dns.default = None;
-        let err = DnsServerManager::build(&dns)
+        let err = build_manager(&dns)
             .err()
             .expect("manager should reject multiple fakeip servers")
             .to_string();
@@ -1671,7 +1588,7 @@ mod tests {
     fn p1313_02_manager_rejects_missing_dependency_and_cycle() {
         let mut dns = dns_ir(vec![dns_server("main", "udp://1.1.1.1:53")]);
         dns.servers[0].address_resolver = Some("missing".to_string());
-        let err = DnsServerManager::build(&dns)
+        let err = build_manager(&dns)
             .err()
             .expect("manager should reject missing dependency")
             .to_string();
@@ -1681,7 +1598,7 @@ mod tests {
         a.address_resolver = Some("b".to_string());
         let mut b = dns_server("b", "udp://8.8.8.8:53");
         b.address_resolver = Some("a".to_string());
-        let err = DnsServerManager::build(&dns_ir(vec![a, b]))
+        let err = build_manager(&dns_ir(vec![a, b]))
             .err()
             .expect("manager should reject dependency cycle")
             .to_string();
@@ -1694,7 +1611,7 @@ mod tests {
         main.address_resolver = Some("bootstrap".to_string());
         let bootstrap = dns_server("bootstrap", "udp://8.8.8.8:53");
 
-        let manager = DnsServerManager::build(&dns_ir(vec![main, bootstrap])).unwrap();
+        let manager = build_manager(&dns_ir(vec![main, bootstrap])).unwrap();
         assert_eq!(manager.ordered_tags, vec!["bootstrap", "main"]);
     }
 
@@ -1702,7 +1619,7 @@ mod tests {
     fn p1313_02_manager_rejects_unknown_transport_type() {
         let mut dns = dns_ir(vec![dns_server("bad", "bogus://1.1.1.1")]);
         dns.servers[0].server_type = Some("bogus".to_string());
-        let err = DnsServerManager::build(&dns)
+        let err = build_manager(&dns)
             .err()
             .expect("manager should reject unknown transport type")
             .to_string();
@@ -1711,7 +1628,7 @@ mod tests {
 
     #[test]
     fn p1313_02_manager_rejects_invalid_server_address() {
-        let err = DnsServerManager::build(&dns_ir(vec![dns_server("bad", "udp://")]))
+        let err = build_manager(&dns_ir(vec![dns_server("bad", "udp://")]))
             .err()
             .expect("manager should reject invalid server address")
             .to_string();
@@ -1848,15 +1765,17 @@ mod tests {
     }
 
     #[test]
-    fn hydrate_dns_ir_reads_env_values() {
-        let _ttl = EnvVarGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
-        let _timeout = EnvVarGuard::set("SB_DNS_UDP_TIMEOUT_MS", "2500");
-        let _fake = EnvVarGuard::set("SB_DNS_FAKEIP_ENABLE", "1");
-        let _fake_v4 = EnvVarGuard::set("SB_FAKEIP_V4_BASE", "198.18.0.0");
-        let _fake_v4_mask = EnvVarGuard::set("SB_FAKEIP_V4_MASK", "15");
-        let _client = EnvVarGuard::set("SB_DNS_CLIENT_SUBNET", "1.2.3.0/24");
-
-        let hydrated = hydrate_dns_ir_from_env(&sb_config::ir::DnsIR::default());
+    fn hydrate_dns_ir_reads_options() {
+        let options = DnsRuntimeOptions {
+            default_ttl_s: 900,
+            udp_timeout_ms: 2500,
+            fakeip_enabled: true,
+            fakeip_v4_base: "198.18.0.0".parse().unwrap(),
+            fakeip_v4_mask: 15,
+            client_subnet: Some("1.2.3.0/24".into()),
+            ..DnsRuntimeOptions::default()
+        };
+        let hydrated = hydrate_dns_ir_from_options(&sb_config::ir::DnsIR::default(), &options);
         assert_eq!(hydrated.timeout_ms, Some(2500));
         assert_eq!(hydrated.ttl_default_s, Some(900));
         assert_eq!(hydrated.fakeip_enabled, Some(true));
@@ -1867,12 +1786,15 @@ mod tests {
 
     #[test]
     fn hydrate_dns_ir_does_not_override_ir_values() {
-        let _ttl = EnvVarGuard::set("SB_DNS_DEFAULT_TTL_S", "900");
+        let options = DnsRuntimeOptions {
+            default_ttl_s: 900,
+            ..DnsRuntimeOptions::default()
+        };
         let ir = sb_config::ir::DnsIR {
             ttl_default_s: Some(120),
             ..Default::default()
         };
-        let hydrated = hydrate_dns_ir_from_env(&ir);
+        let hydrated = hydrate_dns_ir_from_options(&ir, &options);
         assert_eq!(hydrated.ttl_default_s, Some(120));
     }
 

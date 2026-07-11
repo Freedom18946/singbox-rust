@@ -4,6 +4,14 @@ use rand::{thread_rng, Rng};
 use std::net::IpAddr;
 
 pub fn build_query(host: &str, qtype: u16) -> Result<Vec<u8>> {
+    build_query_with_client_subnet(host, qtype, None)
+}
+
+pub fn build_query_with_client_subnet(
+    host: &str,
+    qtype: u16,
+    client_subnet: Option<&str>,
+) -> Result<Vec<u8>> {
     let mut rng = thread_rng();
     let id: u16 = rng.gen();
     let mut out = Vec::with_capacity(512);
@@ -23,8 +31,9 @@ pub fn build_query(host: &str, qtype: u16) -> Result<Vec<u8>> {
     out.extend_from_slice(&qtype.to_be_bytes()); // QTYPE
     out.extend_from_slice(&1u16.to_be_bytes()); // QCLASS IN
 
-    // Optionally append EDNS0 Client Subnet if configured via env
-    if let Some((family, src_prefix, scope_prefix, addr_bytes)) = parse_client_subnet_env() {
+    if let Some((family, src_prefix, scope_prefix, addr_bytes)) =
+        client_subnet.and_then(parse_client_subnet)
+    {
         // Set ARCOUNT=1
         out[10] = 0;
         out[11] = 1;
@@ -51,8 +60,7 @@ pub fn build_query(host: &str, qtype: u16) -> Result<Vec<u8>> {
     Ok(out)
 }
 
-fn parse_client_subnet_env() -> Option<(u16, u8, u8, Vec<u8>)> {
-    let s = std::env::var("SB_DNS_CLIENT_SUBNET").ok()?;
+fn parse_client_subnet(s: &str) -> Option<(u16, u8, u8, Vec<u8>)> {
     let s = s.trim();
     if s.is_empty() {
         return None;

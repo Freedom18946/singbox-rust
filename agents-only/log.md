@@ -281,3 +281,20 @@
 
 **结果**: WP08 DONE；routing 7 files/1487 LOC → 1 file/25 LOC；WP11 解锁。无新增
 parity/BHV/REALITY/packaging movement。
+
+---
+
+## 2026-07-11 MIG-03 WP11 env/config convergence
+
+**任务**: 将 sb-core 的 `SB_*` 环境解析上收 app 组合根，保留全部兼容语义并冻结构造期快照。
+
+**变更**:
+- 新增六域 `CoreRuntimeOptions` 与 app 141-key parser；supervisor、Context、Bridge 显式注入。
+- DNS/router/network/service/debug/admin 全面改用 options；core `SB_*` 字面量和读取均归零。
+- core 测试主路径改为显式 options；新增登记表与默认结构锁；adapter 自有兼容读取留在 adapter。
+- 修复 explain 索引、UDP explain options 与 Clash/FakeIP 全局测试隔离；清理 64 条已失效 env boundary 断言。
+
+**验证**: workspace all-features check、指定 clippy、sb-core/app full test、fmt、boundaries
+429 assertions、diff-check、core census 全绿。
+
+**结果**: WP11 DONE；141 → 0 core `SB_*`，白名单 0，无变量废弃，WP14 解锁。

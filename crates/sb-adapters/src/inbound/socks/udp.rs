@@ -8,7 +8,7 @@ use std::fmt;
 
 use anyhow::{bail, Result};
 use once_cell::sync::OnceCell as SyncOnceCell;
-use sb_core::net::ratelimit::maybe_drop_udp;
+use sb_core::net::ratelimit::UdpRateLimiter;
 use sb_core::obs::access;
 use sb_core::outbound::endpoint::{ProxyEndpoint, ProxyKind};
 use sb_core::outbound::observe::with_pool_observation;
@@ -35,6 +35,45 @@ use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{
     Decision as RDecision, RouteActionOptions, RouteCtx as RulesRouteCtx,
 };
+
+fn adapter_network_options() -> &'static sb_core::runtime_options::NetworkRuntimeOptions {
+    static OPTIONS: SyncOnceCell<sb_core::runtime_options::NetworkRuntimeOptions> =
+        SyncOnceCell::new();
+    OPTIONS.get_or_init(|| {
+        let mut options = sb_core::runtime_options::NetworkRuntimeOptions::default();
+        options.udp_outbound_bytes_per_second = std::env::var("SB_UDP_OUTBOUND_BPS_MAX")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(options.udp_outbound_bytes_per_second);
+        options.udp_outbound_packets_per_second = std::env::var("SB_UDP_OUTBOUND_PPS_MAX")
+            .ok()
+            .and_then(|value| value.parse().ok())
+            .unwrap_or(options.udp_outbound_packets_per_second);
+        options
+    })
+}
+
+fn adapter_dns_options() -> &'static sb_core::runtime_options::DnsRuntimeOptions {
+    static OPTIONS: SyncOnceCell<sb_core::runtime_options::DnsRuntimeOptions> = SyncOnceCell::new();
+    OPTIONS.get_or_init(|| {
+        let mut options = sb_core::runtime_options::DnsRuntimeOptions::default();
+        options.enabled = std::env::var("SB_DNS_ENABLE")
+            .ok()
+            .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
+        options
+    })
+}
+
+fn udp_rate_limiter() -> &'static UdpRateLimiter {
+    static LIMITER: SyncOnceCell<UdpRateLimiter> = SyncOnceCell::new();
+    LIMITER.get_or_init(|| UdpRateLimiter::from_options(adapter_network_options()))
+}
+
+fn access_log_enabled() -> bool {
+    std::env::var("SB_ACCESS_LOG")
+        .ok()
+        .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
+}
 use sb_core::router::{RouteCtx as RouterRouteCtx, RouterHandle, Transport};
 use sb_core::services::v2ray_api::StatsManager;
 
@@ -241,7 +280,7 @@ async fn open_direct_socket_upstream(
 ) -> Result<Arc<UdpSocket>> {
     let socket = direct_udp_socket_for(dst).await?;
     if options.udp_connect {
-        let addr = resolve_target_socketaddr(dst).await?;
+        let addr = resolve_target_socketaddr(dst, adapter_dns_options()).await?;
         socket.connect(addr).await?;
     }
     Ok(Arc::new(socket))
@@ -258,7 +297,7 @@ async fn send_to_nat_upstream(
             if options.udp_connect && socket.peer_addr().is_ok() {
                 Ok(socket.send(payload).await?)
             } else {
-                direct_sendto(socket.as_ref(), dst, payload).await
+                direct_sendto(socket.as_ref(), dst, payload, adapter_network_options()).await
             }
         }
         UdpNatUpstream::Transport(transport) => transport
@@ -1816,7 +1855,7 @@ pub async fn serve_udp_datagrams_with_runtime(
 
         let body = &buf[header_len..n];
 
-        if let Some(_reason) = maybe_drop_udp(body.len()) {
+        if let Some(_reason) = udp_rate_limiter().maybe_drop_udp(body.len()) {
             #[cfg(feature = "metrics")]
             metrics::counter!("outbound_drop_total", "kind" => "udp", "reason" => "limit")
                 .increment(1);
@@ -2030,6 +2069,7 @@ pub async fn serve_udp_datagrams_with_runtime(
                     metrics::counter!("udp_bytes_out_total").increment(body.len() as u64);
                 }
                 access::log(
+                    access_log_enabled(),
                     "socks_udp_forward",
                     &[
                         ("proto", "socks_udp".into()),
@@ -2042,6 +2082,7 @@ pub async fn serve_udp_datagrams_with_runtime(
             Err(_e) => {
                 sb_core::metrics::record_inbound_error_display("socks_udp", &_e);
                 access::log(
+                    access_log_enabled(),
                     "socks_udp_forward_fail",
                     &[
                         ("proto", "socks_udp".into()),

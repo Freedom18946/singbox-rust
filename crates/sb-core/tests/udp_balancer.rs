@@ -32,9 +32,6 @@ async fn balancer_direct_ok() -> anyhow::Result<()> {
         }
         Err(err) => return Err(err),
     };
-    // 开启 balancer，仅 direct
-    std::env::set_var("SB_UDP_BALANCER", "1");
-    std::env::set_var("SB_UDP_BALANCER_BACKENDS", "direct:1");
     // 决策 direct
     let dst = UdpTargetAddr::Ip(echo);
     let payload = b"balancer-direct";

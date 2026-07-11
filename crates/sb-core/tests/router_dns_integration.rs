@@ -4,45 +4,25 @@
 
 use std::net::IpAddr;
 use std::sync::Arc;
-use std::sync::{Mutex, OnceLock};
 use std::time::Duration;
 
 use sb_core::dns::{DnsAnswer, Resolver};
 use sb_core::router::{DnsResolve, DnsResolverBridge, RouterHandle};
+use sb_core::runtime_options::RouterRuntimeOptions;
 
-fn serial_guard() -> std::sync::MutexGuard<'static, ()> {
-    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
-    LOCK.get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner())
-}
-
-struct EnvVarGuard {
-    key: &'static str,
-    prev: Option<std::ffi::OsString>,
-}
-
-impl EnvVarGuard {
-    fn set(key: &'static str, value: &str) -> Self {
-        let prev = std::env::var_os(key);
-        std::env::set_var(key, value);
-        Self { key, prev }
-    }
-
-    fn remove(key: &'static str) -> Self {
-        let prev = std::env::var_os(key);
-        std::env::remove_var(key);
-        Self { key, prev }
-    }
-}
-
-impl Drop for EnvVarGuard {
-    fn drop(&mut self) {
-        match self.prev.as_ref() {
-            Some(v) => std::env::set_var(self.key, v),
-            None => std::env::remove_var(self.key),
-        }
-    }
+fn router_with_dns(
+    resolver: MockDnsResolver,
+    rules: &str,
+    enabled: bool,
+    timeout_ms: u64,
+) -> RouterHandle {
+    RouterHandle::from_options(Arc::new(RouterRuntimeOptions {
+        rules_inline: rules.into(),
+        dns_enabled: enabled,
+        dns_timeout_ms: timeout_ms,
+        ..Default::default()
+    }))
+    .with_dns_resolver(Arc::new(resolver))
 }
 
 /// Mock DNS resolver for testing
@@ -95,19 +75,13 @@ impl Resolver for MockDnsResolver {
 
 #[tokio::test]
 async fn test_dns_integration_domain_resolution() {
-    let _serial = serial_guard();
-    // Set up environment for DNS-enabled routing
-    let _dns = EnvVarGuard::set("SB_ROUTER_DNS", "1");
-    let _dns_timeout = EnvVarGuard::set("SB_ROUTER_DNS_TIMEOUT_MS", "1000");
-    let _override = EnvVarGuard::set("SB_ROUTER_OVERRIDE", "cidr4:1.2.3.0/24=direct");
-
     // Create mock DNS resolver
     let mut mock_resolver = MockDnsResolver::new();
     mock_resolver.add_response("example.com", vec!["1.2.3.4".parse().unwrap()], 300);
     mock_resolver.add_response("google.com", vec!["8.8.8.8".parse().unwrap()], 300);
 
     // Create router with DNS resolver
-    let router = RouterHandle::from_env().with_dns_resolver(Arc::new(mock_resolver));
+    let router = router_with_dns(mock_resolver, "cidr4:1.2.3.0/24=direct", true, 1000);
 
     // Test domain that resolves to IP matching CIDR rule
     let decision = router.decide_udp_async("example.com").await;
@@ -120,18 +94,15 @@ async fn test_dns_integration_domain_resolution() {
 
 #[tokio::test]
 async fn test_dns_integration_exact_match_priority() {
-    let _serial = serial_guard();
-    // Set up environment
-    let _dns = EnvVarGuard::set("SB_ROUTER_DNS", "1");
-    let _override = EnvVarGuard::set(
-        "SB_ROUTER_OVERRIDE",
-        "exact:test.example.com=proxy,cidr4:1.2.3.0/24=direct",
-    );
-
     let mut mock_resolver = MockDnsResolver::new();
     mock_resolver.add_response("test.example.com", vec!["1.2.3.4".parse().unwrap()], 300);
 
-    let router = RouterHandle::from_env().with_dns_resolver(Arc::new(mock_resolver));
+    let router = router_with_dns(
+        mock_resolver,
+        "exact:test.example.com=proxy\ncidr4:1.2.3.0/24=direct",
+        true,
+        300,
+    );
 
     // Exact match should take priority over DNS resolution + CIDR match
     let decision = router.decide_udp_async("test.example.com").await;
@@ -140,17 +111,11 @@ async fn test_dns_integration_exact_match_priority() {
 
 #[tokio::test]
 async fn test_dns_integration_timeout_handling() {
-    let _serial = serial_guard();
-    // Set up environment with short timeout
-    let _dns = EnvVarGuard::set("SB_ROUTER_DNS", "1");
-    let _dns_timeout = EnvVarGuard::set("SB_ROUTER_DNS_TIMEOUT_MS", "10"); // Very short timeout
-    let _override = EnvVarGuard::set("SB_ROUTER_OVERRIDE", "cidr4:1.2.3.0/24=proxy");
-
     // Create resolver that will timeout
     let mock_resolver = MockDnsResolver::new();
     // Don't add any responses - will cause timeout
 
-    let router = RouterHandle::from_env().with_dns_resolver(Arc::new(mock_resolver));
+    let router = router_with_dns(mock_resolver, "cidr4:1.2.3.0/24=proxy", true, 10);
 
     let decision = router.decide_udp_async("slow.example.com").await;
     assert_eq!(decision, "unresolved"); // Should fall back to router default on timeout
@@ -158,15 +123,10 @@ async fn test_dns_integration_timeout_handling() {
 
 #[tokio::test]
 async fn test_dns_integration_error_handling() {
-    let _serial = serial_guard();
-    // Set up environment
-    let _dns = EnvVarGuard::set("SB_ROUTER_DNS", "1");
-    let _override = EnvVarGuard::set("SB_ROUTER_OVERRIDE", "cidr4:1.2.3.0/24=proxy");
-
     let mut mock_resolver = MockDnsResolver::new();
     mock_resolver.add_error("error.example.com", "DNS resolution failed");
 
-    let router = RouterHandle::from_env().with_dns_resolver(Arc::new(mock_resolver));
+    let router = router_with_dns(mock_resolver, "cidr4:1.2.3.0/24=proxy", true, 300);
 
     let decision = router.decide_udp_async("error.example.com").await;
     assert_eq!(decision, "unresolved"); // Should fall back to router default on error
@@ -174,11 +134,6 @@ async fn test_dns_integration_error_handling() {
 
 #[tokio::test]
 async fn test_dns_integration_ipv6_support() {
-    let _serial = serial_guard();
-    // Set up environment
-    let _dns = EnvVarGuard::set("SB_ROUTER_DNS", "1");
-    let _override = EnvVarGuard::set("SB_ROUTER_OVERRIDE", "cidr6:2001:db8::/32=proxy");
-
     let mut mock_resolver = MockDnsResolver::new();
     mock_resolver.add_response(
         "ipv6.example.com",
@@ -186,7 +141,7 @@ async fn test_dns_integration_ipv6_support() {
         300,
     );
 
-    let router = RouterHandle::from_env().with_dns_resolver(Arc::new(mock_resolver));
+    let router = router_with_dns(mock_resolver, "cidr6:2001:db8::/32=proxy", true, 300);
 
     let decision = router.decide_udp_async("ipv6.example.com").await;
     assert_eq!(decision, "proxy"); // Should match IPv6 CIDR rule
@@ -194,14 +149,6 @@ async fn test_dns_integration_ipv6_support() {
 
 #[tokio::test]
 async fn test_dns_integration_multiple_ips() {
-    let _serial = serial_guard();
-    // Set up environment
-    let _dns = EnvVarGuard::set("SB_ROUTER_DNS", "1");
-    let _override = EnvVarGuard::set(
-        "SB_ROUTER_OVERRIDE",
-        "cidr4:1.2.3.0/24=proxy,cidr4:8.8.8.0/24=direct",
-    );
-
     let mut mock_resolver = MockDnsResolver::new();
     mock_resolver.add_response(
         "multi.example.com",
@@ -209,7 +156,12 @@ async fn test_dns_integration_multiple_ips() {
         300,
     );
 
-    let router = RouterHandle::from_env().with_dns_resolver(Arc::new(mock_resolver));
+    let router = router_with_dns(
+        mock_resolver,
+        "cidr4:1.2.3.0/24=proxy\ncidr4:8.8.8.0/24=direct",
+        true,
+        300,
+    );
 
     let decision = router.decide_udp_async("multi.example.com").await;
     // Should match the first IP that has a rule (1.2.3.4 -> proxy)
@@ -218,15 +170,10 @@ async fn test_dns_integration_multiple_ips() {
 
 #[tokio::test]
 async fn test_dns_integration_disabled() {
-    let _serial = serial_guard();
-    // Ensure DNS is disabled
-    let _dns = EnvVarGuard::remove("SB_ROUTER_DNS");
-    let _override = EnvVarGuard::set("SB_ROUTER_OVERRIDE", "exact:test.com=proxy");
-
     let mut mock_resolver = MockDnsResolver::new();
     mock_resolver.add_response("unknown.example.com", vec!["1.2.3.4".parse().unwrap()], 300);
 
-    let router = RouterHandle::from_env().with_dns_resolver(Arc::new(mock_resolver));
+    let router = router_with_dns(mock_resolver, "exact:test.com=proxy", false, 300);
 
     // DNS resolution should not be used when disabled
     let decision = router.decide_udp_async("unknown.example.com").await;
@@ -235,7 +182,6 @@ async fn test_dns_integration_disabled() {
 
 #[test]
 fn test_router_has_dns_resolver() {
-    let _serial = serial_guard();
     let router_without_dns = RouterHandle::from_env();
     assert!(!router_without_dns.has_dns_resolver());
 
@@ -246,7 +192,6 @@ fn test_router_has_dns_resolver() {
 
 #[tokio::test]
 async fn test_dns_bridge_integration() {
-    let _serial = serial_guard();
     let mut mock_resolver = MockDnsResolver::new();
     mock_resolver.add_response("bridge.test.com", vec!["192.168.1.1".parse().unwrap()], 300);
 

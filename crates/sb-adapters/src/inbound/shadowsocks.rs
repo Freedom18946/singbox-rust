@@ -21,7 +21,7 @@ use crate::inbound::connect::{
 use sb_core::net::metered;
 use sb_core::net::metered::TrafficRecorder;
 use sb_core::net::rate_limit_metrics;
-use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
+use sb_core::net::tcp_rate_limit::TcpRateLimiter;
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
 use sb_core::router;
@@ -808,7 +808,7 @@ async fn serve_run(
     let udp_addr = udp_socket.local_addr()?;
 
     // Initialize rate limiter
-    let rate_limiter = TcpRateLimiter::new(TcpRateLimitConfig::from_env());
+    let rate_limiter = TcpRateLimiter::new(super::tcp_rate_limit_config_from_env());
 
     if let Some(tx) = ready_tx {
         let _ = tx.send(actual);
@@ -1235,7 +1235,7 @@ impl ShadowsocksInboundAdapter {
         let method = AeadCipherKind::from_method(&self.config.method)
             .ok_or_else(|| anyhow!("unsupported method"))?;
         let shared = self.runtime_shared_for_detour(&method);
-        let rate_limiter = TcpRateLimiter::new(TcpRateLimitConfig::from_env());
+        let rate_limiter = TcpRateLimiter::new(super::tcp_rate_limit_config_from_env());
         handle_conn_stream(&self.config, method, stream, peer, &rate_limiter, shared).await
     }
 }

@@ -1,21 +1,12 @@
 #![cfg(feature = "router")]
 use sb_core::net::datagram::UdpTargetAddr;
-use sb_core::router::{self};
-use std::sync::{Mutex, OnceLock};
-
-static TEST_LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+use sb_core::router;
+use sb_core::runtime_options::RouterRuntimeOptions;
+use std::sync::Arc;
 
 #[test]
 fn router_udp_rules_default_unresolved() {
-    let _g = TEST_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    // Ensure clean env to avoid leakage from other tests
-    std::env::remove_var("SB_ROUTER_UDP");
-    std::env::remove_var("SB_ROUTER_UDP_RULES");
-    // 不设置 env，默认 unresolved
-    let h = router::RouterHandle::new_for_tests(); // 若无此构造，可改为 router::RouterHandle::default()
+    let h = router::RouterHandle::from_options(Arc::new(RouterRuntimeOptions::default()));
     let d = UdpTargetAddr::Domain {
         host: "foo.bar".into(),
         port: 53,
@@ -24,23 +15,12 @@ fn router_udp_rules_default_unresolved() {
 }
 
 #[test]
-fn router_udp_rules_env_parsing() {
-    let _g = TEST_LOCK
-        .get_or_init(|| Mutex::new(()))
-        .lock()
-        .unwrap_or_else(|e| e.into_inner());
-    // Clean then set
-    std::env::remove_var("SB_ROUTER_UDP");
-    std::env::remove_var("SB_ROUTER_UDP_RULES");
-    std::env::remove_var("SB_TEST_USE_ENV");
-    std::env::set_var("SB_ROUTER_UDP", "1");
-    std::env::set_var(
-        "SB_ROUTER_UDP_RULES",
-        "exact:foo.bar=proxy,suffix:.example.com=reject,default=unresolved",
-    );
-    // Instruct RouterHandle::new_for_tests to snapshot env for this test
-    std::env::set_var("SB_TEST_USE_ENV", "1");
-    let h = router::RouterHandle::new_for_tests();
+fn router_udp_rules_options_parsing() {
+    let h = router::RouterHandle::from_options(Arc::new(RouterRuntimeOptions {
+        udp_enabled: true,
+        udp_rules: Some("exact:foo.bar=proxy,suffix:.example.com=reject,default=unresolved".into()),
+        ..RouterRuntimeOptions::default()
+    }));
     let x = UdpTargetAddr::Domain {
         host: "foo.bar".into(),
         port: 53,
@@ -56,8 +36,4 @@ fn router_udp_rules_env_parsing() {
         port: 53,
     };
     assert_eq!(h.decide_udp(&z), "unresolved");
-    // Cleanup to not affect other tests
-    std::env::remove_var("SB_ROUTER_UDP");
-    std::env::remove_var("SB_ROUTER_UDP_RULES");
-    std::env::remove_var("SB_TEST_USE_ENV");
 }

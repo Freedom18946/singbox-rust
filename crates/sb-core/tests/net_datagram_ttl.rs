@@ -1,4 +1,5 @@
 use sb_core::net::datagram::{UdpNatKey, UdpNatMap, UdpTargetAddr};
+use sb_core::runtime_options::NetworkRuntimeOptions;
 use std::sync::Arc;
 use std::time::Duration;
 use tokio::net::UdpSocket;
@@ -28,8 +29,11 @@ async fn bind_socket_or_skip() -> Option<Arc<UdpSocket>> {
 async fn nat_ttl_compaction_under_race() {
     let capacity = 64usize;
     let ttl_ms = 30u64;
-    std::env::set_var("SB_UDP_NAT_MAX", capacity.to_string());
-    let map = UdpNatMap::new(None);
+    let options = NetworkRuntimeOptions {
+        udp_nat_max: capacity,
+        ..Default::default()
+    };
+    let map = UdpNatMap::with_options(&options);
 
     // 连续插入并读写，制造"刷新部分、过期部分"的竞态
     for i in 0..32 {

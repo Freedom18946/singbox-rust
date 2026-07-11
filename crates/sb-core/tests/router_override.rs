@@ -1,23 +1,26 @@
 #![cfg(feature = "router")]
-use sb_core::router::{decide_http, RouterHandle};
+use sb_core::router::RouterHandle;
+use sb_core::runtime_options::RouterRuntimeOptions;
+use std::sync::Arc;
 
 #[tokio::test]
 async fn override_exact_suffix_and_defaults() {
     // 覆盖：exact & suffix & tcp 默认
-    std::env::set_var("SB_ROUTER_RULES", "default=unresolved");
-    std::env::set_var("SB_ROUTER_OVERRIDE",
-        "exact:api.example.com=proxy; suffix:.example.com=reject; transport:tcp=proxy; transport:udp=proxy; default=reject");
+    let options = RouterRuntimeOptions {
+        rules_inline: "default=unresolved".into(),
+        runtime_override: Some(
+            "exact:api.example.com=proxy; suffix:.example.com=reject; transport:tcp=proxy; transport:udp=proxy; default=reject".into(),
+        ),
+        ..RouterRuntimeOptions::default()
+    };
+    let h = RouterHandle::from_options(Arc::new(options));
     // exact 胜出
-    let decision = decide_http("api.example.com");
-    assert_eq!(decision.target, "proxy");
+    assert_eq!(h.decide_tcp_async("api.example.com").await, "proxy");
     // 非 exact 但命中 suffix
-    let decision = decide_http("x.example.com");
-    assert_eq!(decision.target, "reject");
+    assert_eq!(h.decide_tcp_async("x.example.com").await, "reject");
     // 非 host 命中，走 transport 覆盖
-    let decision = decide_http("no.match");
-    assert_eq!(decision.target, "proxy");
+    assert_eq!(h.decide_tcp_async("no.match").await, "proxy");
     // UDP 路径：覆盖 transport:udp 与默认（使用同一个覆盖设置）
-    let h = RouterHandle::from_env();
     let d = h.decide_udp_async("no.match").await;
     assert_eq!(d, "proxy");
 }

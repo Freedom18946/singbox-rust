@@ -52,7 +52,7 @@ async fn main() -> anyhow::Result<()> {
     let logging_owner = logging::install_logging_owner(redactor)?;
 
     #[cfg(feature = "failpoints")]
-    sb_core::util::failpoint::init_from_env();
+    sb_core::util::failpoint::init(app::core_env::failpoint_config().as_deref());
 
     #[cfg(feature = "panic_log")]
     app::panic::install();

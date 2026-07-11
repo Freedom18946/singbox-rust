@@ -66,20 +66,24 @@ pub struct QueryExecutor {
 impl QueryExecutor {
     /// 创建新的查询执行器
     pub fn new(upstreams: Vec<Arc<dyn DnsUpstream>>) -> Self {
-        let strategy = match std::env::var("SB_DNS_STRATEGY").as_deref() {
-            Ok("failover") => QueryStrategy::Failover,
-            Ok("race") => QueryStrategy::Race,
-            Ok("round_robin") => QueryStrategy::RoundRobin,
-            Ok("random") => QueryStrategy::Random,
+        Self::from_options(
+            upstreams,
+            &crate::runtime_options::DnsRuntimeOptions::default(),
+        )
+    }
+
+    pub fn from_options(
+        upstreams: Vec<Arc<dyn DnsUpstream>>,
+        options: &crate::runtime_options::DnsRuntimeOptions,
+    ) -> Self {
+        let strategy = match options.strategy.as_str() {
+            "failover" => QueryStrategy::Failover,
+            "race" => QueryStrategy::Race,
+            "round_robin" => QueryStrategy::RoundRobin,
+            "random" => QueryStrategy::Random,
             _ => QueryStrategy::Failover,
         };
-
-        let query_timeout = Duration::from_millis(
-            std::env::var("SB_DNS_QUERY_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let query_timeout = Duration::from_millis(options.query_timeout_ms);
 
         Self {
             upstreams,

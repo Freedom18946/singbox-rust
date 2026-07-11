@@ -5,78 +5,6 @@ use lru::LruCache;
 use parking_lot::Mutex;
 use std::num::NonZeroUsize;
 
-// ---------------------------------------------------------------------------
-// Env-var parse helpers (MIG-02: no silent parse fallback)
-// ---------------------------------------------------------------------------
-
-fn fakeip_env_ipv4(name: &str, default: Ipv4Addr) -> Ipv4Addr {
-    let raw = match std::env::var(name) {
-        Ok(v) => v,
-        Err(_) => return default,
-    };
-    match raw.trim().parse::<Ipv4Addr>() {
-        Ok(v) => v,
-        Err(err) => {
-            tracing::warn!(
-                "env '{name}' value '{raw}' is not a valid Ipv4Addr; \
-                 silent parse fallback is disabled, using default {default}: {err}"
-            );
-            default
-        }
-    }
-}
-
-fn fakeip_env_ipv6(name: &str, default: Ipv6Addr) -> Ipv6Addr {
-    let raw = match std::env::var(name) {
-        Ok(v) => v,
-        Err(_) => return default,
-    };
-    match raw.trim().parse::<Ipv6Addr>() {
-        Ok(v) => v,
-        Err(err) => {
-            tracing::warn!(
-                "env '{name}' value '{raw}' is not a valid Ipv6Addr; \
-                 silent parse fallback is disabled, using default {default}: {err}"
-            );
-            default
-        }
-    }
-}
-
-fn fakeip_env_u8(name: &str, default: u8) -> u8 {
-    let raw = match std::env::var(name) {
-        Ok(v) => v,
-        Err(_) => return default,
-    };
-    match raw.trim().parse::<u8>() {
-        Ok(v) => v,
-        Err(err) => {
-            tracing::warn!(
-                "env '{name}' value '{raw}' is not a valid u8; \
-                 silent parse fallback is disabled, using default {default}: {err}"
-            );
-            default
-        }
-    }
-}
-
-fn fakeip_env_usize(name: &str, default: usize) -> usize {
-    let raw = match std::env::var(name) {
-        Ok(v) => v,
-        Err(_) => return default,
-    };
-    match raw.trim().parse::<usize>() {
-        Ok(v) => v,
-        Err(err) => {
-            tracing::warn!(
-                "env '{name}' value '{raw}' is not a valid usize; \
-                 silent parse fallback is disabled, using default {default}: {err}"
-            );
-            default
-        }
-    }
-}
-
 // ============================================================================
 // FakeIP Store/Storage/Metadata Traits (Go parity)
 // ============================================================================
@@ -140,6 +68,7 @@ fn start_v6(base: Ipv6Addr) -> Ipv6Addr {
 
 #[derive(Debug)]
 struct State {
+    enabled: bool,
     v4_base: Ipv4Addr,
     v4_mask: u8,
     v4_current: Ipv4Addr,
@@ -166,17 +95,15 @@ fn fakeip_capacity(cap: usize) -> NonZeroUsize {
 
 fn state() -> &'static Mutex<State> {
     STATE.get_or_init(|| {
-        // Defaults: 240.0.0.0/8, capacity 16384
-        let v4_base = fakeip_env_ipv4("SB_FAKEIP_V4_BASE", Ipv4Addr::new(240, 0, 0, 0));
-        let v4_mask = fakeip_env_u8("SB_FAKEIP_V4_MASK", 8);
-        let v6_base = fakeip_env_ipv6(
-            "SB_FAKEIP_V6_BASE",
-            Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0),
-        );
-        let v6_mask = fakeip_env_u8("SB_FAKEIP_V6_MASK", 8);
-        let cap = fakeip_env_usize("SB_FAKEIP_CAP", 16384);
+        let defaults = crate::runtime_options::DnsRuntimeOptions::default();
+        let v4_base = defaults.fakeip_v4_base;
+        let v4_mask = defaults.fakeip_v4_mask;
+        let v6_base = defaults.fakeip_v6_base;
+        let v6_mask = defaults.fakeip_v6_mask;
+        let cap = defaults.fakeip_capacity;
         let cap_nz = fakeip_capacity(cap.max(DEFAULT_FAKEIP_CACHE_CAPACITY));
         Mutex::new(State {
+            enabled: defaults.fakeip_enabled,
             v4_base,
             v4_mask,
             v4_current: start_v4(v4_base),
@@ -192,65 +119,41 @@ fn state() -> &'static Mutex<State> {
     })
 }
 
-fn refresh_from_env(st: &mut State) {
-    let v4_base = fakeip_env_ipv4("SB_FAKEIP_V4_BASE", Ipv4Addr::new(240, 0, 0, 0));
-    let v4_mask = fakeip_env_u8("SB_FAKEIP_V4_MASK", 8);
-    let v6_base = fakeip_env_ipv6(
-        "SB_FAKEIP_V6_BASE",
-        Ipv6Addr::new(0xfd00, 0, 0, 0, 0, 0, 0, 0),
-    );
-    let v6_mask = fakeip_env_u8("SB_FAKEIP_V6_MASK", 8);
-    let cap = fakeip_env_usize("SB_FAKEIP_CAP", 16384);
-
-    if st.v4_base == v4_base
-        && st.v4_mask == v4_mask
-        && st.v6_base == v6_base
-        && st.v6_mask == v6_mask
-        && st.cap == cap
-    {
-        return;
-    }
-
-    // Preserve existing mappings and storage when resizing
+pub fn configure(dns: &sb_config::ir::DnsIR, options: &crate::runtime_options::DnsRuntimeOptions) {
+    let v4_base = dns
+        .fakeip_v4_base
+        .as_deref()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(options.fakeip_v4_base);
+    let v4_mask = dns.fakeip_v4_mask.unwrap_or(options.fakeip_v4_mask);
+    let v6_base = dns
+        .fakeip_v6_base
+        .as_deref()
+        .and_then(|value| value.parse().ok())
+        .unwrap_or(options.fakeip_v6_base);
+    let v6_mask = dns.fakeip_v6_mask.unwrap_or(options.fakeip_v6_mask);
+    let cap = options.fakeip_capacity;
     let cap_nz = fakeip_capacity(cap.max(DEFAULT_FAKEIP_CACHE_CAPACITY));
-
-    // Create new caches with new capacity
-    let mut new_v4 = LruCache::new(cap_nz);
-    let mut new_v6 = LruCache::new(cap_nz);
-    let mut new_ip = LruCache::new(cap_nz);
-
-    // Copy over existing items (LRU order might be reset but data preserved)
-    for (k, v) in st.by_domain_v4.iter() {
-        new_v4.put(k.clone(), *v);
-    }
-    for (k, v) in st.by_domain_v6.iter() {
-        new_v6.put(k.clone(), *v);
-    }
-    for (k, v) in st.by_ip.iter() {
-        new_ip.put(*k, v.clone());
-    }
-
+    let mut st = state().lock();
+    st.enabled = dns.fakeip_enabled.unwrap_or(options.fakeip_enabled);
     st.v4_base = v4_base;
     st.v4_mask = v4_mask;
-    // v4_current should ideally check against new base but for simplicity keeping logic
+    st.v4_current = start_v4(v4_base);
     st.v6_base = v6_base;
     st.v6_mask = v6_mask;
+    st.v6_current = start_v6(v6_base);
     st.cap = cap;
-    st.by_domain_v4 = new_v4;
-    st.by_domain_v6 = new_v6;
-    st.by_ip = new_ip;
-    // storage is preserved in `st` (we modify mutable ref)
+    st.by_domain_v4 = LruCache::new(cap_nz);
+    st.by_domain_v6 = LruCache::new(cap_nz);
+    st.by_ip = LruCache::new(cap_nz);
 }
 
 pub fn enabled() -> bool {
-    std::env::var("SB_DNS_FAKEIP_ENABLE")
-        .ok()
-        .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"))
+    state().lock().enabled
 }
 
 pub fn set_storage(storage: Arc<dyn FakeIpStorage>) {
     let mut st = state().lock();
-    refresh_from_env(&mut st);
     st.storage = Some(storage);
 
     // Best-effort restore persisted current pointers. Must happen after FakeIP env is applied.
@@ -275,7 +178,6 @@ pub fn set_storage(storage: Arc<dyn FakeIpStorage>) {
 
 pub fn allocate_v4(domain: &str) -> IpAddr {
     let mut st = state().lock();
-    refresh_from_env(&mut st);
     if let Some(ip) = st.by_domain_v4.get(domain) {
         return IpAddr::V4(*ip);
     }
@@ -318,7 +220,6 @@ pub fn allocate_v4(domain: &str) -> IpAddr {
 
 pub fn allocate_v6(domain: &str) -> IpAddr {
     let mut st = state().lock();
-    refresh_from_env(&mut st);
     if let Some(ip) = st.by_domain_v6.get(domain) {
         return IpAddr::V6(*ip);
     }
@@ -360,19 +261,16 @@ pub fn allocate_v6(domain: &str) -> IpAddr {
 
 pub fn lookup_domain(ip: &IpAddr) -> Option<String> {
     let mut st = state().lock();
-    refresh_from_env(&mut st);
     st.by_ip.get(ip).cloned()
 }
 
 pub fn mapping_count() -> usize {
     let mut st = state().lock();
-    refresh_from_env(&mut st);
     st.by_domain_v4.len() + st.by_domain_v6.len()
 }
 
 pub fn reset() -> usize {
     let mut st = state().lock();
-    refresh_from_env(&mut st);
 
     let count = st.by_domain_v4.len() + st.by_domain_v6.len();
     st.by_domain_v4.clear();
@@ -417,7 +315,6 @@ fn is_fake_v6(ip: Ipv6Addr, base: Ipv6Addr, mask: u8) -> bool {
 
 pub fn is_fake_ip(ip: &IpAddr) -> bool {
     let mut st = state().lock();
-    refresh_from_env(&mut st);
     match ip {
         IpAddr::V4(v4) => is_fake_v4(*v4, st.v4_base, st.v4_mask),
         IpAddr::V6(v6) => is_fake_v6(*v6, st.v6_base, st.v6_mask),
@@ -435,12 +332,21 @@ pub fn to_domain(ip: &IpAddr) -> Option<String> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::testutil::EnvVarGuard;
+    use crate::runtime_options::DnsRuntimeOptions;
+
+    fn configure_options(options: DnsRuntimeOptions) {
+        let mut dns = sb_config::ir::DnsIR::default();
+        dns.fakeip_enabled = None;
+        configure(&dns, &options);
+    }
 
     #[test]
     fn test_fakeip_v4_allocation() {
-        let _base = EnvVarGuard::set("SB_FAKEIP_V4_BASE", "198.18.0.0");
-        let _mask = EnvVarGuard::set("SB_FAKEIP_V4_MASK", "16");
+        configure_options(DnsRuntimeOptions {
+            fakeip_v4_base: "198.18.0.0".parse().unwrap(),
+            fakeip_v4_mask: 16,
+            ..Default::default()
+        });
 
         let ip1 = allocate_v4("example.com");
         let ip2 = allocate_v4("google.com");
@@ -463,8 +369,11 @@ mod tests {
 
     #[test]
     fn test_fakeip_v6_allocation() {
-        let _base = EnvVarGuard::set("SB_FAKEIP_V6_BASE", "fd00::");
-        let _mask = EnvVarGuard::set("SB_FAKEIP_V6_MASK", "8");
+        configure_options(DnsRuntimeOptions {
+            fakeip_v6_base: "fd00::".parse().unwrap(),
+            fakeip_v6_mask: 8,
+            ..Default::default()
+        });
 
         let ip1 = allocate_v6("example.com");
         let ip2 = allocate_v6("google.com");
@@ -487,8 +396,11 @@ mod tests {
 
     #[test]
     fn test_fakeip_detection() {
-        let _base = EnvVarGuard::set("SB_FAKEIP_V4_BASE", "198.18.0.0");
-        let _mask = EnvVarGuard::set("SB_FAKEIP_V4_MASK", "16");
+        configure_options(DnsRuntimeOptions {
+            fakeip_v4_base: "198.18.0.0".parse().unwrap(),
+            fakeip_v4_mask: 16,
+            ..Default::default()
+        });
 
         let fake_ip = allocate_v4("test.com");
         assert!(is_fake_ip(&fake_ip));
@@ -503,8 +415,7 @@ mod tests {
 
     #[test]
     fn test_fakeip_reverse_lookup() {
-        let _base = EnvVarGuard::set("SB_FAKEIP_V4_BASE", "240.0.0.0");
-        let _mask = EnvVarGuard::set("SB_FAKEIP_V4_MASK", "8");
+        configure_options(DnsRuntimeOptions::default());
 
         let domain = "example.org";
         let ip = allocate_v4(domain);
@@ -519,37 +430,18 @@ mod tests {
     }
 
     #[test]
-    #[ignore] // Side effects affect other tests running in parallel
     fn test_fakeip_enabled() {
-        // Test default (disabled)
-        {
-            let _g = EnvVarGuard::remove("SB_DNS_FAKEIP_ENABLE");
-            assert!(!enabled());
-        }
+        configure_options(DnsRuntimeOptions::default());
+        assert!(!enabled());
 
-        // Test enabled with "1"
-        {
-            let _g = EnvVarGuard::set("SB_DNS_FAKEIP_ENABLE", "1");
-            assert!(enabled());
-        }
+        configure_options(DnsRuntimeOptions {
+            fakeip_enabled: true,
+            ..Default::default()
+        });
+        assert!(enabled());
 
-        // Test enabled with "true"
-        {
-            let _g = EnvVarGuard::set("SB_DNS_FAKEIP_ENABLE", "true");
-            assert!(enabled());
-        }
-
-        // Test enabled with "TRUE"
-        {
-            let _g = EnvVarGuard::set("SB_DNS_FAKEIP_ENABLE", "TRUE");
-            assert!(enabled());
-        }
-
-        // Test disabled with "0"
-        {
-            let _g = EnvVarGuard::set("SB_DNS_FAKEIP_ENABLE", "0");
-            assert!(!enabled());
-        }
+        configure_options(DnsRuntimeOptions::default());
+        assert!(!enabled());
     }
 
     #[test]

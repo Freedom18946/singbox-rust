@@ -1,7 +1,9 @@
 #![cfg(feature = "router")]
-use sb_core::router::{router_index_decide_exact_suffix, router_index_from_env_with_reload};
+use sb_core::router::{router_index_decide_exact_suffix, router_index_with_reload};
+use sb_core::runtime_options::RouterRuntimeOptions;
 use std::fs;
 use std::io::Write;
+use std::sync::Arc;
 use tempfile::tempdir;
 
 #[tokio::test]
@@ -19,10 +21,13 @@ async fn include_is_expanded_in_hot_reload() {
         writeln!(f, "default=unresolved").unwrap();
     }
 
-    std::env::set_var("SB_ROUTER_RULES_FILE", &main_path);
-    std::env::set_var("SB_ROUTER_RULES_HOT_RELOAD_MS", "50");
-
-    let shared = router_index_from_env_with_reload().await;
+    let shared = router_index_with_reload(Arc::new(RouterRuntimeOptions {
+        rules_file: Some(main_path.clone()),
+        rules_base_dir: Some(base),
+        rules_hot_reload_ms: 50,
+        ..RouterRuntimeOptions::default()
+    }))
+    .await;
     // 给后台热载器一点时间
     tokio::time::sleep(std::time::Duration::from_millis(120)).await;
 

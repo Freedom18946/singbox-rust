@@ -233,6 +233,7 @@ pub trait DnsResolver: Send + Sync {
 #[derive(Clone)]
 pub struct ResolverHandle {
     inner: Arc<dyn DnsResolver>,
+    options: Arc<crate::runtime_options::DnsRuntimeOptions>,
     enabled: bool,
     #[cfg(feature = "dns_cache")]
     cache: Arc<std::sync::Mutex<crate::dns::cache::DnsCache>>, // 共享 LRU
@@ -310,51 +311,20 @@ impl Drop for InflightGuards {
 }
 
 impl ResolverHandle {
-    /// 从 env 初始化：
-    // - SB_DNS_ENABLE=1 时启用；否则标记为 disabled（但仍提供 SystemResolver）
-    // - 静态表通过 SB_DNS_STATIC 提供
+    /// Build with empty-environment defaults for compatibility.
     pub fn from_env_or_default() -> Self {
-        let enabled = std::env::var("SB_DNS_ENABLE")
-            .ok()
-            .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-        let default_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_DEFAULT_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(60),
-        );
-        let _min_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_MIN_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(1),
-        );
-        let _max_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_MAX_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(600),
-        );
-        let _neg_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_NEG_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(30),
-        );
-        let _cap = std::env::var("SB_DNS_CACHE_SIZE")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1024);
-        let ipv6_enabled = std::env::var("SB_DNS_IPV6")
-            .ok()
-            .is_none_or(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-        let static_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_STATIC_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(300),
-        );
-        let static_raw = std::env::var("SB_DNS_STATIC").unwrap_or_default();
+        Self::from_options(Arc::new(
+            crate::runtime_options::DnsRuntimeOptions::default(),
+        ))
+    }
+
+    pub fn from_options(options: Arc<crate::runtime_options::DnsRuntimeOptions>) -> Self {
+        let enabled = options.enabled;
+        let default_ttl = Duration::from_secs(options.default_ttl_s);
+        let _cap = options.cache_capacity;
+        let ipv6_enabled = options.ipv6_enabled;
+        let static_ttl = Duration::from_secs(options.static_ttl_s);
+        let static_raw = &options.static_records;
         let mut static_map = std::collections::HashMap::new();
         for kv in static_raw
             .split(',')
@@ -378,32 +348,16 @@ impl ResolverHandle {
         let cache = crate::dns::cache::DnsCache::new(_cap);
         let sys = system::SystemResolver::new(default_ttl);
         #[cfg(any(test, feature = "dev-cli"))]
-        let prefetch_enabled = std::env::var("SB_DNS_PREFETCH")
-            .ok()
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false);
+        let prefetch_enabled = options.prefetch_enabled;
         #[cfg(any(test, feature = "dev-cli"))]
-        let prefetch_before = Duration::from_millis(
-            std::env::var("SB_DNS_PREFETCH_BEFORE_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(200),
-        );
+        let prefetch_before = Duration::from_millis(options.prefetch_before_ms);
         #[cfg(any(test, feature = "dev-cli"))]
-        let prefetch_conc = std::env::var("SB_DNS_PREFETCH_CONCURRENCY")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(4);
-        let max_inflight = std::env::var("SB_DNS_POOL_MAX_INFLIGHT")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(64);
-        let per_host = std::env::var("SB_DNS_PER_HOST_INFLIGHT")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(2);
+        let prefetch_conc = options.prefetch_concurrency;
+        let max_inflight = options.pool_max_inflight;
+        let per_host = options.per_host_inflight;
         Self {
             inner: Arc::new(sys),
+            options,
             enabled,
             #[cfg(feature = "dns_cache")]
             cache: Arc::new(std::sync::Mutex::new(cache)),
@@ -434,6 +388,7 @@ impl ResolverHandle {
         let cache = crate::dns::cache::DnsCache::new(1024);
         Self {
             inner: Arc::new(sys),
+            options: Arc::new(crate::runtime_options::DnsRuntimeOptions::default()),
             enabled: false,
             #[cfg(feature = "dns_cache")]
             cache: Arc::new(std::sync::Mutex::new(cache)),
@@ -660,12 +615,7 @@ impl ResolverHandle {
             if let Ok(mut g) = self.inflight_per_host.lock() {
                 g.entry(host_lc.clone())
                     .or_insert_with(|| {
-                        Arc::new(tokio::sync::Semaphore::new(
-                            std::env::var("SB_DNS_PER_HOST_INFLIGHT")
-                                .ok()
-                                .and_then(|v| v.parse::<usize>().ok())
-                                .unwrap_or(2),
-                        ))
+                        Arc::new(tokio::sync::Semaphore::new(self.options.per_host_inflight))
                     })
                     .clone()
             } else {
@@ -674,24 +624,14 @@ impl ResolverHandle {
             }
         };
         let _inflight = InflightGuards::acquire(&self.inflight_global, &host_sem).await;
-        // Build upstream pool from env
-        let pool_raw = std::env::var("SB_DNS_POOL").unwrap_or_else(|_| "system".to_string());
+        let pool_raw = self.options.pool.clone();
         let upstreams = parse_pool(&pool_raw);
         // strategy
-        let strategy = std::env::var("SB_DNS_POOL_STRATEGY").unwrap_or_else(|_| "race".to_string());
-        let race_window_ms = std::env::var("SB_DNS_RACE_WINDOW_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(50);
-        let he_order = std::env::var("SB_DNS_HE_ORDER").unwrap_or_else(|_| "A_FIRST".to_string());
-        let he_race_ms = std::env::var("SB_DNS_HE_RACE_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(30);
-        let timeout_ms = std::env::var("SB_DNS_UDP_TIMEOUT_MS")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(200);
+        let strategy = self.options.pool_strategy.clone();
+        let race_window_ms = self.options.race_window_ms;
+        let he_order = self.options.happy_eyeballs_order.clone();
+        let he_race_ms = self.options.happy_eyeballs_race_ms;
+        let timeout_ms = self.options.udp_timeout_ms;
 
         if upstreams.is_empty() {
             return self.inner.resolve(host).await;
@@ -829,12 +769,7 @@ async fn query_one(
             for sa in iter {
                 ips.push(sa.ip());
             }
-            ttl = Duration::from_secs(
-                std::env::var("SB_DNS_DEFAULT_TTL_S")
-                    .ok()
-                    .and_then(|v| v.parse::<u64>().ok())
-                    .unwrap_or(60),
-            );
+            ttl = Duration::from_secs(handle.options.default_ttl_s);
             #[cfg(feature="metrics")]
             ::metrics::counter!("dns_upstream_select_total", "strategy"=>"pool", "upstream"=>"system", "kind"=>"system").increment(1);
         }
@@ -908,14 +843,7 @@ async fn query_one(
                 }
                 ttl = min_ttl
                     .map(|s| Duration::from_secs(u64::from(s)))
-                    .unwrap_or_else(|| {
-                        Duration::from_secs(
-                            std::env::var("SB_DNS_DEFAULT_TTL_S")
-                                .ok()
-                                .and_then(|v| v.parse::<u64>().ok())
-                                .unwrap_or(60),
-                        )
-                    });
+                    .unwrap_or_else(|| Duration::from_secs(handle.options.default_ttl_s));
                 #[cfg(feature="metrics")]
                 ::metrics::counter!("dns_upstream_select_total", "strategy"=>"pool", "upstream"=>format!("udp://{}", _sa), "kind"=>"udp").increment(1);
             }
@@ -971,14 +899,7 @@ async fn query_one(
                 }
                 ttl = min_ttl
                     .map(|s| Duration::from_secs(u64::from(s)))
-                    .unwrap_or_else(|| {
-                        Duration::from_secs(
-                            std::env::var("SB_DNS_DEFAULT_TTL_S")
-                                .ok()
-                                .and_then(|v| v.parse::<u64>().ok())
-                                .unwrap_or(60),
-                        )
-                    });
+                    .unwrap_or_else(|| Duration::from_secs(handle.options.default_ttl_s));
                 #[cfg(feature="metrics")]
                 ::metrics::counter!("dns_upstream_select_total", "strategy"=>"pool", "upstream"=>up_key(&up), "kind"=>"doh").increment(1);
             }
@@ -1073,14 +994,7 @@ async fn query_one(
                 }
                 ttl = min_ttl
                     .map(|s| Duration::from_secs(u64::from(s)))
-                    .unwrap_or_else(|| {
-                        Duration::from_secs(
-                            std::env::var("SB_DNS_DEFAULT_TTL_S")
-                                .ok()
-                                .and_then(|v| v.parse::<u64>().ok())
-                                .unwrap_or(60),
-                        )
-                    });
+                    .unwrap_or_else(|| Duration::from_secs(handle.options.default_ttl_s));
                 #[cfg(feature="metrics")]
                 ::metrics::counter!("dns_upstream_select_total", "strategy"=>"pool", "upstream"=>up_key(&up), "kind"=>"dot").increment(1);
             }

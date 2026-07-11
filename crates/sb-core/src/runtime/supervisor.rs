@@ -223,12 +223,14 @@ fn dns_stage_for_service_stage(
 fn build_runtime_dns_from_ir(
     ir: &sb_config::ir::ConfigIR,
     cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+    options: Arc<crate::runtime_options::DnsRuntimeOptions>,
 ) -> Result<Option<RuntimeDns>> {
     if ir.dns.is_none() {
         return Ok(None);
     }
-    let (resolver, router) = crate::dns::config_builder::build_dns_components(ir, cache_file)
-        .context("failed to build DNS runtime")?;
+    let (resolver, router) =
+        crate::dns::config_builder::build_dns_components_with_options(ir, cache_file, options)
+            .context("failed to build DNS runtime")?;
     Ok(Some(RuntimeDns { resolver, router }))
 }
 
@@ -548,6 +550,23 @@ impl Supervisor {
         ir: sb_config::ir::ConfigIR,
         adapter_registry: Option<crate::adapter::registry::RegistrySnapshot>,
     ) -> Result<Self> {
+        Self::start_with_registry_and_options(
+            ir,
+            adapter_registry,
+            Arc::new(crate::runtime_options::CoreRuntimeOptions::default()),
+        )
+        .await
+    }
+
+    /// Start supervisor with an explicit adapter registry and immutable runtime options.
+    #[cfg(feature = "router")]
+    pub async fn start_with_registry_and_options(
+        ir: sb_config::ir::ConfigIR,
+        adapter_registry: Option<crate::adapter::registry::RegistrySnapshot>,
+        runtime_options: crate::runtime_options::SharedCoreRuntimeOptions,
+    ) -> Result<Self> {
+        #[cfg(feature = "rule_coverage")]
+        crate::router::coverage::set_enabled(runtime_options.router.rule_coverage);
         if let Some(snapshot) = adapter_registry.as_ref() {
             crate::adapter::registry::install_snapshot(snapshot);
         }
@@ -569,9 +588,13 @@ impl Supervisor {
         let engine_for_state = engine.clone();
 
         // Create runtime context and wire experimental sidecars from IR
-        let context = build_context_from_ir(&ir, None)?;
+        let context = build_context_from_ir_with_options(&ir, None, runtime_options)?;
         ensure_geo_assets(&ir).await;
-        let dns_runtime = match build_runtime_dns_from_ir(&ir, context.cache_file.clone()) {
+        let dns_runtime = match build_runtime_dns_from_ir(
+            &ir,
+            context.cache_file.clone(),
+            Arc::new(context.runtime_options.dns.clone()),
+        ) {
             Ok(runtime) => runtime,
             Err(e) => {
                 shutdown_context(&context);
@@ -628,6 +651,7 @@ impl Supervisor {
         // Apply TLS certificate configuration (global trust augmentation)
         crate::tls::global::apply_from_ir(ir.certificate.as_ref());
 
+        let health_enabled = context.runtime_options.services.health_enabled;
         let initial_state = State::new(engine_for_state, bridge, context, dns_runtime.clone(), ir);
         let state = Arc::new(RwLock::new(initial_state));
 
@@ -709,7 +733,7 @@ impl Supervisor {
         state.write().await.inbound_monitors = inbound_monitors;
 
         // Optional health task
-        if std::env::var("SB_HEALTH_ENABLE").is_ok() {
+        if health_enabled {
             let health_bridge = bridge_for_health.clone();
             let tok = cancel.clone();
             let health_handle = tokio::spawn(async move {
@@ -789,6 +813,21 @@ impl Supervisor {
         ir: sb_config::ir::ConfigIR,
         adapter_registry: Option<crate::adapter::registry::RegistrySnapshot>,
     ) -> Result<Self> {
+        Self::start_with_registry_and_options(
+            ir,
+            adapter_registry,
+            Arc::new(crate::runtime_options::CoreRuntimeOptions::default()),
+        )
+        .await
+    }
+
+    /// Start supervisor with an explicit adapter registry and immutable runtime options.
+    #[cfg(not(feature = "router"))]
+    pub async fn start_with_registry_and_options(
+        ir: sb_config::ir::ConfigIR,
+        adapter_registry: Option<crate::adapter::registry::RegistrySnapshot>,
+        runtime_options: crate::runtime_options::SharedCoreRuntimeOptions,
+    ) -> Result<Self> {
         if let Some(snapshot) = adapter_registry.as_ref() {
             crate::adapter::registry::install_snapshot(snapshot);
         }
@@ -806,9 +845,13 @@ impl Supervisor {
         }
 
         // Create runtime context and wire experimental sidecars from IR
-        let context = build_context_from_ir(&ir, None)?;
+        let context = build_context_from_ir_with_options(&ir, None, runtime_options)?;
         ensure_geo_assets(&ir).await;
-        let dns_runtime = match build_runtime_dns_from_ir(&ir, context.cache_file.clone()) {
+        let dns_runtime = match build_runtime_dns_from_ir(
+            &ir,
+            context.cache_file.clone(),
+            Arc::new(context.runtime_options.dns.clone()),
+        ) {
             Ok(runtime) => runtime,
             Err(e) => {
                 shutdown_context(&context);
@@ -1010,7 +1053,11 @@ impl Supervisor {
             state_guard.current_ir.clone()
         };
 
-        let diff = if runtime_diff_from_env() {
+        let runtime_diff = {
+            let state_guard = self.state.read().await;
+            state_guard.context.runtime_options.services.runtime_diff
+        };
+        let diff = if runtime_diff {
             let diff = sb_config::ir::diff::diff(&old_ir, &new_ir);
             tracing::debug!(
                 target: "sb_core::runtime",
@@ -1132,8 +1179,12 @@ impl Supervisor {
         );
 
         // Build new context from new IR (supports dynamic service reconfiguration)
-        let new_context =
-            build_context_from_ir_with_cache(&new_ir, inherited_v2ray, inherited_cache_file)?;
+        let new_context = build_context_from_ir_with_cache_and_options(
+            &new_ir,
+            inherited_v2ray,
+            inherited_cache_file,
+            old_context.runtime_options.clone(),
+        )?;
         ensure_geo_assets(&new_ir).await;
 
         // APP-RELOAD-CONTEXT-CLEANUP-01B: every fallible pre-swap activation stage runs inside
@@ -1147,7 +1198,11 @@ impl Supervisor {
         let mut new_inbound_monitors_slot: Option<Vec<InboundRuntimeMonitor>> = None;
         let activation_result: Result<(Arc<Bridge>, Option<RuntimeDns>, Vec<InboundRuntimeMonitor>)> = async {
             let new_dns_runtime =
-                build_runtime_dns_from_ir(&new_ir, new_context.cache_file.clone())?;
+                build_runtime_dns_from_ir(
+                    &new_ir,
+                    new_context.cache_file.clone(),
+                    Arc::new(new_context.runtime_options.dns.clone()),
+                )?;
             new_dns_runtime_slot = new_dns_runtime.clone();
 
             // Initialize new context managers
@@ -1255,7 +1310,7 @@ impl Supervisor {
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
             publish_runtime_dns(state_guard.dns_runtime.as_ref());
             // Start new health task if needed
-            if std::env::var("SB_HEALTH_ENABLE").is_ok() {
+            if state_guard.context.runtime_options.services.health_enabled {
                 let health_bridge = state_guard.bridge.clone();
                 let health_cancel = CancellationToken::new();
                 let health_handle = tokio::spawn(async move {
@@ -1346,8 +1401,12 @@ impl Supervisor {
         );
 
         // Build new context from new IR (supports dynamic service reconfiguration)
-        let new_context =
-            build_context_from_ir_with_cache(&new_ir, inherited_v2ray, inherited_cache_file)?;
+        let new_context = build_context_from_ir_with_cache_and_options(
+            &new_ir,
+            inherited_v2ray,
+            inherited_cache_file,
+            old_context.runtime_options.clone(),
+        )?;
         ensure_geo_assets(&new_ir).await;
 
         // APP-RELOAD-CONTEXT-CLEANUP-01B: same single pre-swap transaction block as the router
@@ -1358,7 +1417,11 @@ impl Supervisor {
         let mut new_inbound_monitors_slot: Option<Vec<InboundRuntimeMonitor>> = None;
         let activation_result: Result<(Arc<Bridge>, Option<RuntimeDns>, Vec<InboundRuntimeMonitor>)> = async {
             let new_dns_runtime =
-                build_runtime_dns_from_ir(&new_ir, new_context.cache_file.clone())?;
+                build_runtime_dns_from_ir(
+                    &new_ir,
+                    new_context.cache_file.clone(),
+                    Arc::new(new_context.runtime_options.dns.clone()),
+                )?;
             new_dns_runtime_slot = new_dns_runtime.clone();
 
             // Initialize new context managers (Box Runtime Parity)
@@ -1446,7 +1509,7 @@ impl Supervisor {
             crate::adapter::bridge::publish_runtime_registries(&state_guard.bridge);
             publish_runtime_dns(state_guard.dns_runtime.as_ref());
             // Start new health task if needed
-            if std::env::var("SB_HEALTH_ENABLE").is_ok() {
+            if state_guard.context.runtime_options.services.health_enabled {
                 let health_bridge = state_guard.bridge.clone();
                 let health_cancel = CancellationToken::new();
                 let health_handle = tokio::spawn(async move {
@@ -1706,7 +1769,11 @@ impl SupervisorHandle {
             state_guard.current_ir.clone()
         };
 
-        let diff = if runtime_diff_from_env() {
+        let runtime_diff = {
+            let state_guard = self.state.read().await;
+            state_guard.context.runtime_options.services.runtime_diff
+        };
+        let diff = if runtime_diff {
             sb_config::ir::diff::diff(&old_ir, &new_ir)
         } else {
             let _ = &new_ir;
@@ -2133,7 +2200,19 @@ fn build_context_from_ir(
     ir: &sb_config::ir::ConfigIR,
     inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
 ) -> Result<Context> {
-    build_context_from_ir_with_cache(ir, inherited_v2ray_server, None)
+    build_context_from_ir_with_options(
+        ir,
+        inherited_v2ray_server,
+        Arc::new(crate::runtime_options::CoreRuntimeOptions::default()),
+    )
+}
+
+fn build_context_from_ir_with_options(
+    ir: &sb_config::ir::ConfigIR,
+    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+    runtime_options: crate::runtime_options::SharedCoreRuntimeOptions,
+) -> Result<Context> {
+    build_context_from_ir_with_cache_and_options(ir, inherited_v2ray_server, None, runtime_options)
 }
 
 fn build_context_from_ir_with_cache(
@@ -2141,7 +2220,21 @@ fn build_context_from_ir_with_cache(
     inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
     inherited_cache_file: Option<Arc<dyn crate::context::CacheFile>>,
 ) -> Result<Context> {
-    let mut ctx = Context::new();
+    build_context_from_ir_with_cache_and_options(
+        ir,
+        inherited_v2ray_server,
+        inherited_cache_file,
+        Arc::new(crate::runtime_options::CoreRuntimeOptions::default()),
+    )
+}
+
+fn build_context_from_ir_with_cache_and_options(
+    ir: &sb_config::ir::ConfigIR,
+    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+    inherited_cache_file: Option<Arc<dyn crate::context::CacheFile>>,
+    runtime_options: crate::runtime_options::SharedCoreRuntimeOptions,
+) -> Result<Context> {
+    let mut ctx = Context::with_runtime_options(runtime_options);
     ctx.network.apply_route_options(&ir.route);
     ctx = wire_experimental_sidecars(ctx, ir, inherited_v2ray_server, inherited_cache_file)?;
     log_geo_download_hints(ir);
@@ -2150,9 +2243,6 @@ fn build_context_from_ir_with_cache(
     }
     if let Some(p) = &ir.route.geosite_path {
         std::env::set_var("GEOSITE_PATH", p);
-    }
-    if let Some(strategy) = &ir.route.network_strategy {
-        std::env::set_var("SB_NETWORK_STRATEGY", strategy);
     }
     #[cfg(feature = "service_ntp")]
     {
@@ -2591,29 +2681,6 @@ impl Bridge {
     }
 }
 
-fn parse_runtime_diff_env(value: Option<&str>) -> Result<bool, Arc<str>> {
-    match value {
-        Some(v) if v == "1" || v.eq_ignore_ascii_case("true") => Ok(true),
-        Some(v) if v.is_empty() || v == "0" || v.eq_ignore_ascii_case("false") => Ok(false),
-        Some(raw) => Err(format!(
-            "runtime env 'SB_RUNTIME_DIFF' value '{raw}' is not a recognized boolean; silent parse fallback is disabled; use '1'/'true' or '0'/'false'"
-        )
-        .into()),
-        None => Ok(false),
-    }
-}
-
-fn runtime_diff_from_env() -> bool {
-    let raw = std::env::var("SB_RUNTIME_DIFF").ok();
-    match parse_runtime_diff_env(raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) => {
-            tracing::warn!("{reason}; using default false");
-            false
-        }
-    }
-}
-
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -2807,15 +2874,6 @@ mod tests {
             .shutdown_graceful(std::time::Duration::from_millis(100))
             .await
             .expect("shutdown supervisor with explicit registry");
-    }
-
-    #[test]
-    fn invalid_runtime_diff_env_reports_explicitly() {
-        let err = super::parse_runtime_diff_env(Some("on"))
-            .expect_err("unrecognized boolean env should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_RUNTIME_DIFF"));
-        assert!(msg.contains("silent parse fallback is disabled"));
     }
 
     #[derive(Debug)]
@@ -3120,8 +3178,12 @@ mod tests {
             ..Default::default()
         });
 
-        let err = build_runtime_dns_from_ir(&ir, None)
-            .expect_err("unsupported resolved DNS transport should block activation");
+        let err = build_runtime_dns_from_ir(
+            &ir,
+            None,
+            Arc::new(crate::runtime_options::DnsRuntimeOptions::default()),
+        )
+        .expect_err("unsupported resolved DNS transport should block activation");
         assert!(format!("{err:#}").contains("resolved"));
     }
 

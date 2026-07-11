@@ -25,12 +25,7 @@ pub struct TcpTransport {
 impl TcpTransport {
     /// 创建新的 TCP DNS 传输
     pub fn new(server: SocketAddr) -> Self {
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_TCP_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let timeout = Duration::from_millis(5000);
 
         Self { server, timeout }
     }

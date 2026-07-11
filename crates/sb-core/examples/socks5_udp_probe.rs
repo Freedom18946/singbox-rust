@@ -36,7 +36,12 @@ async fn main() -> Result<()> {
     // TCP 控制通道：greet + UDP ASSOC
     let mut ctrl = TcpStream::connect(socks).await?;
     sb_core::socks5::greet_noauth(&mut ctrl).await?;
-    let relay = sb_core::socks5::udp_associate(&mut ctrl, "0.0.0.0:0".parse()?).await?;
+    let resolve_bound_domain = std::env::var("SB_SOCKS_UDP_RESOLVE_BND")
+        .ok()
+        .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"));
+    let relay =
+        sb_core::socks5::udp_associate(&mut ctrl, "0.0.0.0:0".parse()?, resolve_bound_domain)
+            .await?;
 
     // 通过中继发 DNS 查询
     let udp = UdpSocket::bind(("0.0.0.0", 0)).await?;

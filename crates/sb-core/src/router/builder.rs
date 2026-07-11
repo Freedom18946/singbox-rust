@@ -128,6 +128,8 @@ pub fn build_index_from_ir(cfg: &ConfigIR) -> Result<Arc<RouterIndex>, String> {
         default,
         gen: 1,
         checksum,
+        suffix_strict: false,
+        suffix_trie_enabled: false,
     };
 
     // Record build time metrics

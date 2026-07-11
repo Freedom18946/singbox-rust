@@ -1,4 +1,4 @@
-//! Minimal DNS client with in-process cache (behind env `SB_DNS_ENABLE=1`).
+//! Minimal DNS client with in-process cache.
 //! 默认关闭；开启后通过系统解析器进行 A/AAAA 解析，并暴露基础指标。
 
 use std::{
@@ -24,6 +24,10 @@ struct Inner {
     /// Negative cache TTL for NXDOMAIN/NODATA (Go parity: dns.ClientOptions.CacheCapacity + negative handling)
     negative_ttl: Duration,
     cap: usize,
+    enabled: bool,
+    mode: String,
+    upstream: Option<String>,
+    parallel: bool,
 }
 
 #[derive(Clone)]
@@ -35,36 +39,25 @@ struct CacheEntry {
 
 impl DnsClient {
     pub fn new(ttl: Duration) -> Self {
-        let cap = std::env::var("SB_DNS_CACHE_MAX")
-            .ok()
-            .and_then(|v| v.parse::<usize>().ok())
-            .unwrap_or(1024);
-        let min_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_MIN_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(1),
-        );
-        let max_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_MAX_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(86400), // 1 day default max
-        );
-        let negative_ttl = Duration::from_secs(
-            std::env::var("SB_DNS_NEG_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(30),
-        );
+        Self::from_options(ttl, &crate::runtime_options::DnsRuntimeOptions::default())
+    }
+
+    pub fn from_options(
+        ttl: Duration,
+        options: &crate::runtime_options::DnsRuntimeOptions,
+    ) -> Self {
         Self {
             inner: Arc::new(Inner {
                 cache: RwLock::new(HashMap::new()),
                 ttl_default: ttl,
-                min_ttl,
-                max_ttl,
-                negative_ttl,
-                cap,
+                min_ttl: Duration::from_secs(options.min_ttl_s),
+                max_ttl: Duration::from_secs(options.max_ttl_s),
+                negative_ttl: Duration::from_secs(options.negative_ttl_s),
+                cap: options.cache_max,
+                enabled: options.enabled,
+                mode: options.mode.clone(),
+                upstream: options.upstream.clone(),
+                parallel: options.parallel,
             }),
         }
     }
@@ -87,19 +80,17 @@ impl DnsClient {
                 max_ttl,
                 negative_ttl,
                 cap,
+                enabled: false,
+                mode: "system".into(),
+                upstream: None,
+                parallel: false,
             }),
         }
     }
 
-    fn enabled() -> bool {
-        std::env::var("SB_DNS_ENABLE")
-            .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-            .unwrap_or(false)
-    }
-
     /// 解析域名（优先缓存；miss 时调用系统解析器）
     pub async fn resolve(&self, host: &str, default_port: u16) -> anyhow::Result<Vec<SocketAddr>> {
-        if !Self::enabled() {
+        if !self.inner.enabled {
             // 未启用则短路：交给系统解析（与现状一致）
             return Ok(tokio::net::lookup_host((host, default_port))
                 .await?
@@ -116,10 +107,8 @@ impl DnsClient {
                 .collect());
         }
         // 若设置了 UDP 模式，则优先走自定义上游
-        let mode_udp = std::env::var("SB_DNS_MODE")
-            .ok()
-            .is_some_and(|v| v.eq_ignore_ascii_case("udp"));
-        let upstream = std::env::var("SB_DNS_UPSTREAM").ok();
+        let mode_udp = self.inner.mode.eq_ignore_ascii_case("udp");
+        let upstream = self.inner.upstream.clone();
         // 2) miss：UDP 或系统解析器
         #[cfg(feature = "metrics")]
         metrics::counter!("dns_query_total", "type"=>"A+AAAA").increment(1);
@@ -127,11 +116,7 @@ impl DnsClient {
         let res: anyhow::Result<(Vec<IpAddr>, Option<u32>, bool)> = if mode_udp {
             if let Some(up) = upstream {
                 let up: std::net::SocketAddr = up.parse()?;
-                // 并发 A/AAAA：behind env（默认关闭，保持现状）
-                let parallel = std::env::var("SB_DNS_PARALLEL")
-                    .ok()
-                    .is_some_and(|v| v == "1" || v.eq_ignore_ascii_case("true"));
-                if parallel {
+                if self.inner.parallel {
                     udp_query_a_aaaa_parallel(&up, host)
                         .await
                         .map(|(ips, ttl)| (ips, ttl, false))
@@ -139,7 +124,7 @@ impl DnsClient {
                     udp_query_follow_cname(&up, host).await // (ips, min_ttl, negative)
                 }
             } else {
-                Err(anyhow::anyhow!("SB_DNS_UPSTREAM not set"))
+                Err(anyhow::anyhow!("DNS upstream not configured"))
             }
         } else {
             // 系统解析：无 TTL，可视作成功数据，存默认 TTL

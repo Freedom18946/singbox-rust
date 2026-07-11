@@ -1,14 +1,17 @@
 #![cfg(feature = "router")]
-use sb_core::router::{router_build_index_from_str, BuildError, InvalidReason};
+use sb_core::router::{router_build_index_from_str_with_options, BuildError, InvalidReason};
+use sb_core::runtime_options::RouterRuntimeOptions;
 
 #[test]
 fn require_default_guard() {
-    std::env::set_var("SB_ROUTER_RULES_REQUIRE_DEFAULT", "1");
     let txt = "suffix:example.com=proxy";
-    let e = router_build_index_from_str(txt, 1024).unwrap_err();
+    let options = RouterRuntimeOptions {
+        rules_require_default: true,
+        ..RouterRuntimeOptions::default()
+    };
+    let e = router_build_index_from_str_with_options(txt, 1024, &options).unwrap_err();
     match e {
         BuildError::Invalid(InvalidReason::MissingDefault) => {}
         _ => panic!("Expected MissingDefault error when default rule is required"),
     }
-    std::env::remove_var("SB_ROUTER_RULES_REQUIRE_DEFAULT");
 }

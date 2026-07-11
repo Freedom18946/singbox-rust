@@ -1,11 +1,22 @@
+#![allow(clippy::await_holding_lock)]
+
 use sb_config::ir::{
     CacheFileIR, ConfigIR, ExperimentalIR, OutboundIR, OutboundType, RouteIR, RuleIR,
 };
 use sb_core::adapter::registry::RegistrySnapshot;
 use sb_core::runtime::supervisor::Supervisor;
+use std::sync::{Mutex, MutexGuard, OnceLock};
+
+fn clash_state_guard() -> MutexGuard<'static, ()> {
+    static LOCK: OnceLock<Mutex<()>> = OnceLock::new();
+    LOCK.get_or_init(|| Mutex::new(()))
+        .lock()
+        .unwrap_or_else(|e| e.into_inner())
+}
 
 #[tokio::test]
 async fn selector_selection_survives_reload_via_cache_file() {
+    let _guard = clash_state_guard();
     let temp_dir = tempfile::tempdir().expect("temp dir");
     let cache_dir = temp_dir.path().join("selector-cache");
 
@@ -110,6 +121,7 @@ async fn selector_selection_survives_reload_via_cache_file() {
 
 #[tokio::test]
 async fn clash_mode_restores_from_cache_file_on_start() {
+    let _guard = clash_state_guard();
     let temp_dir = tempfile::tempdir().expect("temp dir");
     let cache_dir = temp_dir.path().join("clash-mode-cache");
     let cache_cfg = CacheFileIR {

@@ -111,7 +111,7 @@ pub async fn serve_socks(
         ready_tx,
         None,
         Arc::new(AtomicU64::new(0)),
-        TcpRateLimiter::new(TcpRateLimitConfig::from_env()),
+        TcpRateLimiter::new(super::tcp_rate_limit_config_from_env()),
     )
     .await
 }
@@ -261,7 +261,7 @@ async fn run_with_ready_and_active(
         ready_tx,
         udp_addr,
         active_connections,
-        TcpRateLimiter::new(TcpRateLimitConfig::from_env()),
+        TcpRateLimiter::new(super::tcp_rate_limit_config_from_env()),
     )
     .await
 }

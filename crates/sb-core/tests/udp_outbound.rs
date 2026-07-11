@@ -48,7 +48,14 @@ async fn direct_sendto_loopback_smoke() {
     // send via outbound helper
     let dst = UdpTargetAddr::Ip(srv_addr);
     let payload = b"ping-outbound";
-    let n = match direct_sendto(&client, &dst, payload).await {
+    let n = match direct_sendto(
+        &client,
+        &dst,
+        payload,
+        &sb_core::runtime_options::NetworkRuntimeOptions::default(),
+    )
+    .await
+    {
         Ok(n) => n,
         Err(err) if is_permission_denied_any(&err) => {
             eprintln!("skipping direct_sendto_loopback_smoke: {err}");

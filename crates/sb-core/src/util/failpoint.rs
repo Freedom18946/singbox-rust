@@ -10,10 +10,10 @@ pub enum Action {
 
 static FP_CFG: OnceLock<String> = OnceLock::new();
 
-/// Initialize failpoint configuration from `SB_FAILPOINTS` environment variable.
-pub fn init_from_env() {
-    if let Ok(cfg) = std::env::var("SB_FAILPOINTS") {
-        let _ = FP_CFG.set(cfg);
+/// Initialize failpoint configuration from application-owned runtime options.
+pub fn init(config: Option<&str>) {
+    if let Some(config) = config {
+        let _ = FP_CFG.set(config.to_string());
     }
 }
 

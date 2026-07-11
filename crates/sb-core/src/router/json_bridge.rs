@@ -199,27 +199,27 @@ fn to_rules(mut doc: JsonDoc) -> Vec<Rule> {
 /// 从 JSON 文本/文件初始化并安装规则引擎（ENV 控制；默认不启用）
 /// 优先顺序：若 `rules::global()` 已启（例如 TEXT/FILE 已装），则跳过不覆盖。
 pub fn init_from_json_env() {
+    init_from_options(&crate::runtime_options::RouterRuntimeOptions::default());
+}
+
+pub fn init_from_options(options: &crate::runtime_options::RouterRuntimeOptions) {
     if r::global().is_some() {
         return;
     }
-    let enable = std::env::var("SB_ROUTER_RULES_FROM_JSON")
-        .ok()
-        .map(|v| v == "1" || v.eq_ignore_ascii_case("true"))
-        .unwrap_or(false);
-    if !enable {
+    if !options.json_rules_enabled {
         return;
     }
     // 读取 JSON
-    let src = if let Ok(path) = std::env::var("SB_ROUTER_JSON_FILE") {
-        match fs::read_to_string(&path) {
+    let src = if let Some(path) = options.json_file.as_ref() {
+        match fs::read_to_string(path) {
             Ok(s) => s,
             Err(e) => {
-                tracing::warn!(%path, error=%e, "router.json_bridge: read file failed");
+                tracing::warn!(path = %path.display(), error=%e, "router.json_bridge: read file failed");
                 return;
             }
         }
-    } else if let Ok(text) = std::env::var("SB_ROUTER_JSON_TEXT") {
-        text
+    } else if let Some(text) = options.json_text.as_ref() {
+        text.clone()
     } else {
         tracing::warn!("router.json_bridge: enabled but no JSON provided");
         return;

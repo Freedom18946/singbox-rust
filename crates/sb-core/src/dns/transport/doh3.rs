@@ -41,12 +41,7 @@ impl Doh3Transport {
     ) -> Result<Self> {
         crate::tls::ensure_rustls_crypto_provider();
 
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_DOH3_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let timeout = Duration::from_millis(5000);
 
         // Create client endpoint with HTTP/3 ALPN
         let bind_addr = SocketAddr::from(([0, 0, 0, 0], 0));

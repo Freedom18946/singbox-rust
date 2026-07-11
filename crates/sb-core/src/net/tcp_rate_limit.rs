@@ -39,34 +39,13 @@ impl Default for TcpRateLimitConfig {
 }
 
 impl TcpRateLimitConfig {
-    pub fn from_env() -> Self {
-        let max_connections = parse_tcp_rate_env_usize("SB_INBOUND_RATE_LIMIT_PER_IP", Some(100));
-
-        let window_sec = parse_tcp_rate_env_usize("SB_INBOUND_RATE_LIMIT_WINDOW_SEC", Some(10));
-
-        let max_qps = parse_tcp_rate_env_usize("SB_INBOUND_RATE_LIMIT_QPS", None);
-
+    pub fn from_options(options: &crate::runtime_options::NetworkRuntimeOptions) -> Self {
         Self {
-            max_connections: max_connections.unwrap_or(100),
-            window: Duration::from_secs(window_sec.unwrap_or(10) as u64),
-            max_qps,
+            max_connections: options.inbound_rate_limit_per_ip,
+            window: options.inbound_rate_limit_window,
+            max_qps: options.inbound_rate_limit_qps,
             ..Default::default()
         }
-    }
-}
-
-fn parse_tcp_rate_env_usize(key: &str, default: Option<usize>) -> Option<usize> {
-    match std::env::var(key).ok() {
-        Some(raw) => match raw.parse::<usize>() {
-            Ok(v) => Some(v),
-            Err(err) => {
-                tracing::warn!(
-                    "tcp-rate-limit env '{key}' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-                );
-                default
-            }
-        },
-        None => default,
     }
 }
 

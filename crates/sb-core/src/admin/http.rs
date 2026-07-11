@@ -48,64 +48,16 @@ struct Limits {
     max_rps_per_ip: usize,
 }
 
-fn parse_admin_env_usize(key: &str, value: Option<&str>) -> Result<usize, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<usize>().map_err(|err| -> Arc<str> {
-            format!(
-                "admin env '{key}' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Err("not set".into()),
-    }
-}
-
-fn parse_admin_env_u64(key: &str, value: Option<&str>) -> Result<u64, Arc<str>> {
-    match value {
-        Some(raw) => raw.parse::<u64>().map_err(|err| -> Arc<str> {
-            format!(
-                "admin env '{key}' value '{raw}' is invalid; silent parse fallback is disabled; fix the config explicitly: {err}"
-            )
-            .into()
-        }),
-        None => Err("not set".into()),
-    }
-}
-
-fn env_usize(key: &str, default: usize) -> usize {
-    let raw = std::env::var(key).ok();
-    match parse_admin_env_usize(key, raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) if raw.is_some() => {
-            tracing::warn!("{reason}; using default {default}");
-            default
-        }
-        _ => default,
-    }
-}
-
-fn env_u64(key: &str, default: u64) -> u64 {
-    let raw = std::env::var(key).ok();
-    match parse_admin_env_u64(key, raw.as_deref()) {
-        Ok(val) => val,
-        Err(reason) if raw.is_some() => {
-            tracing::warn!("{reason}; using default {default}");
-            default
-        }
-        _ => default,
-    }
-}
-
-fn limits() -> Limits {
+fn limits(options: &crate::runtime_options::DebugRuntimeOptions) -> Limits {
     Limits {
-        max_header_bytes: env_usize("SB_ADMIN_MAX_HEADER_BYTES", 64 * 1024),
-        max_body_bytes: env_usize("SB_ADMIN_MAX_BODY_BYTES", 2 * 1024 * 1024),
-        first_byte_timeout: Duration::from_millis(env_u64("SB_ADMIN_FIRSTBYTE_TIMEOUT_MS", 1500)),
-        first_line_timeout: Duration::from_millis(env_u64("SB_ADMIN_FIRSTLINE_TIMEOUT_MS", 3000)),
-        read_timeout: Duration::from_millis(env_u64("SB_ADMIN_READ_TIMEOUT_MS", 4000)),
-        write_timeout: Duration::from_millis(env_u64("SB_ADMIN_WRITE_TIMEOUT_MS", 4000)),
-        max_conn_per_ip: env_usize("SB_ADMIN_MAX_CONN_PER_IP", 8),
-        max_rps_per_ip: env_usize("SB_ADMIN_MAX_RPS_PER_IP", 16),
+        max_header_bytes: options.admin_max_header_bytes,
+        max_body_bytes: options.admin_max_body_bytes,
+        first_byte_timeout: options.admin_first_byte_timeout,
+        first_line_timeout: options.admin_first_line_timeout,
+        read_timeout: options.admin_read_timeout,
+        write_timeout: options.admin_write_timeout,
+        max_conn_per_ip: options.admin_max_connections_per_ip,
+        max_rps_per_ip: options.admin_max_requests_per_second_per_ip,
     }
 }
 
@@ -183,8 +135,7 @@ fn inc_concurrency(ip: IpAddr, lim: &Limits) -> Result<ConnGuard, ()> {
     Ok(ConnGuard { ip })
 }
 
-fn read_line(s: &mut TcpStream, total_read: &mut usize) -> std::io::Result<String> {
-    let lim = limits();
+fn read_line(s: &mut TcpStream, total_read: &mut usize, lim: &Limits) -> std::io::Result<String> {
     let start = Instant::now();
     let mut buf = Vec::with_capacity(128);
     let mut b = [0u8; 1];
@@ -238,13 +189,12 @@ fn read_line(s: &mut TcpStream, total_read: &mut usize) -> std::io::Result<Strin
     Ok(String::from_utf8_lossy(&buf).trim().to_string())
 }
 
-fn read_headers(s: &mut TcpStream) -> std::io::Result<Vec<(String, String)>> {
-    let lim = limits();
+fn read_headers(s: &mut TcpStream, lim: &Limits) -> std::io::Result<Vec<(String, String)>> {
     let mut h = Vec::new();
     let mut total = 0usize;
     s.set_read_timeout(Some(lim.read_timeout))?;
     loop {
-        let line = read_line(s, &mut total)?;
+        let line = read_line(s, &mut total, lim)?;
         if line.is_empty() {
             break;
         }
@@ -263,8 +213,11 @@ fn read_headers(s: &mut TcpStream) -> std::io::Result<Vec<(String, String)>> {
     Ok(h)
 }
 
-fn read_body(s: &mut TcpStream, headers: &[(String, String)]) -> std::io::Result<Vec<u8>> {
-    let lim = limits();
+fn read_body(
+    s: &mut TcpStream,
+    headers: &[(String, String)],
+    lim: &Limits,
+) -> std::io::Result<Vec<u8>> {
     let mut len = 0usize;
     for (k, v) in headers {
         if k.eq_ignore_ascii_case("Content-Length") {
@@ -299,8 +252,6 @@ fn read_body(s: &mut TcpStream, headers: &[(String, String)]) -> std::io::Result
 }
 
 fn write_json(s: &mut TcpStream, code: u16, body: &str) -> std::io::Result<()> {
-    let lim = limits();
-    s.set_write_timeout(Some(lim.write_timeout))?;
     let hdr = format!(
         "HTTP/1.1 {} OK\r\nContent-Type: application/json\r\nContent-Length: {}\r\n\r\n",
         code,
@@ -335,7 +286,7 @@ fn handle(
     supervisor: Option<&Arc<Supervisor>>,
     rt_handle: Option<&Handle>,
 ) -> std::io::Result<()> {
-    let lim = limits();
+    let lim = limits(&bridge.context.runtime_options.debug);
     let peer_opt = cli.peer_addr().ok();
 
     // Check rate limit early
@@ -349,7 +300,7 @@ fn handle(
 
     // Now read request line - handle IO errors gracefully
     let mut total_read = 0usize;
-    let line = match read_line(&mut cli, &mut total_read) {
+    let line = match read_line(&mut cli, &mut total_read, &lim) {
         Ok(l) => l,
         Err(e) => {
             // For header too large or timeout, send proper HTTP error
@@ -367,7 +318,7 @@ fn handle(
 
     let (method, path, _ver) = parse_path(&line);
 
-    let headers = match read_headers(&mut cli) {
+    let headers = match read_headers(&mut cli, &lim) {
         Ok(h) => h,
         Err(e) => {
             if e.kind() == std::io::ErrorKind::InvalidData {
@@ -505,7 +456,7 @@ fn handle(
         }
         #[cfg(feature = "router")]
         ("POST", "/explain") => {
-            let body = match read_body(&mut cli, &headers) {
+            let body = match read_body(&mut cli, &headers, &lim) {
                 Ok(b) => b,
                 Err(e) => {
                     let body = json_err("bad_request", &format!("{}", e));
@@ -557,7 +508,7 @@ fn handle(
             let obj = json_err("not_available", "router feature not enabled");
             write_json(&mut cli, 503, &obj)
         }
-        ("POST", "/reload") => handle_reload(&mut cli, &headers, supervisor, rt_handle),
+        ("POST", "/reload") => handle_reload(&mut cli, &headers, supervisor, rt_handle, &lim),
         _ => {
             let obj = json_err("not_found", "no such endpoint");
             write_json(&mut cli, 404, &obj)
@@ -655,6 +606,7 @@ fn handle_reload(
     headers: &[(String, String)],
     supervisor: Option<&Arc<Supervisor>>,
     rt_handle: Option<&Handle>,
+    lim: &Limits,
 ) -> std::io::Result<()> {
     let now = SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -680,7 +632,7 @@ fn handle_reload(
     };
 
     // Parse request body
-    let body = if let Ok(b) = read_body(cli, headers) {
+    let body = if let Ok(b) = read_body(cli, headers, lim) {
         b
     } else {
         let error_obj = serde_json::json!({
@@ -902,11 +854,12 @@ pub fn spawn_admin(
         &[("addr", &addr)],
     );
     let h = thread::spawn(move || {
+        let lim = limits(&bridge.context.runtime_options.debug);
         for c in l.incoming() {
             match c {
                 Ok(mut s) => {
                     let _ = s.set_nodelay(true);
-                    let lim = limits();
+                    let _ = s.set_write_timeout(Some(lim.write_timeout));
                     let conn_guard = match s.peer_addr().ok() {
                         Some(peer) => match inc_concurrency(peer.ip(), &lim) {
                             Ok(g) => Some(g),
@@ -943,27 +896,4 @@ pub fn spawn_admin(
         }
     });
     Ok(h)
-}
-
-#[cfg(test)]
-mod tests {
-    use super::{parse_admin_env_u64, parse_admin_env_usize};
-
-    #[test]
-    fn invalid_admin_env_usize_reports_explicitly() {
-        let err = parse_admin_env_usize("SB_ADMIN_MAX_HEADER_BYTES", Some("big"))
-            .expect_err("invalid admin env usize should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ADMIN_MAX_HEADER_BYTES"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
-
-    #[test]
-    fn invalid_admin_env_u64_reports_explicitly() {
-        let err = parse_admin_env_u64("SB_ADMIN_READ_TIMEOUT_MS", Some("slow"))
-            .expect_err("invalid admin env u64 should be rejected explicitly");
-        let msg = err.to_string();
-        assert!(msg.contains("SB_ADMIN_READ_TIMEOUT_MS"));
-        assert!(msg.contains("silent parse fallback is disabled"));
-    }
 }

@@ -36,12 +36,7 @@ impl DoqTransport {
     ) -> Result<Self> {
         crate::tls::ensure_rustls_crypto_provider();
 
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_DOQ_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let timeout = Duration::from_millis(5000);
         // Create client endpoint and config once with DoQ ALPN
         let bind_addr = SocketAddr::from(([0, 0, 0, 0], 0));
         let mut endpoint = quinn::Endpoint::client(bind_addr).map_err(io::Error::other)?;

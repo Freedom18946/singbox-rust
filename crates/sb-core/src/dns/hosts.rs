@@ -40,16 +40,18 @@ impl HostsResolver {
 
     /// 使用指定路径创建Hosts解析器
     pub fn with_path(file_path: PathBuf) -> Result<Self> {
-        let ttl = Duration::from_secs(
-            std::env::var("SB_DNS_HOSTS_TTL_S")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(3600), // 默认1小时
-        );
+        Self::with_path_and_options(
+            file_path,
+            &crate::runtime_options::DnsRuntimeOptions::default(),
+        )
+    }
 
-        let enabled = std::env::var("SB_DNS_HOSTS_ENABLE")
-            .ok()
-            .is_none_or(|v| v == "1" || v.eq_ignore_ascii_case("true")); // 默认启用
+    pub fn with_path_and_options(
+        file_path: PathBuf,
+        options: &crate::runtime_options::DnsRuntimeOptions,
+    ) -> Result<Self> {
+        let ttl = Duration::from_secs(options.hosts_file_ttl_s);
+        let enabled = options.hosts_enabled;
 
         let mut resolver = Self {
             hosts: Arc::new(RwLock::new(HashMap::new())),

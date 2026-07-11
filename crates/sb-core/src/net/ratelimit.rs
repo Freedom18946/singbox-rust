@@ -80,22 +80,22 @@ impl Bucket {
     }
 }
 
-fn global_bucket() -> &'static Bucket {
-    static B: OnceLock<Bucket> = OnceLock::new();
-    B.get_or_init(|| {
-        let bps = std::env::var("SB_UDP_OUTBOUND_BPS_MAX")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
-        let pps = std::env::var("SB_UDP_OUTBOUND_PPS_MAX")
-            .ok()
-            .and_then(|v| v.parse::<u64>().ok())
-            .unwrap_or(0);
-        Bucket::new(bps, pps)
-    })
+pub struct UdpRateLimiter {
+    bucket: Bucket,
 }
 
-/// 对外接口：检查是否应当丢弃该 UDP 出站（返回 Some(reason) 表示应丢弃）
-pub fn maybe_drop_udp(len: usize) -> Option<&'static str> {
-    global_bucket().try_consume(len).err()
+impl UdpRateLimiter {
+    #[must_use]
+    pub fn from_options(options: &crate::runtime_options::NetworkRuntimeOptions) -> Self {
+        Self {
+            bucket: Bucket::new(
+                options.udp_outbound_bytes_per_second,
+                options.udp_outbound_packets_per_second,
+            ),
+        }
+    }
+
+    pub fn maybe_drop_udp(&self, len: usize) -> Option<&'static str> {
+        self.bucket.try_consume(len).err()
+    }
 }

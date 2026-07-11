@@ -278,6 +278,8 @@ fn test_enhanced_geosite_lookup_integration() {
         default: "direct",
         gen: 0,
         checksum: [0; 32],
+        suffix_strict: false,
+        suffix_trie_enabled: false,
     };
 
     // Test enhanced GeoSite lookup

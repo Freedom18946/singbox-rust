@@ -43,12 +43,7 @@ impl DotTransport {
         extra_ca_pem: Vec<String>,
         skip_verify: bool,
     ) -> Result<Self> {
-        let timeout = Duration::from_millis(
-            std::env::var("SB_DNS_DOT_TIMEOUT_MS")
-                .ok()
-                .and_then(|v| v.parse::<u64>().ok())
-                .unwrap_or(5000),
-        );
+        let timeout = Duration::from_millis(5000);
 
         #[cfg(any(feature = "tls", feature = "tls_rustls"))]
         let tls_config = {

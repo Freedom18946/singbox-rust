@@ -10,6 +10,16 @@
 
 ---
 
+## Resume (2026-07-11) - MIG-03 WP11 env/config convergence DONE
+
+- 141 个 core-owned `SB_*` 全部由 app 组合根一次解析，注入 `CoreRuntimeOptions` 六域；
+  core `SB_*` 字面量/直接读取/白名单均为 0，构造后冻结。
+- DNS/router/net/service/debug/admin 消费链与测试已迁移；变量无废弃。登记权威：
+  `agents-only/mig03/mig03_wp11_env_registry.md`。
+- 验收：workspace all-features check、clippy、sb-core/app full test、fmt、boundaries 429、
+  diff-check 全绿。
+- **Authorized transition:** WP14 已解锁；按 `workpackage_latest.md` 继续下一项 MIG-03 frontier。
+
 ## Resume (2026-07-11) - MIG-03 WP08 router stack merge DONE
 
 - **WP08 accepted:** `router/` is sole implementation home. `routing/` is a 25-line WP14
