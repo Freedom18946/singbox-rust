@@ -135,12 +135,6 @@ fn ss_connector(ss_addr: SocketAddr, password: &str) -> ShadowsocksConnector {
     .expect("create Shadowsocks connector")
 }
 
-fn install_direct_rules_engine() {
-    let rules = sb_core::router::rules::parse_rules("default=direct");
-    let engine = sb_core::router::rules::RuleEngine::build(rules);
-    sb_core::router::rules::install_global(engine);
-}
-
 async fn wait_for_api(client: &reqwest::Client, base_url: &str) {
     let deadline = Instant::now() + Duration::from_secs(5);
     loop {
@@ -250,7 +244,7 @@ fn stop_runtime(runtime: &Runtime) {
 async fn managed_shadowsocks_ssmapi_tcp_udp_stats_and_cache() {
     let _ = tracing_subscriber::fmt().with_env_filter("info").try_init();
     sb_adapters::register_all();
-    install_direct_rules_engine();
+    sb_api::services::register_all();
 
     let Some(ss_port) = reserve_loopback_port("shadowsocks") else {
         return;

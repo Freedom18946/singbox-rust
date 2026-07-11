@@ -14,6 +14,47 @@ use sb_config::ir::{ConfigIR, OutboundIR, OutboundType};
 use sb_core::runtime::supervisor::Supervisor;
 use tokio::sync::RwLock;
 
+#[derive(Debug)]
+struct TestDirectOutbound;
+
+impl sb_types::Outbound for TestDirectOutbound {
+    fn r#type(&self) -> &str {
+        "direct"
+    }
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new("direct")
+    }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
+    fn dial<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async { Err(sb_types::CoreError::policy("provider reload test direct")) })
+    }
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async { Err(sb_types::CoreError::policy("provider reload test direct")) })
+    }
+}
+
+fn build_test_direct_outbound(
+    _param: &sb_core::adapter::OutboundParam,
+    _ir: &OutboundIR,
+    _ctx: &sb_core::adapter::registry::AdapterOutboundContext,
+) -> Option<Arc<dyn sb_types::Outbound>> {
+    Some(Arc::new(TestDirectOutbound))
+}
+
+fn test_registry() -> sb_core::adapter::registry::RegistrySnapshot {
+    let mut registry = sb_core::adapter::registry::RegistrySnapshot::new();
+    registry.register_outbound("direct", build_test_direct_outbound);
+    registry
+}
+
 #[derive(Clone)]
 struct MockProviderState {
     body: Arc<RwLock<String>>,
@@ -153,7 +194,7 @@ async fn proxy_provider_http_update_replaces_runtime_outbounds() -> anyhow::Resu
         return Ok(());
     };
 
-    let supervisor = Supervisor::start(initial_ir()).await?;
+    let supervisor = Supervisor::start_with_registry(initial_ir(), Some(test_registry())).await?;
     let provider_manager = Arc::new(
         ProviderManager::default().with_reload_channel(supervisor.handle().reload_sender()),
     );
@@ -220,7 +261,7 @@ async fn rule_provider_http_update_replaces_runtime_rules() -> anyhow::Result<()
         return Ok(());
     };
 
-    let supervisor = Supervisor::start(initial_ir()).await?;
+    let supervisor = Supervisor::start_with_registry(initial_ir(), Some(test_registry())).await?;
     let provider_manager = Arc::new(
         ProviderManager::default().with_reload_channel(supervisor.handle().reload_sender()),
     );

@@ -115,23 +115,29 @@
 ## 架构
 
 ```
-sb-types (契约) → sb-config → sb-core (引擎) → sb-adapters (协议) → app (组合根)
-                                  ↑                     ↑
-                              sb-tls              sb-transport
+sb-types (契约) ← sb-config
+    ↑               ↑
+    └──── sb-core ← sb-adapters ← sb-transport / sb-tls / sb-platform
+             ↑           ↑
+      sb-api / sb-service-derp
+             ↑
+        app (组合根)
 ```
 
 **核心事实**：
 - `sb-adapters` 持有协议 inbound/outbound 实现；Hysteria v1/v2、Naive H2 与其 QUIC
   公共层已完整迁出 sb-core。
 - `sb-core/outbound/` 仅保留引擎级管理、调度与通用原语，不再包含上述 QUIC 协议实现。
+- 路由实现唯一落位 `sb-core/router/`；旧 `routing/` 兼容 facade 已删除。
+- HTTP 控制面归 `sb-api`，DERP 归 `sb-service-derp`；sb-core 无 axum/tonic。
 - sb-core 的 legacy `out_*`、`router`、`routing` feature 已由 MIG-03 WP13 退役；
   router/suffix/keyword 基础能力常驻，协议 feature owner 为 sb-adapters/app。
 
 ### Feature Gate 要点
 
 - rustls/tokio-rustls: optional behind `tls_rustls`
-- reqwest: optional behind `dns_doh` / `service_derp`
-- axum/tonic: optional behind `service_ssmapi` / `service_v2ray_api`
+- reqwest: optional behind `dns_doh`
+- axum/tonic: 不属于 sb-core；控制面 feature owner 为 sb-api/app
 - Hysteria/Hysteria2 inbound 与 outbound 均由 sb-adapters 的 `adapter-hysteria*` feature 所有
 
 ### sb-types Port Traits

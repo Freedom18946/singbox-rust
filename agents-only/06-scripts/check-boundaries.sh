@@ -653,6 +653,7 @@ for removed in \
     crates/sb-core/src/tls/mod.rs \
     crates/sb-core/src/subscribe/mod.rs \
     crates/sb-core/src/socks5/mod.rs \
+    crates/sb-core/src/routing/mod.rs \
     crates/sb-core/src/services/tailscale/mod.rs \
     crates/sb-adapters/src/canonical.rs \
     crates/sb-proto/Cargo.toml; do

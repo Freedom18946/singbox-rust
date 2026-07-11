@@ -92,9 +92,6 @@ async fn start_ss_server_on(
     method: &str,
     password: &str,
 ) -> Option<ShadowsocksServerHandle> {
-    let rules = sb_core::router::rules::parse_rules("default=direct");
-    sb_core::router::rules::install_global(sb_core::router::rules::RuleEngine::build(rules));
-
     let listener = match TcpListener::bind(listen).await {
         Ok(listener) => listener,
         Err(err) => {
@@ -217,6 +214,7 @@ async fn run_concurrent_ss_round(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial_test::serial]
 async fn test_shadowsocks_server_restart_recovery() {
     let Some(echo_addr) = start_echo_server().await else {
         return;
@@ -269,6 +267,7 @@ async fn test_shadowsocks_server_restart_recovery() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial_test::serial]
 async fn test_shadowsocks_server_multi_flap_recovery() {
     let Some(echo_addr) = start_echo_server().await else {
         return;
@@ -327,6 +326,7 @@ async fn test_shadowsocks_server_multi_flap_recovery() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial_test::serial]
 async fn test_shadowsocks_restart_recovery_concurrent_burst() {
     let Some(echo_addr) = start_echo_server().await else {
         return;
@@ -393,6 +393,7 @@ async fn test_shadowsocks_restart_recovery_concurrent_burst() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial_test::serial]
 async fn test_shadowsocks_auth_fault_then_concurrent_recovery() {
     let Some(echo_addr) = start_echo_server().await else {
         return;

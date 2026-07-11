@@ -61,7 +61,6 @@ pub mod outbound;
 /// 适配器的管道工具。
 /// Routing engine and rule matching.
 /// 路由引擎和规则匹配。
-pub mod routing;
 pub mod udp_nat_instrument;
 // Expose legacy router module for compatibility with external crates
 

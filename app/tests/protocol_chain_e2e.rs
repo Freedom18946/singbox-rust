@@ -105,7 +105,9 @@ async fn start_mixed_server() -> std::io::Result<(SocketAddr, tokio::sync::mpsc:
         tls: None,
         users: Some(vec![]),
         set_system_proxy: false,
-        allow_private_network: false,
+        // Test upstream is loopback; permit it explicitly instead of relying on
+        // deprecated implicit-private-network behavior.
+        allow_private_network: true,
         udp_timeout: None,
         domain_strategy: None,
         stats: None,

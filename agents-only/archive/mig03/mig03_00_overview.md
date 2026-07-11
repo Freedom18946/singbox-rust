@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # MIG-03 总览 — 调研证据、阶段划分、全局验收
 
-Status: ACTIVE（轨迹进行中；各包状态见各包头部）
+Status: DONE（2026-07-12；终验记录见归档后的 WP14）
 立项日期: 2026-07-06
 决策背景: 用户否决"新仓库重写 + cp 搬运"方案，确定仓内迁移（strangler-fig）。
 技术抉择: 全部可选项已由用户委托按"现实可行性 + 长远维护 + 完美等价 Go 内核
@@ -111,12 +111,12 @@ git diff --check
 
 | 指标 | 基线（2026-07-06） | 终局 |
 |------|--------------------|------|
-| sb-core LOC | 108,129 | |
-| sb-core features | 103 | |
-| sb-core cfg(feature) 块 | 1,077 | |
-| sb-core 内不同 SB_* env | 161 | |
-| register.rs LOC | 4,264 | |
-| OutboundConnector 定义数 | ≥6 | |
-| sb-core 内协议双实现（与 adapters 重叠） | socks5/http/mixed/ss/hysteria/hysteria2/naive/quic | |
-| 路由栈数 | 2 | |
-| sb-core 内 axum/tonic | 有（service_* 门下） | |
+| sb-core LOC | 108,129 | 79,973（-26.0%） |
+| sb-core features | 103 | 65（-36.9%） |
+| sb-core cfg(feature) 块 | 1,077 | 787（-26.9%） |
+| sb-core 内不同 SB_* env | 161 | 0 |
+| register.rs LOC | 4,264 | 7 |
+| OutboundConnector 定义数 | ≥6 | 0（正典契约名为 `sb_types::Outbound`，定义数 1） |
+| sb-core 内协议双实现（与 adapters 重叠） | socks5/http/mixed/ss/hysteria/hysteria2/naive/quic | 0 |
+| 路由栈数 | 2 | 1（`sb-core/src/router/`） |
+| sb-core 内 axum/tonic | 有（service_* 门下） | 0 |

@@ -481,7 +481,7 @@ forbid|W200-08-no-tproxy-direct-default|crates/sb-adapters/src/inbound/tproxy.rs
 require|W200-09-trojan-explicit-disabled|crates/sb-adapters/src/inbound/trojan.rs|implicit direct fallback is disabled|trojan must explicitly refuse when router missing
 require|W200-10-vless-explicit-disabled|crates/sb-adapters/src/inbound/vless.rs|implicit direct fallback is disabled|vless must explicitly refuse when router missing
 require|W200-11-vmess-explicit-disabled|crates/sb-adapters/src/inbound/vmess.rs|implicit direct fallback is disabled|vmess must explicitly refuse when router missing
-require|W200-12-shadowsocks-explicit-disabled|crates/sb-adapters/src/inbound/shadowsocks.rs|implicit direct fallback is disabled|ss must explicitly refuse when router missing
+require|W200-12-shadowsocks-injected-router|crates/sb-adapters/src/inbound/shadowsocks.rs|cfg.router.decide_with_meta|ss must route through explicitly injected router ownership
 require|W200-13-shadowtls-explicit-disabled|crates/sb-adapters/src/inbound/shadowtls.rs|implicit fallback is disabled|shadowtls must explicitly refuse when router missing
 require|W200-14-anytls-explicit-disabled|crates/sb-adapters/src/inbound/anytls.rs|implicit direct fallback is disabled|anytls must explicitly refuse when router missing
 require|W200-15-redirect-explicit-disabled|crates/sb-adapters/src/inbound/redirect.rs|implicit direct fallback is disabled|redirect must explicitly refuse when router missing

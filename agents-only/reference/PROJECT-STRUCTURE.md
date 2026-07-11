@@ -53,6 +53,7 @@ singbox-rust/
 - `sb-tls`
 - `sb-platform`
 - `sb-api`
+- `sb-service-derp`
 - `sb-runtime`
 - `sb-metrics`
 - `sb-security`
@@ -63,8 +64,9 @@ singbox-rust/
 
 结构口径说明：
 
-- `sb-core` 采用“内核合集层”定义，详见 `ARCHITECTURE-SPEC.md`
+- `sb-core` 是路由、DNS、生命周期与运行时编排引擎；过渡期“内核合集层”容忍已关闭
 - 新协议默认归属 `sb-adapters`
+- HTTP 控制面归 `sb-api`，DERP 归 `sb-service-derp`
 - 实际边界以 `check-boundaries.sh` 和 `boundary-policy.json` 为准
 
 ### `app/`

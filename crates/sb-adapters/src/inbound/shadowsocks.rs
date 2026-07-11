@@ -25,8 +25,8 @@ use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::TcpRateLimiter;
 use sb_core::outbound::registry;
 use sb_core::router;
-use sb_core::router::rules as rules_global;
-use sb_core::router::rules::{Decision as RDecision, RouteCtx};
+use sb_core::router::rules::Decision as RDecision;
+use sb_core::router::{RouteCtx, Transport};
 use sb_core::v2ray_stats::StatsManager;
 
 use std::collections::HashMap;
@@ -1406,32 +1406,21 @@ where
 
     // Step 3: router decision
     // 步骤 3：路由决策
-    let (decision, rule) = match rules_global::global() {
-        Some(eng) => {
-            let ctx = RouteCtx {
-                domain: Some(&host),
-                ip: None,
-                transport_udp: false,
-                port: Some(port),
-                inbound_tag: cfg.tag.as_deref().or(Some("shadowsocks")),
-                network: Some("tcp"),
-                ..Default::default()
-            };
-            let (d, r) = eng.decide_with_meta(&ctx);
-            if matches!(d, RDecision::Reject) {
-                return Err(anyhow!("ss: rejected by rules"));
-            }
-            (d, r)
-        }
-        None => {
-            tracing::warn!(
-                "shadowsocks: router engine not initialized; implicit direct fallback is disabled"
-            );
-            return Err(anyhow!(
-                "ss: router engine not initialized, implicit direct fallback is disabled"
-            ));
-        }
+    let ctx = RouteCtx {
+        host: Some(&host),
+        ip: None,
+        port: Some(port),
+        inbound_tag: cfg.tag.as_deref().or(Some("shadowsocks")),
+        network: "tcp",
+        transport: Transport::Tcp,
+        ..Default::default()
     };
+    let decision_meta = cfg.router.decide_with_meta(&ctx);
+    let decision = decision_meta.decision;
+    let rule = decision_meta.rule;
+    if matches!(decision, RDecision::Reject) {
+        return Err(anyhow!("ss: rejected by rules"));
+    }
 
     let opts = ConnectOpts;
     // Match by reference so we can still use `decision` later (conntrack/chain computation).

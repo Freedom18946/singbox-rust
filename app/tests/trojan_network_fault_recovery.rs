@@ -250,6 +250,7 @@ async fn run_concurrent_trojan_round(
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial_test::serial]
 async fn test_trojan_server_restart_recovery() {
     init_crypto();
     let Some(echo_addr) = start_echo_server().await else {
@@ -307,6 +308,7 @@ async fn test_trojan_server_restart_recovery() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+#[serial_test::serial]
 async fn test_trojan_server_multi_flap_recovery() {
     init_crypto();
     let Some(echo_addr) = start_echo_server().await else {
@@ -370,6 +372,7 @@ async fn test_trojan_server_multi_flap_recovery() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial_test::serial]
 async fn test_trojan_restart_recovery_concurrent_burst() {
     init_crypto();
     let Some(echo_addr) = start_echo_server().await else {
@@ -438,6 +441,7 @@ async fn test_trojan_restart_recovery_concurrent_burst() {
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial_test::serial]
 async fn test_trojan_auth_fault_then_concurrent_recovery() {
     init_crypto();
     let Some(echo_addr) = start_echo_server().await else {

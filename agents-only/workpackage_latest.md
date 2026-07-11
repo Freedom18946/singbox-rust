@@ -44,6 +44,7 @@
 | MT-DEPLOY-01 | `archive/mt_summary.md` |
 | MT-GUI-01/02/03/04 | `archive/mt_summary.md` |
 | MT-REAL-01（ARCH-LIMIT-REALITY 收口，2026-04-15） | `archive/reality_summary.md` |
+| MIG-03（架构去重迁移，WP01-WP14） | `archive/mig03/`（2026-07-12） |
 | 旧 deployment-acceptance 下一阶段口径（已被 MT-REAL-02 取代） | `archive/mt_summary.md` |
 
 ### MT-GUI-04 结论（验收基线，非 parity completion）
@@ -55,8 +56,7 @@
 ### 下一阶段默认路线
 
 - **最高目标线**：REALITY 本地主线已封箱（T3 收口）；当前推荐下一卡与优先级以 `active_context.md` 为准。
-- **MIG-03（架构去重迁移，2026-07-06 立项）**：4 阶段 / 14 工作包，全集见
-  `agents-only/mig03/`（README 为索引与全局纪律）；各包状态以包头 `Status:` 为准。
+- **MIG-03（架构去重迁移）**：WP01-WP14 已关闭并归档至 `agents-only/archive/mig03/`。
 - **参考内核抬版本后的任务入口**：`agents-only/post1313/`（Go 1.13.13 / GUI 1.25.1
   差异分析与任务包；P1313-09 已本地关闭，其余任务以各包状态为准）。
 - **维护基线**：声明完成能力已逐项验收闭环；不再拆细维护卡，不重开旧 maintenance 线名。

@@ -137,16 +137,16 @@ async fn test_reload_http_inbound_adapter() -> Result<()> {
             }
         });
 
-        send_reload_request(&reload_config, "test-token", 20090).await?;
-        sleep(Duration::from_millis(300)).await;
+        let response = send_reload_request(&reload_config, "test-token", 20090).await?;
+        assert_eq!(response["ok"], true, "Reload should succeed");
 
         // Verify port switched
         assert!(
-            test_port_connectivity(20002).await,
+            wait_for_port_state(20002, true).await,
             "New HTTP inbound should be accessible after reload"
         );
         assert!(
-            !test_port_connectivity(20001).await,
+            wait_for_port_state(20001, false).await,
             "Old HTTP inbound should be stopped"
         );
 
@@ -304,7 +304,7 @@ async fn test_reload_shadowsocks_outbound_adapter() -> Result<()> {
                 "type": "http",
                 "tag": "http-in",
                 "listen": "127.0.0.1",
-                "port": 20021
+                "port": 20022
             }],
             "outbounds": [
                 {
@@ -409,7 +409,7 @@ async fn test_reload_selector_members() -> Result<()> {
                 "type": "http",
                 "tag": "http-in",
                 "listen": "127.0.0.1",
-                "port": 20031
+                "port": 20032
             }],
             "outbounds": [
                 {
@@ -453,9 +453,9 @@ async fn test_reload_selector_members() -> Result<()> {
     result
 }
 
-/// Test reload preserves adapter state idempotency
+/// Test same-port reload rejection preserves adapter state
 ///
-/// Verifies that reloading with the same config is idempotent.
+/// Verifies unsupported same-port in-process reload fails atomically.
 #[tokio::test]
 async fn test_reload_adapter_idempotency() -> Result<()> {
     if should_skip_network_tests() {
@@ -514,18 +514,20 @@ async fn test_reload_adapter_idempotency() -> Result<()> {
     }
 
     let result = async {
-        // First reload with same config
+        // Same-port reload is rejected before stopping the old listener.
         let response1 = send_reload_request(&config, "test-token", 20094).await?;
-        assert_eq!(response1["ok"], true);
-
-        // Second reload with same config
-        let response2 = send_reload_request(&config, "test-token", 20094).await?;
-        assert_eq!(response2["ok"], true);
+        assert_eq!(response1["ok"], false);
+        assert!(
+            response1
+                .to_string()
+                .contains("same-port in-process reload is unsupported"),
+            "unexpected rejection response: {response1}"
+        );
 
         // Port should still be accessible
         assert!(
             test_port_connectivity(20041).await,
-            "Inbound should remain accessible after idempotent reloads"
+            "Old inbound should remain accessible after rejected reload"
         );
 
         Ok(())
@@ -595,7 +597,7 @@ async fn test_reload_feature_gated_adapters() -> Result<()> {
                 "type": "http",
                 "tag": "http-in",
                 "listen": "127.0.0.1",
-                "port": 20051
+                "port": 20052
             }],
             "outbounds": [
                 // VMess - feature-gated
@@ -641,7 +643,18 @@ async fn test_port_connectivity(port: u16) -> bool {
         tokio::net::TcpStream::connect(format!("127.0.0.1:{}", port)),
     )
     .await
-    .is_ok()
+    .is_ok_and(|result| result.is_ok())
+}
+
+async fn wait_for_port_state(port: u16, expected: bool) -> bool {
+    let deadline = tokio::time::Instant::now() + Duration::from_secs(2);
+    while tokio::time::Instant::now() < deadline {
+        if test_port_connectivity(port).await == expected {
+            return true;
+        }
+        sleep(Duration::from_millis(50)).await;
+    }
+    false
 }
 
 async fn send_reload_request(

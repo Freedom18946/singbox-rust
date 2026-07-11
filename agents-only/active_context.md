@@ -10,19 +10,20 @@
 
 ---
 
-## Resume (2026-07-11) - MIG-03 WP13 feature matrix slimming DONE
+## Resume (2026-07-12) - MIG-03 WP14 final acceptance DONE
 
-- **WP13 accepted:** sb-core declared features close at 65 and source `cfg(feature)` at 787;
-  all legacy `out_*`, core `router`/`routing`, `legacy_protocols`, and obsolete dev/index gates
-  are retired. Router, suffix trie, keyword linear index, and DNS runtime-option paths are constant.
-- Every retained core feature has a Cargo purpose comment. Census and corrected baseline replay live
-  in `mig03/mig03_wp13_feature_census.md`; regression locks budgets, retired names, comments, and
-  downstream forwarding.
-- Seven build combinations, core all-feature tests, app all-feature lib plus WP13-related E2E,
-  repeated FakeIP isolation, workspace clippy, fmt, boundaries, consistency, and diff-check pass.
-  Full app `net_e2e` retains unrelated macOS Shadowsocks mux/mixed early-EOF/hang quality debt.
-  **Authorized transition:** WP14 next.
-- **Scope note:** structural/feature convergence only. No parity/BHV/REALITY movement claimed.
+- **MIG-03 accepted and archived:** WP01-WP14 closed. Final D17 metrics meet every target;
+  canonical contracts, adapter protocol ownership, single router stack, externalized Web/DERP
+  services, frozen runtime options, duplicate cleanup, and feature slimming are closed.
+- WP14 removed final `routing/` compatibility facade and locked non-return in boundary V8. Stable
+  architecture docs, navigation, experience memory, phase map, and archived acceptance evidence
+  now match source facts.
+- Workspace all-feature fmt/check/clippy/test, five app profiles, Python tool suites, Trojan
+  integration, strict boundaries, consistency, and diff-check pass. Interop full run: 87/103;
+  all 16 failures classified as external-env, dual/Go oracle, non-promotable Rust diagnostic,
+  harness assertion, or historical S4 baseline; no new unclassified difference. Exact evidence:
+  `archive/mig03/mig03_wp14_final_acceptance_and_archive.md`.
+- **Scope note:** architecture migration closure only. No parity/BHV/REALITY movement claimed.
 
 ## Resume (2026-07-11) - MIG-03 WP09/WP10/WP12 red-team acceptance DONE
 
@@ -44,15 +45,15 @@
 - 141 个 core-owned `SB_*` 全部由 app 组合根一次解析，注入 `CoreRuntimeOptions` 六域；
   core `SB_*` 字面量/直接读取/白名单均为 0，构造后冻结。
 - DNS/router/net/service/debug/admin 消费链与测试已迁移；变量无废弃。登记权威：
-  `agents-only/mig03/mig03_wp11_env_registry.md`。
+  `agents-only/archive/mig03/mig03_wp11_env_registry.md`。
 - 验收：workspace all-features check、clippy、sb-core/app full test、fmt、boundaries 429、
   diff-check 全绿。
 - **Authorized transition:** WP14 已解锁；按 `workpackage_latest.md` 继续下一项 MIG-03 frontier。
 
 ## Resume (2026-07-11) - MIG-03 WP08 router stack merge DONE
 
-- **WP08 accepted:** `router/` is sole implementation home. `routing/` is a 25-line WP14
-  compatibility facade; ConfigIR engine/explain/trace moved under router, duplicate toy matcher,
+- **WP08 accepted:** `router/` is sole implementation home. Its former 25-line `routing/`
+  compatibility facade was removed by WP14; ConfigIR engine/explain/trace moved under router, duplicate toy matcher,
   IR, and reload router were deleted. Router-domain `pub struct Engine` count is one.
 - ConfigIR and rule-set paths share label-aware suffix matching; DNS continues through canonical
   `RuleMatcher` with no local domain matcher. Explain JSON has an exact field-order/value lock;
@@ -120,7 +121,7 @@
 
 ## Resume (2026-07-11) - MIG-03 WP04 semantic audit DONE
 
-- **WP04 accepted:** `mig03/mig03_wp04_coverage_matrix.md` corrects stale scaffold
+- **WP04 accepted:** `archive/mig03/mig03_wp04_coverage_matrix.md` corrects stale scaffold
   assumptions, inventories all live construction paths, and records per-protocol eight-dimension
   coverage, D9/D10/D14 decisions, cross-dependencies, test disposition, and parity handoffs.
 - Two WP05 GAP groups remain: SOCKS inbound Rust-only limiter/active-TCP/compatible metrics plus
@@ -157,7 +158,7 @@
   (incl. `trojan.rs` comment, golden spec, AGENTS.md). Nothing deleted.
 - **NOT moved (hard constraints)**: `mt_real_01_evidence/` + `mt_real_02_evidence/` (paths
   hard-coded in `scripts/tools/*.py` regression tests); `fable5审计报告/` (2026-06-29 disposition:
-  stays put, anchored by root README / docs / capabilities generator); `mig03/`, `post1313/` (active).
+  stays put, anchored by root README / docs / capabilities generator); `post1313/` remains active.
 - **Maintenance automation upgraded**: `06-scripts/verify-consistency.sh` now enforces S-tier
   line caps (active_context ≤300, workpackage ≤120) and a top-level file whitelist as hard
   failures, plus stale-Resume / oversized-log advisories. `log.md` pre-2026-06 bulk rolled into
@@ -167,15 +168,15 @@
 
 ## Resume (2026-07-06) - MIG-03 architecture de-dup migration PLANNED
 
-- **MIG-03 planning complete, no code changed**: `agents-only/mig03/` now holds the full
+- **MIG-03 planning snapshot (later executed and archived)**: `agents-only/archive/mig03/` holds the full
   planning set (README index + overview + WP01-WP14; this initial snapshot predated WP01
   execution) for the in-repo
   strangler-fig migration: trait unification, scaffold retirement, router-stack merge,
   control-plane/env convergence, feature slimming. User rejected the new-repo rewrite path.
-- Baseline metrics snapshot lives in `mig03/mig03_00_overview.md` §1/§6 (sb-core 108k LOC /
+- Baseline metrics snapshot lives in `archive/mig03/mig03_00_overview.md` §1/§6 (sb-core 108k LOC /
   103 features / 161 SB_* env vars; register.rs 4,264 lines; ≥6 OutboundConnector defs).
 - All optional technical choices pre-decided by user delegation (2026-07-06): see
-  `mig03/mig03_01_decisions.md` D1-D18; user gates removed from packages (only D18 escalation
+  `archive/mig03/mig03_01_decisions.md` D1-D18; user gates removed from packages (only D18 escalation
   remains). This planning snapshot initially exposed WP01 + WP04; live WP status is in each
   package header and the current update above; lane rules are in the README.
 - **Scope note**: planning artifacts only. No behavior, parity/BHV, gate, or packaging

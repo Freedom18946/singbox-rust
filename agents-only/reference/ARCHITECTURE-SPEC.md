@@ -1,7 +1,8 @@
 # 架构规范（Architecture Specification）
 
 > **整合自 singbox_archspec_v2**：定义 crate 边界、依赖方向和核心接口。  
-> **L19.3.1 决议生效**：`sb-core` 角色按“内核合集层（Kernel Aggregate）”执行，详见 `agents-only/archive/adr_l19_3_1_sb_core_role.md`。
+> **MIG-03 终局生效**：L19.3.1 的“内核合集层”过渡容忍已关闭；`sb-core`
+> 只承担路由、DNS、生命周期与运行时编排。
 
 ---
 
@@ -12,14 +13,11 @@
 ```
 sb-types   ← sb-config
    ↑            ↑
-   │            │
-sb-core   ← sb-adapters  ← sb-transport / sb-tls / sb-platform / sb-security
-   ↑
-   │
-sb-api / sb-metrics / sb-runtime
-   ↑
-   │
-  app (composition root)
+   └── sb-core ← sb-adapters ← sb-transport / sb-tls / sb-platform / sb-security
+          ↑           ↑
+   sb-api / sb-metrics / sb-runtime / sb-service-derp
+          ↑
+         app (composition root)
 ```
 
 **规则**：依赖只能单向，箭头方向表示 "被依赖"。
@@ -33,13 +31,13 @@ sb-api / sb-metrics / sb-runtime
 | Ports traits、错误类型定义 | rustls/quinn/ws 库 |
 | serde, bytes, ipnet | 系统调用/文件 I/O crate |
 
-#### sb-core（内核合集层）
+#### sb-core（内核引擎层）
 | 允许 | 禁止 |
 |------|------|
-| 路由/策略/会话编排（核心职责） | 无门控新增 Web/TLS/QUIC 重依赖 |
-| 已存在协议/服务/传输模块（必须 feature-gated） | 未登记 owner 的重复实现长期保留 |
+| 路由/策略/会话编排（核心职责） | Web/TLS/QUIC 重依赖 |
+| DNS、生命周期、registry 与通用数据面原语 | inbound/outbound 协议实现 |
 | 通过 Ports 与外部交互 | 绕过 `check-boundaries.sh` 的依赖边界检查 |
-| 与 sb-adapters 协同迁移重叠实现 | 未经 ADR 擅自扩大对外职责 |
+| 注入式运行配置 | axum/tonic 控制面或直接读取 `SB_*` 环境变量 |
 
 #### sb-adapters（协议适配器层）
 | 允许 | 禁止 |
@@ -101,7 +99,7 @@ sb-api / sb-metrics / sb-runtime
 
 - **sb-api** 只通过 Ports 调用 sb-core
 - **sb-api** 不能直接调用 sb-adapters
-- Web 框架优先放在 sb-api；`sb-core` 中仅允许在 `service_*` feature 下保留现有实现
+- Web 框架与 SSMAPI/V2Ray API 归 sb-api；DERP 归 sb-service-derp；sb-core 不承载 Web 框架
 
 ---
 
@@ -196,14 +194,14 @@ sb-api / sb-metrics / sb-runtime
 singbox-rust/
 ├── app/                    # CLI 和组合根
 ├── crates/
-│   ├── sb-core/           # 内核合集层（Kernel Aggregate）
+│   ├── sb-core/           # 内核引擎层
 │   │   ├── src/
 │   │   │   ├── router/    # 路由引擎
 │   │   │   ├── dns/       # DNS 系统
 │   │   │   ├── inbound/   # 入站管理
 │   │   │   ├── outbound/  # 出站管理
 │   │   │   ├── endpoint/  # 端点
-│   │   │   └── services/  # 服务
+│   │   │   └── services/  # 非 Web 内核服务
 │   ├── sb-adapters/       # 协议适配器
 │   │   ├── src/
 │   │   │   ├── inbound/   # 入站协议
@@ -215,6 +213,7 @@ singbox-rust/
 │   ├── sb-tls/            # TLS 层
 │   ├── sb-platform/       # 平台能力
 │   ├── sb-api/            # 外部 API
+│   ├── sb-service-derp/   # DERP 服务
 │   ├── sb-metrics/        # 可观测性
 │   ├── sb-runtime/        # 运行时
 │   ├── sb-security/       # 安全

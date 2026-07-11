@@ -31,7 +31,7 @@
 | 规则 | 详情 |
 |------|------|
 | sb-types 零大依赖 | 禁止 tokio/hyper/axum |
-| sb-core 内核合集治理 | 允许遗留协议/服务实现，但必须 feature-gated + 可审计 |
+| sb-core 引擎边界 | 只放路由、DNS、生命周期与运行时编排；协议归 adapters，Web 控制面归 API/service crate |
 | 协议归属默认 | 新增协议默认放 sb-adapters；例外需 ADR |
 | 控制面隔离 | sb-api 不直接依赖 sb-adapters；sb-core 的 web 依赖必须 optional |
 
@@ -46,6 +46,8 @@
 | 逐步可选化 | 先 `optional = true`，再 feature 列表加 `dep:xxx`，最后 `cargo check` |
 | 分层编译验证 | `cargo check -p sb-types` → `-p sb-core` → `--workspace` |
 | feature gate 逐步卸载 | 先改 builder 不依赖 out_*，再检查 adapter，最后删 dead forwarding |
+| 兼容 facade 必有删除闸门 | 过渡模块写明删除包，并在终局 boundary gate 锁定路径不存在 |
+| 终局指标重放源码事实 | LOC、feature、cfg、env、trait 数分别用独立命令实测；不沿用规划快照 |
 
 ## 架构模式
 
