@@ -64,7 +64,7 @@ impl Runtime {
                 format!("Failed to initialize bridge from IR: {}", e),
             )
         })?;
-        let switchboard = switchboard::SwitchboardBuilder::from_config_ir(ir)?;
+        let switchboard = switchboard::SwitchboardBuilder::from_bridge(&bridge)?;
         Ok(Self::new(engine, bridge, switchboard))
     }
 }

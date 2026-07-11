@@ -113,6 +113,9 @@ async fn start_trojan_server_on(
     cert_pem: &str,
     key_pem: &str,
 ) -> Option<TrojanServerHandle> {
+    let rules = sb_core::router::rules::parse_rules("default=direct");
+    sb_core::router::rules::install_global(sb_core::router::rules::Engine::build(rules));
+
     let listener = match TcpListener::bind(listen).await {
         Ok(listener) => listener,
         Err(err) => {

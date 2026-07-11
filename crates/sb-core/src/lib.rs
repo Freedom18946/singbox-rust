@@ -50,13 +50,13 @@ pub mod errors;
 pub mod health;
 /// Inbound protocol implementations and manager.
 /// 入站协议实现和管理器。
-pub mod inbound; // <— 新增导出，供 bridge/scaffold 使用
+pub mod inbound;
 pub mod log;
 pub mod metrics;
 pub mod net;
 /// Outbound protocol implementations and manager.
 /// 出站协议实现和管理器。
-pub mod outbound; // <— 新增导出，供 bridge/scaffold 使用
+pub mod outbound;
 /// Pipeline utilities for adapters.
 /// 适配器的管道工具。
 #[cfg(feature = "router")]

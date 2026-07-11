@@ -65,15 +65,11 @@ require|W6-09-use-empty-switchboard-upstream-auth-test|app/tests/upstream_auth.r
 require|W6-10-use-empty-switchboard-upstream-socks-http-test|app/tests/upstream_socks_http.rs|OutboundSwitchboard::new\(\)|upstream_socks_http test should use empty switchboard
 
 forbid|W7-01-no-switchboard-socksup-concrete|crates/sb-core/src/runtime/switchboard.rs|socks_upstream::SocksUp|switchboard should not construct core concrete SOCKS upstream connector
-require|W7-02-switchboard-socks-explicit-unsupported|crates/sb-core/src/runtime/switchboard.rs|SOCKS outbound in switchboard is disabled; use adapter bridge/supervisor path|switchboard SOCKS path should fail with explicit migration guidance
 
 forbid|W8-01-no-switchboard-hy2-concrete|crates/sb-core/src/runtime/switchboard.rs|outbound::hysteria2::Hysteria2Outbound|switchboard should not construct core concrete Hysteria2 connector
-require|W8-02-switchboard-hy2-explicit-unsupported|crates/sb-core/src/runtime/switchboard.rs|Hysteria2 outbound in switchboard is disabled; use adapter bridge/supervisor path|switchboard Hysteria2 path should fail with explicit migration guidance
 
 forbid|W9-01-no-core-http-inbound-bridge-impl|crates/sb-core/src/adapter/mod.rs|inbound::http::\{HttpConfig, HttpInboundService\}|core bridge should not instantiate core HTTP inbound implementation
 forbid|W9-02-no-core-mixed-inbound-bridge-impl|crates/sb-core/src/adapter/mod.rs|inbound::mixed::MixedInbound|core bridge should not instantiate core Mixed inbound implementation
-require|W9-03-http-inbound-explicit-unsupported|crates/sb-core/src/adapter/mod.rs|core bridge HTTP inbound is disabled|core bridge HTTP inbound path should fail with explicit migration guidance
-require|W9-04-mixed-inbound-explicit-unsupported|crates/sb-core/src/adapter/mod.rs|core bridge mixed inbound is disabled|core bridge Mixed inbound path should fail with explicit migration guidance
 
 forbid|W10-01-no-core-http-inbound-test-concrete|app/tests/inbound_http.rs|sb_core::inbound::http::|inbound_http tests should not instantiate core HTTP inbound concrete implementation
 require|W10-02-inbound-http-test-uses-adapter-http|app/tests/inbound_http.rs|use sb_adapters::inbound::http::\{serve_http, HttpProxyConfig\};|inbound_http tests should use sb-adapters HTTP inbound implementation
@@ -93,13 +89,10 @@ require|W15-03-selector-builder-uses-core-group|crates/sb-adapters/src/outbound/
 require|W15-04-urltest-builder-uses-core-group|crates/sb-adapters/src/outbound/urltest.rs|SelectorGroup::new_urltest|urltest builder should use core SelectorGroup implementation
 
 forbid|W16-01-no-bootstrap-hy2-core-concrete|app/src/outbound_groups.rs|sb_core::outbound::hysteria2::Hysteria2Outbound|bootstrap selector/urltest connector path should not construct core Hysteria2 concrete
-require|W16-02-bootstrap-hy2-explicit-disabled-msg|app/src/outbound_groups.rs|Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Hysteria2 path should emit explicit migration guidance
 
 forbid|W17-01-no-bootstrap-socks-core-concrete|app/src/outbound_groups.rs|socks_upstream::SocksUp|bootstrap selector/urltest connector path should not construct core SOCKS concrete
-require|W17-02-bootstrap-socks-explicit-disabled-msg|app/src/outbound_groups.rs|SOCKS5 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap SOCKS5 path should emit explicit migration guidance
 
 forbid|W18-01-no-bootstrap-http-core-concrete|app/src/outbound_groups.rs|http_upstream::HttpUp|bootstrap selector/urltest connector path should not construct core HTTP upstream concrete
-require|W18-02-bootstrap-http-explicit-disabled-msg|app/src/outbound_groups.rs|HTTP proxy selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap HTTP proxy path should emit explicit migration guidance
 
 forbid|W19-01-no-bootstrap-tuic-core-concrete|app/src/outbound_groups.rs|outbound::tuic::TuicOutbound|bootstrap selector/urltest connector path should not construct core TUIC concrete
 
@@ -108,78 +101,43 @@ forbid|W20-01-no-bootstrap-vmess-core-concrete|app/src/outbound_groups.rs|outbou
 forbid|W21-01-no-bootstrap-vless-core-concrete|app/src/outbound_groups.rs|outbound::vless::VlessOutbound|bootstrap selector/urltest connector path should not construct core VLESS concrete
 
 forbid|W22-01-no-bootstrap-direct-core-concrete|app/src/outbound_groups.rs|direct_connector::DirectConnector|bootstrap selector/urltest connector path should not construct core direct concrete
-require|W22-02-bootstrap-direct-uses-adapter-wrapper|app/src/outbound_groups.rs|DirectConnector::new\(\)|bootstrap direct path should route through adapter direct wrapper
 
 forbid|W23-01-no-bootstrap-trojan-core-concrete|app/src/outbound_groups.rs|outbound::trojan::TrojanOutbound|bootstrap selector/urltest connector path should not construct core Trojan concrete
 
 forbid|W24-01-no-bootstrap-silent-fallback-none|app/src/outbound_groups.rs|other => None|bootstrap selector/urltest connector path should not use silent fallback none
-require|W24-02-bootstrap-fallback-explicit-disabled-msg|app/src/outbound_groups.rs|unsupported selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap fallback path should emit explicit migration guidance
 
-require|W25-01-bootstrap-block-explicit-disabled-msg|app/src/outbound_groups.rs|Block selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap Block path should emit explicit migration guidance
-require|W25-02-bootstrap-nested-connector-explicit-disabled-msg|app/src/outbound_groups.rs|Nested connector selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path|bootstrap nested connector path should emit explicit migration guidance
 
 forbid|W26-01-no-switchboard-httpup-concrete|crates/sb-core/src/runtime/switchboard.rs|outbound::http_upstream::HttpUp|switchboard should not construct core HTTP upstream concrete
-require|W26-02-switchboard-http-explicit-disabled|crates/sb-core/src/runtime/switchboard.rs|HTTP outbound in switchboard is disabled; use adapter bridge/supervisor path|switchboard HTTP path should emit explicit migration guidance
 
 forbid|W27-01-no-core-bridge-httpup-concrete|crates/sb-core/src/adapter/mod.rs|outbound::http_upstream::HttpUp|core bridge should not construct core HTTP upstream concrete
 forbid|W27-02-no-core-bridge-socksup-concrete|crates/sb-core/src/adapter/mod.rs|outbound::socks_upstream::SocksUp|core bridge should not construct core SOCKS upstream concrete
-require|W27-03-core-bridge-http-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge HTTP outbound is disabled; use adapter::bridge::build_bridge|core bridge HTTP outbound should emit explicit migration guidance
-require|W27-04-core-bridge-socks-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge SOCKS outbound is disabled; use adapter::bridge::build_bridge|core bridge SOCKS outbound should emit explicit migration guidance
 
 forbid|W28-01-no-core-bridge-silent-direct-fallback|crates/sb-core/src/adapter/mod.rs|_ => direct_connector_fallback\(\)|core bridge should not silently fallback unknown outbound type to direct
-require|W28-02-core-bridge-fallback-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge outbound type is disabled; use adapter::bridge::build_bridge|core bridge fallback should emit explicit migration guidance
 forbid|W29-01-no-core-bridge-vless-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Vless => \{[[:space:]]*direct_connector_fallback\(\)|core bridge VLESS outbound should not fallback to direct
-require|W29-02-core-bridge-vless-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge VLESS outbound is disabled; use adapter::bridge::build_bridge|core bridge VLESS outbound should emit explicit migration guidance
 forbid|W30-01-no-core-bridge-shadowsocks-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Shadowsocks => direct_connector_fallback\(\)|core bridge Shadowsocks outbound should not fallback to direct
-require|W30-02-core-bridge-shadowsocks-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Shadowsocks outbound is disabled; use adapter::bridge::build_bridge|core bridge Shadowsocks outbound should emit explicit migration guidance
 forbid|W31-01-no-core-bridge-urltest-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::UrlTest => direct_connector_fallback\(\)|core bridge URLTest outbound should not fallback to direct
-require|W31-02-core-bridge-urltest-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge URLTest outbound is disabled; use adapter::bridge::build_bridge|core bridge URLTest outbound should emit explicit migration guidance
 forbid|W32-01-no-core-bridge-shadowtls-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Shadowtls => \{[[:space:]]*direct_connector_fallback\(\)|core bridge ShadowTLS outbound should not fallback to direct
-require|W32-02-core-bridge-shadowtls-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge ShadowTLS outbound is disabled; use adapter::bridge::build_bridge|core bridge ShadowTLS outbound should emit explicit migration guidance
 forbid|W33-01-no-core-bridge-hysteria2-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Hysteria2 => \{[[:space:]]*direct_connector_fallback\(\)|core bridge Hysteria2 outbound should not fallback to direct
-require|W33-02-core-bridge-hysteria2-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Hysteria2 outbound is disabled; use adapter::bridge::build_bridge|core bridge Hysteria2 outbound should emit explicit migration guidance
 forbid|W34-01-no-core-bridge-tuic-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Tuic => \{[[:space:]]*direct_connector_fallback\(\)|core bridge TUIC outbound should not fallback to direct
-require|W34-02-core-bridge-tuic-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge TUIC outbound is disabled; use adapter::bridge::build_bridge|core bridge TUIC outbound should emit explicit migration guidance
 forbid|W35-01-no-core-bridge-vmess-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Vmess => \{[[:space:]]*direct_connector_fallback\(\)|core bridge VMess outbound should not fallback to direct
-require|W35-02-core-bridge-vmess-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge VMess outbound is disabled; use adapter::bridge::build_bridge|core bridge VMess outbound should emit explicit migration guidance
 forbid|W36-01-no-core-bridge-trojan-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Trojan => \{[[:space:]]*direct_connector_fallback\(\)|core bridge Trojan outbound should not fallback to direct
-require|W36-02-core-bridge-trojan-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Trojan outbound is disabled; use adapter::bridge::build_bridge|core bridge Trojan outbound should emit explicit migration guidance
 forbid|W37-01-no-core-bridge-ssh-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Ssh => \{[[:space:]]*direct_connector_fallback\(\)|core bridge SSH outbound should not fallback to direct
-require|W37-02-core-bridge-ssh-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge SSH outbound is disabled; use adapter::bridge::build_bridge|core bridge SSH outbound should emit explicit migration guidance
 forbid|W38-01-no-core-bridge-selector-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Selector => \{[[:space:]]*direct_connector_fallback\(\)|core bridge Selector outbound should not fallback to direct
-require|W38-02-core-bridge-selector-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Selector outbound is disabled; use adapter::bridge::build_bridge|core bridge Selector outbound should emit explicit migration guidance
 forbid|W39-01-no-core-bridge-block-direct-fallback-noscaffold|crates/sb-core/src/adapter/mod.rs|Fall back to direct connector when scaffold is not available|core bridge Block outbound should not fallback to direct in no-scaffold mode
-require|W39-02-core-bridge-block-canonical|crates/sb-core/src/adapter/mod.rs|canonical_bridge::BlockOutbound::new|core bridge Block fallback remains canonical until WP06 removes scaffold fallbacks
 forbid|W40-01-no-core-bridge-direct-fallback|crates/sb-core/src/adapter/mod.rs|sb_config::ir::OutboundType::Direct => direct_connector_fallback\(\)|core bridge Direct outbound should not use direct fallback helper
-require|W40-02-core-bridge-direct-explicit-disabled|crates/sb-core/src/adapter/mod.rs|core bridge Direct outbound is disabled; use adapter::bridge::build_bridge|core bridge Direct outbound should emit explicit migration guidance
 forbid|W40-03-no-direct-fallback-helper|crates/sb-core/src/adapter/mod.rs|fn direct_connector_fallback\(\)|core bridge direct fallback helper should be removed after full fallback cleanup
 forbid|W41-01-no-tools-named-outbound-legacy-fallback-msg|app/src/cli/tools.rs|outbound not found and no direct fallback|tools connect named outbound path should not use legacy fallback message
 require|W41-02-tools-named-outbound-explicit-disabled|app/src/cli/tools.rs|requested outbound not found; direct fallback is disabled|tools connect named outbound path should emit explicit no-fallback diagnostics
 forbid|W42-01-no-tools-implicit-direct-fallback|app/src/cli/tools.rs|\.find_direct_fallback\(\)|tools connect default outbound path should not use implicit direct fallback
 require|W42-02-tools-default-direct-explicit-disabled|app/src/cli/tools.rs|direct outbound not found; implicit direct fallback is disabled|tools connect default outbound path should emit explicit no-fallback diagnostics
-forbid|W43-01-no-http-connect-inbound-direct-tag-fallback|crates/sb-core/src/inbound/http_connect.rs|outbound_tag = \"direct\"\.to_string\(\);|HTTP CONNECT inbound route path should not retag missing outbound to direct
-forbid|W43-02-no-http-connect-inbound-direct-fallback-call|crates/sb-core/src/inbound/http_connect.rs|br\.find_direct_fallback\(\)|HTTP CONNECT inbound route path should not fallback to direct connector
-require|W43-03-http-connect-inbound-explicit-no-fallback-msg|crates/sb-core/src/inbound/http_connect.rs|no outbound connector available; direct fallback is disabled in HTTP CONNECT inbound route path|HTTP CONNECT inbound route path should emit explicit no-fallback diagnostics
-forbid|W44-01-no-socks5-inbound-direct-tag-fallback|crates/sb-core/src/inbound/socks5.rs|outbound_tag = \"direct\"\.to_string\(\);|SOCKS5 inbound route path should not retag missing outbound to direct
-forbid|W44-02-no-socks5-inbound-direct-fallback-call|crates/sb-core/src/inbound/socks5.rs|bridge\.find_direct_fallback\(\)|SOCKS5 inbound route path should not fallback to direct connector
-require|W44-03-socks5-inbound-explicit-no-fallback-msg|crates/sb-core/src/inbound/socks5.rs|no outbound connector available; direct fallback is disabled in SOCKS5 inbound route path|SOCKS5 inbound route path should emit explicit no-fallback diagnostics
 forbid|W45-01-no-udp-balancer-noscaffold-direct-fallback|crates/sb-core/src/outbound/udp_balancer.rs|Fallback to direct when scaffold feature is not enabled|UDP balancer SOCKS5 path should not fallback to direct in no-scaffold mode
 forbid|W45-02-no-udp-balancer-no-upstream-direct-fallback|crates/sb-core/src/outbound/udp_balancer.rs|Fallback direct to not break userspace|UDP balancer should not fallback to direct when SOCKS5 upstream is missing
-require|W45-03-udp-balancer-noscaffold-explicit-disabled|crates/sb-core/src/outbound/udp_balancer.rs|UDP SOCKS5 balancer path is disabled without scaffold; direct fallback is disabled|UDP balancer no-scaffold path should emit explicit no-fallback diagnostics
-require|W45-04-udp-balancer-no-upstream-explicit-disabled|crates/sb-core/src/outbound/udp_balancer.rs|no SOCKS5 upstream available in UDP balancer path; direct fallback is disabled|UDP balancer no-upstream path should emit explicit no-fallback diagnostics
 forbid|W46-01-no-tools-udp-direct-fallback-comment|app/src/cli/tools.rs|Fallback: direct UDP|tools connect udp should not keep direct UDP fallback path
 forbid|W46-02-no-tools-udp-direct-fallback-socket|app/src/cli/tools.rs|let target = format!\(\"\\{host\\}:\\{port\\}\"\);|tools connect udp should not build direct UDP target as fallback
 require|W46-03-tools-udp-explicit-no-fallback-msg|app/src/cli/tools.rs|canonical UDP outbound not found; direct fallback is disabled|tools connect udp should emit explicit no-fallback diagnostics
 forbid|W47-01-no-v2ray-test-route-direct-default|crates/sb-api/src/v2ray/services.rs|routing_ctx\.outbound_tag = \"direct\"\.to_string\(\);|v2ray test_route should not auto-fill direct outbound as fallback
 require|W47-02-v2ray-test-route-explicit-no-fallback-msg|crates/sb-api/src/v2ray/services.rs|routing outbound_tag is empty; implicit direct fallback is disabled; provide outbound_tag explicitly|v2ray test_route should emit explicit no-fallback diagnostics for empty outbound_tag
 forbid|W48-01-no-bridge-find-direct-fallback-helper|crates/sb-core/src/adapter/mod.rs|pub fn find_direct_fallback\(&self\)|Bridge direct fallback helper should be removed after direct fallback cleanup
-forbid|W49-01-no-socks5-udp-nat-direct-fallback|crates/sb-core/src/inbound/socks5.rs|crate::net::udp_nat::NatMap::new|SOCKS5 inbound UDP path should not keep NAT-based direct fallback
-forbid|W49-02-no-socks5-udp-direct-fallback-comment|crates/sb-core/src/inbound/socks5.rs|Direct UDP via NAT entry per \(client, dst\)|SOCKS5 inbound UDP path should not document NAT direct fallback path
-require|W49-03-socks5-udp-explicit-no-fallback-msg|crates/sb-core/src/inbound/socks5.rs|socks5-udp: outbound '.*' has no UDP session; direct fallback is disabled; use adapter bridge/supervisor path|SOCKS5 inbound UDP path should emit explicit no-fallback diagnostics
-forbid|W50-01-no-http-connect-stub-direct-default|crates/sb-core/src/inbound/http_connect.rs|outbound: \"direct\"\.to_string\(\),|HTTP CONNECT no-router stub decision should not hardcode direct default outbound
-forbid|W50-02-no-socks5-stub-direct-default|crates/sb-core/src/inbound/socks5.rs|outbound: \"direct\"\.to_string\(\),|SOCKS5 no-router stub decision should not hardcode direct default outbound
-require|W50-03-http-connect-stub-explicit-default-selector|crates/sb-core/src/inbound/http_connect.rs|outbound: self\.resolve_default_outbound_tag\(\),|HTTP CONNECT no-router stub should select outbound from config instead of direct fallback
-require|W50-04-socks5-stub-explicit-default-selector|crates/sb-core/src/inbound/socks5.rs|outbound: self\.resolve_default_outbound_tag\(\),|SOCKS5 no-router stub should select outbound from config instead of direct fallback
 forbid|W51-01-no-router-explain-direct-default|crates/sb-core/src/router/explain.rs|\"direct\"\.to_string\(\)|router explain extraction should not default unresolved outbound to direct
 require|W51-02-router-explain-unresolved-default|crates/sb-core/src/router/explain.rs|\"unresolved\"\.to_string\(\)|router explain extraction should emit explicit unresolved marker when outbound cannot be derived
 forbid|W52-01-no-router-explain-derive-default-fallback|crates/sb-core/src/router/explain.rs|unwrap_or\(\"default\"\)|router explain derive_outbound should not use silent default fallback marker

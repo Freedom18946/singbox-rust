@@ -1223,7 +1223,12 @@ mod tests {
 
     fn make_direct_inbound() -> EnhancedTunInbound {
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -1277,7 +1282,12 @@ mod tests {
         });
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2015,7 +2025,12 @@ mod tests {
         });
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2068,7 +2083,12 @@ mod tests {
         drop(listener);
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2123,7 +2143,12 @@ mod tests {
         });
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2201,7 +2226,12 @@ mod tests {
         drop(listener);
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2261,7 +2291,12 @@ mod tests {
         });
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2351,7 +2386,12 @@ mod tests {
         });
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2436,7 +2476,12 @@ mod tests {
         });
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2499,7 +2544,12 @@ mod tests {
         drop(listener);
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2551,7 +2601,12 @@ mod tests {
         });
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,
@@ -2599,7 +2654,12 @@ mod tests {
         });
 
         let mut map = std::collections::HashMap::new();
-        map.insert("direct".to_string(), OutboundImpl::Direct);
+        map.insert(
+            "direct".to_string(),
+            OutboundImpl::Connector(std::sync::Arc::new(
+                crate::outbound::direct::DirectOutbound::new(),
+            )),
+        );
         let outbounds = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
         let router = Arc::new(RouterHandle::new(Router::with_default(
             OutboundKind::Direct,

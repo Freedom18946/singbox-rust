@@ -77,7 +77,7 @@ fn test_block_outbound_registration() {
     assert!(result.is_some(), "Block outbound should be buildable");
 
     let connector = result.unwrap();
-    assert!(!connector.network().contains(&sb_types::NetworkKind::Udp));
+    assert!(connector.network().contains(&sb_types::NetworkKind::Udp));
 }
 
 #[tokio::test]

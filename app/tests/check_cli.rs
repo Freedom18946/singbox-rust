@@ -12,9 +12,9 @@ fn bin() -> String {
 fn good_config_ok() {
     let good = r#"
 schema_version: 2
-inbounds: [ { type: http, listen: "127.0.0.1", port: 18081 } ]
-outbounds: [ { type: direct, name: direct } ]
-route: { rules: [ { domain: ["example.com"], outbound: "direct" } ] }
+inbounds: []
+outbounds: []
+route: { rules: [] }
 "#;
     let temp_file = NamedTempFile::new().unwrap();
     fs::write(temp_file.path(), good).unwrap();

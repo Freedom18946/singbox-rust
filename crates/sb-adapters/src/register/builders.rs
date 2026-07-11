@@ -2171,7 +2171,7 @@ fn build_tun_inbound(
 
 #[allow(dead_code)]
 fn stub_inbound(kind: &str) {
-    warn!(target: "crate::register", inbound=%kind, "adapter inbound not implemented yet; falling back to scaffold");
+    warn!(target: "crate::register", inbound=%kind, "adapter inbound is not compiled into this build");
 }
 
 #[cfg(feature = "dns")]
@@ -2852,7 +2852,7 @@ fn build_ssh_outbound(
 
 #[allow(dead_code)]
 fn stub_outbound(kind: &str) {
-    warn!(target: "crate::register", outbound=%kind, "adapter outbound not implemented yet; falling back to scaffold");
+    warn!(target: "crate::register", outbound=%kind, "adapter outbound is not compiled into this build");
 }
 
 #[cfg(test)]

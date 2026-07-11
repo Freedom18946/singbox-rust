@@ -656,6 +656,14 @@ fi
 for removed in \
     crates/sb-core/src/outbound/traits.rs \
     crates/sb-core/src/pipeline.rs \
+    crates/sb-core/src/adapter/canonical_bridge.rs \
+    crates/sb-core/src/outbound/direct_connector.rs \
+    crates/sb-core/src/inbound/socks5.rs \
+    crates/sb-core/src/inbound/http_connect.rs \
+    crates/sb-core/src/inbound/mixed.rs \
+    crates/sb-core/src/outbound/socks5_udp.rs \
+    crates/sb-core/src/outbound/udp_socks5.rs \
+    crates/sb-core/src/outbound/udp_proxy_glue.rs \
     crates/sb-adapters/src/canonical.rs \
     crates/sb-proto/Cargo.toml; do
     if [ -e "$removed" ]; then
@@ -682,9 +690,14 @@ if rg -n 'struct[[:space:]]+[A-Za-z0-9_]*(ConnectorWrapper|InboundAdapter)\b' \
     echo "  FAIL: registration module still contains per-protocol adapter wrappers"
     V8_FAILS=$((V8_FAILS + 1))
 fi
-if ! rg -n 'WP06 removes scaffold fallbacks' \
-    crates/sb-core/src/adapter/inbound_transition.rs >/dev/null 2>&1; then
-    echo "  FAIL: sole inbound transition bridge lacks explicit WP06 removal schedule"
+if rg -n 'feature = "scaffold"|features = \[[^]]*"scaffold"' \
+    crates app --glob 'Cargo.toml' --glob '*.rs' >/dev/null 2>&1; then
+    echo "  FAIL: retired scaffold feature remains"
+    V8_FAILS=$((V8_FAILS + 1))
+fi
+if rg -n 'OutboundImpl::(Direct|Block|Socks5|HttpProxy)|DirectConnector|canonical_bridge' \
+    crates/sb-core/src crates/sb-api/src crates/sb-adapters/src app/src --glob '*.rs' >/dev/null 2>&1; then
+    echo "  FAIL: core-owned direct/block or legacy outbound variants remain"
     V8_FAILS=$((V8_FAILS + 1))
 fi
 

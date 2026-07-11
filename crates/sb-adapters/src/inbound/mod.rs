@@ -75,6 +75,7 @@ pub mod hysteria2;
 
 #[cfg(feature = "adapter-anytls")]
 pub mod anytls;
+pub mod connect;
 
 #[cfg(feature = "tun")]
 pub mod tun_session;

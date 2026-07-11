@@ -1,5 +1,5 @@
 #![allow(clippy::manual_flatten, clippy::clone_on_copy)]
-//! Fake upstream proxy servers to validate scaffold outbound connectors.
+//! Fake upstream proxy servers to validate adapter registry outbound connectors.
 use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RouteIR, RuleIR};
 use sb_core::adapter::bridge::build_bridge;
 use sb_core::routing::engine::Engine;
@@ -208,7 +208,7 @@ fn start_fake_http_up(
 }
 
 #[test]
-fn outbound_scaffold_socks_and_http_connect() {
+fn outbound_registry_socks_and_http_connect() {
     sb_adapters::register_all();
     let Some((echo_addr, _eh)) = start_echo() else {
         return;

@@ -61,6 +61,9 @@ async fn start_echo_server() -> Option<SocketAddr> {
 
 // Helper: Start Shadowsocks server
 async fn start_ss_server(method: &str, password: &str) -> Option<(SocketAddr, mpsc::Sender<()>)> {
+    let rules = sb_core::router::rules::parse_rules("default=direct");
+    sb_core::router::rules::install_global(sb_core::router::rules::Engine::build(rules));
+
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
@@ -364,17 +367,22 @@ async fn test_ss_high_concurrency() {
         let success_count = success_count.clone();
 
         handles.push(tokio::spawn(async move {
-            let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+            let _ = tokio::time::timeout(Duration::from_secs(20), async {
+                let target =
+                    TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-            if let Ok(mut stream) = connector.dial(&Session::outbound(target)).await {
-                let test_data = format!("test{}", i);
-                if stream.write_all(test_data.as_bytes()).await.is_ok() {
-                    let mut buf = vec![0u8; test_data.len()];
-                    if stream.read_exact(&mut buf).await.is_ok() && buf == test_data.as_bytes() {
-                        success_count.fetch_add(1, Ordering::Relaxed);
+                if let Ok(mut stream) = connector.dial(&Session::outbound(target)).await {
+                    let test_data = format!("test{}", i);
+                    if stream.write_all(test_data.as_bytes()).await.is_ok() {
+                        let mut buf = vec![0u8; test_data.len()];
+                        if stream.read_exact(&mut buf).await.is_ok() && buf == test_data.as_bytes()
+                        {
+                            success_count.fetch_add(1, Ordering::Relaxed);
+                        }
                     }
                 }
-            }
+            })
+            .await;
         }));
     }
 

@@ -5,7 +5,6 @@
 
 use crate::error::SbResult;
 
-use anyhow::Context;
 use std::collections::HashMap;
 use std::sync::Arc;
 use std::time::Duration;
@@ -55,6 +54,17 @@ impl OutboundSwitchboard {
     {
         let connector = Arc::new(connector);
 
+        self.registry.insert(name.clone(), connector);
+        info!("Registered outbound connector: '{}'", name);
+        Ok(())
+    }
+
+    /// Register an already-built canonical connector.
+    pub fn register_arc(
+        &mut self,
+        name: String,
+        connector: Arc<dyn sb_types::Outbound>,
+    ) -> SbResult<()> {
         self.registry.insert(name.clone(), connector);
         info!("Registered outbound connector: '{}'", name);
         Ok(())
@@ -127,110 +137,34 @@ pub struct SwitchboardBuilder {
 }
 
 impl SwitchboardBuilder {
-    /// Create a new builder
+    /// Create a new builder.
     pub fn new() -> Self {
         Self {
             switchboard: OutboundSwitchboard::new(),
         }
     }
 
-    /// Build outbound connectors from configuration IR
-    pub fn from_config_ir(ir: &sb_config::ir::ConfigIR) -> SbResult<OutboundSwitchboard> {
+    /// Build switchboard from canonical connectors already assembled by adapter registry.
+    pub fn from_bridge(bridge: &crate::adapter::Bridge) -> SbResult<OutboundSwitchboard> {
         let mut builder = Self::new();
-
-        // Register outbound connectors from IR
-        for outbound_ir in &ir.outbounds {
-            let name = outbound_ir.name.as_deref().unwrap_or("unnamed");
-            let result = builder.try_register_from_ir(outbound_ir);
-            match result {
-                Ok(()) => {
-                    info!("Successfully registered outbound: {}", name);
-                }
-                Err(e) => {
-                    warn!(
-                        "Failed to register outbound '{}': {}. Using 501 degraded mode.",
-                        name, e
-                    );
-
-                    // Register a 501 degraded connector for this outbound
-                    let degraded = DegradedConnector::new(name, e.to_string());
-                    builder
-                        .switchboard
-                        .register(name.to_string(), degraded)
-                        .context("Failed to register degraded connector")?;
-                }
-            }
+        for (name, _kind, connector) in &bridge.outbounds {
+            builder
+                .switchboard
+                .register_arc(name.clone(), connector.clone())?;
         }
-
         Ok(builder.switchboard)
     }
 
-    /// Try to register a connector from outbound IR
-    #[allow(unreachable_code)]
-    fn try_register_from_ir(&mut self, ir: &sb_config::ir::OutboundIR) -> AdapterResult<()> {
-        use sb_config::ir::OutboundType;
-
-        #[allow(unused_variables)]
-        let name = ir.name.as_deref().unwrap_or("unnamed");
-
-        match ir.ty {
-            OutboundType::Direct => {
-                self.switchboard
-                    .register(
-                        name.to_string(),
-                        crate::adapter::canonical_bridge::DirectOutbound::new(name),
-                    )
-                    .map_err(|e| AdapterError::Other(e.into()))?;
-            }
-
-            OutboundType::Block => {
-                self.switchboard
-                    .register(
-                        name.to_string(),
-                        crate::adapter::canonical_bridge::BlockOutbound::new(name),
-                    )
-                    .map_err(|e| AdapterError::Other(e.into()))?;
-            }
-
-            OutboundType::Http => {
-                return Err(AdapterError::UnsupportedProtocol(
-                    "HTTP outbound in switchboard is disabled; use adapter bridge/supervisor path"
-                        .to_string(),
-                ));
-            }
-
-            OutboundType::Socks => {
-                return Err(AdapterError::UnsupportedProtocol(
-                    "SOCKS outbound in switchboard is disabled; use adapter bridge/supervisor path"
-                        .to_string(),
-                ));
-            }
-
-            OutboundType::Hysteria2 => {
-                return Err(AdapterError::UnsupportedProtocol(
-                    "Hysteria2 outbound in switchboard is disabled; use adapter bridge/supervisor path"
-                        .to_string(),
-                ));
-            }
-
-            OutboundType::Selector | OutboundType::UrlTest => {
-                return Err(AdapterError::UnsupportedProtocol(
-                    "Selector/urltest outbounds are handled via bridge/registry".to_string(),
-                ));
-            }
-
-            _ => {
-                return Err(AdapterError::UnsupportedProtocol(format!(
-                    "Outbound type {:?} not supported or feature not enabled",
-                    ir.ty
-                )));
-            }
-        }
-
-        Ok(())
+    /// Legacy IR protocol construction is removed. Use adapter bridge first.
+    pub fn from_config_ir(_ir: &sb_config::ir::ConfigIR) -> SbResult<OutboundSwitchboard> {
+        Err(crate::error::SbError::config(
+            sb_types::IssueCode::SchemaInvalid,
+            "switchboard_registry_required",
+            "switchboard protocol construction requires adapter::bridge::build_bridge",
+        ))
     }
 
-    /// Consume the builder and return the switchboard
+    /// Consume builder and return switchboard.
     pub fn build(self) -> OutboundSwitchboard {
         self.switchboard
     }
@@ -293,9 +227,8 @@ mod tests {
     #[allow(unused_imports)]
     use super::*;
 
-    #[cfg(feature = "scaffold")]
     #[test]
-    fn registers_http_and_socks_connectors() {
+    fn ir_construction_requires_adapter_bridge() {
         let ir = sb_config::ir::ConfigIR {
             outbounds: vec![
                 sb_config::ir::OutboundIR {
@@ -315,10 +248,8 @@ mod tests {
             ],
             ..Default::default()
         };
-        let sw = SwitchboardBuilder::from_config_ir(&ir).expect("switchboard");
-        let names = sw.list_connectors();
-        assert!(names.iter().any(|n| n == "h1"));
-        assert!(names.iter().any(|n| n == "s1"));
+        let error = SwitchboardBuilder::from_config_ir(&ir).expect_err("legacy path must fail");
+        assert!(error.to_string().contains("adapter::bridge::build_bridge"));
     }
 
     #[cfg(feature = "out_hysteria2")]
@@ -341,58 +272,5 @@ mod tests {
         assert!(!cfg.zero_rtt_handshake);
         let alpn = cfg.alpn.unwrap();
         assert_eq!(alpn, vec!["h3".to_string(), "hysteria2".to_string()]);
-    }
-}
-
-/// A degraded connector that returns 501 Not Implemented for failed construction
-#[derive(Debug)]
-struct DegradedConnector {
-    name: String,
-    error_reason: String,
-}
-
-impl DegradedConnector {
-    fn new(name: &str, error_reason: String) -> Self {
-        Self {
-            name: name.to_string(),
-            error_reason,
-        }
-    }
-}
-
-impl sb_types::Outbound for DegradedConnector {
-    fn r#type(&self) -> &str {
-        "degraded"
-    }
-    fn tag(&self) -> sb_types::OutboundTag {
-        sb_types::OutboundTag::new(self.name.clone())
-    }
-    fn network(&self) -> &[sb_types::NetworkKind] {
-        &[sb_types::NetworkKind::Tcp]
-    }
-    fn dial<'a>(
-        &'a self,
-        _session: &'a sb_types::Session,
-    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
-        Box::pin(async move {
-            Err(sb_types::CoreError::connect(
-                sb_types::ConnectErrorKind::Unsupported,
-                format!(
-                    "Outbound '{}' is in degraded mode: {}",
-                    self.name, self.error_reason
-                ),
-            ))
-        })
-    }
-    fn listen_packet<'a>(
-        &'a self,
-        _session: &'a sb_types::Session,
-    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
-        Box::pin(async {
-            Err(sb_types::CoreError::connect(
-                sb_types::ConnectErrorKind::Unsupported,
-                "degraded outbound",
-            ))
-        })
     }
 }

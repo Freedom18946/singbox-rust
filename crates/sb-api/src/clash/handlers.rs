@@ -421,24 +421,17 @@ fn build_required_by_gui(
 /// Infer proxy type from OutboundImpl
 fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
     if let Some(outbound) = impl_ {
-        if matches!(outbound, OutboundImpl::Direct) {
-            return PROXY_TYPE_DIRECT.to_string();
+        let OutboundImpl::Connector(connector) = outbound;
+        if connector.as_group().is_some() {
+            return connector.r#type().to_string();
         }
-        if matches!(outbound, OutboundImpl::Block) {
-            return PROXY_TYPE_REJECT.to_string();
-        }
-        if matches!(outbound, OutboundImpl::Socks5(_)) {
-            return PROXY_TYPE_SOCKS5.to_string();
-        }
-        if matches!(outbound, OutboundImpl::HttpProxy(_)) {
-            return PROXY_TYPE_HTTP.to_string();
-        }
-        if let OutboundImpl::Connector(c) = outbound {
-            if c.as_group().is_some() {
-                return c.r#type().to_string();
-            }
-        }
-        return PROXY_TYPE_UNKNOWN.to_string();
+        return match connector.r#type().to_ascii_lowercase().as_str() {
+            "direct" => PROXY_TYPE_DIRECT.to_string(),
+            "block" | "reject" => PROXY_TYPE_REJECT.to_string(),
+            "socks" | "socks5" => PROXY_TYPE_SOCKS5.to_string(),
+            "http" => PROXY_TYPE_HTTP.to_string(),
+            _ => PROXY_TYPE_UNKNOWN.to_string(),
+        };
     }
 
     // Fallback to name inference
@@ -539,15 +532,7 @@ async fn http_url_test(
             })
             .await
         }
-        Some(OutboundImpl::Direct) | None => {
-            tokio::time::timeout(timeout, async move {
-                Ok::<sb_transport::IoStream, std::io::Error>(Box::new(
-                    tokio::net::TcpStream::connect((host, port)).await?,
-                ))
-            })
-            .await
-        }
-        _ => return Err(StatusCode::INTERNAL_SERVER_ERROR),
+        None => return Err(StatusCode::NOT_FOUND),
     };
 
     let mut stream = match connect_result {
@@ -658,15 +643,14 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
             extra: HashMap::new(),
         };
 
-        if let OutboundImpl::Connector(c) = outbound {
-            if let Some(group) = c.as_group() {
-                proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
-                proxy.now = group.now().to_string();
-                proxy.r#type = c.r#type().to_string();
-                // Group-level alive/delay are None (matches Go behavior)
-                proxy.alive = None;
-                proxy.delay = None;
-            }
+        let OutboundImpl::Connector(c) = outbound;
+        if let Some(group) = c.as_group() {
+            proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
+            proxy.now = group.now().to_string();
+            proxy.r#type = c.r#type().to_string();
+            // Group-level alive/delay are None (matches Go behavior)
+            proxy.alive = None;
+            proxy.delay = None;
         }
 
         if default_tag.is_empty() {
@@ -761,14 +745,13 @@ pub async fn get_proxy(
             extra: HashMap::new(),
         };
 
-        if let OutboundImpl::Connector(c) = &outbound {
-            if let Some(group) = c.as_group() {
-                proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
-                proxy.now = group.now().to_string();
-                proxy.r#type = c.r#type().to_string();
-                proxy.alive = None;
-                proxy.delay = None;
-            }
+        let OutboundImpl::Connector(c) = &outbound;
+        if let Some(group) = c.as_group() {
+            proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
+            proxy.now = group.now().to_string();
+            proxy.r#type = c.r#type().to_string();
+            proxy.alive = None;
+            proxy.delay = None;
         }
 
         return (
@@ -1774,23 +1757,22 @@ pub async fn get_meta_groups(State(state): State<ApiState>) -> impl IntoResponse
 
     // Only include OutboundGroup types (Selector, URLTest, Fallback, LoadBalance)
     for (tag, outbound) in entries {
-        if let OutboundImpl::Connector(c) = &outbound {
-            if let Some(group) = c.as_group() {
-                let all = group.all();
-                let now = group.now();
-                let history = lookup_proxy_history(&state.urltest_history, &tag, Some(&outbound));
+        let OutboundImpl::Connector(c) = &outbound;
+        if let Some(group) = c.as_group() {
+            let all = group.all();
+            let now = group.now();
+            let history = lookup_proxy_history(&state.urltest_history, &tag, Some(&outbound));
 
-                groups.push(json!({
-                    "name": tag,
-                    "type": c.r#type(),
-                    "udp": true,
-                    "history": history,
-                    "all": all.into_iter().map(|tag| tag.to_string()).collect::<Vec<_>>(),
-                    "now": now.to_string(),
-                    "hidden": false,
-                    "icon": "",
-                }));
-            }
+            groups.push(json!({
+                "name": tag,
+                "type": c.r#type(),
+                "udp": true,
+                "history": history,
+                "all": all.into_iter().map(|tag| tag.to_string()).collect::<Vec<_>>(),
+                "now": now.to_string(),
+                "hidden": false,
+                "icon": "",
+            }));
         }
     }
 
@@ -1817,12 +1799,11 @@ pub async fn get_meta_group(
         let mut now = group_name.clone();
         let mut proxy_type = infer_proxy_type(&group_name, Some(&outbound));
 
-        if let OutboundImpl::Connector(c) = &outbound {
-            if let Some(group) = c.as_group() {
-                all = group.all().into_iter().map(|tag| tag.to_string()).collect();
-                now = group.now().to_string();
-                proxy_type = c.r#type().to_string();
-            }
+        let OutboundImpl::Connector(c) = &outbound;
+        if let Some(group) = c.as_group() {
+            all = group.all().into_iter().map(|tag| tag.to_string()).collect();
+            now = group.now().to_string();
+            proxy_type = c.r#type().to_string();
         }
 
         let history = lookup_proxy_history(&state.urltest_history, &group_name, Some(&outbound));
@@ -1905,22 +1886,19 @@ pub async fn get_meta_group_delay(
         if let Some(registry) = &state.outbound_registry {
             let reg = registry.read();
             if let Some(outbound) = reg.get(&group_name) {
-                if let OutboundImpl::Connector(c) = outbound {
-                    if let Some(group) = c.as_group() {
-                        group
-                            .all()
-                            .into_iter()
-                            .map(|tag| {
-                                let tag = tag.to_string();
-                                let ob = reg.get(&tag).cloned();
-                                (tag, ob)
-                            })
-                            .collect()
-                    } else {
-                        // Not a group - test the single outbound
-                        vec![(group_name.clone(), Some(outbound.clone()))]
-                    }
+                let OutboundImpl::Connector(c) = outbound;
+                if let Some(group) = c.as_group() {
+                    group
+                        .all()
+                        .into_iter()
+                        .map(|tag| {
+                            let tag = tag.to_string();
+                            let ob = reg.get(&tag).cloned();
+                            (tag, ob)
+                        })
+                        .collect()
                 } else {
+                    // Not a group - test the single outbound
                     vec![(group_name.clone(), Some(outbound.clone()))]
                 }
             } else if group_name == DIRECT_PROXY_NAME || group_name == REJECT_PROXY_NAME {

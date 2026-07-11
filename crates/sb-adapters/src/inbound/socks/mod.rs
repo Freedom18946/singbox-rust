@@ -25,15 +25,15 @@ use tokio::{
 
 use tracing::{debug, info, warn};
 
+use crate::inbound::connect::{
+    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
+    ConnectOpts,
+};
 use once_cell::sync::OnceCell;
 use sb_core::adapter::{InboundReadySender, InboundTaskDriver};
 use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::health as ob_health;
-use sb_core::outbound::{
-    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
-    ConnectOpts,
-};
 use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint, OutboundRegistryHandle};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
@@ -950,7 +950,7 @@ where
         }
     }
 
-    let opts = ConnectOpts::default();
+    let opts = ConnectOpts;
     let outbound_tag: Option<String>;
 
     // Fast path: if router decided a named outbound, try OutboundRegistry first

@@ -2,6 +2,7 @@ use std::net::SocketAddr;
 use std::sync::Arc;
 
 use sb_adapters::inbound::http::{serve_http, HttpProxyConfig};
+use sb_adapters::outbound::direct::DirectOutbound;
 use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 use sb_core::router::{Router, RouterHandle};
 use tokio::sync::mpsc;
@@ -10,7 +11,10 @@ use tokio::sync::mpsc;
 async fn main() -> anyhow::Result<()> {
     let bind: SocketAddr = "127.0.0.1:28080".parse()?;
     let mut map = std::collections::HashMap::new();
-    map.insert("direct".to_string(), OutboundImpl::Direct);
+    map.insert(
+        "direct".to_string(),
+        OutboundImpl::Connector(Arc::new(DirectOutbound::new())),
+    );
     let registry = OutboundRegistry::new(map);
     let outbounds = Arc::new(OutboundRegistryHandle::new(registry));
     let router = Arc::new(RouterHandle::new(Router::with_default("direct")));

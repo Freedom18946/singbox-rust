@@ -40,13 +40,13 @@ use tokio::time::{interval, Duration};
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
-use sb_core::net::metered;
-use sb_core::outbound::registry;
-use sb_core::outbound::selector::PoolSelector;
-use sb_core::outbound::{
+use crate::inbound::connect::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use sb_core::net::metered;
+use sb_core::outbound::registry;
+use sb_core::outbound::selector::PoolSelector;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -296,7 +296,7 @@ async fn handle_conn(
 
     // Step 6: Connect to upstream
     // 步骤 6: 连接上游
-    let opts = ConnectOpts::default();
+    let opts = ConnectOpts;
     // Match by reference so we can still use `decision` later (conntrack/chain computation).
     let (mut upstream, outbound_tag) = match &decision {
         RDecision::Direct => {

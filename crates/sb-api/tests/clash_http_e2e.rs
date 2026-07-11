@@ -21,6 +21,33 @@ use std::sync::Arc;
 use std::time::Instant;
 use tokio::time::{sleep, Duration};
 
+#[derive(Debug)]
+struct DirectTestOutbound;
+
+impl sb_types::Outbound for DirectTestOutbound {
+    fn r#type(&self) -> &str {
+        "direct"
+    }
+    fn tag(&self) -> sb_types::OutboundTag {
+        sb_types::OutboundTag::new("direct")
+    }
+    fn network(&self) -> &[sb_types::NetworkKind] {
+        &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+    }
+    fn dial<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+        Box::pin(async { Err(sb_types::CoreError::policy("test direct is not dialed")) })
+    }
+    fn listen_packet<'a>(
+        &'a self,
+        _session: &'a sb_types::Session,
+    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
+        Box::pin(async { Err(sb_types::CoreError::policy("test direct is not dialed")) })
+    }
+}
+
 fn env_usize(key: &str, default: usize) -> usize {
     std::env::var(key)
         .ok()
@@ -726,7 +753,10 @@ async fn test_select_proxy() -> anyhow::Result<()> {
 #[tokio::test]
 async fn test_select_proxy_non_selector_returns_message_json() -> anyhow::Result<()> {
     let mut map = HashMap::new();
-    map.insert("direct".to_string(), OutboundImpl::Direct);
+    map.insert(
+        "direct".to_string(),
+        OutboundImpl::Connector(Arc::new(DirectTestOutbound)),
+    );
     let registry = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
     let Some(server) =
         TestServer::start_with_server(TestServer::new_server()?.with_outbound_registry(registry))

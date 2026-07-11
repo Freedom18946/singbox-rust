@@ -92,6 +92,9 @@ async fn start_ss_server_on(
     method: &str,
     password: &str,
 ) -> Option<ShadowsocksServerHandle> {
+    let rules = sb_core::router::rules::parse_rules("default=direct");
+    sb_core::router::rules::install_global(sb_core::router::rules::Engine::build(rules));
+
     let listener = match TcpListener::bind(listen).await {
         Ok(listener) => listener,
         Err(err) => {
@@ -157,18 +160,22 @@ async fn dial_echo_once(
     echo_addr: SocketAddr,
     payload: &[u8],
 ) -> bool {
-    let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
+    tokio::time::timeout(Duration::from_secs(5), async {
+        let target = TargetAddr::from_host_port(echo_addr.ip().to_string(), echo_addr.port());
 
-    match connector.dial(&Session::outbound(target)).await {
-        Ok(mut stream) => {
-            if stream.write_all(payload).await.is_err() {
-                return false;
+        match connector.dial(&Session::outbound(target)).await {
+            Ok(mut stream) => {
+                if stream.write_all(payload).await.is_err() {
+                    return false;
+                }
+                let mut back = vec![0u8; payload.len()];
+                stream.read_exact(&mut back).await.is_ok() && back == payload
             }
-            let mut back = vec![0u8; payload.len()];
-            stream.read_exact(&mut back).await.is_ok() && back == payload
+            Err(_) => false,
         }
-        Err(_) => false,
-    }
+    })
+    .await
+    .unwrap_or(false)
 }
 
 async fn run_concurrent_ss_round(

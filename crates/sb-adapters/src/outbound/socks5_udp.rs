@@ -1,6 +1,6 @@
 //! Adapter-owned SOCKS5 UDP association used by inbound proxy routing.
 //!
-//! Replaces scaffold `sb-core::outbound::socks5_udp` dependencies while reusing
+//! Owns SOCKS5 UDP session handling in the adapter layer while reusing
 //! canonical [`sb_types::PacketConn`] from [`super::socks5::Socks5Connector`].
 
 use super::socks5::Socks5Connector;

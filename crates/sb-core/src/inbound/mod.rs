@@ -14,14 +14,6 @@
 
 #[cfg(feature = "in_direct")]
 pub mod direct;
-#[cfg(feature = "in_http")]
-pub mod http;
-#[cfg(feature = "in_http")]
-pub mod http_connect;
-#[cfg(feature = "in_mixed")]
-pub mod mixed;
-#[cfg(feature = "in_socks")]
-pub mod socks5;
 #[cfg(feature = "in_tun")]
 pub mod tun;
 

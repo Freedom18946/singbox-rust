@@ -189,7 +189,6 @@ full    = [
     "subs_http",
     # 其它你需要的聚合开关...
 ]
-scaffold = ["sb-core/scaffold"]
 service_ntp = ["sb-core/service_ntp"]
 service_resolved = ["sb-core/service_resolved", "sb-adapters/service_resolved"]
 service_ssmapi   = ["sb-core/service_ssmapi", "sb-adapters/service_ssmapi"]
@@ -374,7 +373,7 @@ x25519-dalek = { version = "2.0", features = ["static_secrets"] }
 rcgen = "0.12"
 time = "0.3"
 
-sb-core     = { path = "../crates/sb-core", features = ["scaffold"], optional = true }
+sb-core     = { path = "../crates/sb-core", optional = true }
 sb-adapters = { path = "../crates/sb-adapters", optional = true }
 sb-common   = { path = "../crates/sb-common" }
 sb-config   = { path = "../crates/sb-config", package = "sb-config" }
@@ -437,8 +436,8 @@ loom = "0.7"
 criterion = { version = "0.5", default-features = false }
 uuid = { version = "1.0", features = ["v4"] }
 sb-admin-contract = { workspace = true }
-sb-core     = { path = "../crates/sb-core", features = ["scaffold","router"] }
-sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "adapter-http", "http", "tls_reality", "transport_ech", "transport_mux", "transport_tls", "adapter-anytls", "adapter-wireguard-endpoint", "router"] }
+sb-core     = { path = "../crates/sb-core", features = ["router"] }
+sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "adapter-http", "http", "mixed", "tls_reality", "transport_ech", "transport_mux", "transport_tls", "adapter-anytls", "adapter-wireguard-endpoint", "router"] }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"
 async-trait = "0.1"
@@ -450,9 +449,18 @@ futures.workspace = true
 chrono = { workspace = true }
 
 [[test]]
-name = "adapter_bridge_scaffold"
-path = "tests/adapter_bridge_scaffold.rs"
-required-features = ["scaffold"]
+name = "adapter_bridge_registry"
+path = "tests/adapter_bridge_registry.rs"
+
+[[test]]
+name = "p0_upstream_compatibility"
+path = "tests/p0_upstream_compatibility.rs"
+required-features = ["adapters"]
+
+[[test]]
+name = "sb_rule_coverage_bin"
+path = "tests/sb_rule_coverage_bin.rs"
+required-features = ["rule_coverage"]
 
 [[test]]
 name = "admin_auth_contract"
@@ -467,6 +475,7 @@ required-features = ["admin_tests","admin_debug","auth","rate_limit"]
 [[test]]
 name = "reality_tls_e2e"
 path = "../tests/reality_tls_e2e.rs"
+required-features = ["adapters", "tls_reality"]
 
 [[test]]
 name = "hysteria_v1_e2e"

@@ -1,7 +1,7 @@
 //! MIG-03 transitional inbound data-plane bridge.
 //!
 //! Runtime holders consume only `sb_types::Inbound`. Existing blocking protocol
-//! loops remain behind this single bridge until WP06 removes scaffold fallbacks
+//! loops remain behind this single bridge while protocol ownership moves to adapters
 //! and moves lifecycle ownership into concrete inbound implementations. No new
 //! protocol may implement this trait.
 

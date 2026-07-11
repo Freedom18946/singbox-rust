@@ -232,3 +232,28 @@
 
 **结果**: WP05 DONE；实现提交 `de25101d`。无 D18、无 parity/BHV/REALITY/packaging
 移动；WP06已解锁，WP12边界未动。
+
+---
+
+## 2026-07-11 MIG-03 WP06 scaffold retirement
+
+**任务**: 完整移除 bridge scaffold fallback、core 重复协议实现与 scaffold feature。
+
+**变更**:
+- bridge/legacy constructor/runtime switchboard 全部改为 canonical adapter registry；未命中或
+  配置拒绝成为含 tag/kind 的 fatal startup error，阻止 READY。
+- `OutboundImpl` 收敛为单一 Connector；direct/block 唯一归属 adapters；inbound TCP helper
+  迁入 adapters 并保留 DNS、keepalive、handshake、telemetry 语义。
+- 删除 16 个 core legacy 文件和 scaffold Cargo 面；净删 5818 行。boundary V8 新增硬断言。
+- 重写 registry fatal/no-READY 测试；显式化 SS/Trojan 测试路由；修复 interop TLS fixture、
+  rustls provider 与 Trojan upstream 诊断。
+
+**验证**:
+- sb-core/sb-adapters/app 全套测试；workspace all-target/all-feature check；strict clippy；fmt；
+  boundaries 493 assertions；diff-check 全绿。
+- SS/Trojan net-e2e、registry 2/2、release GUI mixed→direct curl 全绿。
+- final strict interop 87/95；WP06 触及 case 全绿。剩余既有 harness/config/S4 基线逐项记录
+  于 WP06；env-limited 7/8。未新增 dual-kernel 差分。
+- gui_runtime binary 40,764,944 → 40,522,992 bytes（-241,952，-0.59%）。
+
+**结果**: WP06 DONE；WP07 解锁。无 parity/BHV/REALITY/packaging denominator 移动。

@@ -10,7 +10,6 @@ pub mod rate_limit;
 pub mod rate_limit_metrics;
 pub mod ratelimit;
 pub mod tcp_rate_limit;
-pub mod udp_upstream_map;
 // Enhanced UDP NAT implementation with O(log N) eviction
 pub mod udp_nat;
 // v2: Generation-based eviction with capacity management

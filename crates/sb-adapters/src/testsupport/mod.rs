@@ -10,7 +10,7 @@ use sb_core::outbound::{OutboundImpl, OutboundKind, OutboundRegistry, OutboundRe
 use sb_core::router::{Router, RouterHandle};
 #[cfg(feature = "socks")]
 use std::net::SocketAddr;
-#[cfg(feature = "socks")]
+#[cfg(any(feature = "router", feature = "socks"))]
 use std::sync::Arc;
 
 /// Spawns a SOCKS/UDP inbound server for testing.
@@ -59,6 +59,9 @@ pub async fn spawn_socks_udp_inbound() -> Result<SocketAddr> {
 pub fn direct_route_fixture() -> (RouterHandle, OutboundRegistryHandle) {
     let router = RouterHandle::new(Router::with_default(OutboundKind::Direct));
     let mut registry = OutboundRegistry::default();
-    registry.insert("direct".to_string(), OutboundImpl::Direct);
+    registry.insert(
+        "direct".to_string(),
+        OutboundImpl::Connector(Arc::new(crate::outbound::direct::DirectOutbound::new())),
+    );
     (router, OutboundRegistryHandle::new(registry))
 }

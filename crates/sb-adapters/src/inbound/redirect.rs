@@ -7,12 +7,12 @@
 //!   - iptables -t nat -A PREROUTING -p tcp --dport <dst> -j REDIRECT --to-port <listen>
 //!   - run this inbound with the same `listen` port.
 
-use anyhow::{anyhow, Result};
-use sb_core::net::metered;
-use sb_core::outbound::{
+use crate::inbound::connect::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use anyhow::{anyhow, Result};
+use sb_core::net::metered;
 use sb_core::outbound::{health as ob_health, registry, selector::PoolSelector};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
@@ -119,7 +119,7 @@ async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr)
         }
     };
 
-    let opts = ConnectOpts::default();
+    let opts = ConnectOpts;
     let mut outbound_tag: Option<String> = None;
     let mut upstream = match decision {
         RDecision::Direct => {

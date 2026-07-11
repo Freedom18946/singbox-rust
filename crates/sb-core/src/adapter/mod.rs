@@ -14,10 +14,10 @@
 //! sb-adapters 提供具体实现；sb-core 定义接口和桥接逻辑。
 
 use crate::context::Context;
-use crate::endpoint::{endpoint_registry, Endpoint, EndpointContext};
+use crate::endpoint::Endpoint;
 #[cfg(feature = "router")]
 use crate::router::RouterHandle;
-use crate::service::{service_registry, Service, ServiceContext};
+use crate::service::Service;
 use sb_config::ir::{Credentials, MultiplexOptionsIR};
 use std::collections::HashMap;
 use std::io;
@@ -25,7 +25,6 @@ use std::sync::Arc;
 
 pub use crate::outbound::selector::Member as SelectorMember;
 pub mod bridge;
-pub mod canonical_bridge;
 pub mod clash;
 pub mod handler;
 mod inbound_transition;
@@ -36,69 +35,6 @@ pub mod surface;
 pub use inbound_transition::{manage_inbound, InboundTaskDriver};
 
 pub type InboundReadySender = tokio::sync::oneshot::Sender<io::Result<()>>;
-
-/// Helper to parse socket address from listen and port
-#[allow(dead_code)]
-fn parse_socket_addr(listen: &str, port: u16) -> anyhow::Result<std::net::SocketAddr> {
-    format!("{listen}:{port}")
-        .parse()
-        .map_err(|e| anyhow::anyhow!("Invalid inbound address: {e}"))
-}
-
-#[derive(Debug, Clone)]
-struct UnsupportedOutboundConnector {
-    reason: Arc<str>,
-}
-
-impl UnsupportedOutboundConnector {
-    fn new(reason: impl Into<Arc<str>>) -> Self {
-        Self {
-            reason: reason.into(),
-        }
-    }
-}
-
-impl sb_types::Outbound for UnsupportedOutboundConnector {
-    fn r#type(&self) -> &str {
-        "unsupported"
-    }
-
-    fn tag(&self) -> sb_types::OutboundTag {
-        sb_types::OutboundTag::new("core-fallback")
-    }
-
-    fn network(&self) -> &[sb_types::NetworkKind] {
-        &[sb_types::NetworkKind::Tcp]
-    }
-
-    fn dial<'a>(
-        &'a self,
-        _session: &'a sb_types::Session,
-    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
-        Box::pin(async move {
-            Err(sb_types::CoreError::connect(
-                sb_types::ConnectErrorKind::Unsupported,
-                self.reason.to_string(),
-            ))
-        })
-    }
-
-    fn listen_packet<'a>(
-        &'a self,
-        _session: &'a sb_types::Session,
-    ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>> {
-        Box::pin(async move {
-            Err(sb_types::CoreError::connect(
-                sb_types::ConnectErrorKind::Unsupported,
-                self.reason.to_string(),
-            ))
-        })
-    }
-}
-
-fn unsupported_outbound_connector(reason: impl Into<Arc<str>>) -> Arc<dyn sb_types::Outbound> {
-    Arc::new(UnsupportedOutboundConnector::new(reason))
-}
 
 /// Inbound construction parameters (derived from IR).
 #[derive(Clone, Debug)]
@@ -373,8 +309,8 @@ impl Default for OutboundParam {
 /// 运行时桥接：管理入站服务和出站连接器。
 ///
 /// The bridge is assembled from IR configuration and serves as the central registry
-/// for all protocol handlers. It supports adapter-first fallback to scaffold implementations.
-/// 桥接器由 IR 配置组装而成，作为所有协议处理程序的中央注册表。它支持适配器优先回退到脚手架实现。
+/// for all protocol handlers. Protocol implementations come from adapter registries.
+/// 桥接器由 IR 配置组装而成，作为所有协议处理程序的中央注册表。协议实现由 adapter registry 提供。
 #[derive(Clone)]
 pub struct Bridge {
     pub inbounds: Vec<Arc<dyn sb_types::Inbound>>,
@@ -420,271 +356,25 @@ impl Bridge {
         }
     }
 
-    /// Create bridge from IR configuration
+    /// Create bridge from IR configuration through the installed adapter registry.
     pub fn new_from_config(ir: &sb_config::ir::ConfigIR, context: Context) -> anyhow::Result<Self> {
-        let mut bridge = Self::new(context);
-
-        // Build inbound services from IR
-        #[cfg(feature = "scaffold")]
-        {
-            for inbound in &ir.inbounds {
-                let inbound_service = match inbound.ty {
-                    sb_config::ir::InboundType::Socks => {
-                        // Create SOCKS5 inbound service
-                        use crate::inbound::socks5::Socks5;
-
-                        let addr = parse_socket_addr(&inbound.listen, inbound.port)?;
-                        Arc::new(Socks5::new(addr.ip().to_string(), addr.port()))
-                            as Arc<dyn InboundTaskDriver>
-                    }
-                    sb_config::ir::InboundType::Http => {
-                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
-                            "http",
-                            "core bridge HTTP inbound is disabled",
-                            Some(
-                                "Use adapter::bridge::build_bridge (sb-adapters HTTP inbound) instead"
-                                    .to_string(),
-                            ),
-                        );
-                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
-                    }
-                    sb_config::ir::InboundType::Mixed => {
-                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
-                            "mixed",
-                            "core bridge mixed inbound is disabled",
-                            Some(
-                                "Use adapter::bridge::build_bridge (sb-adapters mixed inbound) instead"
-                                    .to_string(),
-                            ),
-                        );
-                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
-                    }
-                    sb_config::ir::InboundType::Tun => {
-                        // TUN inbound service
-                        use crate::inbound::tun::TunInboundService;
-
-                        let stats = bridge.context.v2ray_server.as_ref().and_then(|s| s.stats());
-                        Arc::new(
-                            TunInboundService::new()
-                                .with_tag(inbound.tag.clone())
-                                .with_stats(stats),
-                        ) as Arc<dyn InboundTaskDriver>
-                    }
-                    sb_config::ir::InboundType::Direct => {
-                        use crate::inbound::direct::DirectForward;
-
-                        let addr = parse_socket_addr(&inbound.listen, inbound.port)?;
-                        let host = inbound.override_host.clone().ok_or_else(|| {
-                            anyhow::anyhow!(
-                                "direct inbound requires override_address/override_host"
-                            )
-                        })?;
-                        let dst_port = inbound.override_port.ok_or_else(|| {
-                            anyhow::anyhow!("direct inbound requires override_port")
-                        })?;
-                        let stats = bridge.context.v2ray_server.as_ref().and_then(|s| s.stats());
-                        Arc::new(
-                            DirectForward::new(addr, host, dst_port, inbound.udp)
-                                .with_tag(inbound.tag.clone())
-                                .with_stats(stats)
-                                .with_conn_tracker(bridge.context.conn_tracker.clone()),
-                        ) as Arc<dyn InboundTaskDriver>
-                    }
-                    sb_config::ir::InboundType::Redirect => {
-                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
-                            "redirect",
-                            "requires Linux iptables REDIRECT and adapter integration",
-                            Some(
-                                "Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string(),
-                            ),
-                        );
-                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
-                    }
-                    sb_config::ir::InboundType::Tproxy => {
-                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
-                            "tproxy",
-                            "requires Linux IP_TRANSPARENT and adapter integration",
-                            Some(
-                                "Use 'tun' inbound or SOCKS/HTTP inbound as a fallback".to_string(),
-                            ),
-                        );
-                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
-                    }
-                    _ => {
-                        let msg = crate::inbound::unsupported::UnsupportedInbound::new(
-                            inbound.ty.ty_str(),
-                            "requires adapter implementation; build with adapters features enabled",
-                            Some(
-                                "Add sb-adapters adapters feature (e.g., via app feature 'adapters') to enable this inbound"
-                                    .to_string(),
-                            ),
-                        );
-                        Arc::new(msg) as Arc<dyn InboundTaskDriver>
-                    }
-                };
-
-                // Stage 1: acknowledge sniff flag without changing behavior
-                if inbound.sniff {
-                    tracing::info!(
-                        kind = ?inbound.ty,
-                        listen = %format!("{}:{}", inbound.listen, inbound.port),
-                        "inbound sniff requested (stage1 noop)"
-                    );
-                }
-
-                let kind = inbound.ty.ty_str();
-                bridge.add_inbound_with_kind(kind, inbound_service);
-            }
-        }
-
-        #[cfg(not(feature = "scaffold"))]
-        {
-            if !ir.inbounds.is_empty() {
-                return Err(anyhow::anyhow!(
-                    "Inbound services not available without scaffold feature"
-                ));
-            }
-        }
-
-        // Build outbound connectors from IR
-        for outbound in &ir.outbounds {
-            let name = outbound
-                .name
-                .clone()
-                .unwrap_or(format!("outbound_{}", outbound.ty_str()));
-            let kind = outbound.ty_str().to_string();
-
-            let connector = match outbound.ty {
-                sb_config::ir::OutboundType::Direct => unsupported_outbound_connector(
-                    "core bridge Direct outbound is disabled; use adapter::bridge::build_bridge",
-                ),
-                sb_config::ir::OutboundType::Block => {
-                    Arc::new(canonical_bridge::BlockOutbound::new(name.clone()))
-                        as Arc<dyn sb_types::Outbound>
-                }
-                sb_config::ir::OutboundType::Http => {
-                    unsupported_outbound_connector(
-                        "core bridge HTTP outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                sb_config::ir::OutboundType::Socks => {
-                    unsupported_outbound_connector(
-                        "core bridge SOCKS outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                sb_config::ir::OutboundType::Vless => {
-                    unsupported_outbound_connector(
-                        "core bridge VLESS outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                sb_config::ir::OutboundType::Selector => {
-                    unsupported_outbound_connector(
-                        "core bridge Selector outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                sb_config::ir::OutboundType::Shadowsocks => unsupported_outbound_connector(
-                    "core bridge Shadowsocks outbound is disabled; use adapter::bridge::build_bridge",
-                ),
-                sb_config::ir::OutboundType::UrlTest => unsupported_outbound_connector(
-                    "core bridge URLTest outbound is disabled; use adapter::bridge::build_bridge",
-                ),
-                sb_config::ir::OutboundType::Shadowtls => {
-                    unsupported_outbound_connector(
-                        "core bridge ShadowTLS outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                sb_config::ir::OutboundType::Hysteria2 => {
-                    unsupported_outbound_connector(
-                        "core bridge Hysteria2 outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                sb_config::ir::OutboundType::Tuic => {
-                    unsupported_outbound_connector(
-                        "core bridge TUIC outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                sb_config::ir::OutboundType::Vmess => {
-                    unsupported_outbound_connector(
-                        "core bridge VMess outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                sb_config::ir::OutboundType::Trojan => {
-                    unsupported_outbound_connector(
-                        "core bridge Trojan outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                sb_config::ir::OutboundType::Ssh => {
-                    unsupported_outbound_connector(
-                        "core bridge SSH outbound is disabled; use adapter::bridge::build_bridge",
-                    )
-                }
-                _ => unsupported_outbound_connector(
-                    "core bridge outbound type is disabled; use adapter::bridge::build_bridge",
-                ),
-            };
-
-            bridge.add_outbound(name, kind, connector);
-        }
-
-        // Build endpoints from IR
-        for endpoint_ir in &ir.endpoints {
-            let ctx = EndpointContext::default();
-            if let Some(endpoint) = endpoint_registry().build(endpoint_ir, &ctx) {
-                bridge.add_endpoint(endpoint);
-            } else {
-                tracing::warn!(
-                    "Failed to build endpoint: {}",
-                    endpoint_ir.tag.as_deref().unwrap_or("unknown")
-                );
-            }
-        }
-
-        // Build a minimal outbounds registry handle for service detour support.
-        // This mirrors adapter/bridge.rs's helper and is intentionally best-effort.
-        let outbounds_handle: Arc<crate::outbound::OutboundRegistryHandle> = {
-            use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
-            let mut reg = OutboundRegistry::default();
-            for (name, _kind, conn) in &bridge.outbounds {
-                reg.insert(name.clone(), OutboundImpl::Connector(conn.clone()));
-            }
-            Arc::new(OutboundRegistryHandle::new(reg))
-        };
-
-        let endpoints_map: Arc<
-            std::collections::HashMap<String, Arc<dyn crate::endpoint::Endpoint>>,
-        > = Arc::new(
-            bridge
-                .endpoints
-                .iter()
-                .map(|ep| (ep.tag().to_string(), ep.clone()))
-                .collect(),
-        );
-
-        // Best-effort DNSRouter for services (e.g., DERP /bootstrap-dns).
         #[cfg(feature = "router")]
-        let dns_router = crate::dns::config_builder::build_dns_components(ir, None)
-            .ok()
-            .and_then(|(_resolver, router)| router);
+        let bridge = bridge::build_bridge(
+            ir,
+            crate::routing::engine::Engine::new(Arc::new(ir.clone())),
+            context,
+        );
         #[cfg(not(feature = "router"))]
-        let dns_router: Option<std::sync::Arc<dyn crate::dns::DnsRouter>> = None;
+        let bridge = bridge::build_bridge(ir, (), context);
 
-        // Build services from IR
-        for service_ir in &ir.services {
-            let mut ctx = ServiceContext::default()
-                .with_outbounds(outbounds_handle.clone())
-                .with_endpoints(endpoints_map.clone());
-            ctx.dns_router = dns_router.clone();
-            if let Some(service) = service_registry().build(service_ir, &ctx) {
-                bridge.add_service(service);
-            } else {
-                tracing::warn!(
-                    "Failed to build service: {}",
-                    service_ir.tag.as_deref().unwrap_or("unknown")
-                );
-            }
+        if bridge.startup_errors.is_empty() {
+            Ok(bridge)
+        } else {
+            Err(anyhow::anyhow!(
+                "adapter registry failed to build configured protocols: {}",
+                bridge.startup_errors.join("; ")
+            ))
         }
-
-        Ok(bridge)
     }
     /// Registers an inbound service.
     pub fn add_inbound(&mut self, ib: Arc<dyn InboundTaskDriver>) {

@@ -357,7 +357,37 @@ impl Default for OutboundManager {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::outbound::DirectConnector;
+    #[derive(Debug)]
+    struct TestOutbound;
+
+    impl sb_types::Outbound for TestOutbound {
+        fn r#type(&self) -> &str {
+            "test"
+        }
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new("test")
+        }
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp]
+        }
+        fn dial<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async { Err(sb_types::CoreError::policy("test outbound")) })
+        }
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
+            Box::pin(async { Err(sb_types::CoreError::policy("test outbound")) })
+        }
+    }
+
+    fn test_connector() -> Arc<dyn sb_types::Outbound> {
+        Arc::new(TestOutbound)
+    }
 
     #[tokio::test]
     async fn test_outbound_manager_basic_operations() {
@@ -366,7 +396,7 @@ mod tests {
         assert_eq!(manager.len().await, 0);
 
         // Add a connector (legacy)
-        let connector = Arc::new(DirectConnector::new());
+        let connector = test_connector();
         manager
             .add_adapter("direct".to_string(), connector.clone())
             .await;
@@ -392,10 +422,10 @@ mod tests {
 
         // Clear
         manager
-            .add_adapter("direct1".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct1".to_string(), test_connector())
             .await;
         manager
-            .add_adapter("direct2".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct2".to_string(), test_connector())
             .await;
         assert_eq!(manager.len().await, 2);
         manager.clear().await;
@@ -565,10 +595,10 @@ mod tests {
     async fn test_resolve_default_explicit() {
         let manager = OutboundManager::new();
         manager
-            .add_adapter("proxy".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("proxy".to_string(), test_connector())
             .await;
         manager
-            .add_adapter("direct".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct".to_string(), test_connector())
             .await;
 
         let result = manager.resolve_default(Some("proxy")).await;
@@ -580,7 +610,7 @@ mod tests {
     async fn test_resolve_default_not_found() {
         let manager = OutboundManager::new();
         manager
-            .add_adapter("direct".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct".to_string(), test_connector())
             .await;
 
         let result = manager.resolve_default(Some("nonexistent")).await;
@@ -591,10 +621,10 @@ mod tests {
     async fn test_resolve_default_first_registered() {
         let manager = OutboundManager::new();
         manager
-            .add_adapter("beta".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("beta".to_string(), test_connector())
             .await;
         manager
-            .add_adapter("alpha".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("alpha".to_string(), test_connector())
             .await;
 
         let result = manager.resolve_default(None).await;
@@ -617,10 +647,10 @@ mod tests {
     async fn test_get_startup_order_delegates_to_validate_and_sort() {
         let manager = OutboundManager::new();
         manager
-            .add_adapter("proxy".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("proxy".to_string(), test_connector())
             .await;
         manager
-            .add_adapter("direct".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct".to_string(), test_connector())
             .await;
         manager.add_dependency("proxy", "direct").await;
 
@@ -634,10 +664,10 @@ mod tests {
     async fn canonical_outbounds_start_and_close_in_dependency_order() {
         let manager = OutboundManager::new();
         manager
-            .add_adapter("proxy".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("proxy".to_string(), test_connector())
             .await;
         manager
-            .add_adapter("direct".to_string(), Arc::new(DirectConnector::new()))
+            .add_adapter("direct".to_string(), test_connector())
             .await;
         manager.add_dependency("proxy", "direct").await;
 

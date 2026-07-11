@@ -10,6 +10,25 @@
 
 ---
 
+## Resume (2026-07-11) - MIG-03 WP06 scaffold retirement DONE
+
+- **WP06 accepted:** bridge/runtime/switchboard now consume only canonical sb-adapters registry
+  connectors. Registry rejection is a fatal startup error with tag/kind context; no scaffold,
+  degraded, core direct/block, or implicit-direct protocol fallback remains.
+- Scaffold feature/Cargo references and 16 core legacy files are gone. `OutboundImpl` has one
+  Connector variant; inbound TCP helper ownership moved to adapters with DNS/keepalive/telemetry
+  semantics preserved. Net diff is -5818 lines; final gui_runtime binary is 241,952 bytes smaller
+  than the recorded pre-WP06 build.
+- Acceptance: three-crate tests, registry fatal/no-READY test, workspace all-target/all-feature
+  check, strict clippy, fmt, boundaries, diff-check, SS/Trojan net-e2e, release GUI mixed→direct
+  traffic smoke all pass. Final strict interop is 87/95; every WP06-affected case is clean and
+  remaining failures are pre-existing harness/config/S4 baselines documented in WP06.
+- **Authorized transition:** WP07 is unblocked. Next step: relocate the full
+  hysteria/hysteria2/naive/quic family from sb-core to sb-adapters, then run its protocol/bench/
+  global acceptance set.
+- **Scope note:** structural ownership/fallback retirement only. No parity/BHV, packaging, or
+  REALITY denominator movement is claimed.
+
 ## Resume (2026-07-11) - MIG-03 WP05 adapter gap closure DONE
 
 - **WP05 accepted:** `de25101d` moves active SOCKS UDP map/session/transport ownership into
@@ -119,12 +138,10 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 
 ## Current Build And Gate
 
-- 2026-07-11 WP05 final: workspace all-features check and all-target/all-feature clippy **PASS**;
-  fmt, boundaries, diff-check **PASS**.
-- sb-adapters default/all-features, sb-core regression, app acceptance/gui_runtime/parity profiles,
-  and isolated SOCKS/router feature **PASS**.
-- Python reality_probe_tools/clienthello_family/dual_kernel_verification **PASS**;
-  SOCKS TCP/UDP and mixed dual-kernel traffic success with empty error sets.
+- 2026-07-11 WP06 final: workspace all-target/all-feature check, strict clippy, fmt,
+  boundaries, diff-check, and sb-core/sb-adapters/app tests **PASS**.
+- Registry fatal/no-READY contract, SS/Trojan net-e2e, release gui_runtime build and mixed→direct
+  traffic smoke **PASS**. Interop classification and existing non-WP06 failures: WP06 package.
 
 ## T3 ClientHello Fingerprint Parity — T3-0…T3-2 DONE (2026-06-08)
 

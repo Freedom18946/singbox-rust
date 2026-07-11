@@ -159,7 +159,7 @@ async fn connect_tcp(
     // Register adapters (if feature enabled) before building bridge
     app::util::register_adapters_once();
 
-    // Build bridge using adapter-aware path (tries adapter registry first, falls back to scaffold)
+    // Build bridge through required adapter registries.
     #[cfg(feature = "router")]
     let bridge = {
         let engine = sb_core::routing::engine::Engine::new(std::sync::Arc::new(ir.clone()));

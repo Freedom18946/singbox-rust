@@ -15,11 +15,13 @@ async fn test_supervisor_lifecycle() {
         ..Default::default()
     };
 
-    // 2. Start Supervisor
-    // We use the start method. Depending on features, it might be different, but the signature is the same.
-    let supervisor = Supervisor::start(initial_ir.clone())
-        .await
-        .expect("failed to start supervisor");
+    // 2. Start Supervisor with the product adapter registry.
+    let supervisor = Supervisor::start_with_registry(
+        initial_ir.clone(),
+        Some(sb_adapters::build_default_registry()),
+    )
+    .await
+    .expect("failed to start supervisor");
     let handle = supervisor.handle();
 
     // 3. Verify initial state

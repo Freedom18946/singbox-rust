@@ -43,13 +43,14 @@ const TCP_ROUNDTRIP_TIMEOUT_MS: u64 = 10_000;
 const INTEROP_PASSWORD: &str = "interop-password";
 const INTEROP_VLESS_UUID: &str = "00000000-0000-0000-0000-000000000001";
 const INTEROP_VMESS_UUID: &str = "00000000-0000-0000-0000-000000000002";
-const INTEROP_CERT_PATH: &str = "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt";
-const INTEROP_KEY_PATH: &str = "vendor/anytls-rs/examples/singbox/certs/anytls.local.key";
+const INTEROP_CERT_PATH: &str = "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt.fixture";
+const INTEROP_KEY_PATH: &str = "vendor/anytls-rs/examples/singbox/certs/anytls.local.key.fixture";
 
 static PROTOCOL_UPSTREAM_RULES_INIT: Once = Once::new();
 
 fn ensure_protocol_upstream_rules() {
     PROTOCOL_UPSTREAM_RULES_INIT.call_once(|| {
+        let _ = rustls::crypto::ring::default_provider().install_default();
         let rules = parse_rules("default=direct");
         install_global_rules(Engine::build(rules));
     });
@@ -691,7 +692,11 @@ async fn start_single_upstream(
                             tracing::warn!(error = %err, "trojan upstream serve failed during shutdown");
                         }
                     }
-                    _ = &mut serve => {}
+                    result = &mut serve => {
+                        if let Err(err) = result {
+                            tracing::warn!(error = %err, "trojan upstream serve failed");
+                        }
+                    }
                 }
             });
 

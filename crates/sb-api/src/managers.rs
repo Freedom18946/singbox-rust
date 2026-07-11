@@ -641,8 +641,11 @@ impl ProviderManager {
         let healthy = if let Some(ref registry) = self.outbound_registry {
             let ep = self.probe_endpoint.clone();
             let target = self.probe_target.clone();
-            match tokio::time::timeout(Duration::from_secs(5), registry.connect_tcp(&target, ep))
-                .await
+            match tokio::time::timeout(
+                Duration::from_secs(5),
+                registry.connect_tcp_stream(&target, ep),
+            )
+            .await
             {
                 Ok(Ok(_stream)) => true,
                 Ok(Err(e)) => {
@@ -895,6 +898,34 @@ mod tests {
     use super::*;
     use std::sync::atomic::AtomicUsize;
 
+    #[derive(Debug)]
+    struct RejectOutbound;
+
+    impl sb_types::Outbound for RejectOutbound {
+        fn r#type(&self) -> &str {
+            "block"
+        }
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new("block-probe")
+        }
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+        }
+        fn dial<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async { Err(sb_types::CoreError::policy("blocked by test")) })
+        }
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
+            Box::pin(async { Err(sb_types::CoreError::policy("blocked by test")) })
+        }
+    }
+
     fn mock_fetch(body: &'static str) -> FetchFn {
         Arc::new(move |_url| Box::pin(async move { Ok(body.to_string()) }))
     }
@@ -1089,7 +1120,10 @@ mod tests {
 
         // Register a "block-probe" outbound that always returns PermissionDenied
         let mut reg = OutboundRegistry::default();
-        reg.insert("block-probe".into(), OutboundImpl::Block);
+        reg.insert(
+            "block-probe".into(),
+            OutboundImpl::Connector(Arc::new(RejectOutbound)),
+        );
         let handle = Arc::new(OutboundRegistryHandle::new(reg));
 
         let noop_fetch: FetchFn = Arc::new(|_| Box::pin(async { Err("unused".into()) }));

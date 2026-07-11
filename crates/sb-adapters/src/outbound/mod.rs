@@ -788,6 +788,7 @@ impl TryFrom<&sb_config::ir::OutboundIR> for ssh::SshConnector {
 
 #[cfg(test)]
 mod canonical_capability_tests {
+    #[cfg(any(feature = "adapter-dns", feature = "adapter-vmess"))]
     use sb_types::{NetworkKind, Outbound};
 
     #[cfg(feature = "adapter-vmess")]

@@ -7,8 +7,19 @@
 //! - Complete: All basic DNS transports implemented (12/12)
 
 use anyhow::Result;
-use sb_config::ir::{ConfigIR, DnsIR};
+use sb_config::ir::{ConfigIR, DnsIR, DnsServerIR};
 use sb_core::dns::config_builder::resolver_from_ir;
+
+fn system_dns_ir() -> DnsIR {
+    DnsIR {
+        servers: vec![DnsServerIR {
+            tag: "system".to_string(),
+            address: "system".to_string(),
+            ..Default::default()
+        }],
+        ..Default::default()
+    }
+}
 
 // ============================================================================
 // SYSTEM RESOLVER TESTS
@@ -16,7 +27,7 @@ use sb_core::dns::config_builder::resolver_from_ir;
 
 #[test]
 fn test_system_resolver_creates_successfully() {
-    let ir = DnsIR::default();
+    let ir = system_dns_ir();
 
     let cfg = ConfigIR {
         dns: Some(ir),
@@ -170,7 +181,7 @@ fn test_dns_features_are_documented() {
 #[test]
 fn test_dns_coverage_summary() -> Result<()> {
     // Create a resolver with default configuration
-    let ir = DnsIR::default();
+    let ir = system_dns_ir();
     let cfg = ConfigIR {
         dns: Some(ir),
         ..Default::default()

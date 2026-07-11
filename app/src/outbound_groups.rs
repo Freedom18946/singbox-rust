@@ -11,7 +11,7 @@ use sb_core::outbound::selector_group::{
 #[cfg(feature = "router")]
 use sb_core::outbound::Outbound as AdapterConnector;
 #[cfg(feature = "router")]
-use sb_core::outbound::{DirectConnector, OutboundImpl};
+use sb_core::outbound::OutboundImpl;
 #[cfg(feature = "router")]
 use std::{collections::HashMap, sync::Arc};
 #[cfg(feature = "router")]
@@ -143,58 +143,15 @@ fn collect_group_members(
 }
 
 #[cfg(feature = "router")]
-fn to_adapter_connector(imp: &OutboundImpl) -> Option<Arc<dyn AdapterConnector>> {
-    if matches!(imp, OutboundImpl::Direct) {
-        return Some(Arc::new(DirectConnector::new()));
-    }
-
-    if matches!(imp, OutboundImpl::Block) {
-        tracing::warn!(
-            "Block selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-        );
-        return None;
-    }
-
-    if matches!(imp, OutboundImpl::Socks5(_)) {
-        tracing::warn!(
-            "SOCKS5 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-        );
-        return None;
-    }
-
-    if matches!(imp, OutboundImpl::HttpProxy(_)) {
-        tracing::warn!(
-            "HTTP proxy selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-        );
-        return None;
-    }
-
-    if matches!(imp, OutboundImpl::Hysteria2(_)) {
-        tracing::warn!(
-            "Hysteria2 selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-        );
-        return None;
-    }
-
-    if matches!(imp, OutboundImpl::Connector(_)) {
-        tracing::warn!(
-            "Nested connector selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-        );
-        return None;
-    }
-
-    tracing::warn!(
-        outbound_variant = ?imp,
-        "unsupported selector/urltest member in bootstrap adapter connector path is disabled; use adapter bridge/supervisor path"
-    );
-    None
+fn to_adapter_connector(implementation: &OutboundImpl) -> Option<Arc<dyn AdapterConnector>> {
+    let OutboundImpl::Connector(connector) = implementation;
+    Some(connector.clone())
 }
 
 #[cfg(all(test, feature = "router"))]
 mod tests {
     use super::*;
-    use sb_core::outbound::{HttpProxyConfig, OutboundImpl, Socks5Config};
-    use std::net::SocketAddr;
+    use sb_core::outbound::OutboundImpl;
 
     fn history_service() -> Arc<dyn sb_core::context::URLTestHistoryStorage> {
         Arc::new(sb_core::services::urltest_history::URLTestHistoryService::new())
@@ -231,20 +188,36 @@ mod tests {
         }
     }
 
-    fn socks5_impl() -> OutboundImpl {
-        OutboundImpl::Socks5(Socks5Config {
-            proxy_addr: "127.0.0.1:1080".parse::<SocketAddr>().expect("socket addr"),
-            username: None,
-            password: None,
-        })
+    #[derive(Debug)]
+    struct TestOutbound(&'static str);
+
+    impl sb_types::Outbound for TestOutbound {
+        fn r#type(&self) -> &str {
+            self.0
+        }
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new(self.0)
+        }
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp]
+        }
+        fn dial<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async { Err(sb_types::CoreError::policy("test outbound")) })
+        }
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
+            Box::pin(async { Err(sb_types::CoreError::policy("test outbound")) })
+        }
     }
 
-    fn http_impl() -> OutboundImpl {
-        OutboundImpl::HttpProxy(HttpProxyConfig {
-            proxy_addr: "127.0.0.1:8080".parse::<SocketAddr>().expect("socket addr"),
-            username: None,
-            password: None,
-        })
+    fn connector_impl(kind: &'static str) -> OutboundImpl {
+        OutboundImpl::Connector(Arc::new(TestOutbound(kind)))
     }
 
     #[test]
@@ -258,8 +231,8 @@ mod tests {
         ));
 
         let mut map = HashMap::from([
-            ("direct-a".to_string(), OutboundImpl::Direct),
-            ("direct-b".to_string(), OutboundImpl::Direct),
+            ("direct-a".to_string(), connector_impl("direct")),
+            ("direct-b".to_string(), connector_impl("direct")),
         ]);
         bind_selector_outbound_groups(&ir, &mut map, None, history_service());
 
@@ -276,7 +249,7 @@ mod tests {
         ir.outbounds
             .push(urltest_outbound("auto", Some(vec!["direct-a"])));
 
-        let mut map = HashMap::from([("direct-a".to_string(), OutboundImpl::Direct)]);
+        let mut map = HashMap::from([("direct-a".to_string(), connector_impl("direct"))]);
         bind_selector_outbound_groups(&ir, &mut map, None, history_service());
 
         assert!(matches!(map.get("auto"), Some(OutboundImpl::Connector(_))));
@@ -285,9 +258,9 @@ mod tests {
     #[test]
     fn collect_group_members_keeps_only_usable_connectors() {
         let existing = HashMap::from([
-            ("direct-a".to_string(), OutboundImpl::Direct),
-            ("socks-a".to_string(), socks5_impl()),
-            ("http-a".to_string(), http_impl()),
+            ("direct-a".to_string(), connector_impl("direct")),
+            ("socks-a".to_string(), connector_impl("socks")),
+            ("http-a".to_string(), connector_impl("http")),
         ]);
         let members = vec![
             "direct-a".to_string(),
@@ -299,20 +272,30 @@ mod tests {
         let group_members = collect_group_members("manual", &members, &existing);
         let tags: Vec<_> = group_members.into_iter().map(|member| member.tag).collect();
 
-        assert_eq!(tags, vec!["direct-a".to_string()]);
+        assert_eq!(
+            tags,
+            vec![
+                "direct-a".to_string(),
+                "socks-a".to_string(),
+                "http-a".to_string()
+            ]
+        );
     }
 
     #[test]
-    fn selector_binding_skips_missing_or_unusable_members_until_none_remain() {
+    fn selector_binding_keeps_registered_connector_when_other_member_is_missing() {
         let mut ir = sb_config::ir::ConfigIR::default();
         ir.outbounds.push(direct_outbound("direct-a"));
         ir.outbounds
             .push(selector_outbound("manual", Some(vec!["missing", "http-a"])));
 
-        let mut map = HashMap::from([("http-a".to_string(), http_impl())]);
+        let mut map = HashMap::from([("http-a".to_string(), connector_impl("http"))]);
         bind_selector_outbound_groups(&ir, &mut map, None, history_service());
 
-        assert!(!map.contains_key("manual"));
+        assert!(matches!(
+            map.get("manual"),
+            Some(OutboundImpl::Connector(_))
+        ));
     }
 
     #[test]
@@ -340,10 +323,10 @@ mod tests {
 
     #[test]
     fn to_adapter_connector_is_pinned_for_bootstrap_second_pass() {
-        assert!(to_adapter_connector(&OutboundImpl::Direct).is_some());
-        assert!(to_adapter_connector(&OutboundImpl::Block).is_none());
-        assert!(to_adapter_connector(&socks5_impl()).is_none());
-        assert!(to_adapter_connector(&http_impl()).is_none());
+        assert!(to_adapter_connector(&connector_impl("direct")).is_some());
+        assert!(to_adapter_connector(&connector_impl("block")).is_some());
+        assert!(to_adapter_connector(&connector_impl("socks")).is_some());
+        assert!(to_adapter_connector(&connector_impl("http")).is_some());
     }
 
     #[test]
@@ -378,8 +361,8 @@ mod tests {
         ));
 
         let mut map = HashMap::from([
-            ("direct-a".to_string(), OutboundImpl::Direct),
-            ("direct-b".to_string(), OutboundImpl::Direct),
+            ("direct-a".to_string(), connector_impl("direct")),
+            ("direct-b".to_string(), connector_impl("direct")),
         ]);
         bind_selector_outbound_groups(&ir, &mut map, None, history_service());
 
@@ -401,7 +384,7 @@ mod tests {
         ir.outbounds
             .push(urltest_outbound("auto", Some(vec!["direct-a"])));
 
-        let mut map = HashMap::from([("direct-a".to_string(), OutboundImpl::Direct)]);
+        let mut map = HashMap::from([("direct-a".to_string(), connector_impl("direct"))]);
         bind_selector_outbound_groups(&ir, &mut map, None, history_service());
 
         let OutboundImpl::Connector(connector) = map.get("auto").expect("urltest registered")

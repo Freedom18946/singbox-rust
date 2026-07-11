@@ -1,9 +1,6 @@
-//! Adapter Bridge: Prioritizes sb-adapter registry; falls back to scaffold implementations.
+//! Adapter Bridge: assembles protocol implementations from adapter registries.
 //!
-//! This module provides the core bridging logic to assemble inbound and outbound adapters
-//! from configuration IR. It supports two strategies controlled by the `ADAPTER_FORCE` env var:
-//! - `adapter`: Use sb-adapters registry (reserved for future implementation)
-//! - `scaffold`: Use built-in simple implementations (direct/socks/http/ssh/selector/etc.)
+//! Missing builders are fatal startup errors. No protocol fallback exists in sb-core.
 
 use crate::adapter::registry;
 use crate::adapter::{AnyTlsUserParam, Bridge, InboundParam, OutboundParam};
@@ -493,18 +490,6 @@ fn to_inbound_param(
     })
 }
 
-/// Extracts credentials (username, password) from outbound parameter.
-///
-/// Returns `(Option<String>, Option<String>)` for username and password.
-#[cfg(feature = "scaffold")]
-#[allow(dead_code)]
-fn extract_credentials(p: &OutboundParam) -> (Option<String>, Option<String>) {
-    p.credentials
-        .as_ref()
-        .map(|c| (c.username.clone(), c.password.clone()))
-        .unwrap_or((None, None))
-}
-
 /// Converts outbound IR to (name, parameter) tuple.
 ///
 /// The name defaults to the outbound type string if not explicitly provided.
@@ -602,17 +587,10 @@ struct BuiltOutbound {
     outbound: Arc<dyn sb_types::Outbound>,
 }
 
-// WP06 removes these scaffold-era direct/block fallbacks.
-fn core_fallback_outbound(ob: &OutboundIR) -> Option<BuiltOutbound> {
-    match ob.ty {
-        OutboundType::Direct => Some(BuiltOutbound {
-            outbound: Arc::new(super::canonical_bridge::DirectOutbound::new("direct")),
-        }),
-        OutboundType::Block => Some(BuiltOutbound {
-            outbound: Arc::new(super::canonical_bridge::BlockOutbound::new("block")),
-        }),
-        _ => None,
-    }
+fn unavailable_protocol_error(direction: &str, kind: &str, tag: &str) -> String {
+    format!(
+        "{direction} '{tag}' kind '{kind}' is unavailable: protocol is not compiled into this build or its adapter configuration was rejected"
+    )
 }
 
 /// Helper: assembles basic outbounds (excluding selectors).
@@ -626,11 +604,18 @@ fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
         let (name, p) = match to_outbound_param(ob) {
             Ok(p) => p,
             Err(err) => {
-                tracing::warn!(
+                let message = format!(
+                    "outbound '{}' kind '{}' has invalid configuration: {err}",
+                    ob.name.as_deref().unwrap_or(ob.ty_str()),
+                    ob.ty.ty_str()
+                );
+                br.startup_errors.push(message.clone());
+                tracing::error!(
                     target: "sb_core::adapter",
                     outbound = %ob.name.as_deref().unwrap_or(ob.ty_str()),
                     kind = %ob.ty.ty_str(),
                     error = %err,
+                    message = %message,
                     "invalid outbound config; refusing to build adapter"
                 );
                 continue;
@@ -638,15 +623,18 @@ fn assemble_outbounds(cfg: &ConfigIR, br: &mut Bridge) {
         };
         let kind = p.kind.clone();
 
-        if let Some(o) = try_adapter_outbound(&p, ob, br).or_else(|| core_fallback_outbound(ob)) {
+        if let Some(o) = try_adapter_outbound(&p, ob, br) {
             // Optionally wrap with circuit breaker
             let outbound = maybe_wrap_with_cb(name.as_str(), o.outbound);
             br.add_outbound(name.clone(), kind, outbound);
         } else {
+            let message = unavailable_protocol_error("outbound", &kind, &name);
+            br.startup_errors.push(message.clone());
             tracing::error!(
                 target: "sb_core::adapter",
                 outbound = %name,
                 kind = %kind,
+                message = %message,
                 "no outbound builder available for requested kind"
             );
         }
@@ -779,11 +767,18 @@ fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
             let (name, p) = match to_outbound_param(ob) {
                 Ok(p) => p,
                 Err(err) => {
-                    tracing::warn!(
+                    let message = format!(
+                        "outbound '{}' kind '{}' has invalid configuration: {err}",
+                        ob.name.as_deref().unwrap_or(ob.ty_str()),
+                        ob.ty.ty_str()
+                    );
+                    br.startup_errors.push(message.clone());
+                    tracing::error!(
                         target: "sb_core::adapter",
                         outbound = %ob.name.as_deref().unwrap_or(ob.ty_str()),
                         kind = %ob.ty.ty_str(),
                         error = %err,
+                        message = %message,
                         "invalid outbound config; refusing to build adapter"
                     );
                     continue;
@@ -795,10 +790,13 @@ fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
                 let outbound = maybe_wrap_with_cb(name.as_str(), o.outbound);
                 br.add_outbound(name.clone(), kind, outbound);
             } else {
+                let message = unavailable_protocol_error("outbound", &kind, &name);
+                br.startup_errors.push(message.clone());
                 tracing::error!(
                     target: "sb_core::adapter",
                     outbound = %name,
                     kind = %kind,
+                    message = %message,
                     "no selector/urltest builder available for requested kind"
                 );
             }
@@ -862,11 +860,18 @@ pub fn build_bridge(
         let p = match to_inbound_param(ib, br.context.conn_tracker.clone()) {
             Ok(p) => p,
             Err(err) => {
-                tracing::warn!(
+                let tag = ib.tag.as_deref().unwrap_or(ib.ty.ty_str());
+                let message = format!(
+                    "inbound '{tag}' kind '{}' has invalid configuration: {err}",
+                    ib.ty.ty_str()
+                );
+                br.startup_errors.push(message.clone());
+                tracing::error!(
                     target: "sb_core::adapter",
                     inbound = %ib.ty.ty_str(),
                     listen = %format!("{}:{}", ib.listen, ib.port),
                     error = %err,
+                    message = %message,
                     "invalid inbound config; refusing to build adapter"
                 );
                 continue;
@@ -885,16 +890,14 @@ pub fn build_bridge(
         if let Some(i) = try_adapter_inbound(&p, &adapter_ctx) {
             br.add_canonical_inbound_with_meta(p.kind.as_str(), p.tag.clone(), i);
         } else {
-            if p.kind == "tun" {
-                br.startup_errors.push(format!(
-                    "tun inbound '{}' failed to prepare runtime backend",
-                    p.tag.as_deref().unwrap_or("tun")
-                ));
-            }
+            let tag = p.tag.as_deref().unwrap_or(p.kind.as_str());
+            let message = unavailable_protocol_error("inbound", &p.kind, tag);
+            br.startup_errors.push(message.clone());
             tracing::error!(
                 target: "sb_core::adapter",
                 inbound = %p.kind,
                 listen = %format!("{}:{}", p.listen, p.port),
+                message = %message,
                 "no inbound builder available for requested kind"
             );
         }

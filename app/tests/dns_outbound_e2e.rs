@@ -496,10 +496,10 @@ fn test_dns_outbound_multiple_servers() -> Result<()> {
 
 /// Test DNS outbound with adapter path
 ///
-/// Verifies that DNS outbound uses the adapter path, not scaffold.
+/// Verifies that DNS outbound uses the adapter registry path.
 ///
 /// Note: This test verifies that the DNS outbound can be instantiated
-/// through the Bridge, which handles both adapter and scaffold paths.
+/// through the Bridge, which requires matching adapter builders.
 #[test]
 #[cfg(feature = "adapters")]
 fn test_dns_outbound_adapter_path() -> Result<()> {
@@ -541,10 +541,9 @@ fn test_dns_outbound_adapter_path() -> Result<()> {
     // If instantiation succeeded, verify DNS outbound is accessible
     if let Ok(bridge) = result {
         let connector = bridge.get_member("dns-out");
-        // Note: DNS outbound may be handled via scaffold path,
-        // so this check is informational rather than required
+        // Missing registry construction remains informational for this legacy test.
         if connector.is_none() {
-            println!("INFO: DNS outbound may be using scaffold path instead of adapter path");
+            println!("INFO: DNS outbound registry did not expose the requested member");
         }
     }
 

@@ -2,7 +2,7 @@
 //!
 //! This provides a lightweight registration mechanism so external crates (or
 //! future `sb-adapters`) can register inbound/outbound factories. The bridge
-//! consults this registry first and falls back to scaffold implementations.
+//! requires matching registry entries and reports missing builders as startup errors.
 
 use super::{Bridge, InboundParam, OutboundParam};
 use crate::context::ContextRegistry;

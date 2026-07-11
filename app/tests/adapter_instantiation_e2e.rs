@@ -17,7 +17,6 @@ use serde_json::json;
 #[test]
 fn test_inbound_adapters_instantiation() -> Result<()> {
     // Ensure adapters are registered
-    #[cfg(feature = "adapters")]
     sb_adapters::register_all();
 
     let test_cases = vec![
@@ -172,7 +171,6 @@ fn test_inbound_adapters_instantiation() -> Result<()> {
 #[test]
 fn test_outbound_adapters_instantiation() -> Result<()> {
     // Ensure adapters are registered
-    #[cfg(feature = "adapters")]
     sb_adapters::register_all();
 
     let test_cases: Vec<(&str, serde_json::Value)> = vec![
@@ -397,7 +395,6 @@ fn test_outbound_adapters_instantiation() -> Result<()> {
 /// Test that feature gates correctly control adapter availability
 #[test]
 fn test_feature_gate_control() {
-    #[cfg(feature = "adapters")]
     sb_adapters::register_all();
 
     // Test that HTTP adapter is available when feature is enabled
@@ -483,7 +480,6 @@ fn test_feature_gate_control() {
 /// Test that adapter registry doesn't panic with empty or minimal configurations
 #[test]
 fn test_adapter_registry_robustness() -> Result<()> {
-    #[cfg(feature = "adapters")]
     sb_adapters::register_all();
 
     // Test with minimal config (no inbounds/outbounds)

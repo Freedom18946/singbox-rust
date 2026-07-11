@@ -79,6 +79,9 @@ async fn start_trojan_server(
     cert_pem: String,
     key_pem: String,
 ) -> Option<(SocketAddr, mpsc::Sender<()>, NamedTempFile, NamedTempFile)> {
+    let rules = sb_core::router::rules::parse_rules("default=direct");
+    sb_core::router::rules::install_global(sb_core::router::rules::Engine::build(rules));
+
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {

@@ -14,16 +14,16 @@ use aes_gcm::{
 };
 use chacha20poly1305::{ChaCha20Poly1305, Nonce as ChaNonce};
 
+use crate::inbound::connect::{
+    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
+    ConnectOpts,
+};
 use sb_core::net::metered;
 use sb_core::net::metered::TrafficRecorder;
 use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
 use sb_core::outbound::registry;
 use sb_core::outbound::selector::PoolSelector;
-use sb_core::outbound::{
-    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
-    ConnectOpts,
-};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -1121,6 +1121,7 @@ pub fn register_detour_inbound(tag: String, inbound: &Arc<ShadowsocksInboundAdap
     DETOUR_INBOUNDS.insert(tag, Arc::downgrade(inbound));
 }
 
+#[cfg(feature = "shadowtls")]
 pub(crate) fn resolve_detour_inbound(tag: &str) -> Option<Arc<ShadowsocksInboundAdapter>> {
     DETOUR_INBOUNDS.get(tag).and_then(|entry| entry.upgrade())
 }
@@ -1432,7 +1433,7 @@ where
         }
     };
 
-    let opts = ConnectOpts::default();
+    let opts = ConnectOpts;
     // Match by reference so we can still use `decision` later (conntrack/chain computation).
     let (mut upstream, outbound_tag) = match &decision {
         RDecision::Direct => {

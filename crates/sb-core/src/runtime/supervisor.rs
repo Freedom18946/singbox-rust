@@ -2623,6 +2623,52 @@ mod tests {
     static SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
         once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
 
+    #[derive(Debug)]
+    struct TestDirectOutbound;
+
+    impl sb_types::Outbound for TestDirectOutbound {
+        fn r#type(&self) -> &str {
+            "direct"
+        }
+
+        fn tag(&self) -> sb_types::OutboundTag {
+            sb_types::OutboundTag::new("direct")
+        }
+
+        fn network(&self) -> &[sb_types::NetworkKind] {
+            &[sb_types::NetworkKind::Tcp, sb_types::NetworkKind::Udp]
+        }
+
+        fn dial<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedStream, sb_types::CoreError>> {
+            Box::pin(async { Err(sb_types::CoreError::policy("test direct outbound")) })
+        }
+
+        fn listen_packet<'a>(
+            &'a self,
+            _session: &'a sb_types::Session,
+        ) -> sb_types::BoxFuture<'a, Result<sb_types::BoxedPacketConn, sb_types::CoreError>>
+        {
+            Box::pin(async { Err(sb_types::CoreError::policy("test direct outbound")) })
+        }
+    }
+
+    fn build_test_direct_outbound(
+        _param: &crate::adapter::OutboundParam,
+        _ir: &sb_config::ir::OutboundIR,
+        _ctx: &crate::adapter::registry::AdapterOutboundContext,
+    ) -> Option<Arc<dyn sb_types::Outbound>> {
+        Some(Arc::new(TestDirectOutbound))
+    }
+
+    fn test_registry_snapshot() -> crate::adapter::registry::RegistrySnapshot {
+        let mut snapshot = crate::adapter::registry::RegistrySnapshot::new();
+        let _ = snapshot.register_outbound("direct", build_test_direct_outbound);
+        snapshot
+    }
+
     #[derive(Clone)]
     struct DummyEndpoint {
         stages: Arc<Mutex<Vec<EndpointStage>>>,
@@ -2753,12 +2799,9 @@ mod tests {
             ..Default::default()
         };
 
-        let sup = Supervisor::start_with_registry(
-            ir,
-            Some(crate::adapter::registry::RegistrySnapshot::new()),
-        )
-        .await
-        .expect("start supervisor with explicit registry");
+        let sup = Supervisor::start_with_registry(ir, Some(test_registry_snapshot()))
+            .await
+            .expect("start supervisor with explicit registry");
 
         sup.handle()
             .shutdown_graceful(std::time::Duration::from_millis(100))
@@ -3103,9 +3146,12 @@ mod tests {
             ir
         }
 
-        let supervisor = Supervisor::start_with_registry(direct_ir("old-direct-dns"), None)
-            .await
-            .expect("old runtime starts");
+        let supervisor = Supervisor::start_with_registry(
+            direct_ir("old-direct-dns"),
+            Some(test_registry_snapshot()),
+        )
+        .await
+        .expect("old runtime starts");
         let old_runtime =
             crate::adapter::registry::runtime_outbounds().expect("old runtime outbounds published");
         assert!(old_runtime.resolve("old-direct-dns").is_some());
@@ -3221,7 +3267,7 @@ mod tests {
         }
 
         fn registry_snapshot() -> RegistrySnapshot {
-            let mut snapshot = RegistrySnapshot::new();
+            let mut snapshot = test_registry_snapshot();
             let _ = snapshot.register_inbound("http", build_ready_inbound);
             snapshot
         }

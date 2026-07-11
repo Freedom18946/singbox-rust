@@ -198,15 +198,6 @@ routing            = ["router"]  # routing as alias for router
 rules_capture      = []
 sbcore_analyze_json= []
 sbcore_rules_tool  = []
-scaffold           = [
-    "in_socks",
-    "in_http",
-    "in_mixed",
-    "in_tun",
-    "in_direct",
-    "out_socks",
-    "out_http",
-]  # 满足 app 依赖 (Deprecated: use specific in_*/out_* features)
 schema-v2          = []
 selector_p3        = []
 socks              = []

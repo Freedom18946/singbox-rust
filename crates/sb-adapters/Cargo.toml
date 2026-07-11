@@ -58,10 +58,11 @@ metrics = { version = "0.23", optional = true }
 clap = { version = "4", optional = true, features = ["derive"] }
 
 # 工作区内依赖（按你的仓库结构）
-sb-core = { path = "../sb-core", features = ["router", "scaffold", "v2ray_transport"] }
+sb-core = { path = "../sb-core", features = ["router", "v2ray_transport"] }
 sb-common = { path = "../sb-common" }
 sb-config = { path = "../sb-config" }
 sb-types = { path = "../sb-types" }
+socket2 = "0.6"
 sb-metrics = { path = "../sb-metrics", optional = true }
 sb-platform = { path = "../sb-platform", optional = true }
 sb-tls = { path = "../sb-tls", optional = true }

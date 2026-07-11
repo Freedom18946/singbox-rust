@@ -313,7 +313,21 @@ async fn test_selector_permanent_failure_handling() {
     let s = selector.clone();
     s.start_health_check();
 
-    sleep(Duration::from_millis(200)).await;
+    tokio::time::timeout(Duration::from_secs(2), async {
+        loop {
+            let broken_is_unhealthy = selector
+                .get_members()
+                .iter()
+                .find(|(tag, _, _)| tag == "broken")
+                .is_some_and(|(_, healthy, _)| !healthy);
+            if broken_is_unhealthy {
+                break;
+            }
+            sleep(Duration::from_millis(25)).await;
+        }
+    })
+    .await
+    .expect("broken member should become unhealthy");
 
     // "broken" should be permanently failed
     let members_status = selector.get_members();

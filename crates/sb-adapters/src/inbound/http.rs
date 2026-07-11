@@ -70,15 +70,15 @@ use std::{
 #[allow(dead_code)] // Reserved for connection tracking
 static HTTP_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
+use crate::inbound::connect::{
+    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
+    ConnectOpts,
+};
 #[cfg(feature = "metrics")]
 use metrics::counter;
 use once_cell::sync::OnceCell;
 use sb_core::outbound::health as ob_health;
 use sb_core::outbound::OutboundRegistryHandle;
-use sb_core::outbound::{
-    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
-    ConnectOpts,
-};
 use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
 use sb_core::router;
@@ -750,7 +750,7 @@ where
     decision =
         apply_health_fallback_policy(decision, ob_health::global_status().map(|st| st.is_up()));
 
-    let opts = ConnectOpts::default();
+    let opts = ConnectOpts;
 
     // Establish TCP with upstream first (based on decision and default proxy)
     // 先与上游建立 TCP（根据决策与默认代理）

@@ -8,6 +8,10 @@
 //! - Full stream relay with SYNACK semantics
 
 use super::tls;
+use crate::inbound::connect::{
+    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
+    ConnectOpts,
+};
 use anyhow::{anyhow, Context, Result};
 use anytls_rs::padding::PaddingFactory;
 use anytls_rs::protocol::{Command, Frame};
@@ -18,10 +22,7 @@ use bytes::Bytes;
 use sb_core::adapter::{InboundParam, InboundTaskDriver};
 use sb_core::net::metered::TrafficRecorder;
 use sb_core::outbound::selector::PoolSelector;
-use sb_core::outbound::{
-    direct_connect_hostport, http_proxy_connect_through_proxy, registry,
-    socks5_connect_through_socks5, ConnectOpts, OutboundRegistryHandle,
-};
+use sb_core::outbound::{registry, OutboundRegistryHandle};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
@@ -489,7 +490,7 @@ async fn connect_via_router(
         }
     };
 
-    let opts = ConnectOpts::default();
+    let opts = ConnectOpts;
     let target = format!("{}:{}", dest.host, dest.port);
 
     let (stream, outbound_tag) = match decision {

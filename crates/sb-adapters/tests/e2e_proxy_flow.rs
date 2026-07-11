@@ -107,7 +107,12 @@ fn start_http_origin(body: &'static str) -> Option<CapturedOrigin> {
 /// Build outbound registry and router with direct connection
 fn build_direct_proxy() -> (Arc<OutboundRegistryHandle>, Arc<RouterHandle>) {
     let mut map = std::collections::HashMap::new();
-    map.insert("direct".to_string(), OutboundImpl::Direct);
+    map.insert(
+        "direct".to_string(),
+        OutboundImpl::Connector(std::sync::Arc::new(
+            sb_adapters::outbound::direct::DirectOutbound::new(),
+        )),
+    );
     let registry = OutboundRegistry::new(map);
 
     let router = Router::with_default(OutboundKind::Direct);

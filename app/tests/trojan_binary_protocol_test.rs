@@ -99,6 +99,9 @@ async fn start_trojan_server_with_users(
     cert_pem: String,
     key_pem: String,
 ) -> Option<(SocketAddr, mpsc::Sender<()>, NamedTempFile, NamedTempFile)> {
+    let rules = sb_core::router::rules::parse_rules("default=direct");
+    sb_core::router::rules::install_global(sb_core::router::rules::Engine::build(rules));
+
     let listener = match TcpListener::bind("127.0.0.1:0").await {
         Ok(listener) => listener,
         Err(err) => {
@@ -137,7 +140,6 @@ async fn start_trojan_server_with_users(
         conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         transport_layer: None,
         multiplex: None,
-        #[cfg(feature = "tls_reality")]
         reality: None,
         fallback: None,
         fallback_for_alpn: HashMap::new(),
@@ -379,6 +381,9 @@ async fn test_binary_protocol_backward_compat() {
     let mut key_file = NamedTempFile::new().unwrap();
     key_file.write_all(key.as_bytes()).unwrap();
 
+    let rules = sb_core::router::rules::parse_rules("default=direct");
+    sb_core::router::rules::install_global(sb_core::router::rules::Engine::build(rules));
+
     // Test backward compatibility with single password
     #[allow(deprecated)]
     let config = TrojanInboundConfig {
@@ -393,7 +398,6 @@ async fn test_binary_protocol_backward_compat() {
         conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
         transport_layer: None,
         multiplex: None,
-        #[cfg(feature = "tls_reality")]
         reality: None,
         fallback: None,
         fallback_for_alpn: HashMap::new(),

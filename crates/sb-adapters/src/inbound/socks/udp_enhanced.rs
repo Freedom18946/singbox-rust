@@ -298,7 +298,7 @@ pub async fn serve_socks5_udp_enhanced(socket: Arc<UdpSocket>) -> Result<()> {
                 continue;
             }
             RDecision::Proxy(_) => {
-                // Legacy experiment now uses canonical adapter PacketConn rather than core scaffold.
+                // Legacy experiment now uses canonical adapter PacketConn.
                 if let Some(connector) = udp_proxy.as_ref() {
                     let udp_target = match &target {
                         TargetAddr::Ip(address) => CanonicalTargetAddr::Socket(*address),

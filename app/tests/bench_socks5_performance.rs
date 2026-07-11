@@ -89,7 +89,12 @@ async fn start_socks5_server() -> std::io::Result<(SocketAddr, mpsc::Sender<()>)
     drop(temp_listener);
 
     let mut map = std::collections::HashMap::new();
-    map.insert("direct".to_string(), OutboundImpl::Direct);
+    map.insert(
+        "direct".to_string(),
+        OutboundImpl::Connector(std::sync::Arc::new(
+            sb_adapters::outbound::direct::DirectOutbound::new(),
+        )),
+    );
     let registry = OutboundRegistry::new(map);
     let outbounds = Arc::new(OutboundRegistryHandle::new(registry));
     let router = Arc::new(RouterHandle::new(Router::with_default("direct")));

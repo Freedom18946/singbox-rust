@@ -8,16 +8,16 @@
 //! - Routes via sb-core router/outbounds
 
 use super::tls;
+use crate::inbound::connect::{
+    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
+    ConnectOpts,
+};
 use crate::transport_config::InboundStream;
 use anyhow::{anyhow, Result};
 use sb_core::adapter::InboundTaskDriver;
 use sb_core::net::metered;
 use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
-use sb_core::outbound::{
-    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
-    ConnectOpts,
-};
 use sb_core::outbound::{registry, selector::PoolSelector};
 use sb_core::router;
 use sb_core::router::rules as rules_global;
@@ -798,7 +798,7 @@ async fn handle_tcp_connect(
         }
     };
 
-    let opts = ConnectOpts::default();
+    let opts = ConnectOpts;
     let (mut upstream, outbound_tag) = match decision {
         RDecision::Direct => {
             let s = direct_connect_hostport(host, port, &opts).await?;
