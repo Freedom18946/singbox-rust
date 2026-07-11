@@ -1103,7 +1103,7 @@ fn build_shadowsocks_inbound(
     );
     #[cfg(feature = "service_ssmapi")]
     {
-        use sb_core::services::ssmapi::{registry::register_managed_ssm_server, ManagedSSMServer};
+        use sb_core::service::ssm::{register_managed_ssm_server, ManagedSSMServer};
 
         let tag = ManagedSSMServer::tag(adapter.as_ref()).to_string();
         if !tag.trim().is_empty() {

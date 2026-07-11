@@ -9,7 +9,7 @@ LISTEN=${SB_SOCKS_UDP_LISTEN:-127.0.0.1:11080}
 
 # Start mock upstream (SOCKS5 with UDP associate)
 echo "[RUN] mock upstream socks5 server at $UP -> $DNS"
-cargo run -q --manifest-path crates/sb-core/Cargo.toml --example mock_socks5_upstream -- ${UP} ${DNS} &
+cargo run -q --manifest-path crates/sb-adapters/Cargo.toml --example mock_socks5_upstream -- ${UP} ${DNS} &
 UP_PID=$!
 trap 'kill $UP_PID $APP_PID 2>/dev/null || true' EXIT
 sleep 0.5
@@ -46,7 +46,7 @@ APP_PID=$!
 sleep 1.5
 
 echo "[PROBE] dns query through socks5 udp (should hit upstream)"
-cargo run -q --manifest-path crates/sb-core/Cargo.toml --example socks5_udp_probe -- ${LISTEN} ${DNS} example.com
+cargo run -q --manifest-path crates/sb-adapters/Cargo.toml --example socks5_udp_probe -- ${LISTEN} ${DNS} example.com
 
 echo "[INFO] scraping udp upstream metrics (optional)"
 set +e

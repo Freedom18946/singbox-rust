@@ -128,7 +128,7 @@ pub(crate) fn start_v2ray_api_server(
     listen: &str,
     stats: Option<sb_config::ir::StatsIR>,
 ) -> Option<ServiceHandle> {
-    use sb_core::context::V2RayServer;
+    use sb_core::context::ManagedApiServer;
 
     let listen = listen.trim();
     if listen.is_empty() {
@@ -149,7 +149,7 @@ pub(crate) fn start_v2ray_api_server(
         stats,
     };
 
-    let server = Arc::new(sb_core::services::v2ray_api::V2RayApiServer::new(config));
+    let server = Arc::new(sb_api::services::v2ray_api::V2RayApiServer::new(config));
     match server.start() {
         Ok(()) => {
             info!(listen = %listen, "Started V2Ray API server");

@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # MIG-03 WP09 — derp / ssmapi / v2ray_api 迁出 sb-core，内核 axum/tonic 清零
 
-Status: PLANNED
+Status: DONE (2026-07-11)
 Priority: P1
 Depends on: 无（可与 α/β 车道并行；不碰 bridge/router 文件）
 Blocks: WP13（service_* feature 归位在 WP13 收网）
@@ -65,16 +65,16 @@ derp 单文件 5,311 行无法独立演进；tonic/axum 版本升级被内核锁
 
 ## Acceptance
 
-- [ ] `cargo tree -p sb-core --all-features | grep -E ' axum | tonic '` = 空。
-- [ ] `crates/sb-core/src/services/` 下不再存在 derp/、ssmapi/、v2ray_api.rs、
+- [x] `cargo tree -p sb-core --all-features | grep -E ' axum | tonic '` = 空。
+- [x] `crates/sb-core/src/services/` 下不再存在 derp/、ssmapi/、v2ray_api.rs、
       v2ray/（其余内核服务保留）。
-- [ ] v2ray/ssmapi/derp 的现有测试在新家全绿；API 对外契约回归
+- [x] v2ray/ssmapi/derp 的现有测试在新家全绿；API 对外契约回归
       （现有 API 集成测试 + 手工 curl 冒烟记录在包内）。
-- [ ] supervisor 不再 import 任何具体服务类型（`grep -n "V2RayServer\|derp\|ssmapi" runtime/supervisor.rs` 清零或仅剩泛化接口）。
-- [ ] app 三聚合 profile 构建通过：
+- [x] supervisor 不再 import 任何具体服务类型（`grep -n "V2RayServer\|derp\|ssmapi" runtime/supervisor.rs` 清零或仅剩泛化接口）。
+- [x] app 三聚合 profile 构建通过：
       `cargo check -p app --features acceptance`、`--features gui_runtime`、
       `--features parity`。
-- [ ] 全局验收门禁五连全绿。
+- [x] 全局验收门禁五连全绿。
 
 ## 验证命令
 
@@ -101,4 +101,11 @@ git diff --check
 
 ## 发现移交
 
-（执行时填写。）
+DERP 已迁入独立 `sb-service-derp`，按 handshake/http/relay/mesh/lifecycle 拆分；
+SSM API 与 V2Ray API 归 `sb-api`。app 组合根外置注册，core supervisor 仅见泛化
+`Service`/`StartStage`。`sb-core` feature tree 中 axum/tonic 为 0，原服务目录仅保留
+cache_file/dns_forwarder/ntp/time/urltest_history。
+
+验收补漏：修复 selector 默认 profile 的 `sb-metrics` 依赖、DERP 测试依赖、sb-api
+tower util 版本、DERP HeaderValue panic 路径、新 crate boundary allowlist。crate 全测试、
+三 app profile、clippy、workspace all-features、fmt、427 条 boundary、diff-check 全绿。

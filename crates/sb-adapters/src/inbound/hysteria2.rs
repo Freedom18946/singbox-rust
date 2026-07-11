@@ -8,7 +8,7 @@ use sb_core::outbound::{
 };
 use sb_core::router::engine::RouteCtx;
 use sb_core::router::{self, Transport};
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 use sb_transport::IoStream;
 use std::io;
 use std::net::{IpAddr, SocketAddr};

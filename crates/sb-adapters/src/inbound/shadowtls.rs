@@ -8,7 +8,7 @@ use anyhow::{anyhow, Context, Result};
 use hmac::{Hmac, Mac};
 use sb_core::adapter::InboundTaskDriver;
 use sb_core::router;
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 use serde::Deserialize;
 use sha1::Sha1;
 use sha2::{Digest, Sha256};

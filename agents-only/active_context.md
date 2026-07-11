@@ -10,6 +10,21 @@
 
 ---
 
+## Resume (2026-07-11) - MIG-03 WP09/WP10/WP12 red-team acceptance DONE
+
+- **WP09 accepted:** DERP moved to `sb-service-derp`; SSM/V2Ray API moved to `sb-api`;
+  app owns concrete service registration. sb-core service tree has no axum/tonic and retains
+  only non-Web kernel services.
+- **WP10 accepted:** `sb_api::debug` is sole HTTP/auth/middleware owner. app keeps endpoint state
+  plus route extension; all endpoints retained. Real HTTP tests lock 200/401/429, request-id,
+  envelope, audit, and extension behavior.
+- **WP12 accepted:** core selector/p3/udp-balancer and transport/tls/subscribe/config/socks5
+  shadows retired or relocated per D15. WireGuard/Tailscale layer split is explicit; no D18 item.
+- Red-team fixes closed default-profile metrics linkage, relocated test dependencies/feature gates,
+  DERP header panic paths, and stale boundary assertions. Workspace all-features, focused crate/app
+  tests, three app profiles, clippy, fmt, 427 boundaries, and diff-check pass.
+- **Authorized transition:** WP13 is next MIG-03 frontier; WP07 and WP12 prerequisites are closed.
+
 ## Resume (2026-07-11) - MIG-03 WP11 env/config convergence DONE
 
 - 141 个 core-owned `SB_*` 全部由 app 组合根一次解析，注入 `CoreRuntimeOptions` 六域；

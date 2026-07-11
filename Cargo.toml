@@ -17,6 +17,7 @@ members = [
   "crates/sb-transport",
   "crates/sb-subscribe",
   "crates/sb-api",
+  "crates/sb-service-derp",
   "crates/sb-tls",
   "labs/interop-lab",
   "xtask",

@@ -67,7 +67,7 @@ YAML
 
   # Try the probe through main instance (this will test if UDP upstream metrics get incremented)
   for i in 1 2 3; do
-    if timeout 5 cargo run -q --example socks5_udp_probe --manifest-path "${root}/crates/sb-core/Cargo.toml" -- "${socks_main}" "1.1.1.1:53" "example.com" >/dev/null 2>&1; then
+    if timeout 5 cargo run -q --example socks5_udp_probe --manifest-path "${root}/crates/sb-adapters/Cargo.toml" -- "${socks_main}" "1.1.1.1:53" "example.com" >/dev/null 2>&1; then
       ok=1; break
     fi
     sleep 0.5

@@ -29,17 +29,20 @@ use crate::inbound::connect::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use crate::outbound::pool_selector::PoolSelector;
 use once_cell::sync::OnceCell;
 use sb_core::adapter::{InboundReadySender, InboundTaskDriver};
 use sb_core::net::rate_limit_metrics;
-use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
+#[cfg(test)]
+use sb_core::net::tcp_rate_limit::TcpRateLimitConfig;
+use sb_core::net::tcp_rate_limit::TcpRateLimiter;
 use sb_core::outbound::health as ob_health;
-use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
+use sb_core::outbound::registry;
 use sb_core::outbound::{Endpoint, OutboundRegistryHandle};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
 use sb_core::router::rules::Decision as RDecision;
 use sb_core::router::{RouteCtx, RouterHandle, Transport};
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 use sb_transport::IoStream;
 
 static SELECTOR: OnceCell<PoolSelector> = OnceCell::new();
@@ -1072,7 +1075,6 @@ where
                     let cap = socks_sticky_env_usize("SB_PROXY_STICKY_CAP", 4096);
                     PoolSelector::new_with_capacity(cap, std::time::Duration::from_millis(ttl))
                 });
-                let _health = MultiHealthView;
                 let target_str = match &endpoint {
                     Endpoint::Domain(host, port) => format!("{}:{}", host, port),
                     Endpoint::Ip(sa) => sa.to_string(),

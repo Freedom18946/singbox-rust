@@ -51,32 +51,6 @@ static STATUS: once_cell::sync::OnceCell<HealthStatus> = once_cell::sync::OnceCe
 static STATES: once_cell::sync::OnceCell<DashMap<String, EpState>> =
     once_cell::sync::OnceCell::new(); // key: "name#index"
 
-pub struct MultiHealthView;
-
-// NOTE: HealthView trait can be wired when multi-pool selection is finalized.
-/*impl crate::outbound::selector::HealthView for MultiHealthView {
-    fn is_selectable(&self, ep: &ProxyEndpoint) -> bool {
-        let states = match STATES.get() {
-            Some(s) => s,
-            None => return true, // No health system initialized, assume healthy
-        };
-
-        // Construct key (simplified: use addr as key; for named pools, registration should maintain "pool:name#idx")
-        let k = format!("{}", ep.addr);
-        if let Some(s) = states.get(&k) {
-            if !s.up.load(Ordering::Relaxed) {
-                // Check circuit breaker window
-                if let Some(t0) = *s.opened_at.lock() {
-                    if t0.elapsed() < Duration::from_millis(ep.open_ms) {
-                        return false;
-                    }
-                }
-            }
-        }
-        true
-    }
-}*/
-
 pub fn global_status() -> Option<&'static HealthStatus> {
     STATUS.get()
 }

@@ -6,10 +6,6 @@ use crate::adapter::registry;
 use crate::adapter::{AnyTlsUserParam, Bridge, InboundParam, OutboundParam};
 use crate::context::Context;
 use crate::endpoint::{endpoint_registry, Endpoint, EndpointAsOutbound, EndpointContext};
-#[allow(unused_imports)]
-use crate::outbound::selector::Selector;
-#[allow(unused_imports)]
-use crate::outbound::selector_group::{ProxyMember, SelectorGroup};
 use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 #[cfg(feature = "router")]
 use crate::router::RouterHandle;
@@ -18,8 +14,6 @@ use dashmap::DashMap;
 use once_cell::sync::Lazy;
 use sb_config::ir::{ConfigIR, InboundIR, OutboundIR, OutboundType};
 use std::sync::Arc;
-#[allow(unused_imports)]
-use std::time::Instant;
 
 fn outbound_registry_from_bridge(br: &Bridge) -> OutboundRegistry {
     let mut reg = OutboundRegistry::default();

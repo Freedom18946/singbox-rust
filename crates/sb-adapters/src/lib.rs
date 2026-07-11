@@ -161,6 +161,11 @@ pub mod service_stubs;
 
 /// Service implementations.
 pub mod service;
+pub mod socks5_codec;
+
+#[cfg(feature = "legacy_tailscale_outbound")]
+#[doc(hidden)]
+pub mod tailscale_control;
 
 /// Utility functions and helpers.
 ///

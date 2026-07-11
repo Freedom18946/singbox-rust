@@ -510,7 +510,15 @@ else:
     if core_id is None:
         errors.append("cannot locate sb-core package in cargo metadata")
     else:
-        allowlist = {"app", "interop-lab", "sb-api", "sb-adapters", "sb-benches", "xtests"}
+        allowlist = {
+            "app",
+            "interop-lab",
+            "sb-api",
+            "sb-adapters",
+            "sb-benches",
+            "sb-service-derp",
+            "xtests",
+        }
         optional_allowlist = {"sb-subscribe"}
         actual = set()
         optional_actual = set()
@@ -664,6 +672,19 @@ for removed in \
     crates/sb-core/src/outbound/socks5_udp.rs \
     crates/sb-core/src/outbound/udp_socks5.rs \
     crates/sb-core/src/outbound/udp_proxy_glue.rs \
+    crates/sb-core/src/outbound/selector.rs \
+    crates/sb-core/src/outbound/selector_group.rs \
+    crates/sb-core/src/outbound/selector_p3.rs \
+    crates/sb-core/src/outbound/p3_selector.rs \
+    crates/sb-core/src/outbound/feedback.rs \
+    crates/sb-core/src/outbound/observe.rs \
+    crates/sb-core/src/outbound/udp_balancer.rs \
+    crates/sb-core/src/config/mod.rs \
+    crates/sb-core/src/transport/mod.rs \
+    crates/sb-core/src/tls/mod.rs \
+    crates/sb-core/src/subscribe/mod.rs \
+    crates/sb-core/src/socks5/mod.rs \
+    crates/sb-core/src/services/tailscale/mod.rs \
     crates/sb-adapters/src/canonical.rs \
     crates/sb-proto/Cargo.toml; do
     if [ -e "$removed" ]; then
@@ -698,6 +719,19 @@ fi
 if rg -n 'OutboundImpl::(Direct|Block|Socks5|HttpProxy)|DirectConnector|canonical_bridge' \
     crates/sb-core/src crates/sb-api/src crates/sb-adapters/src app/src --glob '*.rs' >/dev/null 2>&1; then
     echo "  FAIL: core-owned direct/block or legacy outbound variants remain"
+    V8_FAILS=$((V8_FAILS + 1))
+fi
+
+if rg -n 'sb_core::tls|crate::tls::' \
+    crates/sb-core/src crates/sb-adapters/src --glob '*.rs' >/dev/null 2>&1; then
+    echo "  FAIL: WP12 core TLS shadow import remains"
+    V8_FAILS=$((V8_FAILS + 1))
+fi
+
+if [ ! -f crates/sb-adapters/src/outbound/selector_group.rs ] || \
+   ! rg -n 'impl sb_types::OutboundGroup for SelectorGroup' \
+      crates/sb-adapters/src/outbound/selector_group.rs >/dev/null 2>&1; then
+    echo "  FAIL: adapter-owned canonical SelectorGroup is missing"
     V8_FAILS=$((V8_FAILS + 1))
 fi
 

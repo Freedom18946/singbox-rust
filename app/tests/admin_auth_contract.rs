@@ -71,7 +71,7 @@ impl TestConfig {
 /// Returns an `AdminDebugHandle` that supports graceful shutdown.
 async fn start_test_server(
     config: &mut TestConfig,
-) -> Result<app::admin_debug::http_server::AdminDebugHandle, io::Error> {
+) -> Result<app::admin_debug::AdminDebugHandle, io::Error> {
     // Set environment variables for the test
     std::env::set_var("SB_ADMIN_TOKEN", &config.auth_token);
     std::env::set_var("SB_ADMIN_RATE_LIMIT_ENABLED", "1");
@@ -106,7 +106,7 @@ async fn start_test_server(
         std::time::Instant::now(),
     ));
 
-    let handle = app::admin_debug::http_server::serve_plain(&addr_string, state).await?;
+    let handle = state.spawn_plain_http_server_sync(addr_string);
 
     // Give the server a moment to fully start
     sleep(Duration::from_millis(100)).await;
@@ -116,7 +116,7 @@ async fn start_test_server(
 
 async fn start_test_server_or_skip(
     config: &mut TestConfig,
-) -> Option<app::admin_debug::http_server::AdminDebugHandle> {
+) -> Option<app::admin_debug::AdminDebugHandle> {
     match start_test_server(config).await {
         Ok(handle) => Some(handle),
         Err(err) if err.kind() == io::ErrorKind::PermissionDenied => {

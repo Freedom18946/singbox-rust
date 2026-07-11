@@ -1,7 +1,7 @@
+use sb_adapters::outbound::selector_group::{ProxyMember, SelectorGroup, UrlTestOptions};
 use sb_config::ir::{OutboundIR, OutboundType};
 use sb_core::adapter::{Bridge, OutboundParam};
 use sb_core::context::{Context, ContextRegistry};
-use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup, UrlTestOptions};
 use sb_types::Outbound;
 use std::sync::Arc;
 use std::time::Duration;

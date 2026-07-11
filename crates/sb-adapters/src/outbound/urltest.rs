@@ -1,10 +1,9 @@
 use std::sync::Arc;
 use std::time::Duration;
 
+use super::selector_group::{ProxyMember, SelectorGroup, UrlTestOptions};
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::{registry, OutboundParam};
-use sb_core::outbound::selector_group::UrlTestOptions;
-use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup};
 
 type OutboundBuilderResult = Option<Arc<dyn sb_types::Outbound>>;
 

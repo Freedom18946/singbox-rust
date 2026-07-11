@@ -24,7 +24,7 @@ run() {
   echo "[DEBUG] Starting UDP stability test for ${dur}s with map_size <= ${max_map_size}"
 
   while [[ $(date +%s) -lt $t_end ]]; do
-    if cargo run -q --example socks5_udp_probe --manifest-path "${ROOT}/crates/sb-core/Cargo.toml" -- "${socks}" "1.1.1.1:53" "example.com" >/dev/null 2>&1; then
+    if cargo run -q --example socks5_udp_probe --manifest-path "${ROOT}/crates/sb-adapters/Cargo.toml" -- "${socks}" "1.1.1.1:53" "example.com" >/dev/null 2>&1; then
       sent=$((sent+1))
     else
       failed=$((failed+1))

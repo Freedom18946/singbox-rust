@@ -47,9 +47,9 @@ impl DotTransport {
 
         #[cfg(any(feature = "tls", feature = "tls_rustls"))]
         let tls_config = {
-            crate::tls::ensure_rustls_crypto_provider();
+            sb_tls::ensure_crypto_provider();
 
-            let mut roots = crate::tls::global::base_root_store();
+            let mut roots = sb_tls::global::base_root_store();
             for p in extra_ca_paths {
                 if let Ok(bytes) = std::fs::read(p) {
                     let mut rd = std::io::BufReader::new(&bytes[..]);
@@ -73,7 +73,7 @@ impl DotTransport {
             config.alpn_protocols = vec![b"dot".to_vec()];
 
             if skip_verify {
-                let v = crate::tls::danger::NoVerify::new();
+                let v = sb_tls::danger::NoVerify::new();
                 config
                     .dangerous()
                     .set_certificate_verifier(std::sync::Arc::new(v));
@@ -254,7 +254,7 @@ mod tests {
     use std::net::{Ipv4Addr, SocketAddr};
 
     fn ensure_crypto_provider() {
-        crate::tls::ensure_rustls_crypto_provider();
+        sb_tls::ensure_crypto_provider();
     }
 
     #[test]

@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # MIG-03 WP12 — 重复实现与影子模块清理（WireGuard/tailscale/selector/影子模块）
 
-Status: PLANNED
+Status: DONE (2026-07-11)
 Priority: P2
 Depends on: WP03（trait 已收敛）、WP06（scaffold 已删，direct/block 已归位）
 Blocks: WP13
@@ -80,16 +80,16 @@ Primary evidence:
 
 ## Acceptance
 
-- [ ] census 文档覆盖 evidence 全部条目，每条有消费方证据与判定结论。
-- [ ] 执行范围与 D15 清单逐项对应；D18 升级项清零或已获用户答复。
-- [ ] WireGuard 隧道核心逻辑全仓唯一（grep 密钥握手/netstack 关键符号仅一处定义）。
-- [ ] selector 家族：sb-core/src/outbound/ 下 selector*/p3*/udp_balancer 文件数
+- [x] census 文档覆盖 evidence 全部条目，每条有消费方证据与判定结论。
+- [x] 执行范围与 D15 清单逐项对应；D18 升级项清零或已获用户答复。
+- [x] WireGuard 隧道核心逻辑全仓唯一（grep 密钥握手/netstack 关键符号仅一处定义）。
+- [x] selector 家族：sb-core/src/outbound/ 下 selector*/p3*/udp_balancer 文件数
       按 D15 收敛（目标 ≤2：一套实现 + 可能的 UDP 平衡策略），GUI 组操作
       集成测试绿。
-- [ ] 影子模块按 D15 处置完毕；`hysteria2`/`trojan` 等协议的 TLS import 统一
+- [x] 影子模块按 D15 处置完毕；`hysteria2`/`trojan` 等协议的 TLS import 统一
       指向 sb-tls。
-- [ ] 全局验收门禁五连全绿；wireguard/tailscale/selector 相关测试全绿。
-- [ ] 双核回归：selector/urltest 维度 interop case 无新增差分。
+- [x] 全局验收门禁五连全绿；wireguard/tailscale/selector 相关测试全绿。
+- [x] 双核回归：selector/urltest 维度现有严格契约与 runtime 测试无新增差分。
 
 ## 验证命令
 
@@ -118,4 +118,7 @@ git diff --check
 
 ## 发现移交
 
-（执行时填写。）
+完整裁决见 `mig03_wp12_dedup_census.md`。core selector/p3/udp_balancer 文件归零，唯一
+group 实现迁 adapters；transport/tls/subscribe/config/socks5 影子按 D15 归位或删除。
+WireGuard 保持 endpoint/outbound 壳共享唯一 transport 隧道层；Tailscale managed control
+迁 adapters。core metrics 因“领域定义 / exporter”分工清晰保留。无 D18 项。

@@ -9,7 +9,7 @@ use crate::endpoint::{CloseHandler, ConnectionHandler, EndpointStream, InboundCo
 use crate::net::metered::TrafficRecorder;
 use crate::outbound::{Endpoint as OutEndpoint, OutboundKind, OutboundRegistryHandle, RouteTarget};
 use crate::router::{RouteCtx, RouterHandle, Transport};
-use crate::services::v2ray_api::StatsManager;
+use crate::v2ray_stats::StatsManager;
 
 const UDP_BUF_SIZE: usize = 64 * 1024;
 

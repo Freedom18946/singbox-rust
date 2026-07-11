@@ -213,10 +213,15 @@ impl Dialer for Http2Dialer {
             .parse::<Uri>()
             .map_err(|e| DialError::Other(format!("Invalid URI: {}", e)))?;
 
+        let request_host = if self.config.host.is_empty() {
+            host
+        } else {
+            &self.config.host
+        };
         let mut request_builder = Request::builder()
             .method(self.config.method.as_str())
             .uri(uri)
-            .header("Host", &self.config.host);
+            .header("Host", request_host);
 
         // Add custom headers
         // 添加自定义头部

@@ -354,7 +354,10 @@ pub mod vmess;
 pub mod wireguard;
 // Selector group adapters (always available since they're core functionality)
 // 选择器组适配器（始终可用，因为它们是核心功能）
+pub mod pool_observe;
+pub mod pool_selector;
 pub mod selector;
+pub mod selector_group;
 pub mod urltest;
 
 // Re-export traits for easy access

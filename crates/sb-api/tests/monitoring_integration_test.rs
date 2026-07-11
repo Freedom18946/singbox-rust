@@ -11,6 +11,7 @@ use tokio::time::timeout;
 
 /// Test the complete monitoring system integration
 #[tokio::test]
+#[serial_test::serial]
 async fn test_monitoring_system_integration() -> anyhow::Result<()> {
     let api_config = ApiConfig {
         listen_addr: SocketAddr::from(([127, 0, 0, 1], 0)),
@@ -60,12 +61,17 @@ async fn test_traffic_monitoring(
     monitoring.bridge().update_traffic(2048, 4096).await;
 
     // Verify traffic updates are received
-    let traffic_update = timeout(Duration::from_millis(100), traffic_rx.recv()).await;
-    assert!(traffic_update.is_ok(), "Should receive traffic update");
-    let stats = match traffic_update {
-        Ok(Ok(s)) => s,
-        _ => return Ok(()),
-    };
+    let stats = timeout(Duration::from_secs(2), async {
+        loop {
+            if let Ok(stats) = traffic_rx.recv().await {
+                if stats.up >= 1024 && stats.down >= 2048 {
+                    break stats;
+                }
+            }
+        }
+    })
+    .await
+    .expect("Should receive a non-zero traffic update");
     assert!(stats.up >= 1024, "Upload should be at least 1024 bytes");
     assert!(stats.down >= 2048, "Download should be at least 2048 bytes");
     assert!(stats.timestamp > 0, "Timestamp should be set");
@@ -331,6 +337,7 @@ async fn test_v2ray_api_integration(
 
 /// Test end-to-end monitoring with both APIs
 #[tokio::test]
+#[serial_test::serial]
 async fn test_end_to_end_monitoring() -> anyhow::Result<()> {
     let api_config = ApiConfig {
         listen_addr: SocketAddr::from(([127, 0, 0, 1], 0)),

@@ -14,10 +14,12 @@
 //!
 //! Priority: WS-E Task "Add comprehensive contract tests for selector/urltest"
 
+use sb_adapters::outbound::selector_group::{
+    ProxyMember, SelectMode, SelectorGroup, UrlTestOptions,
+};
 use sb_adapters::register_all;
 use sb_config::validator::v2::to_ir_v1;
 use sb_core::adapter::registry;
-use sb_core::outbound::selector_group::{ProxyMember, SelectMode, SelectorGroup, UrlTestOptions};
 use sb_core::outbound::Outbound;
 use sb_core::router::Engine;
 use std::sync::Arc;

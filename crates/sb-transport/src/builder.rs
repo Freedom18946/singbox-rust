@@ -264,6 +264,16 @@ impl TransportBuilder {
         }
     }
 
+    /// Switch to dependency-light gRPC framing without tonic.
+    #[cfg(feature = "transport_grpc_lite")]
+    #[must_use]
+    pub fn grpc_lite(self, config: crate::grpc_lite::GrpcLiteConfig) -> Self {
+        let dialer = crate::grpc_lite::GrpcLiteDialer::new(config, self.inner);
+        Self {
+            inner: Box::new(dialer),
+        }
+    }
+
     /// Return the composed dialer
     /// 返回组合后的拨号器
     #[must_use]

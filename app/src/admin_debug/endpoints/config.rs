@@ -4,7 +4,6 @@ use crate::admin_debug::{
     reloadable,
 };
 use serde::{Deserialize, Serialize};
-use std::collections::HashMap;
 use tokio::io::{AsyncRead, AsyncWrite};
 
 #[derive(Serialize)]
@@ -186,7 +185,7 @@ where
     }
 }
 
-#[cfg(feature = "admin_tests")]
+#[cfg(all(test, feature = "admin_tests"))]
 mod tests {
     use super::*;
 

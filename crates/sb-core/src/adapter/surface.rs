@@ -5,16 +5,17 @@
 //! stays in the existing managers and services.
 
 use crate::context::{
-    CacheFile, CertificateStore, ContextRegistry, TimeService, URLTestHistoryStorage, V2RayServer,
+    CacheFile, CertificateStore, ContextRegistry, ManagedApiServer, TimeService,
+    URLTestHistoryStorage,
 };
 use crate::dns::dns_router::DnsRouter;
-use crate::services::v2ray_api::StatsManager;
+use crate::v2ray_stats::StatsManager;
 use sb_types::ports::{
     AdapterServicePorts, BoxFuture, CacheFilePort, CertificateStorePort, ClashServerPort,
     CloseHook, ConnectionTrackerPort, DnsCacheStats, DnsQueryOptions, DnsRouterPort,
-    FakeIpMetadata as PortFakeIpMetadata, FakeIpStoragePort, PacketMetadata, PreMatchResult,
-    RdrcStorePort, RouteMetadata, RouterPort, RuleSetPort, SavedRuleSetBinary, TimePort,
-    UrlTestHistory, UrlTestHistoryPort, V2RayServerPort, V2RayStatsPort,
+    FakeIpMetadata as PortFakeIpMetadata, FakeIpStoragePort, ManagedApiServerPort, PacketMetadata,
+    PreMatchResult, RdrcStorePort, RouteMetadata, RouterPort, RuleSetPort, SavedRuleSetBinary,
+    TimePort, UrlTestHistory, UrlTestHistoryPort, V2RayStatsPort,
 };
 use std::net::IpAddr;
 use std::sync::Arc;
@@ -56,7 +57,7 @@ impl AdapterServices {
                 v2ray_server: context
                     .v2ray_server
                     .as_ref()
-                    .map(|server| Arc::new(V2RayServerPortAdapter::new(server.clone())) as _),
+                    .map(|server| Arc::new(ManagedApiServerPortAdapter::new(server.clone())) as _),
                 time_service: context
                     .time_service
                     .as_ref()
@@ -455,24 +456,24 @@ impl V2RayStatsPort for V2RayStatsPortAdapter {
 }
 
 #[derive(Clone)]
-struct V2RayServerPortAdapter {
-    inner: Arc<dyn V2RayServer>,
+struct ManagedApiServerPortAdapter {
+    inner: Arc<dyn ManagedApiServer>,
 }
 
-impl V2RayServerPortAdapter {
-    fn new(inner: Arc<dyn V2RayServer>) -> Self {
+impl ManagedApiServerPortAdapter {
+    fn new(inner: Arc<dyn ManagedApiServer>) -> Self {
         Self { inner }
     }
 }
 
-impl std::fmt::Debug for V2RayServerPortAdapter {
+impl std::fmt::Debug for ManagedApiServerPortAdapter {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("V2RayServerPortAdapter")
+        f.debug_struct("ManagedApiServerPortAdapter")
             .finish_non_exhaustive()
     }
 }
 
-impl V2RayServerPort for V2RayServerPortAdapter {
+impl ManagedApiServerPort for ManagedApiServerPortAdapter {
     fn stats_service(&self) -> Option<Arc<dyn V2RayStatsPort>> {
         self.inner
             .stats()

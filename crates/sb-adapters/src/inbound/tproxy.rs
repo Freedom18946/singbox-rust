@@ -8,12 +8,13 @@ use crate::inbound::connect::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use crate::outbound::pool_selector::PoolSelector;
 use anyhow::{anyhow, Result};
 use sb_core::net::metered;
-use sb_core::outbound::{health as ob_health, registry, selector::PoolSelector};
+use sb_core::outbound::{health as ob_health, registry};
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::os::fd::FromRawFd;
 use std::sync::Arc;

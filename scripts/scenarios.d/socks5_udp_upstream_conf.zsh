@@ -11,7 +11,7 @@ run() {
   fi
   local socks="${SOCKS:-127.0.0.1:11080}"
   # 触发一次 UDP 查询，经主实例路由到上游池 up#1
-  if cargo run -q --example socks5_udp_probe --manifest-path "${ROOT}/crates/sb-core/Cargo.toml" -- "${socks}" "1.1.1.1:53" "example.com" >/dev/null 2>&1 ; then
+  if cargo run -q --example socks5_udp_probe --manifest-path "${ROOT}/crates/sb-adapters/Cargo.toml" -- "${socks}" "1.1.1.1:53" "example.com" >/dev/null 2>&1 ; then
     echo '{"name":"socks5_udp_upstream_conf","ok":1,"msg":"probe via configured upstream ok"}'
   else
     echo '{"name":"socks5_udp_upstream_conf","ok":0,"msg":"probe via configured upstream failed"}'

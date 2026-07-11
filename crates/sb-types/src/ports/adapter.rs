@@ -256,7 +256,7 @@ pub trait V2RayStatsPort: ConnectionTrackerPort + Send + Sync + std::fmt::Debug 
 }
 
 /// V2Ray server contract.
-pub trait V2RayServerPort: Send + Sync + std::fmt::Debug + 'static {
+pub trait ManagedApiServerPort: Send + Sync + std::fmt::Debug + 'static {
     fn stats_service(&self) -> Option<Arc<dyn V2RayStatsPort>>;
 }
 
@@ -278,7 +278,7 @@ pub struct AdapterServicePorts {
     pub cache_file: Option<Arc<dyn CacheFilePort>>,
     pub urltest_history: Option<Arc<dyn UrlTestHistoryPort>>,
     pub clash_server: Option<Arc<dyn ClashServerPort>>,
-    pub v2ray_server: Option<Arc<dyn V2RayServerPort>>,
+    pub v2ray_server: Option<Arc<dyn ManagedApiServerPort>>,
     pub time_service: Option<Arc<dyn TimePort>>,
     pub certificate_store: Option<Arc<dyn CertificateStorePort>>,
 }

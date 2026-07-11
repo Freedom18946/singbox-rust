@@ -337,24 +337,20 @@ fn test_connection_window_recovery() {
 }
 
 // ============================================================================
-// ENVIRONMENT VARIABLE CONFIGURATION
+// RUNTIME OPTION CONFIGURATION
 // ============================================================================
 
 #[test]
-fn test_env_var_configuration() {
-    // Test loading configuration from environment variables
-    std::env::set_var("SB_INBOUND_RATE_LIMIT_PER_IP", "50");
-    std::env::set_var("SB_INBOUND_RATE_LIMIT_WINDOW_SEC", "30");
-    std::env::set_var("SB_INBOUND_RATE_LIMIT_QPS", "100");
-
-    let config = TcpRateLimitConfig::from_env();
+fn test_runtime_option_configuration() {
+    let options = sb_core::runtime_options::NetworkRuntimeOptions {
+        inbound_rate_limit_per_ip: 50,
+        inbound_rate_limit_window: Duration::from_secs(30),
+        inbound_rate_limit_qps: Some(100),
+        ..Default::default()
+    };
+    let config = TcpRateLimitConfig::from_options(&options);
 
     assert_eq!(config.max_connections, 50);
     assert_eq!(config.window, Duration::from_secs(30));
     assert_eq!(config.max_qps, Some(100));
-
-    // Clean up
-    std::env::remove_var("SB_INBOUND_RATE_LIMIT_PER_IP");
-    std::env::remove_var("SB_INBOUND_RATE_LIMIT_WINDOW_SEC");
-    std::env::remove_var("SB_INBOUND_RATE_LIMIT_QPS");
 }

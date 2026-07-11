@@ -3,7 +3,7 @@
 //!
 //! A thin, read-only projection of a sidecar's source-of-truth runtime snapshot into an
 //! app-internal liveness model. Two source kinds:
-//! - **`V2Ray`**: maps `sb_core::context::V2RayServerRuntimeSnapshot` (published by sb-core).
+//! - **`V2Ray`**: maps `sb_core::context::ManagedApiRuntimeSnapshot` (published by sb-core).
 //! - **Clash**: the app task owner publishes the app-level `SidecarRuntimeSnapshot` directly, so the
 //!   Clash arm is an identity read (no second mapping).
 //!
@@ -20,7 +20,7 @@
 
 #[cfg(feature = "v2ray_api")]
 use sb_core::context::{
-    V2RayServer, V2RayServerActivePhase, V2RayServerExit, V2RayServerRuntimeSnapshot,
+    ManagedApiActivePhase, ManagedApiExit, ManagedApiRuntimeSnapshot, ManagedApiServer,
 };
 use tokio::sync::watch;
 
@@ -70,7 +70,7 @@ pub enum SidecarExit {
 /// The source a subscription projects from.
 enum SidecarRuntimeSource {
     #[cfg(feature = "v2ray_api")]
-    V2Ray(watch::Receiver<V2RayServerRuntimeSnapshot>),
+    V2Ray(watch::Receiver<ManagedApiRuntimeSnapshot>),
     #[cfg(feature = "clash_api")]
     Clash(watch::Receiver<SidecarRuntimeSnapshot>),
 }
@@ -87,11 +87,14 @@ pub struct SidecarRuntimeSubscription {
 impl SidecarRuntimeSubscription {
     /// Build a subscription from a `V2Ray` server's runtime-state capability.
     ///
-    /// Returns `None` when the server does not expose a runtime snapshot (the `V2RayServer` trait
+    /// Returns `None` when the server does not expose a runtime snapshot (the `ManagedApiServer` trait
     /// default returns `None`). `None` means "capability absent", NOT "exited" — callers must not
     /// treat it as a terminal state.
     #[cfg(feature = "v2ray_api")]
-    pub fn from_v2ray_server(name: impl Into<String>, server: &dyn V2RayServer) -> Option<Self> {
+    pub fn from_v2ray_server(
+        name: impl Into<String>,
+        server: &dyn ManagedApiServer,
+    ) -> Option<Self> {
         let receiver = server.subscribe_runtime_state()?;
         Some(Self {
             name: name.into(),
@@ -173,7 +176,7 @@ impl SidecarRuntimeSubscription {
 
 /// Pure projection of a `V2Ray` source snapshot into the app model.
 #[cfg(feature = "v2ray_api")]
-fn map_v2ray_snapshot(source: &V2RayServerRuntimeSnapshot) -> SidecarRuntimeSnapshot {
+fn map_v2ray_snapshot(source: &ManagedApiRuntimeSnapshot) -> SidecarRuntimeSnapshot {
     SidecarRuntimeSnapshot {
         current: source.current.as_ref().map(|g| SidecarActiveGeneration {
             generation: g.generation,
@@ -188,10 +191,10 @@ fn map_v2ray_snapshot(source: &V2RayServerRuntimeSnapshot) -> SidecarRuntimeSnap
 
 /// Map a source active-phase; unknown future variants degrade to `Unknown`.
 #[cfg(feature = "v2ray_api")]
-const fn map_v2ray_phase(phase: &V2RayServerActivePhase) -> SidecarActivePhase {
+const fn map_v2ray_phase(phase: &ManagedApiActivePhase) -> SidecarActivePhase {
     match phase {
-        V2RayServerActivePhase::Running => SidecarActivePhase::Running,
-        V2RayServerActivePhase::ShutdownRequested => SidecarActivePhase::ShutdownRequested,
+        ManagedApiActivePhase::Running => SidecarActivePhase::Running,
+        ManagedApiActivePhase::ShutdownRequested => SidecarActivePhase::ShutdownRequested,
         // sb-core's enum is #[non_exhaustive]: never panic, never collapse to a real phase.
         _ => SidecarActivePhase::Unknown,
     }
@@ -199,13 +202,13 @@ const fn map_v2ray_phase(phase: &V2RayServerActivePhase) -> SidecarActivePhase {
 
 /// Map a source terminal exit; unknown future variants degrade to `Unknown`.
 #[cfg(feature = "v2ray_api")]
-fn map_v2ray_exit(exit: &V2RayServerExit) -> SidecarExit {
+fn map_v2ray_exit(exit: &ManagedApiExit) -> SidecarExit {
     match exit {
-        V2RayServerExit::CleanShutdown => SidecarExit::CleanShutdown,
-        V2RayServerExit::UnexpectedCompletion => SidecarExit::UnexpectedCompletion,
-        V2RayServerExit::ServeError(e) => SidecarExit::ServeError(e.clone()),
-        V2RayServerExit::Panicked(p) => SidecarExit::Panicked(p.clone()),
-        V2RayServerExit::Cancelled => SidecarExit::Cancelled,
+        ManagedApiExit::CleanShutdown => SidecarExit::CleanShutdown,
+        ManagedApiExit::UnexpectedCompletion => SidecarExit::UnexpectedCompletion,
+        ManagedApiExit::ServeError(e) => SidecarExit::ServeError(e.clone()),
+        ManagedApiExit::Panicked(p) => SidecarExit::Panicked(p.clone()),
+        ManagedApiExit::Cancelled => SidecarExit::Cancelled,
         // sb-core's enum is #[non_exhaustive]: never panic, never collapse to CleanShutdown.
         _ => SidecarExit::Unknown,
     }
@@ -449,23 +452,23 @@ mod tests {
     mod v2ray {
         use super::super::*;
         use sb_core::context::{
-            V2RayServerActiveGeneration, V2RayServerExitRecord, V2RayServerRuntimeSnapshot,
+            ManagedApiActiveGeneration, ManagedApiExitRecord, ManagedApiRuntimeSnapshot,
         };
 
-        /// Minimal V2RayServer that publishes through a test-owned watch sender.
+        /// Minimal ManagedApiServer that publishes through a test-owned watch sender.
         #[derive(Debug)]
         struct MockV2Ray {
-            tx: watch::Sender<V2RayServerRuntimeSnapshot>,
+            tx: watch::Sender<ManagedApiRuntimeSnapshot>,
         }
 
         impl MockV2Ray {
             fn new() -> Self {
-                let (tx, _) = watch::channel(V2RayServerRuntimeSnapshot::default());
+                let (tx, _) = watch::channel(ManagedApiRuntimeSnapshot::default());
                 Self { tx }
             }
         }
 
-        impl V2RayServer for MockV2Ray {
+        impl ManagedApiServer for MockV2Ray {
             fn start(&self) -> anyhow::Result<()> {
                 Ok(())
             }
@@ -474,16 +477,16 @@ mod tests {
             }
             fn subscribe_runtime_state(
                 &self,
-            ) -> Option<watch::Receiver<V2RayServerRuntimeSnapshot>> {
+            ) -> Option<watch::Receiver<ManagedApiRuntimeSnapshot>> {
                 Some(self.tx.subscribe())
             }
         }
 
-        /// V2RayServer that does NOT expose runtime state (uses the trait default None).
+        /// ManagedApiServer that does NOT expose runtime state (uses the trait default None).
         #[derive(Debug)]
         struct MockNoRuntime;
 
-        impl V2RayServer for MockNoRuntime {
+        impl ManagedApiServer for MockNoRuntime {
             fn start(&self) -> anyhow::Result<()> {
                 Ok(())
             }
@@ -492,11 +495,11 @@ mod tests {
             }
         }
 
-        fn running(generation: u64) -> V2RayServerRuntimeSnapshot {
-            V2RayServerRuntimeSnapshot {
-                current: Some(V2RayServerActiveGeneration {
+        fn running(generation: u64) -> ManagedApiRuntimeSnapshot {
+            ManagedApiRuntimeSnapshot {
+                current: Some(ManagedApiActiveGeneration {
                     generation,
-                    phase: V2RayServerActivePhase::Running,
+                    phase: ManagedApiActivePhase::Running,
                 }),
                 last_exit: None,
             }
@@ -505,7 +508,7 @@ mod tests {
         // ── A. Empty snapshot ──
         #[test]
         fn maps_empty_snapshot() {
-            let mapped = map_v2ray_snapshot(&V2RayServerRuntimeSnapshot::default());
+            let mapped = map_v2ray_snapshot(&ManagedApiRuntimeSnapshot::default());
             assert_eq!(mapped, SidecarRuntimeSnapshot::default());
             assert!(mapped.current.is_none());
             assert!(mapped.last_exit.is_none());
@@ -527,10 +530,10 @@ mod tests {
         // ── C. ShutdownRequested ──
         #[test]
         fn maps_shutdown_requested_generation() {
-            let source = V2RayServerRuntimeSnapshot {
-                current: Some(V2RayServerActiveGeneration {
+            let source = ManagedApiRuntimeSnapshot {
+                current: Some(ManagedApiActiveGeneration {
                     generation: 8,
-                    phase: V2RayServerActivePhase::ShutdownRequested,
+                    phase: ManagedApiActivePhase::ShutdownRequested,
                 }),
                 last_exit: None,
             };
@@ -548,25 +551,25 @@ mod tests {
         #[test]
         fn maps_each_exit_variant() {
             let cases = [
-                (V2RayServerExit::CleanShutdown, SidecarExit::CleanShutdown),
+                (ManagedApiExit::CleanShutdown, SidecarExit::CleanShutdown),
                 (
-                    V2RayServerExit::UnexpectedCompletion,
+                    ManagedApiExit::UnexpectedCompletion,
                     SidecarExit::UnexpectedCompletion,
                 ),
                 (
-                    V2RayServerExit::ServeError("boom".to_string()),
+                    ManagedApiExit::ServeError("boom".to_string()),
                     SidecarExit::ServeError("boom".to_string()),
                 ),
                 (
-                    V2RayServerExit::Panicked("kaboom".to_string()),
+                    ManagedApiExit::Panicked("kaboom".to_string()),
                     SidecarExit::Panicked("kaboom".to_string()),
                 ),
-                (V2RayServerExit::Cancelled, SidecarExit::Cancelled),
+                (ManagedApiExit::Cancelled, SidecarExit::Cancelled),
             ];
             for (source_exit, want) in cases {
-                let source = V2RayServerRuntimeSnapshot {
+                let source = ManagedApiRuntimeSnapshot {
                     current: None,
-                    last_exit: Some(V2RayServerExitRecord {
+                    last_exit: Some(ManagedApiExitRecord {
                         generation: 5,
                         exit: source_exit,
                     }),
@@ -587,11 +590,11 @@ mod tests {
         async fn late_subscriber_reads_terminal() {
             let mock = MockV2Ray::new();
             // Publish a terminal BEFORE the adapter subscribes.
-            mock.tx.send_replace(V2RayServerRuntimeSnapshot {
+            mock.tx.send_replace(ManagedApiRuntimeSnapshot {
                 current: None,
-                last_exit: Some(V2RayServerExitRecord {
+                last_exit: Some(ManagedApiExitRecord {
                     generation: 3,
-                    exit: V2RayServerExit::CleanShutdown,
+                    exit: ManagedApiExit::CleanShutdown,
                 }),
             });
             let mut sub = SidecarRuntimeSubscription::from_v2ray_server("v2ray", &mock)
@@ -674,7 +677,7 @@ mod tests {
         #[test]
         fn real_v2ray_server_yields_some() {
             let server =
-                sb_core::services::v2ray_api::V2RayApiServer::new(sb_config::ir::V2RayApiIR {
+                sb_api::services::v2ray_api::V2RayApiServer::new(sb_config::ir::V2RayApiIR {
                     listen: Some("127.0.0.1:0".to_string()),
                     stats: None,
                 });

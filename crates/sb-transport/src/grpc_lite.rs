@@ -21,6 +21,7 @@
 //! - Compatible with standard gRPC servers
 //! - Streaming support
 
+use crate::dialer::{DialError, Dialer, IoStream};
 use bytes::{Buf, BufMut, Bytes, BytesMut};
 use std::io::{self, ErrorKind};
 use std::pin::Pin;
@@ -46,6 +47,8 @@ pub struct GrpcLiteConfig {
     pub path: Option<String>,
     /// User-Agent header
     pub user_agent: Option<String>,
+    /// Custom gRPC metadata headers.
+    pub metadata: Vec<(String, String)>,
 }
 
 impl GrpcLiteConfig {
@@ -57,6 +60,7 @@ impl GrpcLiteConfig {
             host: String::new(),
             path: None,
             user_agent: None,
+            metadata: Vec::new(),
         }
     }
 
@@ -78,11 +82,58 @@ impl GrpcLiteConfig {
         self
     }
 
+    /// Add custom gRPC metadata.
+    pub fn with_metadata(mut self, key: impl Into<String>, value: impl Into<String>) -> Self {
+        self.metadata.push((key.into(), value.into()));
+        self
+    }
+
     /// Get the gRPC path
     pub fn grpc_path(&self) -> String {
         self.path
             .clone()
             .unwrap_or_else(|| format!("/{}/{}", self.service_name, self.method_name))
+    }
+}
+
+/// Dependency-light gRPC dialer used by legacy diagnostic mapping.
+pub struct GrpcLiteDialer {
+    config: GrpcLiteConfig,
+    inner: crate::http2::Http2Dialer,
+}
+
+impl GrpcLiteDialer {
+    #[must_use]
+    pub fn new(config: GrpcLiteConfig, inner: Box<dyn Dialer>) -> Self {
+        let mut headers = vec![("content-type".into(), "application/grpc".into())];
+        headers.push(("te".into(), "trailers".into()));
+        if let Some(user_agent) = &config.user_agent {
+            headers.push(("user-agent".into(), user_agent.clone()));
+        }
+        headers.extend(config.metadata.clone());
+        let http2 = crate::http2::Http2Config {
+            path: config.grpc_path(),
+            host: config.host.clone(),
+            headers,
+            method: "POST".into(),
+            ..Default::default()
+        };
+        Self {
+            config,
+            inner: crate::http2::Http2Dialer::new(http2, inner),
+        }
+    }
+}
+
+#[async_trait::async_trait]
+impl Dialer for GrpcLiteDialer {
+    async fn connect(&self, host: &str, port: u16) -> Result<IoStream, DialError> {
+        let stream = self.inner.connect(host, port).await?;
+        Ok(Box::new(GrpcLiteStream::new(stream, self.config.clone())))
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
     }
 }
 
@@ -362,6 +413,8 @@ pub fn build_grpc_headers(config: &GrpcLiteConfig) -> Vec<(String, String)> {
         headers.push(("user-agent".to_string(), "grpc-rust/1.0".to_string()));
     }
 
+    headers.extend(config.metadata.clone());
+
     headers
 }
 
@@ -410,7 +463,8 @@ mod tests {
     fn test_headers_build() {
         let config = GrpcLiteConfig::new("TestService", "TestMethod")
             .with_host("example.com")
-            .with_user_agent("test-client/1.0");
+            .with_user_agent("test-client/1.0")
+            .with_metadata("x-test", "yes");
 
         let headers = build_grpc_headers(&config);
 
@@ -423,6 +477,7 @@ mod tests {
         assert!(headers
             .iter()
             .any(|(k, v)| k == "content-type" && v == "application/grpc"));
+        assert!(headers.iter().any(|(k, v)| k == "x-test" && v == "yes"));
     }
 
     #[test]

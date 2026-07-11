@@ -73,10 +73,10 @@ Rule of thumb:
 
 Several scripts call Rust examples directly. The current reliable mappings are:
 
-- `crates/sb-core/examples/socks5_udp_probe.rs`
+- `crates/sb-adapters/examples/socks5_udp_probe.rs`
 - `crates/sb-core/examples/dns_query.rs`
 - `crates/sb-core/examples/dns_cache_show.rs`
-- `crates/sb-core/examples/mock_socks5_upstream.rs`
+- `crates/sb-adapters/examples/mock_socks5_upstream.rs`
 - `crates/sb-core/examples/router_eval.rs`
 - `crates/sb-core/examples/socks5_stub.rs`
 

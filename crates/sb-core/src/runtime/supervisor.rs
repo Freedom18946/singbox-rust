@@ -14,7 +14,7 @@
 use crate::adapter::Bridge;
 #[cfg(test)]
 use crate::adapter::InboundTaskDriver;
-use crate::context::{Context, Startable, V2RayServer, V2RayServerActivePhase};
+use crate::context::{Context, ManagedApiActivePhase, ManagedApiServer, Startable};
 use crate::endpoint::{Endpoint, StartStage as EndpointStage};
 #[cfg(feature = "router")]
 use crate::router::Engine;
@@ -41,6 +41,19 @@ fn ensure_bridge_startup_ready(bridge: &Bridge) -> Result<()> {
         "runtime startup blocked by adapter errors: {}",
         bridge.startup_errors.join("; ")
     ))
+}
+
+fn apply_tls_certificate_config(cert: Option<&sb_config::ir::CertificateIR>) {
+    if let Some(certificate) = cert {
+        sb_tls::global::apply_certificate_config(
+            certificate.store.as_deref(),
+            &certificate.ca_paths,
+            &certificate.ca_pem,
+            certificate.certificate_directory_path.as_deref(),
+        );
+    } else {
+        sb_tls::global::apply_certificate_config(None, &[], &[], None);
+    }
 }
 
 /// Messages sent to supervisor event loop
@@ -573,7 +586,7 @@ impl Supervisor {
 
         // Ensure TLS crypto provider is installed before any TLS usage
         #[cfg(feature = "tls_rustls")]
-        crate::tls::ensure_rustls_crypto_provider();
+        sb_tls::ensure_crypto_provider();
 
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
         let cancel = CancellationToken::new();
@@ -649,7 +662,7 @@ impl Supervisor {
         tracing::info!(target: "sb_core::runtime", "Context managers started");
 
         // Apply TLS certificate configuration (global trust augmentation)
-        crate::tls::global::apply_from_ir(ir.certificate.as_ref());
+        apply_tls_certificate_config(ir.certificate.as_ref());
 
         let health_enabled = context.runtime_options.services.health_enabled;
         let initial_state = State::new(engine_for_state, bridge, context, dns_runtime.clone(), ir);
@@ -834,7 +847,7 @@ impl Supervisor {
 
         // Ensure TLS crypto provider is installed before any TLS usage
         #[cfg(feature = "tls_rustls")]
-        crate::tls::ensure_rustls_crypto_provider();
+        sb_tls::ensure_crypto_provider();
 
         let (tx, mut rx) = mpsc::channel::<ReloadMsg>(32);
         let cancel = CancellationToken::new();
@@ -1230,7 +1243,7 @@ impl Supervisor {
             tracing::info!(target: "sb_core::runtime", "New context managers started on reload");
 
             // Refresh global TLS trust configuration from IR
-            crate::tls::global::apply_from_ir(new_ir.certificate.as_ref());
+            apply_tls_certificate_config(new_ir.certificate.as_ref());
 
             let new_inbound_monitors = start_inbounds_until_ready(&new_bridge_arc, "reload").await?;
             new_inbound_monitors_slot = Some(new_inbound_monitors);
@@ -2063,7 +2076,7 @@ fn reject_same_port_reload(
 fn wire_experimental_sidecars(
     mut context: Context,
     ir: &sb_config::ir::ConfigIR,
-    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+    inherited_v2ray_server: Option<Arc<dyn ManagedApiServer>>,
     inherited_cache_file: Option<Arc<dyn crate::context::CacheFile>>,
 ) -> Result<Context> {
     if let Some(exp) = &ir.experimental {
@@ -2100,9 +2113,11 @@ fn wire_experimental_sidecars(
                 context = context.with_v2ray_server(inherited);
                 tracing::info!(target: "sb_core::runtime", listen = ?v2ray_cfg.listen, "V2Ray API server reused across equivalent reload (no rebind)");
             } else {
-                let v2ray_server = Arc::new(crate::services::v2ray_api::V2RayApiServer::new(
-                    v2ray_cfg.clone(),
-                ));
+                let Some(v2ray_server) = crate::service::build_v2ray_server(v2ray_cfg.clone())
+                else {
+                    tracing::warn!(target: "sb_core::runtime", "V2Ray API requested but no control-plane factory is registered");
+                    return Ok(context);
+                };
                 if let Err(e) = v2ray_server.start() {
                     tracing::warn!(target: "sb_core::runtime", error = %e, "failed to start V2Ray API server");
                 } else {
@@ -2152,8 +2167,8 @@ fn restore_clash_mode_from_cache(cache: &dyn crate::context::CacheFile) {
 fn reusable_v2ray_server(
     old_v2ray: Option<&sb_config::ir::V2RayApiIR>,
     new_v2ray: Option<&sb_config::ir::V2RayApiIR>,
-    old_server: Option<&Arc<dyn V2RayServer>>,
-) -> Option<Arc<dyn V2RayServer>> {
+    old_server: Option<&Arc<dyn ManagedApiServer>>,
+) -> Option<Arc<dyn ManagedApiServer>> {
     let old_cfg = old_v2ray?;
     let new_cfg = new_v2ray?;
     if old_cfg != new_cfg {
@@ -2164,7 +2179,7 @@ fn reusable_v2ray_server(
     let rx = server.subscribe_runtime_state()?;
     let is_running = matches!(
         rx.borrow().current.as_ref().map(|g| &g.phase),
-        Some(V2RayServerActivePhase::Running)
+        Some(ManagedApiActivePhase::Running)
     );
     if !is_running {
         tracing::debug!(target: "sb_core::runtime", "V2Ray reload: old server not Running, rebuilding (no reuse)");
@@ -2187,7 +2202,7 @@ fn reusable_cache_file(
     old_service.cloned()
 }
 
-/// True iff both contexts hold the SAME `V2RayServer` instance (i.e. the server was reused across
+/// True iff both contexts hold the SAME `ManagedApiServer` instance (i.e. the server was reused across
 /// a reload). Used to decide whether the old context's teardown must skip closing it.
 fn same_v2ray_server(a: &Context, b: &Context) -> bool {
     match (a.v2ray_server.as_ref(), b.v2ray_server.as_ref()) {
@@ -2198,7 +2213,7 @@ fn same_v2ray_server(a: &Context, b: &Context) -> bool {
 
 fn build_context_from_ir(
     ir: &sb_config::ir::ConfigIR,
-    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+    inherited_v2ray_server: Option<Arc<dyn ManagedApiServer>>,
 ) -> Result<Context> {
     build_context_from_ir_with_options(
         ir,
@@ -2209,7 +2224,7 @@ fn build_context_from_ir(
 
 fn build_context_from_ir_with_options(
     ir: &sb_config::ir::ConfigIR,
-    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+    inherited_v2ray_server: Option<Arc<dyn ManagedApiServer>>,
     runtime_options: crate::runtime_options::SharedCoreRuntimeOptions,
 ) -> Result<Context> {
     build_context_from_ir_with_cache_and_options(ir, inherited_v2ray_server, None, runtime_options)
@@ -2217,7 +2232,7 @@ fn build_context_from_ir_with_options(
 
 fn build_context_from_ir_with_cache(
     ir: &sb_config::ir::ConfigIR,
-    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+    inherited_v2ray_server: Option<Arc<dyn ManagedApiServer>>,
     inherited_cache_file: Option<Arc<dyn crate::context::CacheFile>>,
 ) -> Result<Context> {
     build_context_from_ir_with_cache_and_options(
@@ -2230,7 +2245,7 @@ fn build_context_from_ir_with_cache(
 
 fn build_context_from_ir_with_cache_and_options(
     ir: &sb_config::ir::ConfigIR,
-    inherited_v2ray_server: Option<Arc<dyn V2RayServer>>,
+    inherited_v2ray_server: Option<Arc<dyn ManagedApiServer>>,
     inherited_cache_file: Option<Arc<dyn crate::context::CacheFile>>,
     runtime_options: crate::runtime_options::SharedCoreRuntimeOptions,
 ) -> Result<Context> {
@@ -2336,7 +2351,7 @@ async fn download_file(url: &str, path: &str) -> Result<()> {
 /// Reload-only teardown of the replaced (old) context after a successful swap.
 ///
 /// `preserve_v2ray` is true exactly when the new (now-committed) context shares the old context's
-/// `Arc<dyn V2RayServer>` — i.e. the server was reused (APP-RELOAD-SIDECAR-ORDER-01C). In that
+/// `Arc<dyn ManagedApiServer>` — i.e. the server was reused (APP-RELOAD-SIDECAR-ORDER-01C). In that
 /// case the new context is the close owner, so this teardown must NOT close the shared server;
 /// all other managers close as usual. The flag is computed via `same_v2ray_server` BEFORE the
 /// swap, because the new context is moved into state at commit and is no longer reachable here.
@@ -3546,24 +3561,24 @@ mod tests {
             reusable_v2ray_server, same_v2ray_server, shutdown_context, shutdown_replaced_context,
         };
         use crate::context::{
-            Context, V2RayServer, V2RayServerActiveGeneration, V2RayServerActivePhase,
-            V2RayServerExit, V2RayServerExitRecord, V2RayServerRuntimeSnapshot,
+            Context, ManagedApiActiveGeneration, ManagedApiActivePhase, ManagedApiExit,
+            ManagedApiExitRecord, ManagedApiRuntimeSnapshot, ManagedApiServer,
         };
         use sb_config::ir::{StatsIR, V2RayApiIR};
         use std::sync::atomic::{AtomicUsize, Ordering};
         use std::sync::Arc;
         use tokio::sync::watch;
 
-        /// A `V2RayServer` test double that records `close()` calls and publishes a fixed runtime
+        /// A `ManagedApiServer` test double that records `close()` calls and publishes a fixed runtime
         /// snapshot (or none). It keeps the watch sender alive so the receiver stays valid.
         #[derive(Debug)]
         struct MockV2Ray {
             closes: Arc<AtomicUsize>,
-            rx: Option<watch::Receiver<V2RayServerRuntimeSnapshot>>,
-            _tx: Option<watch::Sender<V2RayServerRuntimeSnapshot>>,
+            rx: Option<watch::Receiver<ManagedApiRuntimeSnapshot>>,
+            _tx: Option<watch::Sender<ManagedApiRuntimeSnapshot>>,
         }
 
-        impl V2RayServer for MockV2Ray {
+        impl ManagedApiServer for MockV2Ray {
             fn start(&self) -> anyhow::Result<()> {
                 Ok(())
             }
@@ -3573,7 +3588,7 @@ mod tests {
             }
             fn subscribe_runtime_state(
                 &self,
-            ) -> Option<watch::Receiver<V2RayServerRuntimeSnapshot>> {
+            ) -> Option<watch::Receiver<ManagedApiRuntimeSnapshot>> {
                 self.rx.clone()
             }
         }
@@ -3581,8 +3596,8 @@ mod tests {
         /// Build a mock server + a handle to its close counter. `snapshot = None` means the server
         /// exposes NO runtime state (mirrors a non-introspectable / trait-default implementor).
         fn mock(
-            snapshot: Option<V2RayServerRuntimeSnapshot>,
-        ) -> (Arc<dyn V2RayServer>, Arc<AtomicUsize>) {
+            snapshot: Option<ManagedApiRuntimeSnapshot>,
+        ) -> (Arc<dyn ManagedApiServer>, Arc<AtomicUsize>) {
             let closes = Arc::new(AtomicUsize::new(0));
             let (rx, _tx) = match snapshot {
                 Some(s) => {
@@ -3591,7 +3606,7 @@ mod tests {
                 }
                 None => (None, None),
             };
-            let server: Arc<dyn V2RayServer> = Arc::new(MockV2Ray {
+            let server: Arc<dyn ManagedApiServer> = Arc::new(MockV2Ray {
                 closes: closes.clone(),
                 rx,
                 _tx,
@@ -3599,9 +3614,9 @@ mod tests {
             (server, closes)
         }
 
-        fn running_snapshot(phase: V2RayServerActivePhase) -> V2RayServerRuntimeSnapshot {
-            V2RayServerRuntimeSnapshot {
-                current: Some(V2RayServerActiveGeneration {
+        fn running_snapshot(phase: ManagedApiActivePhase) -> ManagedApiRuntimeSnapshot {
+            ManagedApiRuntimeSnapshot {
+                current: Some(ManagedApiActiveGeneration {
                     generation: 1,
                     phase,
                 }),
@@ -3609,8 +3624,8 @@ mod tests {
             }
         }
 
-        fn mock_running() -> (Arc<dyn V2RayServer>, Arc<AtomicUsize>) {
-            mock(Some(running_snapshot(V2RayServerActivePhase::Running)))
+        fn mock_running() -> (Arc<dyn ManagedApiServer>, Arc<AtomicUsize>) {
+            mock(Some(running_snapshot(ManagedApiActivePhase::Running)))
         }
 
         fn cfg(listen: &str, stats_enabled: bool) -> V2RayApiIR {
@@ -3666,15 +3681,15 @@ mod tests {
             let a = cfg("127.0.0.1:10085", true);
 
             let (sr, _) = mock(Some(running_snapshot(
-                V2RayServerActivePhase::ShutdownRequested,
+                ManagedApiActivePhase::ShutdownRequested,
             )));
             assert!(reusable_v2ray_server(Some(&a), Some(&a), Some(&sr)).is_none());
 
-            let (exited, _) = mock(Some(V2RayServerRuntimeSnapshot {
+            let (exited, _) = mock(Some(ManagedApiRuntimeSnapshot {
                 current: None,
-                last_exit: Some(V2RayServerExitRecord {
+                last_exit: Some(ManagedApiExitRecord {
                     generation: 1,
-                    exit: V2RayServerExit::CleanShutdown,
+                    exit: ManagedApiExit::CleanShutdown,
                 }),
             }));
             assert!(
@@ -3872,7 +3887,7 @@ mod tests {
         use super::super::shutdown_failed_reload_context;
         use super::{DummyEndpoint, DummyService};
         use crate::adapter::InboundTaskDriver;
-        use crate::context::{Context, V2RayServer};
+        use crate::context::{Context, ManagedApiServer};
         use crate::endpoint::{Endpoint, StartStage as EndpointStage};
         use crate::service::Service;
         use std::sync::atomic::{AtomicUsize, Ordering};
@@ -3933,13 +3948,13 @@ mod tests {
             }
         }
 
-        /// A `V2RayServer` test double that records `close()` calls.
+        /// A `ManagedApiServer` test double that records `close()` calls.
         #[derive(Debug)]
         struct CloseCountingV2Ray {
             closes: Arc<AtomicUsize>,
         }
 
-        impl V2RayServer for CloseCountingV2Ray {
+        impl ManagedApiServer for CloseCountingV2Ray {
             fn start(&self) -> anyhow::Result<()> {
                 Ok(())
             }
@@ -3949,9 +3964,9 @@ mod tests {
             }
         }
 
-        fn counting_v2ray() -> (Arc<dyn V2RayServer>, Arc<AtomicUsize>) {
+        fn counting_v2ray() -> (Arc<dyn ManagedApiServer>, Arc<AtomicUsize>) {
             let closes = Arc::new(AtomicUsize::new(0));
-            let server: Arc<dyn V2RayServer> = Arc::new(CloseCountingV2Ray {
+            let server: Arc<dyn ManagedApiServer> = Arc::new(CloseCountingV2Ray {
                 closes: closes.clone(),
             });
             (server, closes)

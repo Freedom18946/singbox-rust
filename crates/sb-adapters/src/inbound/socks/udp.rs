@@ -6,14 +6,14 @@
 pub use sb_core::net::datagram::UdpTargetAddr;
 use std::fmt;
 
+use crate::outbound::pool_observe::with_pool_observation;
+use crate::outbound::pool_selector::PoolSelector;
 use anyhow::{bail, Result};
 use once_cell::sync::OnceCell as SyncOnceCell;
 use sb_core::net::ratelimit::UdpRateLimiter;
 use sb_core::obs::access;
 use sb_core::outbound::endpoint::{ProxyEndpoint, ProxyKind};
-use sb_core::outbound::observe::with_pool_observation;
 use sb_core::outbound::registry;
-use sb_core::outbound::selector::PoolSelector;
 
 use std::net::SocketAddr;
 use std::sync::Arc;
@@ -75,7 +75,7 @@ fn access_log_enabled() -> bool {
         .is_some_and(|value| value == "1" || value.eq_ignore_ascii_case("true"))
 }
 use sb_core::router::{RouteCtx as RouterRouteCtx, RouterHandle, Transport};
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 
 use super::upstream::{Key as UpstreamKey, UdpUpstreamMap, UpstreamRuntimeConfig};
 use crate::outbound::socks5_udp::UpSocksSession;

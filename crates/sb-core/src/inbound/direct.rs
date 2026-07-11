@@ -20,7 +20,7 @@ use tokio_util::sync::CancellationToken;
 use crate::adapter::InboundTaskDriver;
 use crate::net::datagram::UdpConntrackMeta;
 use crate::net::metered;
-use crate::services::v2ray_api::StatsManager;
+use crate::v2ray_stats::StatsManager;
 use sb_common::conntrack::ConnTracker;
 
 #[derive(Debug, Clone)]

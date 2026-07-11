@@ -51,7 +51,7 @@ parity = [
 
 # Test-gating features (not included in acceptance)
 long_tests = []
-admin_tests = []
+admin_tests = ["sb-api/admin_tests"]
 net_e2e = []
 
 # Dev/auxiliary CLI feature gates
@@ -60,15 +60,15 @@ manpage = []
 dev-cli = ["notify", "ignore", "toml"]
 prefetch = []
 admin_envelope = ["sb-admin-contract"]
-auth = ["admin_envelope"]
-rate_limit = ["admin_envelope"]
-jwt = ["jsonwebtoken", "p256", "pkcs8"]  # JWT 提供者启用时再打开
+auth = ["admin_envelope", "sb-api/auth"]
+rate_limit = ["admin_envelope", "sb-api/rate_limit"]
+jwt = ["jsonwebtoken", "p256", "pkcs8", "sb-api/jwt"]  # JWT 提供者启用时再打开
 
 ## 路由/运行期与观测能力
-router  = ["sb-core", "sb-core/router", "sb-core/legacy_protocols", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "sb-core/v2ray_transport", "out_ss", "sb-transport", "reqwest", "tokio-util"]
+router  = ["sb-core", "sb-core/router", "sb-core/legacy_protocols", "sb-core/out_vless", "sb-core/out_vmess", "sb-core/out_trojan", "sb-core/out_hysteria2", "sb-core/out_tuic", "sb-core/v2ray_transport", "out_ss", "sb-transport", "sb-subscribe", "reqwest", "tokio-util"]
 observe = ["router", "sb-metrics", "sb-core/metrics", "sb-adapters/metrics"]
 out_ss = ["sb-core/out_ss"]
-admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth", "tokio-util"]
+admin_debug = ["observe", "url", "bytes", "reqwest", "futures-util", "subs_http", "admin_envelope", "auth", "tokio-util", "sb-api/debug"]
 ssh = ["sb-adapters/ssh"]
 tools = ["sb-core", "reqwest", "router", "adapters"]
 tools_http3 = ["reqwest/http3"]
@@ -191,10 +191,10 @@ full    = [
 ]
 service_ntp = ["sb-core/service_ntp"]
 service_resolved = ["sb-core/service_resolved", "sb-adapters/service_resolved"]
-service_ssmapi   = ["sb-core/service_ssmapi", "sb-adapters/service_ssmapi"]
-service_derp     = ["sb-core/service_derp", "sb-adapters/service_derp"]
+service_ssmapi   = ["sb-api", "sb-api/ssmapi", "sb-adapters/service_ssmapi"]
+service_derp     = ["sb-service-derp", "sb-adapters/service_derp"]
 clash_api        = ["sb-api", "sb-api/clash-api", "sb-api/provider-reload"]
-v2ray_api        = ["sb-core", "sb-core/service_v2ray_api", "sb-api", "sb-api/v2ray-api"]
+v2ray_api        = ["sb-core", "sb-api", "sb-api/v2ray-api"]
 hickory-proto = ["dep:hickory-proto"]
 adapter-http = ["sb-adapters/adapter-http"]
 out_tuic = ["sb-core/out_tuic"]
@@ -342,6 +342,7 @@ required-features = ["router"]
 
 [dependencies]
 anyhow      = { workspace = true }
+async-trait = "0.1"
 clap        = { workspace = true }
 serde       = { workspace = true }
 serde_json  = { workspace = true }
@@ -383,6 +384,7 @@ sb-tls      = { path = "../crates/sb-tls", package = "sb-tls", optional = true }
 futures-util= { version = "0.3", optional = true }
 sb-runtime  = { path = "../crates/sb-runtime", optional = true }
 sb-api      = { path = "../crates/sb-api", optional = true }
+sb-service-derp = { path = "../crates/sb-service-derp", optional = true }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"], optional = true }
 uuid        = { version = "1", features = ["v4"] }
 
@@ -440,7 +442,6 @@ sb-core     = { path = "../crates/sb-core", features = ["router"] }
 sb-adapters = { path = "../crates/sb-adapters", features = ["adapter-hysteria", "adapter-shadowsocks", "shadowsocks", "adapter-vmess", "vmess", "adapter-vless", "vless", "adapter-trojan", "trojan", "adapter-socks", "socks", "adapter-http", "http", "mixed", "tls_reality", "transport_ech", "transport_mux", "transport_tls", "adapter-anytls", "adapter-wireguard-endpoint", "router"] }
 sb-transport = { path = "../crates/sb-transport", features = ["transport_mux"] }
 serial_test = "2"
-async-trait = "0.1"
 sb-metrics = { path = "../crates/sb-metrics" }
 sb-test-utils = { path = "../crates/sb-test-utils" }
 futures.workspace = true
@@ -548,8 +549,4 @@ required-features = ["bench"]
 
 [[bench]]
 name = "performance_baseline"
-required-features = ["bench"]
-
-[[bench]]
-name = "selector_score"
 required-features = ["bench"]

@@ -1,0 +1,44 @@
+[package]
+name = "sb-service-derp"
+version = "0.1.0"
+edition = "2021"
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+description = "DERP relay service for singbox-rust"
+
+[dependencies]
+anyhow = "1"
+bytes = "1"
+futures = "0.3"
+hex = "0.4"
+hyper = { version = "0.14", features = ["client", "server", "http1", "http2", "tcp"] }
+humantime = "2"
+parking_lot = "0.12"
+reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
+ring = "0.17"
+rustls = { version = "0.23", default-features = false, features = ["std", "ring", "logging", "tls12"] }
+rustls-pemfile = "2"
+sb-config = { path = "../sb-config" }
+sb-core = { path = "../sb-core", default-features = false, features = ["router", "tls_rustls"] }
+sb-metrics = { path = "../sb-metrics" }
+sb-tls = { path = "../sb-tls", default-features = false, features = ["utls"] }
+sb-transport = { path = "../sb-transport", default-features = false, features = ["transport_tls"] }
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+socket2 = "0.6"
+tokio = { version = "1", features = ["full"] }
+tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"] }
+tokio-tungstenite = "0.24"
+tracing = "0.1"
+
+[dev-dependencies]
+async-trait = "0.1"
+rcgen = "0.13"
+sb-types = { path = "../sb-types" }
+tempfile = "3"
+tokio-util = { version = "0.7", features = ["compat"] }
+tracing-subscriber = { version = "0.3", features = ["env-filter"] }
+
+[lints]
+workspace = true

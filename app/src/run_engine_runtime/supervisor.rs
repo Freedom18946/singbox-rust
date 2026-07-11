@@ -62,6 +62,11 @@ fn maybe_init_dns_stub(dns_applied: bool, opts: &crate::run_engine::RunOptions) 
 async fn start_supervisor(
     ir: sb_config::ir::ConfigIR,
 ) -> Result<Arc<sb_core::runtime::supervisor::Supervisor>> {
+    #[cfg(any(feature = "service_ssmapi", feature = "v2ray_api"))]
+    sb_api::services::register_all();
+    #[cfg(feature = "service_derp")]
+    sb_service_derp::register();
+
     let runtime_options = crate::core_env::load(&ir);
     #[cfg(feature = "adapters")]
     info!("Calling Supervisor::start_with_registry");

@@ -24,6 +24,7 @@
 
 #[cfg(feature = "subs_bindings")]
 pub mod bindings;
+pub mod config_merge;
 #[cfg(feature = "subs_full")]
 pub mod convert_full;
 #[cfg(any(feature = "subs_view", feature = "subs_hash"))]

@@ -27,9 +27,12 @@
 #![deny(unused_must_use)]
 #![warn(missing_docs)]
 
+#[cfg(feature = "debug")]
+pub mod debug;
 pub mod error;
 pub mod managers;
 pub mod monitoring;
+pub mod services;
 pub mod types;
 
 #[cfg(feature = "clash-api")]

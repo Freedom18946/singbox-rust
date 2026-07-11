@@ -79,7 +79,7 @@ run() {
   local probe_ok=0
 
   for i in $(seq 1 "$n"); do
-    if cargo run -q --example socks5_udp_probe --manifest-path "${root}/crates/sb-core/Cargo.toml" -- "${socks}" "1.1.1.1:53" "example.com" >/dev/null 2>&1; then
+    if cargo run -q --example socks5_udp_probe --manifest-path "${root}/crates/sb-adapters/Cargo.toml" -- "${socks}" "1.1.1.1:53" "example.com" >/dev/null 2>&1; then
       probe_ok=$((probe_ok + 1))
     fi
     sleep 0.02

@@ -898,7 +898,7 @@ async fn admin_auth_bearer_token() {
     if should_skip_local_network_tests() {
         return;
     }
-    #[cfg(feature = "admin_debug")]
+    #[cfg(all(feature = "admin_debug", feature = "admin_tests"))]
     {
         let _env = admin_env_guard(&[
             ("SB_ADMIN_TOKEN", Some("test-secret-token")),
@@ -908,7 +908,7 @@ async fn admin_auth_bearer_token() {
         let mut headers = std::collections::HashMap::new();
 
         // Test without auth header - should fail
-        let result1 = app::admin_debug::http_server::check_auth(&headers, "/__health");
+        let result1 = sb_api::debug::server::check_auth(&headers, "/__health");
         assert!(!result1);
 
         // Test with correct Bearer token - should pass
@@ -916,7 +916,7 @@ async fn admin_auth_bearer_token() {
             "authorization".to_string(),
             "Bearer test-secret-token".to_string(),
         );
-        let result2 = app::admin_debug::http_server::check_auth(&headers, "/__health");
+        let result2 = sb_api::debug::server::check_auth(&headers, "/__health");
         assert!(result2);
 
         // Test with incorrect token - should fail
@@ -924,7 +924,7 @@ async fn admin_auth_bearer_token() {
             "authorization".to_string(),
             "Bearer wrong-token".to_string(),
         );
-        let result3 = app::admin_debug::http_server::check_auth(&headers, "/__health");
+        let result3 = sb_api::debug::server::check_auth(&headers, "/__health");
         assert!(!result3);
     }
 }
@@ -935,14 +935,14 @@ async fn admin_auth_disabled() {
     if should_skip_local_network_tests() {
         return;
     }
-    #[cfg(feature = "admin_debug")]
+    #[cfg(all(feature = "admin_debug", feature = "admin_tests"))]
     {
         let _env = admin_env_guard(&[("SB_ADMIN_NO_AUTH", Some("1")), ("SB_ADMIN_TOKEN", None)]);
 
         let headers = std::collections::HashMap::new();
 
         // Even without token, should pass when auth is disabled
-        let result = app::admin_debug::http_server::check_auth(&headers, "/__health");
+        let result = sb_api::debug::server::check_auth(&headers, "/__health");
         assert!(result);
     }
 }

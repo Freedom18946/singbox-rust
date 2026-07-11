@@ -3,8 +3,6 @@
 //! Owns CLI parsing, global logging setup, process guards, and command dispatch.
 //! Runtime startup for `run` flows through `app::run_engine`.
 
-#[cfg(feature = "admin_debug")]
-mod admin_debug;
 #[cfg(any(feature = "router", feature = "sbcore_rules_tool"))]
 mod analyze;
 mod cli;

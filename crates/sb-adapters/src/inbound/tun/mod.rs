@@ -23,7 +23,7 @@ use sb_core::outbound::{Endpoint, OutboundKind, OutboundRegistryHandle, RouteTar
 use sb_core::router::engine::Transport;
 use sb_core::router::rules::Decision;
 use sb_core::router::{RouteCtx, RouterHandle};
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 
 use crate::inbound::tun_enhanced::{EnhancedTunInbound, PreparedEnhancedTunRuntime};
 

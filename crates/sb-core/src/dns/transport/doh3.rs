@@ -39,7 +39,7 @@ impl Doh3Transport {
         extra_ca_pem: Vec<String>,
         skip_verify: bool,
     ) -> Result<Self> {
-        crate::tls::ensure_rustls_crypto_provider();
+        sb_tls::ensure_crypto_provider();
 
         let timeout = Duration::from_millis(5000);
 
@@ -48,7 +48,7 @@ impl Doh3Transport {
         let mut endpoint = quinn::Endpoint::client(bind_addr).map_err(io::Error::other)?;
 
         // Build rustls config with ALPN for HTTP/3
-        let mut roots = crate::tls::global::base_root_store();
+        let mut roots = sb_tls::global::base_root_store();
         for p in extra_ca_paths {
             if let Ok(bytes) = std::fs::read(p) {
                 let mut rd = std::io::BufReader::new(&bytes[..]);
@@ -72,7 +72,7 @@ impl Doh3Transport {
         crypto.alpn_protocols = vec![b"h3".to_vec()];
 
         if skip_verify {
-            let v = crate::tls::danger::NoVerify::new();
+            let v = sb_tls::danger::NoVerify::new();
             crypto.dangerous().set_certificate_verifier(Arc::new(v));
         }
 

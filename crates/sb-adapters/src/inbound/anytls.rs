@@ -12,6 +12,7 @@ use crate::inbound::connect::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use crate::outbound::pool_selector::PoolSelector;
 use anyhow::{anyhow, Context, Result};
 use anytls_rs::padding::PaddingFactory;
 use anytls_rs::protocol::{Command, Frame};
@@ -21,7 +22,6 @@ use anytls_rs::util::AnyTlsError;
 use bytes::Bytes;
 use sb_core::adapter::{InboundParam, InboundTaskDriver};
 use sb_core::net::metered::TrafficRecorder;
-use sb_core::outbound::selector::PoolSelector;
 use sb_core::outbound::{registry, OutboundRegistryHandle};
 use sb_core::router;
 use sb_core::router::rules as rules_global;

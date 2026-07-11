@@ -298,3 +298,16 @@ parity/BHV/REALITY/packaging movement。
 429 assertions、diff-check、core census 全绿。
 
 **结果**: WP11 DONE；141 → 0 core `SB_*`，白名单 0，无变量废弃，WP14 解锁。
+## 2026-07-11 MIG-03 WP09/WP10/WP12 red-team acceptance
+
+**任务**: 彻底验收 WP09 服务迁移、WP10 admin_debug 控制面收敛、WP12 去重清理；直接补齐未完成项。
+
+- WP09：DERP 独立 crate，SSM/V2Ray API 归 sb-api，app 外置注册；core axum/tonic 清零。
+- WP10：HTTP/auth/middleware 唯一 owner 归 sb-api；app 保留 endpoint extension，端点无删除。
+- WP12：selector/p3/udp balancer 与影子模块依 D15 收敛；census 完整，无 D18。
+- 红队补漏：默认 adapter 测试缺 `sb-metrics`、DERP dev deps、tower util 版本、测试 feature
+  门控、HeaderValue unwrap、boundary reverse-dep/W188/W189 owner 漂移。
+- 验收：workspace all-features、服务/adapter/core/transport 全测试、app 三 profile、admin HTTP
+  契约、clippy、fmt、427 boundaries、diff-check 全绿。
+
+**结果**: WP09/WP10/WP12 DONE；WP13 解锁。

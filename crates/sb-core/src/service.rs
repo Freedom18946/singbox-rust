@@ -8,6 +8,8 @@ use sb_config::ir::{ServiceIR, ServiceType};
 use std::collections::HashMap;
 use std::sync::Arc;
 
+pub mod ssm;
+
 // Re-export canonical definitions from sb-types.
 // These were previously defined here; now sb-types is the single source of truth.
 pub use sb_types::ports::service::{Lifecycle, Service, StartStage};
@@ -93,6 +95,26 @@ impl ServiceContext {
 
 /// Builder function signature for creating services.
 pub type ServiceBuilder = fn(&ServiceIR, &ServiceContext) -> Option<Arc<dyn Service>>;
+
+/// Factory injected by app composition root for optional V2Ray control-plane sidecar.
+pub type ManagedApiServerFactory =
+    fn(sb_config::ir::V2RayApiIR) -> Arc<dyn crate::context::ManagedApiServer>;
+
+static V2RAY_SERVER_FACTORY: once_cell::sync::Lazy<RwLock<Option<ManagedApiServerFactory>>> =
+    once_cell::sync::Lazy::new(|| RwLock::new(None));
+
+/// Register or replace optional V2Ray sidecar factory.
+pub fn register_v2ray_server_factory(factory: ManagedApiServerFactory) {
+    *V2RAY_SERVER_FACTORY.write() = Some(factory);
+}
+
+/// Construct optional V2Ray sidecar without teaching sb-core its implementation type.
+#[must_use]
+pub fn build_v2ray_server(
+    config: sb_config::ir::V2RayApiIR,
+) -> Option<Arc<dyn crate::context::ManagedApiServer>> {
+    V2RAY_SERVER_FACTORY.read().map(|factory| factory(config))
+}
 
 /// Registry for service builders.
 pub struct ServiceRegistry {

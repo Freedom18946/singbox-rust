@@ -1337,10 +1337,10 @@ impl DotUpstream {
         use tokio::net::TcpStream;
         use tokio_rustls::TlsConnector;
 
-        crate::tls::ensure_rustls_crypto_provider();
+        sb_tls::ensure_crypto_provider();
 
         // Create TLS configuration using global roots + per-upstream extras
-        let mut roots = crate::tls::global::base_root_store();
+        let mut roots = sb_tls::global::base_root_store();
         for p in &self.extra_ca_paths {
             if let Ok(bytes) = std::fs::read(p) {
                 let mut rd = std::io::BufReader::new(&bytes[..]);
@@ -1359,7 +1359,7 @@ impl DotUpstream {
             .with_root_certificates(roots)
             .with_no_client_auth();
         if self.skip_verify {
-            let v = crate::tls::danger::NoVerify::new();
+            let v = sb_tls::danger::NoVerify::new();
             cfg.dangerous().set_certificate_verifier(Arc::new(v));
         }
         let connector = TlsConnector::from(Arc::new(cfg));

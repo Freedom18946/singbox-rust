@@ -1,5 +1,5 @@
 use clap::{Parser, Subcommand};
-use sb_core::subscribe::{diff, merge};
+use sb_subscribe::config_merge::{diff, merge};
 use serde_json::Value;
 use std::fs;
 

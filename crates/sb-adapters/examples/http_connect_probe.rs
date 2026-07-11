@@ -13,11 +13,14 @@ async fn main() -> anyhow::Result<()> {
     let decision = sb_core::router::decide_http(&authority);
     eprintln!("[router] decision={:?}", decision);
     // 选择直连/代理
-    let mut stream = match sb_core::outbound::tcp::connect_auto(&authority, decision.as_str()).await
-    {
-        Ok(s) => s,
-        Err(_) => sb_core::outbound::tcp::connect_direct(&authority).await?,
-    };
+    let network_options = sb_core::runtime_options::NetworkRuntimeOptions::default();
+    let mut stream =
+        match sb_core::outbound::tcp::connect_auto(&authority, decision.as_str(), &network_options)
+            .await
+        {
+            Ok(s) => s,
+            Err(_) => sb_core::outbound::tcp::connect_direct(&authority).await?,
+        };
     // 发一行 TLS ClientHello 前的探测（可选），这里只展示 CONNECT 已经 200 成功
     let host = authority
         .split_once(':')

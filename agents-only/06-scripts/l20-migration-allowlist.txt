@@ -1,4 +1,4 @@
-VERSION|l21.250-wave202-v1|||L21 wave#200-202 — MIG-02 inbound handler + tailscale direct fallback closure
+VERSION|l21.250-wave203-v1|||L21 wave#203 — MIG-03 WP09/WP10 control-plane owner relocation
 # L20 migration tracking assertions (versioned)
 # Format:
 #   <kind>|<id>|<relative_path>|<regex_pattern>|<note>
@@ -81,12 +81,12 @@ require|W11-03-demo-serve-http-entry|examples/code-examples/proxy/http_inbound_d
 
 forbid|W12-01-no-legacy-selector-outbound-type|app/tests/selector_udp_test.rs|sb_adapters::outbound::selector::SelectorOutbound|selector UDP tests should not depend on removed selector adapter concrete type
 forbid|W12-02-no-legacy-urltest-outbound-type|app/tests/selector_udp_test.rs|sb_adapters::outbound::urltest::UrlTestOutbound|urltest UDP tests should not depend on removed urltest adapter concrete type
-require|W12-03-selector-group-used-in-udp-test|app/tests/selector_udp_test.rs|use sb_core::outbound::selector_group::\{ProxyMember, SelectorGroup, UrlTestOptions\};|selector UDP tests should use unified SelectorGroup implementation
+require|W12-03-selector-group-used-in-udp-test|app/tests/selector_udp_test.rs|use sb_adapters::outbound::selector_group::\{ProxyMember, SelectorGroup, UrlTestOptions\};|selector UDP tests should use adapter-owned unified SelectorGroup implementation
 
 forbid|W15-01-no-selector-outbound-concrete|crates/sb-adapters/src/outbound/selector.rs|struct SelectorOutbound|sb-adapters selector path should not reintroduce concrete SelectorOutbound wrapper
 forbid|W15-02-no-urltest-outbound-concrete|crates/sb-adapters/src/outbound/urltest.rs|struct UrlTestOutbound|sb-adapters urltest path should not reintroduce concrete UrlTestOutbound wrapper
-require|W15-03-selector-builder-uses-core-group|crates/sb-adapters/src/outbound/selector.rs|SelectorGroup::new_manual|selector builder should use core SelectorGroup implementation
-require|W15-04-urltest-builder-uses-core-group|crates/sb-adapters/src/outbound/urltest.rs|SelectorGroup::new_urltest|urltest builder should use core SelectorGroup implementation
+require|W15-03-selector-builder-uses-canonical-group|crates/sb-adapters/src/outbound/selector.rs|SelectorGroup::new_manual|selector builder should use adapter-owned canonical SelectorGroup implementation
+require|W15-04-urltest-builder-uses-canonical-group|crates/sb-adapters/src/outbound/urltest.rs|SelectorGroup::new_urltest|urltest builder should use adapter-owned canonical SelectorGroup implementation
 
 forbid|W16-01-no-bootstrap-hy2-core-concrete|app/src/outbound_groups.rs|sb_core::outbound::hysteria2::Hysteria2Outbound|bootstrap selector/urltest connector path should not construct core Hysteria2 concrete
 
@@ -130,8 +130,6 @@ forbid|W41-01-no-tools-named-outbound-legacy-fallback-msg|app/src/cli/tools.rs|o
 require|W41-02-tools-named-outbound-explicit-disabled|app/src/cli/tools.rs|requested outbound not found; direct fallback is disabled|tools connect named outbound path should emit explicit no-fallback diagnostics
 forbid|W42-01-no-tools-implicit-direct-fallback|app/src/cli/tools.rs|\.find_direct_fallback\(\)|tools connect default outbound path should not use implicit direct fallback
 require|W42-02-tools-default-direct-explicit-disabled|app/src/cli/tools.rs|direct outbound not found; implicit direct fallback is disabled|tools connect default outbound path should emit explicit no-fallback diagnostics
-forbid|W45-01-no-udp-balancer-noscaffold-direct-fallback|crates/sb-core/src/outbound/udp_balancer.rs|Fallback to direct when scaffold feature is not enabled|UDP balancer SOCKS5 path should not fallback to direct in no-scaffold mode
-forbid|W45-02-no-udp-balancer-no-upstream-direct-fallback|crates/sb-core/src/outbound/udp_balancer.rs|Fallback direct to not break userspace|UDP balancer should not fallback to direct when SOCKS5 upstream is missing
 forbid|W46-01-no-tools-udp-direct-fallback-comment|app/src/cli/tools.rs|Fallback: direct UDP|tools connect udp should not keep direct UDP fallback path
 forbid|W46-02-no-tools-udp-direct-fallback-socket|app/src/cli/tools.rs|let target = format!\(\"\\{host\\}:\\{port\\}\"\);|tools connect udp should not build direct UDP target as fallback
 require|W46-03-tools-udp-explicit-no-fallback-msg|app/src/cli/tools.rs|canonical UDP outbound not found; direct fallback is disabled|tools connect udp should emit explicit no-fallback diagnostics
@@ -409,16 +407,16 @@ require|W187-02-reloadable-env-cfg-usize|app/src/admin_debug/reloadable.rs|env_c
 require|W187-03-reloadable-env-cfg-u64|app/src/admin_debug/reloadable.rs|env_cfg_u64\("SB_SUBS_TIMEOUT_MS"|reloadable timeout should use explicit parse helper
 require|W187-04-reloadable-explicit-warn|app/src/admin_debug/reloadable.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|reloadable env should emit explicit diagnostics
 
-require|W188-01-rate-limit-max-helper|app/src/admin_debug/middleware/rate_limit.rs|rl_env_u32\("SB_ADMIN_RATE_LIMIT_MAX"|rate limit max should use explicit parse helper
-require|W188-02-rate-limit-window-helper|app/src/admin_debug/middleware/rate_limit.rs|rl_env_u64\("SB_ADMIN_RATE_LIMIT_WINDOW_SEC"|rate limit window should use explicit parse helper
-require|W188-03-rate-limit-burst-helper|app/src/admin_debug/middleware/rate_limit.rs|rl_env_opt_u32\("SB_ADMIN_RATE_LIMIT_BURST"|rate limit burst should use explicit parse helper
-require|W188-04-rate-limit-explicit-warn|app/src/admin_debug/middleware/rate_limit.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|rate limit env should emit explicit diagnostics
+require|W188-01-rate-limit-max-helper|crates/sb-api/src/debug/middleware/rate_limit.rs|rl_env_u32\("SB_ADMIN_RATE_LIMIT_MAX"|rate limit max should use explicit parse helper
+require|W188-02-rate-limit-window-helper|crates/sb-api/src/debug/middleware/rate_limit.rs|rl_env_u64\("SB_ADMIN_RATE_LIMIT_WINDOW_SEC"|rate limit window should use explicit parse helper
+require|W188-03-rate-limit-burst-helper|crates/sb-api/src/debug/middleware/rate_limit.rs|rl_env_opt_u32\("SB_ADMIN_RATE_LIMIT_BURST"|rate limit burst should use explicit parse helper
+require|W188-04-rate-limit-explicit-warn|crates/sb-api/src/debug/middleware/rate_limit.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|rate limit env should emit explicit diagnostics
 
-require|W189-01-admin-limits-header-helper|app/src/admin_debug/http_server.rs|admin_env_usize\("SB_ADMIN_MAX_HEADER_BYTES"|admin limits header should use explicit parse helper
-require|W189-02-admin-limits-body-helper|app/src/admin_debug/http_server.rs|admin_env_usize\("SB_ADMIN_MAX_BODY_BYTES"|admin limits body should use explicit parse helper
-require|W189-03-admin-limits-firstline-helper|app/src/admin_debug/http_server.rs|admin_env_u64\("SB_ADMIN_FIRSTLINE_TIMEOUT_MS"|admin limits firstline should use explicit parse helper
-require|W189-04-admin-limits-read-helper|app/src/admin_debug/http_server.rs|admin_env_u64\("SB_ADMIN_READ_TIMEOUT_MS"|admin limits read timeout should use explicit parse helper
-require|W189-05-admin-limits-explicit-warn|app/src/admin_debug/http_server.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|admin limits env should emit explicit diagnostics
+require|W189-01-admin-limits-header-helper|crates/sb-api/src/debug/server.rs|admin_env_usize\("SB_ADMIN_MAX_HEADER_BYTES"|admin limits header should use explicit parse helper
+require|W189-02-admin-limits-body-helper|crates/sb-api/src/debug/server.rs|admin_env_usize\("SB_ADMIN_MAX_BODY_BYTES"|admin limits body should use explicit parse helper
+require|W189-03-admin-limits-firstline-helper|crates/sb-api/src/debug/server.rs|admin_env_u64\("SB_ADMIN_FIRSTLINE_TIMEOUT_MS"|admin limits firstline should use explicit parse helper
+require|W189-04-admin-limits-read-helper|crates/sb-api/src/debug/server.rs|admin_env_u64\("SB_ADMIN_READ_TIMEOUT_MS"|admin limits read timeout should use explicit parse helper
+require|W189-05-admin-limits-explicit-warn|crates/sb-api/src/debug/server.rs|env '.*' value '.*' is not a valid u..; silent parse fallback is disabled|admin limits env should emit explicit diagnostics
 
 require|W190-01-cli-prefetch-cap-helper|app/src/cli/prefetch/mod.rs|cli_prefetch_env_usize\("SB_PREFETCH_CAP"|cli prefetch cap should use explicit parse helper
 require|W190-02-cli-prefetch-explicit-warn|app/src/cli/prefetch/mod.rs|env '.*' value '.*' is not a valid usize; silent parse fallback is disabled|cli prefetch env should emit explicit diagnostics

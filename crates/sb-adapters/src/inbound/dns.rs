@@ -12,7 +12,7 @@ use std::sync::Arc;
 use sb_core::adapter::InboundTaskDriver;
 use sb_core::dns::{DnsQueryContext, DnsRouter, ResolverHandle};
 use sb_core::net::metered::TrafficRecorder;
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, UdpSocket};
 use tokio::sync::Notify;

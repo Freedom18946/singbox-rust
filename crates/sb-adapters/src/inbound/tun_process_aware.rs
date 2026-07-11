@@ -17,7 +17,7 @@ use tokio::sync::Mutex;
 
 use sb_core::outbound::Outbound;
 use sb_core::router::process_router::ProcessRouter;
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 
 use sb_platform::process::ProcessMatcher;
 use sb_platform::tun::TunError;

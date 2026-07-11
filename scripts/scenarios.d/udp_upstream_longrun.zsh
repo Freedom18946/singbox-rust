@@ -19,7 +19,7 @@ run() {
   echo "[DEBUG] Starting UDP longrun test for ${dur}s"
 
   while [[ $(date +%s) -lt $t_end ]]; do
-    if cargo run -q --example socks5_udp_probe --manifest-path "${ROOT}/crates/sb-core/Cargo.toml" -- "${socks}" "1.1.1.1:53" "example.com" >/dev/null 2>&1; then
+    if cargo run -q --example socks5_udp_probe --manifest-path "${ROOT}/crates/sb-adapters/Cargo.toml" -- "${socks}" "1.1.1.1:53" "example.com" >/dev/null 2>&1; then
       c=$((c+1))
     else
       failed=$((failed+1))

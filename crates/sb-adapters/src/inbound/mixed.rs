@@ -20,10 +20,12 @@ use tracing::{debug, info, warn};
 
 use sb_config::ir::Credentials;
 use sb_core::net::rate_limit_metrics;
-use sb_core::net::tcp_rate_limit::{TcpRateLimitConfig, TcpRateLimiter};
+#[cfg(test)]
+use sb_core::net::tcp_rate_limit::TcpRateLimitConfig;
+use sb_core::net::tcp_rate_limit::TcpRateLimiter;
 use sb_core::outbound::OutboundRegistryHandle;
 use sb_core::router::RouterHandle;
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 use std::pin::Pin;
 use std::task::{Context, Poll};
 use tokio::io::{AsyncRead, AsyncWrite, ReadBuf};

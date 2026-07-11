@@ -27,7 +27,7 @@ pub struct AdminServices {
     #[cfg(feature = "clash_api")]
     clash_listen: Option<std::net::SocketAddr>,
     #[cfg(feature = "admin_debug")]
-    admin_debug: Option<app::admin_debug::http_server::AdminDebugHandle>,
+    admin_debug: Option<app::admin_debug::AdminDebugHandle>,
 }
 
 impl AdminServices {
@@ -511,8 +511,8 @@ pub async fn start_admin_services(ctx: AdminStartContext<'_>) -> Result<AdminSer
                         .parse()
                         .map_err(|error| anyhow!("Invalid admin listen address: {error}"))?;
 
-                    let tls_conf = app::admin_debug::http_server::TlsConf::from_env();
-                    let auth_conf = app::admin_debug::http_server::AuthConf::from_env();
+                    let tls_conf = app::admin_debug::TlsConf::from_env();
+                    let auth_conf = app::admin_debug::AuthConf::from_env();
                     let tls_opt = if tls_conf.enabled {
                         Some(tls_conf)
                     } else {

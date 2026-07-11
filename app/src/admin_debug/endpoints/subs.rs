@@ -2,7 +2,7 @@ use crate::admin_debug::breaker;
 use crate::admin_debug::cache;
 use crate::admin_debug::http_util::{
     is_networking_allowed, parse_query, respond, respond_json_error, validate_decoded_size,
-    validate_format, validate_inline_size_estimate, validate_kinds, validate_url_scheme,
+    validate_format, validate_inline_size_estimate, validate_url_scheme,
 };
 use crate::admin_debug::reloadable;
 use crate::admin_debug::security::forbid_private_host_or_resolved_with_allowlist;
@@ -1595,7 +1595,7 @@ async fn handle_inner(
     } else if path_q.starts_with("/subs/convert") {
         let params = parse_query(q);
         let format = params.get("format").cloned().unwrap_or_default();
-        let mode = params
+        let _mode = params
             .get("mode")
             .cloned()
             .unwrap_or_else(|| "suffix".to_string());
@@ -1657,13 +1657,13 @@ async fn handle_inner(
             .await;
         }
 
-        let text = String::from_utf8_lossy(&bytes).to_string();
+        let _text = String::from_utf8_lossy(&bytes).to_string();
 
         let profile: Result<_, sb_subscribe::model::SubsError> = match format.as_str() {
             "clash" => {
                 #[cfg(feature = "subs_clash")]
                 {
-                    sb_subscribe::parse_clash::parse_with_mode(&text, &mode == "keyword")
+                    sb_subscribe::parse_clash::parse_with_mode(&_text, &_mode == "keyword")
                 }
                 #[cfg(not(feature = "subs_clash"))]
                 {
@@ -1675,7 +1675,7 @@ async fn handle_inner(
             "singbox" => {
                 #[cfg(feature = "subs_singbox")]
                 {
-                    sb_subscribe::parse_singbox::parse_with_mode(&text, &mode == "keyword")
+                    sb_subscribe::parse_singbox::parse_with_mode(&_text, &_mode == "keyword")
                 }
                 #[cfg(not(feature = "subs_singbox"))]
                 {
@@ -1711,7 +1711,7 @@ async fn handle_inner(
     } else if path_q.starts_with("/subs/parse") {
         let params = parse_query(q);
         let format = params.get("format").cloned().unwrap_or_default();
-        let mode = params
+        let _mode = params
             .get("mode")
             .cloned()
             .unwrap_or_else(|| "suffix".to_string());
@@ -1762,13 +1762,13 @@ async fn handle_inner(
             .await;
         }
 
-        let text = String::from_utf8_lossy(&bytes).to_string();
+        let _text = String::from_utf8_lossy(&bytes).to_string();
 
         let profile: Result<_, sb_subscribe::model::SubsError> = match format.as_str() {
             "clash" => {
                 #[cfg(feature = "subs_clash")]
                 {
-                    sb_subscribe::parse_clash::parse_with_mode(&text, &mode == "keyword")
+                    sb_subscribe::parse_clash::parse_with_mode(&_text, &_mode == "keyword")
                 }
                 #[cfg(not(feature = "subs_clash"))]
                 {
@@ -1780,7 +1780,7 @@ async fn handle_inner(
             "singbox" => {
                 #[cfg(feature = "subs_singbox")]
                 {
-                    sb_subscribe::parse_singbox::parse_with_mode(&text, &mode == "keyword")
+                    sb_subscribe::parse_singbox::parse_with_mode(&_text, &_mode == "keyword")
                 }
                 #[cfg(not(feature = "subs_singbox"))]
                 {
@@ -1838,7 +1838,7 @@ async fn handle_inner(
             }
 
             // Validate kinds
-            if let Err(ref err_msg) = validate_kinds(&kinds) {
+            if let Err(ref err_msg) = crate::admin_debug::http_util::validate_kinds(&kinds) {
                 return respond_json_error(sock, 400, "invalid kinds parameter", Some(err_msg))
                     .await;
             }
@@ -1927,7 +1927,8 @@ async fn handle_inner(
                         .collect::<Vec<_>>()
                         .join("\n");
                     let norm = sb_core::router::rules_normalize(&rules_text);
-                    let kinds_v = validate_kinds(&kinds).unwrap_or_default();
+                    let kinds_v =
+                        crate::admin_debug::http_util::validate_kinds(&kinds).unwrap_or_default();
                     let kinds_str_refs: Vec<&str> =
                         kinds_v.iter().map(std::string::String::as_str).collect();
                     let plan = sb_core::router::patch_plan::build_plan(

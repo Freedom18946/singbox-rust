@@ -63,14 +63,7 @@ pub fn build_resolved_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Ar
 
 /// Build a SSM API service.
 ///
-/// When `service_ssmapi` is enabled, this delegates to the real implementation in `sb-core`.
-/// Otherwise, it returns a stub that fails on `start()`.
-#[cfg(feature = "service_ssmapi")]
-pub fn build_ssmapi_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
-    sb_core::services::ssmapi::build_ssmapi_service(ir, ctx)
-}
-
-#[cfg(not(feature = "service_ssmapi"))]
+/// Product composition roots replace this stub with sb-api's implementation.
 pub fn build_ssmapi_service(ir: &ServiceIR, ctx: &ServiceContext) -> Option<Arc<dyn Service>> {
     let _ = ctx;
     let tag = ir.tag.as_deref().unwrap_or("ssm-api");
@@ -121,20 +114,8 @@ pub fn register_service_stubs() {
     #[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
     sb_core::service::register_service(ServiceType::Resolved, build_resolved_service);
 
-    #[cfg(feature = "service_ssmapi")]
-    sb_core::service::register_service(
-        ServiceType::Ssmapi,
-        sb_core::services::ssmapi::build_ssmapi_service,
-    );
-    #[cfg(not(feature = "service_ssmapi"))]
     sb_core::service::register_service(ServiceType::Ssmapi, build_ssmapi_service);
 
-    #[cfg(feature = "service_derp")]
-    sb_core::service::register_service(
-        ServiceType::Derp,
-        sb_core::services::derp::build_derp_service,
-    );
-    #[cfg(not(feature = "service_derp"))]
     sb_core::service::register_service(ServiceType::Derp, build_derp_service);
 }
 
@@ -205,45 +186,6 @@ mod tests {
             ..Default::default()
         };
 
-        #[cfg(feature = "service_ssmapi")]
-        let _keepalive = {
-            use sb_core::services::ssmapi::{
-                registry as ssm_registry, ManagedSSMServer, TrafficTracker,
-            };
-            use std::sync::Arc;
-
-            struct DummyManagedServer {
-                tag: String,
-            }
-
-            impl ManagedSSMServer for DummyManagedServer {
-                fn set_tracker(&self, _tracker: Arc<dyn TrafficTracker>) {}
-
-                fn tag(&self) -> &str {
-                    &self.tag
-                }
-
-                fn inbound_type(&self) -> &str {
-                    "shadowsocks"
-                }
-
-                fn update_users(
-                    &self,
-                    _users: Vec<String>,
-                    _passwords: Vec<String>,
-                ) -> Result<(), String> {
-                    Ok(())
-                }
-            }
-
-            let srv = Arc::new(DummyManagedServer {
-                tag: "ss-in".to_string(),
-            });
-            let srv_dyn: Arc<dyn ManagedSSMServer> = srv.clone();
-            ssm_registry::register_managed_ssm_server("ss-in", Arc::downgrade(&srv_dyn));
-            srv
-        };
-
         let service = registry.build(&ir, &ctx);
         assert!(service.is_some());
 
@@ -254,18 +196,8 @@ mod tests {
         // Starting should fail with helpful error if stub, or succeed if real
         let result = service.start(StartStage::Initialize);
 
-        #[cfg(not(feature = "service_ssmapi"))]
-        {
-            assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("not implemented"));
-        }
-
-        #[cfg(feature = "service_ssmapi")]
-        {
-            if let Err(e) = &result {
-                assert!(!e.to_string().contains("not implemented"));
-            }
-        }
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not implemented"));
     }
 
     #[test]

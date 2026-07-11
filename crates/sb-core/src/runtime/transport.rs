@@ -69,7 +69,6 @@ pub mod map {
                 .collect::<Vec<_>>()
         });
 
-        let mut saw_tls = false;
         // Log the final chain for diagnostics
         tracing::debug!(
             target: "sb_core::transport",
@@ -85,7 +84,7 @@ pub mod map {
                     // Prefer provided TLS config override, otherwise global effective
                     let cfg = tls_cfg_override
                         .clone()
-                        .unwrap_or_else(crate::tls::global::get_effective);
+                        .unwrap_or_else(sb_tls::global::get_effective);
                     let alpn = alpn_from_ir.clone().or_else(|| {
                         if want_h2 {
                             Some(vec![b"h2".to_vec()])
@@ -94,7 +93,6 @@ pub mod map {
                         }
                     });
                     builder = builder.tls(cfg, tls_sni.map(ToOwned::to_owned), alpn);
-                    saw_tls = true;
                 }
                 #[cfg(not(feature = "tls_rustls"))]
                 "tls" => {
@@ -131,22 +129,17 @@ pub mod map {
                     builder = builder.http_upgrade(cfg);
                 }
                 "grpc" => {
-                    let mut cfg = sb_transport::grpc::GrpcConfig::default();
-                    if let Some(s) = grpc_service {
-                        cfg.service_name = s.to_string();
-                    }
-                    if let Some(m) = grpc_method {
-                        cfg.method_name = m.to_string();
-                    }
+                    let mut cfg = sb_transport::grpc_lite::GrpcLiteConfig::new(
+                        grpc_service.unwrap_or("TunService"),
+                        grpc_method.unwrap_or("Tun"),
+                    );
                     if let Some(a) = grpc_authority {
-                        cfg.server_name = Some(a.to_string());
+                        cfg.host = a.to_string();
                     }
                     if !grpc_metadata.is_empty() {
                         cfg.metadata = grpc_metadata.to_vec();
                     }
-                    // Enable TLS when TLS appears explicitly or SNI/ALPN suggests TLS
-                    cfg.enable_tls = saw_tls || tls_sni.is_some() || tls_alpn_csv.is_some();
-                    builder = builder.grpc(cfg);
+                    builder = builder.grpc_lite(cfg);
                 }
                 "mux" | "multiplex" => {
                     let mut cfg = sb_transport::multiplex::MultiplexConfig::default();
@@ -395,7 +388,7 @@ pub mod map {
         use rustls::{ClientConfig, RootCertStore};
         use rustls_pki_types::{CertificateDer, PrivateKeyDer};
 
-        crate::tls::ensure_rustls_crypto_provider();
+        sb_tls::ensure_crypto_provider();
 
         let want_skip = ob.skip_cert_verify.unwrap_or(false);
         let has_ca = !ob.tls_ca_paths.is_empty() || !ob.tls_ca_pem.is_empty();
@@ -408,7 +401,7 @@ pub mod map {
         }
 
         // Base roots: webpki + top-level IR CAs
-        let mut roots: RootCertStore = crate::tls::global::base_root_store();
+        let mut roots: RootCertStore = sb_tls::global::base_root_store();
         // Extend with per-outbound CA paths
         for path in &ob.tls_ca_paths {
             if let Ok(bytes) = std::fs::read(path) {
@@ -494,7 +487,7 @@ pub mod map {
 
         let mut client = if let (Some(chain), Some(k)) = (certs, key) {
             ClientConfig::builder()
-                .with_root_certificates(crate::tls::global::base_root_store())
+                .with_root_certificates(sb_tls::global::base_root_store())
                 .with_client_auth_cert(chain, k)
                 .expect("invalid client auth cert/key")
         } else {
@@ -502,7 +495,7 @@ pub mod map {
         };
 
         if want_skip {
-            let v = crate::tls::danger::NoVerify::new();
+            let v = sb_tls::danger::NoVerify::new();
             client
                 .dangerous()
                 .set_certificate_verifier(std::sync::Arc::new(v));

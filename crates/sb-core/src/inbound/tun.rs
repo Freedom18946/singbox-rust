@@ -15,7 +15,7 @@
 use crate::adapter::InboundTaskDriver;
 use crate::router::{RouteCtx, RouterHandle, Transport};
 use crate::runtime::switchboard::OutboundSwitchboard;
-use crate::services::v2ray_api::StatsManager;
+use crate::v2ray_stats::StatsManager;
 use parking_lot::{Mutex, RwLock};
 use sb_platform::tun::{AsyncTunDevice, TunConfig as PlatformTunConfig, TunError};
 use smoltcp::iface::{Config, Interface, SocketSet};

@@ -1,10 +1,20 @@
 // Integration test for Box Runtime Parity Context wiring
 use sb_config::ir::{CacheFileIR, ConfigIR, ExperimentalIR, V2RayApiIR};
-use sb_core::context::{Context, V2RayServer};
+use sb_core::context::{Context, ManagedApiServer};
 use std::sync::Arc;
 
 #[tokio::test]
 async fn test_context_service_wiring() {
+    #[derive(Debug)]
+    struct TestSidecar;
+    impl ManagedApiServer for TestSidecar {
+        fn start(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+        fn close(&self) -> anyhow::Result<()> {
+            Ok(())
+        }
+    }
     let temp_dir = tempfile::tempdir().expect("temp cache dir");
     let cache_path = temp_dir.path().join("test_cache.db");
 
@@ -44,10 +54,8 @@ async fn test_context_service_wiring() {
             }
         }
 
-        if let Some(v2ray_cfg) = &exp.v2ray_api {
-            let v2ray_server = Arc::new(sb_core::services::v2ray_api::V2RayApiServer::new(
-                v2ray_cfg.clone(),
-            ));
+        if exp.v2ray_api.is_some() {
+            let v2ray_server = Arc::new(TestSidecar);
             let _ = v2ray_server.start();
             context = context.with_v2ray_server(v2ray_server);
         }

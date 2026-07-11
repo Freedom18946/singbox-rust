@@ -6,11 +6,11 @@ cd "$ROOT"
 
 combos=(
   "explain,metrics,dns_udp"
-  "explain,metrics,selector_p3,dns_udp"
+  "explain,metrics,dns_udp"
   "explain,metrics,geoip_mmdb,dns_udp"
   "metrics,rule_coverage,dns_udp"
   "metrics,bench,dns_udp"
-  "explain,metrics,selector_p3,geoip_mmdb,rule_coverage,dns_udp"
+  "explain,metrics,geoip_mmdb,rule_coverage,dns_udp"
 )
 
 out=".e2e/warn_sweep.json"

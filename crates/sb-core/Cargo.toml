@@ -41,7 +41,7 @@ sb-metrics = { path = "../sb-metrics" }
 sb-platform = { path = "../sb-platform", features = ["tun"] }
 sb-tls = { path = "../sb-tls", default-features = false, features = ["utls"] }
 sb-types = { path = "../sb-types" }
-sb-transport = { path = "../sb-transport", default-features = false, features = ["transport_ws", "transport_h2", "transport_tls", "transport_httpupgrade", "transport_mux", "transport_grpc", "transport_wireguard"] }
+sb-transport = { path = "../sb-transport", default-features = false, features = ["transport_ws", "transport_h2", "transport_tls", "transport_httpupgrade", "transport_mux", "transport_grpc_lite", "transport_wireguard"] }
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
 serde_yaml = "0.9"
@@ -49,13 +49,11 @@ sha1 = "0.10"
 sha2 = "0.10"
 smallvec = "1.15"  # 新增：用于小向量（如 DNS addrs）
 smoltcp = { version = "0.11", default-features = false, features = ["std", "log", "medium-ip", "medium-ethernet", "proto-ipv4", "proto-ipv6", "proto-dhcpv4", "socket-tcp", "socket-udp"] }
-snow = { version = "0.9", optional = true }
 socket2 = "0.6"  # 新增：用于 socket 配置
 thiserror = "1.0"
 tokio = { version = "1.47", features = ["full"] }
 tokio-rustls = { version = "0.26", default-features = false, features = ["ring", "logging", "tls12"], optional = true }
 tokio-util = { version = "0.7", features = ["compat"] }
-tokio-tungstenite = { version = "0.24", optional = true }
 tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 uuid = { version = "1.18", features = ["v4", "serde"] }
@@ -91,11 +89,7 @@ humantime = "2.1"
 idna = { version = "1.0", optional = true }
 # thrussh/thrussh-keys removed — SSH now handled by sb-adapters via russh
 loom = { version = "0.7", optional = true }
-axum = { version = "0.7", optional = true }
-axum-server = { version = "0.8", features = ["tls-rustls"], optional = true }
 prost = { version = "0.12", features = ["derive"] }
-tonic = { version = "0.11", optional = true, default-features = false, features = ["transport", "codegen", "prost"] }
-prost-types = "0.12"
 sled = "0.34.7"
 
 [target.'cfg(windows)'.dependencies]
@@ -113,9 +107,6 @@ criterion = "0.5"
 prost = "0.12"
 reqwest = { version = "0.12", default-features = false, features = ["rustls-tls", "json"] }
 hyper = { version = "0.14", features = ["client", "server", "http1", "http2", "tcp"] }
-
-[build-dependencies]
-tonic-build = { version = "0.11", optional = true, default-features = false, features = ["transport", "prost"] }
 
 [features]
 
@@ -154,7 +145,7 @@ dns_doq            = ["dns_udp", "tls_rustls", "dep:quinn"]
 dns_dhcp           = ["dep:notify"]
 dns_udp            = []
 dns_resolved       = ["dep:notify"]
-dns_tailscale      = ["dep:snow"]
+dns_tailscale      = []
 dsl_analyze        = []
 dsl_derive         = []
 dsl_plus           = []
@@ -185,7 +176,7 @@ out_tuic           = []  # Legacy: protocol code removed, handled by sb-adapters
 out_vless          = []  # Legacy: protocol code removed, handled by sb-adapters
 out_vmess          = []  # Legacy: protocol code removed, handled by sb-adapters
 out_wireguard      = []  # Legacy: protocol code removed, handled by sb-adapters
-out_tailscale      = ["dep:snow"]
+out_tailscale      = []
 
 # Legacy protocol implementations (deprecated, use sb-adapters instead)
 # This feature enables the deprecated sb-core protocol implementations
@@ -199,7 +190,6 @@ rules_capture      = []
 sbcore_analyze_json= []
 sbcore_rules_tool  = []
 schema-v2          = []
-selector_p3        = []
 socks              = []
 subs_clash         = []
 subs_http          = []
@@ -225,10 +215,10 @@ failpoints         = ["dep:fail"]
 resolv_conf        = ["dep:notify"]
 v2ray_transport    = []
 service_ntp        = []
-service_ssmapi     = ["dep:axum", "dep:axum-server"]
-service_clash_api  = ["dep:axum"]
-service_v2ray_api  = ["dep:axum", "dep:tonic", "dep:tonic-build"]
-service_derp       = ["dep:tokio-tungstenite", "dep:hyper", "dep:reqwest", "tls_rustls"]
+service_ssmapi     = []
+service_clash_api  = []
+service_v2ray_api  = []
+service_derp       = []
 service_resolved   = ["dns_udp"]
 # Network monitor for tracking network changes (Linux netlink)
 network_monitor    = []
@@ -254,10 +244,6 @@ required-features = ["router"]
 
 [[example]]
 name = "process_routing_demo"
-required-features = ["router"]
-
-[[example]]
-name = "router_udp_balancer_probe"
 required-features = ["router"]
 
 [[example]]

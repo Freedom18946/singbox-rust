@@ -5,7 +5,7 @@
 //! connectors, starts URLTest health checks, and depends on runtime services.
 
 #[cfg(feature = "router")]
-use sb_core::outbound::selector_group::{
+use sb_adapters::outbound::selector_group::{
     ProxyMember as GroupMember, SelectorGroup, UrlTestOptions,
 };
 #[cfg(feature = "router")]

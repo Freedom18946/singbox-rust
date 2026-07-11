@@ -9,7 +9,7 @@
 //!
 //! Priority: WS-E Task "Validate selector/urltest runtime behavior"
 
-use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup, UrlTestOptions};
+use sb_adapters::outbound::selector_group::{ProxyMember, SelectorGroup, UrlTestOptions};
 use sb_core::outbound::Outbound;
 use std::sync::atomic::{AtomicUsize, Ordering};
 use std::sync::Arc;
@@ -125,7 +125,7 @@ fn create_test_member(tag: &str, delay_ms: u64) -> ProxyMember {
     ProxyMember {
         tag: tag.to_string(),
         connector: Arc::new(MockConnector::new(tag, delay_ms)),
-        health: Arc::new(sb_core::outbound::selector_group::ProxyHealth::default()),
+        health: Arc::new(sb_adapters::outbound::selector_group::ProxyHealth::default()),
     }
 }
 
@@ -134,7 +134,7 @@ fn create_failing_member(tag: &str, delay_ms: u64, max_fails: usize) -> ProxyMem
     ProxyMember {
         tag: tag.to_string(),
         connector: Arc::new(MockConnector::with_failures(tag, delay_ms, max_fails)),
-        health: Arc::new(sb_core::outbound::selector_group::ProxyHealth::default()),
+        health: Arc::new(sb_adapters::outbound::selector_group::ProxyHealth::default()),
     }
 }
 
@@ -142,7 +142,7 @@ fn create_permanent_fail_member(tag: &str) -> ProxyMember {
     ProxyMember {
         tag: tag.to_string(),
         connector: Arc::new(MockConnector::with_permanent_failure(tag)),
-        health: Arc::new(sb_core::outbound::selector_group::ProxyHealth::default()),
+        health: Arc::new(sb_adapters::outbound::selector_group::ProxyHealth::default()),
     }
 }
 

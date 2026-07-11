@@ -24,26 +24,11 @@ pub mod chain;
 pub mod endpoint;
 pub mod health;
 pub mod manager;
-pub mod observe;
 pub mod registry;
-pub mod selector;
-pub mod selector_group;
 pub mod tcp;
 pub mod types;
 pub mod udp;
-pub mod udp_balancer;
 pub mod udp_direct;
-// P3 Score Selector
-// P3 评分选择器
-#[cfg(feature = "selector_p3")]
-pub mod selector_p3;
-// Unified Feedback Entry (Selection/Dial Report)
-// 统一反馈入口（选择/拨号回报）
-#[cfg(feature = "selector_p3")]
-pub mod feedback;
-// Simplified P3 Selector
-// 简化 P3 选择器
-pub mod p3_selector;
 
 // Encrypted outbound protocols
 pub mod address;

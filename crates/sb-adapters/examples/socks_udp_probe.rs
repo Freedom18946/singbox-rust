@@ -9,7 +9,6 @@ use sb_adapters::inbound::socks::udp::encode_udp_datagram;
 use sb_adapters::util::parse_payload_arg;
 use sb_core::net::datagram::UdpTargetAddr;
 use sb_core::net::dial::per_attempt_timeout;
-use sb_core::util::env::env_bool;
 use std::env;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::time::Duration;
@@ -69,13 +68,12 @@ async fn main() -> anyhow::Result<()> {
     };
     let out = encode_udp_datagram(&target, &payload);
     eprintln!(
-        "relay={} target={}:{} payload_len={} bytes timeout={:?} nat_adapt={}",
+        "relay={} target={}:{} payload_len={} bytes timeout={:?}",
         server,
         host,
         port,
         payload.len(),
-        per_attempt_timeout(),
-        env_bool("SB_UDP_NAT_ADAPT")
+        per_attempt_timeout(&sb_core::runtime_options::NetworkRuntimeOptions::default()),
     );
     sock.send_to(&out, server).await?;
 

@@ -17,7 +17,7 @@ use std::sync::{Arc, Mutex};
 use std::time::{Duration, Instant};
 
 use crate::net::metered::TrafficRecorder;
-use crate::services::v2ray_api::StatsManager;
+use crate::v2ray_stats::StatsManager;
 use sb_common::conntrack::ConnTracker;
 
 use publicsuffix::{List, Psl};

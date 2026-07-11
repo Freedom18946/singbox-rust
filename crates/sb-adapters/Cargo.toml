@@ -25,6 +25,7 @@ scopeguard = "1.2"
 tokio-util = { version = "0.7", features = ["compat", "io"] }
 futures = "0.3"
 humantime = "2.1"
+snow = { version = "0.9", optional = true }
 
 # VMess protocol dependencies
 uuid = { version = "1.0", features = ["v4", "serde"] }
@@ -63,7 +64,7 @@ sb-common = { path = "../sb-common" }
 sb-config = { path = "../sb-config" }
 sb-types = { path = "../sb-types" }
 socket2 = "0.6"
-sb-metrics = { path = "../sb-metrics", optional = true }
+sb-metrics = { path = "../sb-metrics" }
 sb-platform = { path = "../sb-platform", optional = true }
 sb-tls = { path = "../sb-tls", optional = true }
 sb-transport = { path = "../sb-transport", optional = true }
@@ -152,7 +153,7 @@ naive = ["dep:sb-transport", "sb-transport/transport_tls", "dep:h2", "dep:http"]
 # TUIC inbound (QUIC-based server)
 tuic_server = ["dep:quinn", "dep:rustls", "dep:rustls-pemfile"]
 # 占位：便于在代码中 #[cfg(feature="metrics")]
-metrics = ["dep:metrics", "dep:sb-metrics", "sb-core/metrics"]
+metrics = ["dep:metrics", "sb-core/metrics"]
 # CLI 支持
 clap = ["dep:clap"]
 bench = []
@@ -192,7 +193,7 @@ adapter-hysteria2 = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-
 adapter-shadowtls = ["shadowtls", "dep:sb-tls", "dep:rustls", "dep:tokio-rustls", "dep:webpki-roots", "dep:sb-transport", "sb-transport/transport_tls"]
 adapter-ssh = ["ssh"]
 adapter-tuic = ["tuic", "dep:sb-tls", "dep:sb-transport"]
-adapter-tailscale = ["sb-core/out_tailscale", "sb-transport/transport_tailscale"]
+adapter-tailscale = ["dep:snow", "sb-core/out_tailscale", "sb-transport/transport_tailscale"]
 adapter-wireguard = ["out_wireguard"]
 adapter-wireguard-outbound = ["sb-transport", "sb-transport/transport_wireguard"]
 adapter-wireguard-endpoint = ["dep:boringtun", "dep:tun"]
@@ -225,8 +226,8 @@ adapter-anytls = ["dep:anytls-rs", "dep:tokio-rustls", "dep:rustls", "dep:rustls
 
 # Service implementations
 service_resolved = ["dep:zbus", "sb-core/service_resolved"]
-service_ssmapi = ["sb-core/service_ssmapi"]
-service_derp = ["sb-core/service_derp"]
+service_ssmapi = []
+service_derp = []
 # Network monitor for tracking network changes (Linux netlink)
 network_monitor = ["dep:sb-platform", "sb-core/network_monitor"]
 tsnet = []

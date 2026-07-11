@@ -1,13 +1,14 @@
-use sb_config::ir::{CacheFileIR, StatsIR, V2RayApiIR};
+use sb_config::ir::{CacheFileIR, StatsIR};
 use sb_core::adapter::surface::AdapterServices;
+use sb_core::context::ManagedApiServer;
 use sb_core::context::{Context, ContextRegistry};
 use sb_core::dns::dns_router::NullDnsRouter;
 use sb_core::services::cache_file::CacheFileService;
 use sb_core::services::urltest_history::URLTestHistoryService;
-use sb_core::services::v2ray_api::V2RayApiServer;
+use sb_core::v2ray_stats::StatsManager;
 use sb_types::ports::{
-    AdapterServicePorts, CacheFilePort, ClashServerPort, RouteMetadata, UrlTestHistory,
-    UrlTestHistoryPort, V2RayServerPort,
+    AdapterServicePorts, CacheFilePort, ClashServerPort, ManagedApiServerPort, RouteMetadata,
+    UrlTestHistory, UrlTestHistoryPort,
 };
 use sb_types::InboundTag;
 use std::sync::Arc;
@@ -17,7 +18,24 @@ struct AdapterContracts {
     cache: Arc<dyn CacheFilePort>,
     history: Arc<dyn UrlTestHistoryPort>,
     clash: Arc<dyn ClashServerPort>,
-    v2ray: Arc<dyn V2RayServerPort>,
+    v2ray: Arc<dyn ManagedApiServerPort>,
+}
+
+#[derive(Debug)]
+struct StatsSidecar {
+    stats: Arc<StatsManager>,
+}
+
+impl ManagedApiServer for StatsSidecar {
+    fn start(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+    fn close(&self) -> anyhow::Result<()> {
+        Ok(())
+    }
+    fn stats(&self) -> Option<Arc<StatsManager>> {
+        Some(Arc::clone(&self.stats))
+    }
 }
 
 fn consume_contracts(ports: &AdapterServicePorts) -> AdapterContracts {
@@ -40,17 +58,16 @@ fn adapter_services_expose_trait_object_contracts_without_downcast() {
         rdrc_timeout: Some("1h".into()),
     }));
     let history = Arc::new(URLTestHistoryService::new());
-    let v2ray_impl = Arc::new(V2RayApiServer::new(V2RayApiIR {
-        listen: None,
-        stats: Some(StatsIR {
+    let v2ray_impl = Arc::new(StatsSidecar {
+        stats: Arc::new(StatsManager::new(Some(StatsIR {
             enabled: true,
             inbound: Some(true),
             outbound: Some(true),
             ..Default::default()
-        }),
-    }));
+        }))),
+    });
     v2ray_impl
-        .stats()
+        .stats
         .get_counter("inbound>>>mixed-in>>>traffic>>>uplink")
         .add(17);
 
@@ -137,12 +154,12 @@ fn adapter_services_expose_trait_object_contracts_without_downcast() {
     );
     assert_eq!(
         v2ray_impl
-            .stats()
+            .stats
             .get_stat("outbound>>>direct>>>traffic>>>downlink"),
         Some(0)
     );
     assert!(v2ray_impl
-        .stats()
+        .stats
         .get_stat("inbound>>>mixed-in>>>packet>>>uplink")
         .is_none());
     stats.routed_packet(
@@ -155,13 +172,13 @@ fn adapter_services_expose_trait_object_contracts_without_downcast() {
     );
     assert_eq!(
         v2ray_impl
-            .stats()
+            .stats
             .get_stat("inbound>>>dns-in>>>traffic>>>uplink"),
         Some(0)
     );
     assert_eq!(
         v2ray_impl
-            .stats()
+            .stats
             .get_stat("outbound>>>dns-out>>>traffic>>>downlink"),
         Some(0)
     );

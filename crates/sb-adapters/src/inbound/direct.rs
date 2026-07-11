@@ -8,7 +8,7 @@ use std::sync::Arc;
 
 use sb_core::adapter::{InboundParam, InboundTaskDriver};
 use sb_core::inbound::direct::DirectForward;
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 
 /// Direct inbound adapter that wraps the core DirectForward implementation.
 #[derive(Debug)]

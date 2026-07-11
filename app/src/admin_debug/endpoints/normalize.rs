@@ -5,6 +5,7 @@ use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 #[cfg(feature = "rules_capture")]
 use sb_core::router::engine::RouterHandle;
+#[cfg(any(feature = "subs_clash", feature = "subs_singbox"))]
 use std::fmt::Write as _;
 use tokio::io::AsyncWriteExt;
 

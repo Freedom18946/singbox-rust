@@ -1,8 +1,8 @@
 use std::sync::Arc;
 
+use super::selector_group::{ProxyMember, SelectorGroup};
 use sb_config::ir::OutboundIR;
 use sb_core::adapter::{registry, OutboundParam};
-use sb_core::outbound::selector_group::{ProxyMember, SelectorGroup};
 
 type OutboundBuilderResult = Option<Arc<dyn sb_types::Outbound>>;
 

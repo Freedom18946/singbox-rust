@@ -341,7 +341,6 @@ impl HostBreaker {
 
     #[must_use]
     pub fn state_stats(&self) -> Vec<(String, String, u32)> {
-        let current_time = now();
         self.map
             .iter()
             .filter_map(|(host, stat)| {

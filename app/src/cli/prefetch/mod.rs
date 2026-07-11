@@ -155,8 +155,8 @@ fn feature_guard(feature: &str) -> anyhow::Result<()> {
 #[cfg(feature = "admin_debug")]
 struct PrefetchCliRuntimeDeps {
     #[cfg(feature = "subs_http")]
-    _prefetcher: std::sync::Arc<crate::admin_debug::prefetch::Prefetcher>,
-    metrics: std::sync::Arc<crate::admin_debug::security_metrics::SecurityMetricsState>,
+    _prefetcher: std::sync::Arc<app::admin_debug::prefetch::Prefetcher>,
+    metrics: std::sync::Arc<app::admin_debug::security_metrics::SecurityMetricsState>,
 }
 
 #[cfg(feature = "admin_debug")]
@@ -174,12 +174,12 @@ struct PrefetchCliStats {
 
 #[cfg(feature = "admin_debug")]
 fn build_prefetch_runtime_deps() -> PrefetchCliRuntimeDeps {
-    let metrics = crate::admin_debug::security_metrics::install_default(std::sync::Arc::new(
-        crate::admin_debug::security_metrics::SecurityMetricsState::new(),
+    let metrics = app::admin_debug::security_metrics::install_default(std::sync::Arc::new(
+        app::admin_debug::security_metrics::SecurityMetricsState::new(),
     ));
     #[cfg(feature = "subs_http")]
-    let prefetcher = crate::admin_debug::prefetch::install_default_prefetcher(std::sync::Arc::new(
-        crate::admin_debug::prefetch::Prefetcher::from_env(),
+    let prefetcher = app::admin_debug::prefetch::install_default_prefetcher(std::sync::Arc::new(
+        app::admin_debug::prefetch::Prefetcher::from_env(),
     ));
 
     PrefetchCliRuntimeDeps {
@@ -192,7 +192,7 @@ fn build_prefetch_runtime_deps() -> PrefetchCliRuntimeDeps {
 #[cfg(feature = "admin_debug")]
 #[must_use]
 fn collect_prefetch_cli_stats(
-    metrics: &crate::admin_debug::security_metrics::SecurityMetricsState,
+    metrics: &app::admin_debug::security_metrics::SecurityMetricsState,
 ) -> PrefetchCliStats {
     let (enq, drop, done, fail, retry) = metrics.get_prefetch_counters();
     PrefetchCliStats {
@@ -302,7 +302,7 @@ fn enqueue(_url: String, _etag: Option<String>) -> anyhow::Result<()> {
         let runtime_deps = build_prefetch_runtime_deps();
 
         // 仅入队，不抓取
-        let ok = crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(
+        let ok = app::admin_debug::prefetch::enqueue_prefetch_with_metrics(
             &_url,
             _etag,
             std::sync::Arc::clone(&runtime_deps.metrics),
@@ -332,7 +332,7 @@ fn heat(
     #[cfg(all(feature = "admin_debug", feature = "subs_http"))]
     {
         let runtime_deps = build_prefetch_runtime_deps();
-        let metrics: std::sync::Arc<crate::admin_debug::security_metrics::SecurityMetricsState> =
+        let metrics: std::sync::Arc<app::admin_debug::security_metrics::SecurityMetricsState> =
             std::sync::Arc::clone(&runtime_deps.metrics);
         let stop = std::sync::Arc::new(std::sync::atomic::AtomicBool::new(false));
         let stop2 = stop.clone();
@@ -357,7 +357,7 @@ fn heat(
                     std::time::Duration::from_secs_f64(1.0 / (_rps as f64).max(1.0))
                 };
                 while !stop.load(std::sync::atomic::Ordering::Relaxed) {
-                    let ok = crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(
+                    let ok = app::admin_debug::prefetch::enqueue_prefetch_with_metrics(
                         &url,
                         etag.clone(),
                         metrics.clone(),
@@ -537,7 +537,7 @@ fn sample(
         let metrics = std::sync::Arc::clone(&runtime_deps.metrics);
         let before = runtime_deps.metrics.get_prefetch_queue_depth();
         let t0 = std::time::Instant::now();
-        let ok = crate::admin_debug::prefetch::enqueue_prefetch_with_metrics(&_url, _etag, metrics);
+        let ok = app::admin_debug::prefetch::enqueue_prefetch_with_metrics(&_url, _etag, metrics);
         let t1 = t0.elapsed();
         let mut peak = before;
         let until = std::time::Instant::now() + std::time::Duration::from_secs(_window);
@@ -571,7 +571,7 @@ fn sample(
                     "drop".to_string()
                 },
                 latency_ms: t1.as_millis() as u32,
-                size: crate::admin_debug::prefetch::get_last_prefetch_size() as u32,
+                size: app::admin_debug::prefetch::get_last_prefetch_size() as u32,
                 hint: Some(format!("queue: before={before} peak={peak} after={after}")),
             };
 
@@ -627,7 +627,7 @@ mod tests {
 
     #[test]
     fn collect_prefetch_cli_stats_uses_explicit_metrics_owner() {
-        let metrics = crate::admin_debug::security_metrics::SecurityMetricsState::new();
+        let metrics = app::admin_debug::security_metrics::SecurityMetricsState::new();
         metrics.set_prefetch_queue_depth(4);
         metrics.set_prefetch_queue_high_watermark(7);
         metrics.prefetch_inc("enq");

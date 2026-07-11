@@ -1,5 +1,5 @@
 use crate::service::StartStage;
-use crate::services::v2ray_api::StatsManager;
+use crate::v2ray_stats::StatsManager;
 use dashmap::DashMap;
 use sb_common::conntrack::ConnTracker;
 use sb_config::ir::RouteIR;
@@ -92,7 +92,7 @@ pub struct Context {
     pub cache_file: Option<Arc<dyn CacheFile>>,
     pub urltest_history: Option<Arc<dyn URLTestHistoryStorage>>,
 
-    pub v2ray_server: Option<Arc<dyn V2RayServer>>,
+    pub v2ray_server: Option<Arc<dyn ManagedApiServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
     pub time_service: Option<Arc<dyn TimeService>>,
     pub certificate_store: Option<Arc<dyn CertificateStore>>,
@@ -116,7 +116,7 @@ pub struct ContextRegistry {
     pub cache_file: Option<Arc<dyn CacheFile>>,
     pub urltest_history: Option<Arc<dyn URLTestHistoryStorage>>,
 
-    pub v2ray_server: Option<Arc<dyn V2RayServer>>,
+    pub v2ray_server: Option<Arc<dyn ManagedApiServer>>,
     pub ntp_service: Option<Arc<dyn NtpService>>,
     pub time_service: Option<Arc<dyn TimeService>>,
     pub certificate_store: Option<Arc<dyn CertificateStore>>,
@@ -178,7 +178,7 @@ impl Context {
             v2ray_server: None,
             ntp_service: None,
             time_service: Some(Arc::new(crate::services::time::SystemTimeService::new())),
-            certificate_store: Some(Arc::new(crate::tls::global::GlobalCertificateStore)),
+            certificate_store: Some(Arc::new(GlobalCertificateStore)),
             process_matcher: match ProcessMatcher::new() {
                 Ok(matcher) => Some(Arc::new(matcher)),
                 Err(e) => {
@@ -200,7 +200,7 @@ impl Context {
         self
     }
 
-    pub fn with_v2ray_server(mut self, v2ray_server: Arc<dyn V2RayServer>) -> Self {
+    pub fn with_v2ray_server(mut self, v2ray_server: Arc<dyn ManagedApiServer>) -> Self {
         self.v2ray_server = Some(v2ray_server);
         self
     }
@@ -850,26 +850,26 @@ pub trait CacheFile: Send + Sync + std::fmt::Debug {
 /// - `last_exit` is the terminal outcome of the **highest generation id** seen so far; it is
 ///   monotonic and never regresses to an older generation.
 #[derive(Clone, Debug, Default, PartialEq, Eq)]
-pub struct V2RayServerRuntimeSnapshot {
+pub struct ManagedApiRuntimeSnapshot {
     /// The newest active generation, if any is currently running or shutting down.
-    pub current: Option<V2RayServerActiveGeneration>,
+    pub current: Option<ManagedApiActiveGeneration>,
     /// The terminal outcome of the highest generation that has exited so far.
-    pub last_exit: Option<V2RayServerExitRecord>,
+    pub last_exit: Option<ManagedApiExitRecord>,
 }
 
 /// An active (running or shutting-down) V2Ray server generation.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct V2RayServerActiveGeneration {
+pub struct ManagedApiActiveGeneration {
     /// Monotonic generation id; the first successful start is generation `1`.
     pub generation: u64,
     /// Whether the generation is serving or has been asked to stop.
-    pub phase: V2RayServerActivePhase,
+    pub phase: ManagedApiActivePhase,
 }
 
 /// Active-phase of a V2Ray server generation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum V2RayServerActivePhase {
+pub enum ManagedApiActivePhase {
     /// Serving; the listener is bound and the gRPC server is accepting connections.
     Running,
     /// A shutdown has been requested for this generation; it is draining.
@@ -878,17 +878,17 @@ pub enum V2RayServerActivePhase {
 
 /// A terminal outcome bound to the generation that produced it.
 #[derive(Clone, Debug, PartialEq, Eq)]
-pub struct V2RayServerExitRecord {
+pub struct ManagedApiExitRecord {
     /// The generation that terminated.
     pub generation: u64,
     /// How that generation terminated.
-    pub exit: V2RayServerExit,
+    pub exit: ManagedApiExit,
 }
 
 /// Terminal outcome of a V2Ray server generation.
 #[derive(Clone, Debug, PartialEq, Eq)]
 #[non_exhaustive]
-pub enum V2RayServerExit {
+pub enum ManagedApiExit {
     /// Serve future returned `Ok` after a shutdown had been requested for this generation.
     CleanShutdown,
     /// Serve future returned `Ok` without any shutdown being requested for this generation.
@@ -901,7 +901,7 @@ pub enum V2RayServerExit {
     Cancelled,
 }
 
-pub trait V2RayServer: Send + Sync + std::fmt::Debug {
+pub trait ManagedApiServer: Send + Sync + std::fmt::Debug {
     fn start(&self) -> anyhow::Result<()>;
     fn close(&self) -> anyhow::Result<()>;
     fn stats(&self) -> Option<Arc<StatsManager>> {
@@ -914,7 +914,7 @@ pub trait V2RayServer: Send + Sync + std::fmt::Debug {
     /// value is always readable by late subscribers.
     fn subscribe_runtime_state(
         &self,
-    ) -> Option<tokio::sync::watch::Receiver<V2RayServerRuntimeSnapshot>> {
+    ) -> Option<tokio::sync::watch::Receiver<ManagedApiRuntimeSnapshot>> {
         None
     }
 }
@@ -935,6 +935,16 @@ pub trait TimeService: Send + Sync + std::fmt::Debug {
 pub trait CertificateStore: Send + Sync + std::fmt::Debug {
     /// Return the root certificate pool (PEM encoded).
     fn root_pool(&self) -> Option<Vec<String>>;
+}
+
+/// Default process-wide certificate store marker.
+#[derive(Debug, Clone, Default)]
+pub struct GlobalCertificateStore;
+
+impl CertificateStore for GlobalCertificateStore {
+    fn root_pool(&self) -> Option<Vec<String>> {
+        None
+    }
 }
 
 #[cfg(test)]

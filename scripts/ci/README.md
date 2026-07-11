@@ -27,7 +27,7 @@ Exit codes:
 Acceptance testing with feature gates.
 
 ```bash
-FEATS="explain,selector_p3,metrics" ./scripts/ci/accept.sh
+FEATS="explain,metrics" ./scripts/ci/accept.sh
 ```
 
 ### `strict.sh`
@@ -61,7 +61,6 @@ Individual CI tasks that can be run independently or as part of the pipeline.
 ### Feature Testing
 - `admin-http.sh` - Admin HTTP API testing
 - `selector-bridge.sh` - Selector bridge testing
-- `selector-explain-real.sh` - Selector explain real scenarios
 - `inbounds-upstreams.sh` - Inbound/upstream integration
 - `proxy-minimal.sh` - Minimal proxy testing
 

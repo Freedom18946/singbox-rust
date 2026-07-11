@@ -72,12 +72,10 @@ pub mod router;
 pub mod runtime;
 pub mod runtime_options;
 pub mod session;
-pub mod socks5;
-pub mod subscribe;
 pub mod telemetry;
-pub mod transport;
 pub mod types;
 pub mod util;
+pub mod v2ray_stats;
 pub mod admin {
     pub mod http;
 }
@@ -105,12 +103,6 @@ pub mod service;
 pub mod services;
 
 // 别名模块：为兼容性提供简短的模块名
-pub mod observe {
-    pub use crate::outbound::observe::*;
-}
-
-// TLS utilities
-pub mod tls;
 
 pub use adapter::*; // 兼容 re-export
 

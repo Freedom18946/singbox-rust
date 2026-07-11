@@ -18,16 +18,16 @@ use crate::inbound::connect::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use crate::outbound::pool_selector::PoolSelector;
 use sb_core::net::metered;
 use sb_core::net::metered::TrafficRecorder;
 use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::TcpRateLimiter;
 use sb_core::outbound::registry;
-use sb_core::outbound::selector::PoolSelector;
 use sb_core::router;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 
 use std::collections::HashMap;
 use std::io;
@@ -1127,7 +1127,7 @@ pub(crate) fn resolve_detour_inbound(tag: &str) -> Option<Arc<ShadowsocksInbound
 }
 
 #[cfg(feature = "service_ssmapi")]
-use sb_core::services::ssmapi::{ManagedSSMServer, TrafficTracker};
+use sb_core::service::ssm::{ManagedSSMServer, TrafficTracker};
 
 pub struct ShadowsocksInboundAdapter {
     config: ShadowsocksInboundConfig,
@@ -1576,7 +1576,7 @@ mod tests {
     #[cfg(feature = "service_ssmapi")]
     #[test]
     fn update_users_rebuilds_user_keys() {
-        use sb_core::services::ssmapi::ManagedSSMServer;
+        use sb_core::service::ssm::ManagedSSMServer;
 
         let router = Arc::new(sb_core::router::RouterHandle::from_env());
         let cfg = ShadowsocksInboundConfig {

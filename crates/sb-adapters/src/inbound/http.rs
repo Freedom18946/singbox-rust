@@ -80,17 +80,18 @@ use crate::inbound::connect::{
     direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
     ConnectOpts,
 };
+use crate::outbound::pool_selector::PoolSelector;
 #[cfg(feature = "metrics")]
 use metrics::counter;
 use once_cell::sync::OnceCell;
 use sb_core::outbound::health as ob_health;
+use sb_core::outbound::registry;
 use sb_core::outbound::OutboundRegistryHandle;
-use sb_core::outbound::{health::MultiHealthView, registry, selector::PoolSelector};
 use sb_core::outbound::{Endpoint as OutEndpoint, RouteTarget as OutRouteTarget};
 use sb_core::router;
 use sb_core::router::rules::Decision as RDecision;
 use sb_core::router::{RouteCtx, Transport};
-use sb_core::services::v2ray_api::StatsManager;
+use sb_core::v2ray_stats::StatsManager;
 
 static SELECTOR: OnceCell<PoolSelector> = OnceCell::new();
 
@@ -789,8 +790,6 @@ where
                         let _cap = sticky_env_usize("SB_PROXY_STICKY_CAP", 4096);
                         PoolSelector::new("http_proxy".to_string(), "default".to_string())
                     });
-                    let _health = MultiHealthView;
-
                     if let Some(reg) = registry::global() {
                         if let Some(_pool) = reg.pools.get(name) {
                             if let Some(ep) =

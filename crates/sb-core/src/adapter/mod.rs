@@ -23,7 +23,6 @@ use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
 
-pub use crate::outbound::selector::Member as SelectorMember;
 pub mod bridge;
 pub mod clash;
 pub mod handler;

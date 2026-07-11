@@ -122,8 +122,26 @@ impl MetricsBridge {
 
     /// Update traffic statistics
     pub async fn update_traffic(&self, up_bytes: u64, down_bytes: u64) {
+        self.update_traffic_inner(up_bytes, down_bytes, false).await;
+    }
+
+    /// Merge a monotonic traffic snapshot without allowing a stale source to
+    /// move process-wide counters backwards.
+    async fn merge_traffic(&self, up_bytes: u64, down_bytes: u64) {
+        self.update_traffic_inner(up_bytes, down_bytes, true).await;
+    }
+
+    async fn update_traffic_inner(&self, up_bytes: u64, down_bytes: u64, monotonic: bool) {
         let now = SystemTime::now();
         let mut last_update = self.last_update.lock().await;
+        let (up_bytes, down_bytes) = if monotonic {
+            (
+                up_bytes.max(self.total_up.load(Ordering::Relaxed)),
+                down_bytes.max(self.total_down.load(Ordering::Relaxed)),
+            )
+        } else {
+            (up_bytes, down_bytes)
+        };
         let time_diff = now
             .duration_since(*last_update)
             .unwrap_or_default()
@@ -287,7 +305,7 @@ impl MetricsBridge {
                 }
             }
 
-            self.update_traffic(total_up, total_down).await;
+            self.merge_traffic(total_up, total_down).await;
 
             log::debug!(
                 "Collected metrics from sb-core: up={} down={}",
@@ -371,5 +389,17 @@ mod tests {
                 "cache_size": 0
             })
         );
+    }
+
+    #[tokio::test]
+    async fn monotonic_merge_does_not_regress_newer_traffic() {
+        let bridge = MetricsBridge::new();
+        bridge.update_traffic(2048, 4096).await;
+
+        bridge.merge_traffic(0, 0).await;
+
+        let stats = bridge.get_traffic_stats().await;
+        assert_eq!(stats.up, 2048);
+        assert_eq!(stats.down, 4096);
     }
 }

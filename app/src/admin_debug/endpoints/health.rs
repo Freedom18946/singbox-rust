@@ -30,7 +30,7 @@ pub async fn handle(
 ) -> std::io::Result<()> {
     let query = state.query();
     let pid = std::process::id();
-    let auth_mode = crate::admin_debug::http_server::get_auth_mode();
+    let auth_mode = sb_api::debug::server::get_auth_mode();
 
     // Add mTLS status if enabled
     let mtls_status = if auth_mode == "mtls" {

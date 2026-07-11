@@ -3,22 +3,13 @@
 pub mod cache_file;
 pub mod urltest_history;
 
-#[cfg(feature = "service_derp")]
-pub mod derp;
-
 #[cfg(feature = "service_ntp")]
 pub mod ntp;
 
 #[cfg(feature = "service_resolved")]
 pub mod dns_forwarder;
 
-#[cfg(feature = "service_ssmapi")]
-pub mod ssmapi;
-#[cfg(any(feature = "dns_tailscale", feature = "out_tailscale"))]
-pub mod tailscale;
 pub mod time;
-pub mod v2ray;
-pub mod v2ray_api;
 
 use std::io::Error;
 use std::time::Instant;
@@ -29,13 +20,6 @@ pub fn register_builtins() {
     crate::service::register_service(
         sb_config::ir::ServiceType::Resolved,
         dns_forwarder::build_dns_forwarder_service,
-    );
-    #[cfg(feature = "service_derp")]
-    crate::service::register_service(sb_config::ir::ServiceType::Derp, derp::build_derp_service);
-    #[cfg(feature = "service_ssmapi")]
-    crate::service::register_service(
-        sb_config::ir::ServiceType::Ssmapi,
-        ssmapi::build_ssmapi_service,
     );
 }
 
