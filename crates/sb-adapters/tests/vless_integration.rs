@@ -177,7 +177,10 @@ async fn test_vless_connector_start_with_nil_uuid() {
     let connector = VlessConnector::new(config);
 
     let result = connector.start().await;
-    assert!(result.is_ok(), "Start with nil UUID must succeed (Go-equivalent)");
+    assert!(
+        result.is_ok(),
+        "Start with nil UUID must succeed (Go-equivalent)"
+    );
 }
 
 #[tokio::test]

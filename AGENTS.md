@@ -6,8 +6,9 @@ L1-L25 baseline phases and the 2026-04 MT-* maintenance/acceptance lines are **C
 The **MT-REAL-02** REALITY ClientHello line reached its local-mainline closure via the T3
 track (T3-0..T3-2) and is **boxed**: local functional + normalized-profile + coordinated-
 GREASE parity are closed, and the official FoxIO JA4 algorithm cross-check is closed (vendored
-FoxIO BSD-3 vectors, 2026-07-12); only external/research tail items stay open (extension-order
-distribution, HelloChrome_Auto drift, tier-2 camouflage). The repo is **NOT
+FoxIO BSD-3 vectors, 2026-07-12). Chrome-current drift and extension-order semantics closed locally
+through full-Chrome-150 canary + BoringSSL Fisher-Yates (2026-07-13); only external/research tail
+items stay open (tier-2 camouflage, active probing, healthy-cohort observation). The repo is **NOT
 in pure maintenance mode**, but REALITY is no longer an open implementation frontier; the
 current recommended next step lives in `agents-only/active_context.md` (single source of
 truth — do not assert a stale phase here).

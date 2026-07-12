@@ -33,7 +33,8 @@ EXT_NAMES = {
     13: "signature_algorithms", 16: "alpn", 18: "signed_cert_timestamp", 21: "padding",
     23: "extended_master_secret", 27: "compress_certificate", 35: "session_ticket",
     43: "supported_versions", 45: "psk_key_exchange_modes", 51: "key_share",
-    17613: "application_settings", 65037: "ech_outer", 65281: "renegotiation_info",
+    17613: "application_settings", 51764: "trust_anchors",
+    65037: "ech_outer", 65281: "renegotiation_info",
 }
 
 
@@ -134,6 +135,10 @@ def parse_record(raw):
                 if is_grease(gid):
                     grease_markers["key_share_groups"].append(f"0x{gid:04x}")
             ext_struct["key_share"] = ks
+        elif et == 0xca34:  # trust_anchors: Chrome 150 currently sends empty vector
+            ext_struct["trust_anchors"] = {
+                "list_length": _u16(ed, 0), "payload_length": el,
+            }
         elif et == 0x0015:  # padding
             ext_struct["padding_length"] = el
         elif et == 0xfe0d:  # GREASE-ECH — payload redacted, length only
@@ -162,6 +167,7 @@ def parse_record(raw):
         "supported_versions": ext_struct.get("supported_versions"),
         "alpn": ext_struct.get("alpn"),
         "key_share_groups": ext_struct.get("key_share"),
+        "trust_anchors": ext_struct.get("trust_anchors"),
         "extension_set_sorted_grease_as_category": ext_set,
         "sni_name_length": (ext_struct.get("sni") or {}).get("name_length"),
     }
@@ -195,6 +201,7 @@ def parse_record(raw):
             "supported_groups": ext_struct.get("supported_groups"),
             "signature_algorithms": ext_struct.get("signature_algorithms"),
             "key_share": ext_struct.get("key_share"),
+            "trust_anchors": ext_struct.get("trust_anchors"),
             "grease_ech_payload_length": ext_struct.get("grease_ech_payload_length"),
             "padding_length": ext_struct.get("padding_length"),
             "duplicate_extension_types": duplicate_extension_types,
@@ -218,6 +225,7 @@ def _required_shape(np):
         "supported_versions": np["supported_versions"],
         "alpn": np["alpn"],
         "key_share_groups": np["key_share_groups"],
+        "trust_anchors": np["trust_anchors"],
         "extension_set_sorted_grease_as_category": np["extension_set_sorted_grease_as_category"],
         "compression_methods": np["compression_methods"],
         "session_id_length": np["session_id"]["length"],

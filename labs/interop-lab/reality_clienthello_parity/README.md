@@ -1,9 +1,9 @@
 <!-- tier: B -->
 # REALITY ClientHello Parity Harness (local, read-only)
 
-Formal local harness that compares the **Go reference client** (`utls.HelloChrome_Auto`)
-against the **Rust candidate client** in the controlled local REALITY fixture, and checks
-**relative ClientHello parity** — no public network, no business-source change.
+Formal local harness with two explicit lanes: Chrome-current camouflage checks Rust against
+sanitized full-browser Chrome canary; pinned Go/uTLS checks functional compatibility. No public
+network during gate execution.
 
 It does **not** modify the Rust/Go clients, the patched rustls, the
 `reality_local_fixture`, the `Makefile`, the L18 capstone, CI, or any canonical schema. It
@@ -12,11 +12,10 @@ ClientHello records live only in a tempfile dir and are removed on exit.
 
 ## Three layers (what blocks vs what only informs)
 
-**1. L2 blocking** (changes the exit code):
-- live Go-vs-Rust **normalized-profile digest** parity;
-- **required field-set** parity: cipher tail, supported_groups, signature_algorithms
-  (order), supported_versions, ALPN, key_share groups+lengths, extension set, compression,
-  session_id length+role, record-length buckets;
+**1. Blocking** (changes the exit code):
+- Rust **Chrome-current REALITY shape** against
+  `../reality_chrome_canary/fixtures/chrome_150_stable_mac_arm64.json`;
+- Chrome-current JA4 and 32-byte record-length ladder;
 - functional **token-match** (both kernels);
 - **redaction guard**: the emitted summary carries no raw auth/key material.
 
@@ -28,15 +27,14 @@ ClientHello records live only in a tempfile dir and are removed on exit.
   vendored-vector test `tests/test_foxio_reference_vectors.py`. Scope: algorithm/vector
   conformance, **not** a second-tool fingerprint of the live captures;
 - **FoxIO reference cross-check** result (`foxio_reference.verify_against_vendored_vectors()`);
-- **GREASE slot entropy** (fixed vs randomized) — the current Rust fixed values are
-  **advisory only**;
+- pinned Go/uTLS v1.8.4 vs Rust field-set/digest parity. Expected to differ after Chrome-current
+  advances; this lane proves compatibility, not current-browser camouflage;
+- **GREASE slot entropy**;
 - **extension-order distribution** (per-hello Chrome shuffle);
-- **`fixtures/expected_profile_shape.json` drift** (Go reference vs committed snapshot) —
-  advisory only; flags `HelloChrome_Auto` upstream drift; **never fails Rust**.
+- **`fixtures/expected_profile_shape.json` drift** for pinned Go reference.
 
-**3. Out of scope:** L4 raw byte equality; real-network camouflage sufficiency; active
-probing resistance; tier-2 public cohort; permanently freezing the `HelloChrome_Auto`
-browser fingerprint.
+**3. Out of scope:** L4 raw byte equality; real-network camouflage sufficiency; active probing
+resistance; tier-2 public cohort.
 
 ## Usage
 
@@ -58,7 +56,7 @@ contain REALITY auth material). Default is off (tempfile, removed on exit).
 |------|------|
 | `capture_clienthello.py` | transparent TCP recorder (raw record → tempfile, cleaned on exit) |
 | `parse_clienthello.py` | stdlib parser → **redacted** normalized profile + `normalized_profile_digest` + `from_spec_ja4` |
-| `compare_profiles.py` | blocking (token / field-set / digest / redaction) + advisory (JA4 / GREASE / order / drift) |
+| `compare_profiles.py` | blocking Chrome-current shape/JA4 + token/redaction; advisory Go-compat/profile diagnostics |
 | `run_check.py` | orchestrate capture→parse→compare; exit 0/non-0; sanitized summary |
 | `fixtures/expected_profile_shape.json` | **advisory-only** sanitized Go-reference shape snapshot |
 | `fixtures/foxio_reference_vectors/` | vendored FoxIO BSD-3 JA4 reference vectors (`vectors.json` + `PROVENANCE.md` + `LICENSE-JA4`) |
@@ -74,16 +72,12 @@ markers, advisory entropy only) and are **not** part of the digest / field-set p
 
 ## Snapshot caveat
 
-`expected_profile_shape.json` is **advisory only**: `HelloChrome_Auto` drifts with upstream
-Chrome, so the snapshot hash is **not** a permanent browser-fingerprint commitment. The
-**blocking** gate is the **live Go-vs-Rust relative comparison**, not equality to the
-snapshot.
+`expected_profile_shape.json` is advisory pinned-Go history. Browser-current authority lives in
+`../reality_chrome_canary/`; product/version/provenance are explicit and refreshable.
 
 ## Status
 
-T3-1B harness. `from_spec_ja4`'s algorithm is now cross-checked against FoxIO's OWN published
-reference vectors (`fixtures/foxio_reference_vectors/`, BSD-3 `LICENSE-JA4`), enforced offline
-by `tests/test_foxio_reference_vectors.py` — the official-JA4 cross-check is **CLOSED at the
-algorithm level** (2026-07-12; scope: vector conformance, not a second-tool fingerprint of live
-captures). The coordinated GREASE-selector fix (Rust randomizes GREASE like Chrome) is **T3-1C**;
-golden_spec is amended in **T3-2** (`DEV-REALITY-01`).
+Chrome-current lane targets full Chrome 150.0.7871.115: `trust_anchors`, ML-DSA signature schemes,
+BoringSSL-style wide-entropy Fisher-Yates order, independently sampled ECH bucket/GREASE. Go
+v1.8.4 `HelloChrome_133` remains compatibility-only. FoxIO JA4 algorithm remains verified by
+vendored BSD-3 vectors.

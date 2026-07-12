@@ -220,7 +220,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Decision ID | Tag | Scope | Disposition | Evidence |
 |-------------|-----|-------|-------------|----------|
-| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): functional **client** dataplane = validated by local gate; local ClientHello profile parity (normalized-profile digest + required field-set + coordinated GREASE structure + from-spec JA4) = validated by committed local harness; official-JA4 (FoxIO-tool algorithm cross-check) = CLOSED (vendored FoxIO BSD-3 reference vectors); extension-order distribution + real-network camouflage = open | **Functional local REALITY client dataplane parity is reproducibly validated against a controlled Go REALITY server fixture** (`labs/interop-lab/reality_local_fixture/`, A1, 2026-06-06). Topology is Go=`with_utls` REALITY server, {Go,Rust}=clients dialing it through a local concurrent Go `tls.Listener` dest to a local HTTP token target. The Go client and the Rust client each pass a consecutive end-to-end token matrix; the Rust phase probe passes all four phases (`direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io`); and four negative controls distinguish REALITY-auth rejection (`bad_public_key` → `direct_reality` fails) from VLESS-data-stage rejection (`bad_uuid` → REALITY phases pass, `vless_probe_io` fails), plus fail-fast `dead_dest` and diagnosable `occupied_port`. The per-run matrix lives in the fixture's `round-summary.json` — **do not copy counts here**. **Local ClientHello profile parity is now validated by a committed local harness** (T3 track, 2026-06-07): Rust is **not** naive `rustls` — it carries a patched-rustls Chrome shaping layer (`build_chrome_client_hello_fingerprint`, the FIX-04/FIX-05 lineage; FIX-03 aligned cryptography/session_id) whose normalized-profile digest, required field-set, and coordinated per-ClientHello GREASE structure match the Go `utls.HelloChrome_Auto` reference, with from-spec JA4 observed equal locally. The earlier "`0/21` / rustls lacks a uTLS-equivalent / rustls lacks Chrome shaping" framing is **retired** — it predated the FIX-04/FIX-05 shaping layer and is superseded by the three-tier model below (tier 3); a uTLS-equivalent port is **not** required and is **not** planned. **Official FoxIO JA4 cross-check — CLOSED at the algorithm level (2026-07-12)**: the harness from-spec JA4 algorithm reproduces FoxIO's OWN published reference values (canonical worked example + the full ALPN-segment table) vendored under BSD-3 `LICENSE-JA4` at `labs/interop-lab/reality_clienthello_parity/fixtures/foxio_reference_vectors/`; combined with the committed live Go == Rust from-spec parity, the JA4 both kernels emit is now independently confirmed against FoxIO's authority (the earlier "weak independent confirmation" caveat is retired — the from-spec code itself is now verified). Scope caveat: this is algorithm/vector conformance, NOT a second-tool fingerprint of the live captures. **Still open**: extension-order statistical-distribution equivalence, `HelloChrome_Auto` upstream drift, and real-network camouflage / active-probing sufficiency (tier-2, pre-release observation). Go still treats `uTLS` as a hard dependency in [`reality_client.go`](../../../go_fork_source/sing-box-1.13.13/common/tls/reality_client.go); Rust reaches the equivalent ClientHello shape through the patched-rustls layer rather than a uTLS port. This entry is **client-only / Rust-only functional evidence — NOT a `52/56` BHV behavior-parity increment and NOT a claim of REALITY *server* bidirectional interop**. Acceptance is governed by the three-tier model below. | A1 fixture `labs/interop-lab/reality_local_fixture/` (+ its `round-summary.json` per run); fingerprint history `agents-only/archive/MT-REAL-01/mt_real_01_fix_03.md`, `..._fix_04.md`, `..._fix_05.md`, `..._env_01.md`; FoxIO cross-check vectors + provenance `labs/interop-lab/reality_clienthello_parity/fixtures/foxio_reference_vectors/` (BSD-3 `LICENSE-JA4`, FoxIO-LLC/ja4@`0e54bc83`) |
+| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): functional client dataplane, Chrome-current local ClientHello shape, BoringSSL extension-order semantics, coordinated GREASE, and FoxIO-verified JA4 = closed locally; real-network camouflage and active probing = open | Controlled Go REALITY server fixture validates both clients' token path, Rust phase probe, and negative controls; per-run counts remain only in `round-summary.json`. Rust patched-rustls profile now targets sanitized **full Chrome 150.0.7871.115** canary: `trust_anchors`, ML-DSA signature schemes, and REALITY removal of X25519MLKEM768 group/key-share. Extension ordering uses independent `OsRng` u32 words with BoringSSL reverse Fisher-Yates over middle extensions; two GREASE extensions stay at ends. Shared u16 order/ECH seed and empirical Go-order ranking tables are retired. `reality_clienthello_parity` now has two lanes: Chrome-current Rust shape/JA4 is blocking; pinned Go `metacubex/utls v1.8.4` (`HelloChrome_133`) is functional compatibility only and profile differences are advisory. FoxIO algorithm conformance remains closed through vendored BSD-3 vectors. Still open: real-network camouflage, active probing, and tier-2 healthy-cohort observation. Client-only evidence; no `52/56` BHV increment; no REALITY server bidirectional-interop claim. | A1 fixture `labs/interop-lab/reality_local_fixture/`; Chrome canary `labs/interop-lab/reality_chrome_canary/`; parity harness `labs/interop-lab/reality_clienthello_parity/`; FoxIO vectors under its `fixtures/foxio_reference_vectors/` |
 
 #### REALITY Acceptance: Three-Tier Model
 
@@ -262,11 +262,14 @@ not let one substitute for another, and do not claim closure of one from another
      `direct_reality` / `transport_reality` / `vless_dial` / `vless_probe_io` are
      repeatably verified and the L18 capstone is wired to the `REALITY_LOCAL` gate.
      This is a local gate, **not** server-side automatic merge enforcement.
-   - *Normalized ClientHello profile* — committed harness
-     `labs/interop-lab/reality_clienthello_parity/` (T3-1B, `052d4392`) with blocking
-     gates: functional token-match, normalized-profile digest parity
-     (Go == Rust == `bc002612a968fae0`), required field-set parity, and a redaction
-     guard. No uTLS-equivalent port is needed.
+   - *Chrome-current ClientHello profile* — sanitized full-browser Chrome 150 canary at
+     `labs/interop-lab/reality_chrome_canary/`; blocking Rust shape includes
+     `trust_anchors`, ML-DSA signature schemes, REALITY-transformed groups/key shares,
+     JA4 `t13d1517h2_8daaf6152771_cb7bf5808d99`, record-length ladder, token match, and
+     redaction. Pinned Go/uTLS v1.8.4 Chrome133 remains compatibility-only.
+   - *Extension-order semantics* — current BoringSSL reverse Fisher-Yates with independent
+     `OsRng` u32 words over middle extensions; GREASE extensions are written separately at
+     both ends. Legacy u16 shared seed and empirical order-ranking tables removed.
    - *Coordinated GREASE structure* — T3-1C (`6f8ae63a`): each ClientHello constructs a
      `ChromeGreaseProfile` from an **independent `OsRng`** (it does **not** reuse the
      extension-order seed). cipher / supported_versions / group / ext_head / ext_tail
@@ -278,8 +281,8 @@ not let one substitute for another, and do not claim closure of one from another
      a claim of full probability-distribution equivalence.
 
    **Closed — JA4 (local + FoxIO algorithm cross-check, 2026-07-12):**
-   - *from-spec JA4* — Go == Rust == `t13d1516h2_8daaf6152771_d8a2da3f94cd` (with the
-     normalized digest Go == Rust == `bc002612a968fae0`). The from-spec JA4 **algorithm**
+   - *from-spec JA4* — Chrome-current Rust equals full Chrome 150 at
+     `t13d1517h2_8daaf6152771_cb7bf5808d99`. The from-spec JA4 **algorithm**
      is now cross-checked against FoxIO's OWN published reference values — the canonical
      worked example (`t13d1516h2_8daaf6152771_e5627efa2ab1`) plus the full ALPN-segment
      mapping table — vendored under BSD-3 `LICENSE-JA4` at
@@ -288,22 +291,19 @@ not let one substitute for another, and do not claim closure of one from another
      caveat is retired: the from-spec code itself is FoxIO-verified, so live Go == Rust
      under it is a real independent claim. **Scope caveat**: this is algorithm/vector
      conformance (our JA4 == FoxIO's published JA4), **not** a second-tool (tshark/FoxIO
-     binary) fingerprint of the live captures, and **not** byte-level identity.
+     binary) fingerprint of live captures, and **not** byte-level identity.
 
    **Still OPEN (must not be faked closed):**
-   1. extension-order statistical-distribution equivalence (both shuffle per-hello; the
-      *distribution* shape is not asserted equal).
-   2. `HelloChrome_Auto` upstream profile drift.
-   3. real-network camouflage sufficiency.
-   4. active-probing resistance.
-   5. tier-2 external healthy-cohort observation (pre-release, non-gating).
-   6. A2.3 full L18-capstone runtime status-JSON rehearsal (deferred).
+   1. real-network camouflage sufficiency.
+   2. active-probing resistance.
+   3. tier-2 external healthy-cohort observation (pre-release, non-gating).
+   4. A2.3 full L18-capstone runtime status-JSON rehearsal (deferred).
 
    **Explicit non-goals:**
    - L4 raw-byte identity / byte-for-byte ClientHello equality (two real Chrome
      instances also differ byte-for-byte).
    - forcing the per-hello randomized fields into alignment.
-   - freezing `HelloChrome_Auto` via a historical snapshot.
+   - treating pinned Go/uTLS Chrome133 as current-browser authority.
    - reinstating the retired `fresh09` fixed-node obligation.
 
    Independent and not fully closed by a passing local gate, nor by occasional

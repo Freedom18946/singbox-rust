@@ -10,40 +10,20 @@
 
 ---
 
-## Resume (2026-07-12) - tier-1 REALITY gate RED→GREEN: VLESS nil-uuid Go-alignment
+## Resume (2026-07-13) - REALITY Chrome-current drift + extension-order tail CLOSED locally
 
-- **Surfaced while building JA4 bins**: `make verify-reality-local` was FAILING at HEAD `ec97f112`
-  (`negative_all_pass:false`) — the `bad_uuid` negative control. Positive 20/20 always passed.
-- **Root cause = real Rust/Go divergence** (not a fixture flaw): the fixture's `bad_uuid` is the
-  nil/all-zeros UUID; Rust VLESS rejected nil at config/dial (`vless UUID must not be nil` /
-  `VLESS UUID cannot be nil`), but Go `vless.NewClient` accepts any well-formed UUID incl.
-  `uuid.Nil` and lets the server authenticate at the data stage. Rust fail-fast diverged from Go.
-- **Fix = align Rust to Go**: removed both nil-uuid guards in `crates/sb-adapters/src/outbound/vless.rs`
-  (`start`/`dial`), added Go-equivalence comments; inverted `test_vless_connector_start_with_nil_uuid`.
-  Now nil uuid dials, reaches the VLESS data stage, and the server rejects it (early eof).
-- **Verified**: tier-1 gate `local_deterministic_gate: PASS` (positive 20/20, `negative_all_pass:true`,
-  bad_uuid now `vless_dial ok / vless_probe_io fail`); `vless_integration` 17-pass. **VMess aligned
-  too**: Go `sing-vmess.NewClient` has the identical `uuid.FromString`/nil-accepting pattern, so the
-  matching guard in `vmess.rs:validate_config` was removed the same way (`vmess_unit` 11-pass) — the
-  UUID only derives the auth key and a nil UUID is rejected by the server, not client-side.
-
-## Resume (2026-07-12) - REALITY official-JA4 FoxIO cross-check CLOSED (algorithm level)
-
-- **official-JA4 tail closed at the algorithm level.** The harness from-spec JA4 algorithm
-  (`parse_clienthello`) now reproduces FoxIO's OWN published reference values — canonical
-  worked example `t13d1516h2_8daaf6152771_e5627efa2ab1` + the full ALPN-segment table —
-  vendored under BSD-3 `LICENSE-JA4` at `reality_clienthello_parity/fixtures/foxio_reference_vectors/`
-  (FoxIO-LLC/ja4@`0e54bc83`), enforced by offline blocking test `tests/test_foxio_reference_vectors.py`.
-- Fixed a real from-spec bug the cross-check exposed: ALPN `a`-segment now implements FoxIO's
-  non-alphanumeric→hex rule (`parse_clienthello:_ja4_alpn_segment`); also empty-sigalg / empty-ext
-  `c`-segment edge cases. Mainstream `h2` path unchanged → reality golden `…_d8a2da3f94cd` unmoved.
-- Status token flipped `DIAGNOSTIC_PENDING_FOXIO_REFERENCE` → `FOXIO_REFERENCE_VERIFIED`; `run_check.py`
-  summary `foxio_reference_crosscheck` now carries the live verifier result (was a hard-coded DEFERRED
-  string). golden_spec `DEV-REALITY-01` + three-tier model updated.
-- **Scope caveat**: algorithm/vector conformance (our JA4 == FoxIO's published JA4), NOT a
-  second-tool (tshark) fingerprint of live captures, NOT byte identity. Still OPEN: ext-order
-  distribution, `HelloChrome_Auto` drift, tier-2 camouflage. No `52/56` BHV movement (REALITY
-  has no S3 BHV-ID). Evidence: `labs/interop-lab/reality_clienthello_parity/fixtures/foxio_reference_vectors/PROVENANCE.md`.
+- Production profile now targets **full Chrome 150.0.7871.115**, not pinned uTLS
+  `HelloChrome_Auto=Chrome133`: adds `trust_anchors` (`0xca34`, empty vector) and ML-DSA
+  signature schemes `0x0904/05/06`; REALITY still removes X25519MLKEM768 group/key-share.
+- Extension order now follows current BoringSSL semantics: independent `OsRng` u32 words,
+  reverse Fisher-Yates over middle extensions; GREASE remains fixed at both ends. Shared u16
+  order/ECH seed and empirical Go-order ranking tables removed. ECH bucket, order, GREASE,
+  ECH payload/key bytes consume independent entropy.
+- New sanitized full-browser canary: `labs/interop-lab/reality_chrome_canary/`. Harness split:
+  Chrome-current Rust shape/JA4 = blocking; pinned Go/uTLS v1.8.4 = functional compatibility
+  lane, profile differences advisory. Local 10-run Chrome lane PASS; tier-1 20/20 PASS.
+- Remaining REALITY research tail: real-network camouflage, active probing, tier-2 cohort.
+  No `52/56` BHV movement; REALITY has no S3 BHV-ID.
 
 ## Resume (2026-07-12) - MT-INTEROP-03 dual-kernel baseline cleanup DONE
 
@@ -57,8 +37,8 @@
   only two declared assertion stages are accepted, while launch or any extra failure remains FAIL.
 - FakeIP cursor behavior is locked as S4 `DIV-M-012`; static S4 labels never suppress failures.
   Evidence: `archive/mt_interop_03/acceptance.md`.
-- **Recommended next:** REALITY external research tail (official FoxIO JA4, extension-order
-  distribution, HelloChrome_Auto drift), then tier-2 camouflage. GUI desktop remains paused until
+- **Recommended next:** REALITY external research tail: tier-2 camouflage, active probing, and
+  healthy-cohort observation. GUI desktop remains paused until
   explicitly reopened.
 
 ## Resume (2026-07-12) - MIG-03 WP14 final acceptance DONE
@@ -237,22 +217,27 @@
 
 Phase: MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
 (non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, not in the
-S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED; official-JA4
-algorithm cross-check CLOSED (vendored FoxIO BSD-3 vectors, 2026-07-12); ext-order distribution
-+ `HelloChrome_Auto` drift + camouflage OPEN.
+S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local Chrome-current profile, wide-entropy
+BoringSSL order semantics, and official-JA4 algorithm cross-check CLOSED; real-network camouflage,
+active probing, and tier-2 cohort remain OPEN.
 
 ## Current Build And Gate
 
+- 2026-07-13 REALITY: focused sb-tls, Python canary/parity, Chrome-current 10-run lane,
+  tier-1 20-run local fixture, boundaries, consistency, fmt/check/clippy PASS. Workspace
+  all-features test reaches unrelated existing `app/tests/multiplex_vless_e2e.rs` failure
+  (5/5 `connection is closed`, reproduced isolated); no TLS/REALITY test failure.
 - 2026-07-11 WP07 final: workspace all-feature check, strict workspace clippy, fmt, boundaries,
   diff-check, core+adapters tests, Hysteria v1 E2E, Hysteria2 integration/UDP E2E, and benchmark
   execution **PASS**. Exact evidence and dependency handoffs: WP07 package.
 
-## T3 ClientHello Fingerprint Parity — T3-0…T3-2 DONE (2026-06-08)
+## T3 ClientHello Fingerprint Parity — Chrome-current refresh DONE (2026-07-13)
 
-- CLOSED (local): functional dataplane, normalized-profile parity, required field-set parity,
-  coordinated GREASE structure, and from-spec JA4 Go==Rust; **official FoxIO JA4 algorithm
-  cross-check CLOSED (2026-07-12)** via vendored FoxIO BSD-3 reference vectors.
-- OPEN: extension-order statistical parity, `HelloChrome_Auto` drift, tier-2 camouflage.
+- CLOSED (local): functional dataplane; full-Chrome-150 sanitized canary shape; BoringSSL
+  reverse-Fisher-Yates order semantics with wide independent entropy; coordinated GREASE;
+  from-spec JA4 `t13d1517h2_8daaf6152771_cb7bf5808d99`; FoxIO algorithm vectors.
+- Pinned Go/uTLS Chrome133 now compatibility-only, not current-browser authority.
+- OPEN: tier-2 camouflage, active probing, external healthy-cohort observation.
   NON-GOAL: L4 byte identity; second-tool fingerprint of live captures.
 - A2.3 runtime status-JSON rehearsal DEFERRED. Detail: t32 governance; T3-1B `052d4392`.
 
@@ -261,9 +246,8 @@ algorithm cross-check CLOSED (vendored FoxIO BSD-3 vectors, 2026-07-12); ext-ord
 1. Local deterministic gate — `make verify-reality-local` (A1/A2 committed; A2.3 deferred).
 2. External healthy-cohort observation — pre-release, NON-gating (tri-state; no single node
    is a closure identity; outage ≠ regression).
-3. ClientHello fingerprint parity — tier-3: local profile parity CLOSED (see T3 section);
-   official-JA4 algorithm cross-check CLOSED (FoxIO vectors); ext-order distribution +
-   `HelloChrome_Auto` drift + camouflage OPEN.
+3. ClientHello fingerprint parity — tier-3: Chrome-current local shape/order/JA4 CLOSED;
+   pinned Go lane compatibility-only; real-network camouflage + active probing OPEN.
 
 ## Closed Tracks (compressed; detail in archive)
 

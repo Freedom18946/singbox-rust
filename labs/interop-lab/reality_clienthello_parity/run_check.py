@@ -1,14 +1,15 @@
 #!/usr/bin/env python3
 """Orchestrate the local REALITY ClientHello-parity check (read-only, no public network).
 
-Pipeline: render configs from the committed manifest into a TEMP dir -> bring up the local
+Pipeline: render configs from the committed manifest into a TEMP dir -> bring up local
 fixture topology (tls_dest / http_target / reality_server, fixed ports unchanged) -> start a
 transparent recorder on a configurable port -> run the Go reference client and the Rust
 candidate client N times each through the recorder (token-match) -> parse the captured
 ClientHellos (raw bytes in a tempfile dir, removed on exit) -> compare profiles -> write a
 SANITIZED summary to the gitignored artifacts dir -> tear everything down.
 
-Exit 0 iff the BLOCKING parity gates pass; advisory diagnostics never change the exit code.
+Exit 0 iff Chrome-current Rust + functional/redaction gates pass. Pinned-Go profile differences
+remain compatibility diagnostics and never change exit code.
 Never overwrites committed evidence; never modifies the committed manifest (uses a temp copy).
 """
 import argparse
@@ -23,6 +24,7 @@ import tempfile
 
 HERE = pathlib.Path(__file__).resolve().parent
 REPO = HERE.parents[2]
+CHROME_CURRENT = REPO / "labs/interop-lab/reality_chrome_canary/fixtures/chrome_150_stable_mac_arm64.json"
 FIXTURE = REPO / "labs/interop-lab/reality_local_fixture"
 GO_SB = REPO / "target/reality_fixture_bin/sing-box-utls"
 HELPER = REPO / "target/reality_fixture_bin/fixture-helper"
@@ -196,7 +198,8 @@ def main():
         snap_path = HERE / "fixtures" / "expected_profile_shape.json"
         if snap_path.exists():
             snap = json.loads(snap_path.read_text())
-        result = C.compare(go, rust, token_ok["go"], token_ok["rust"], snap)
+        chrome_current = json.loads(CHROME_CURRENT.read_text())
+        result = C.compare(go, rust, token_ok["go"], token_ok["rust"], snap, chrome_current)
 
         summary = {
             "run_id": run_id, "runs": args.runs,
@@ -213,8 +216,7 @@ def main():
         print(json.dumps({"blocking_pass": result["blocking_pass"],
                           "go": len(go), "rust": len(rust),
                           "token_match": result["blocking"]["token_match"],
-                          "digest": result["blocking"]["normalized_profile_digest_parity"],
-                          "field_set": result["blocking"]["required_field_set_parity"]["pass"],
+                          "chrome_current": result["blocking"]["chrome_current_reality_shape"],
                           "summary": str(out / "summary.json")}, indent=2))
         sys.exit(0 if result["blocking_pass"] else 1)
     finally:

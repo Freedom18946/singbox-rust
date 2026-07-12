@@ -18,6 +18,7 @@ BASE_SHAPE = {
     "supported_versions": ["GREASE", "0x0304", "0x0303"],
     "alpn": ["h2", "http/1.1"],
     "key_share_groups": [{"group": "GREASE", "key_length": 1}, {"group": "0x001d", "key_length": 32}],
+    "trust_anchors": {"list_length": 0, "payload_length": 2},
     "extension_set_sorted_grease_as_category": ["alpn", "key_share", "server_name", "supported_groups"],
     "compression_methods": [0],
     "session_id_length": 32, "session_id_role": "reality-auth-redacted",
@@ -75,6 +76,32 @@ class TestCompare(unittest.TestCase):
         r = C.compare([prof(digest="d0")], [prof(digest="d0")], True, True, snap)
         self.assertTrue(r["blocking_pass"])  # drift does NOT block
         self.assertTrue(r["advisory"]["snapshot_drift"]["drift_detected"])
+
+    def test_chrome_current_lane_blocks_rust_drift_not_go_legacy_drift(self):
+        current = {
+            "provenance": {"version": "150.0.7871.115"},
+            "reality_expected_shape": copy.deepcopy(BASE_SHAPE),
+            "reality_record_length_ladder_spacing": 32,
+            "reality_from_spec_ja4": "t13d1516h2_aa_bb",
+        }
+        old_go = copy.deepcopy(BASE_SHAPE)
+        old_go["signature_algorithms_in_order"] = ["0x0403"]
+        r = C.compare([prof(shape=old_go)], [prof()], True, True, chrome_current=current)
+        self.assertTrue(r["blocking_pass"])
+        self.assertTrue(r["blocking"]["chrome_current_reality_shape"]["pass"])
+        self.assertFalse(r["advisory"]["go_compat_profile_parity"]["field_set"]["pass"])
+
+    def test_chrome_current_lane_rejects_rust_shape_drift(self):
+        current = {
+            "provenance": {"version": "150.0.7871.115"},
+            "reality_expected_shape": copy.deepcopy(BASE_SHAPE),
+            "reality_record_length_ladder_spacing": 32,
+            "reality_from_spec_ja4": "t13d1516h2_aa_bb",
+        }
+        bad = copy.deepcopy(BASE_SHAPE)
+        bad["trust_anchors"] = None
+        r = C.compare([prof()], [prof(shape=bad)], True, True, chrome_current=current)
+        self.assertFalse(r["blocking_pass"])
 
     def test_rust_fixed_grease_advisory_only(self):
         # rust GREASE fixed (1 distinct), go randomized — advisory, must not block

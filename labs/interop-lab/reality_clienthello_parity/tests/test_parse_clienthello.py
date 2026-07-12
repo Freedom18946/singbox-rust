@@ -43,10 +43,11 @@ def build_clienthello():
     sv = _ext(0x002b, struct.pack(">B", len(sv_body)) + sv_body)
     ks_entries = struct.pack(">HH", 0x3a3a, 1) + b"\x00" + struct.pack(">HH", 0x001d, len(KEY_MARK)) + KEY_MARK
     ks = _ext(0x0033, struct.pack(">H", len(ks_entries)) + ks_entries)
+    trust_anchors = _ext(0xca34, b"\x00\x00")
     ech = _ext(0xfe0d, ECH_MARK)
     ghead = _ext(0x4a4a, b"")
     gtail = _ext(0x5a5a, b"\x00")
-    exts = ghead + sni + groups + sigs + alpn + sv + ks + ech + gtail
+    exts = ghead + sni + groups + sigs + alpn + sv + ks + trust_anchors + ech + gtail
     ext_block = struct.pack(">H", len(exts)) + exts
     hs_body = legacy + random + sid + cs + comp + ext_block
     hs = b"\x01" + struct.pack(">I", len(hs_body))[1:] + hs_body
@@ -95,6 +96,8 @@ class TestParse(unittest.TestCase):
         self.assertEqual(np["supported_versions"], ["GREASE", "0x0304", "0x0303"])
         self.assertEqual(np["alpn"], ["h2", "http/1.1"])
         self.assertEqual([g["group"] for g in np["key_share_groups"]], ["GREASE", "0x001d"])
+        self.assertEqual(np["trust_anchors"], {"list_length": 0, "payload_length": 2})
+        self.assertIn("trust_anchors", np["extension_set_sorted_grease_as_category"])
         self.assertIn("server_name", np["extension_set_sorted_grease_as_category"])
 
     def test_grease_markers_public_only(self):

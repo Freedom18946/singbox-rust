@@ -1,19 +1,16 @@
 #!/usr/bin/env python3
-"""Compare Go-reference vs Rust-candidate normalized ClientHello profiles.
+"""Evaluate Chrome-current Rust shape plus pinned-Go compatibility diagnostics.
 
 BLOCKING gates (affect exit code):
   1. functional token-match for both kernels;
-  2. required field-set parity (cipher tail, supported_groups, signature_algorithms ORDER,
-     supported_versions, ALPN, key_share groups+lengths, extension set, compression,
-     session_id length+role, record-length buckets);
-  3. normalized_profile_digest parity (Go == Rust, single value each);
-  4. redaction guard: emitted summary contains NO raw auth/key material.
+  2. Chrome-current REALITY shape, JA4, and record-length ladder;
+  3. redaction guard: emitted summary contains NO raw auth/key material.
 
 ADVISORY diagnostics (recorded, never change the exit code):
   - from_spec_ja4 parity (algorithm FOXIO_REFERENCE_VERIFIED via vendored vectors);
-  - GREASE slot entropy (fixed vs random) — current Rust fixed values are advisory only;
+  - GREASE slot entropy;
   - extension-order distribution (distinct permutations);
-  - expected_profile_shape.json drift (Go vs snapshot) — advisory only, never fails Rust.
+  - pinned Go-vs-Rust profile parity and expected_profile_shape.json drift.
 """
 import json
 import re
@@ -62,7 +59,7 @@ def _ext_order_distribution(parsed_list):
     return {"distinct_permutations": len(perms), "n_samples": len(parsed_list)}
 
 
-def compare(go, rust, token_ok_go, token_ok_rust, snapshot=None):
+def compare(go, rust, token_ok_go, token_ok_rust, snapshot=None, chrome_current=None):
     res = {"blocking": {}, "advisory": {}, "blocking_pass": False}
 
     # --- BLOCKING 1: token-match ---
@@ -104,26 +101,55 @@ def compare(go, rust, token_ok_go, token_ok_rust, snapshot=None):
     res["blocking"]["normalized_profile_digest_parity"] = {
         "go": go_dig, "rust": rust_dig, "pass": dig_pass}
 
+    if chrome_current is not None:
+        legacy_field = res["blocking"].pop("required_field_set_parity")
+        legacy_digest = res["blocking"].pop("normalized_profile_digest_parity")
+        expected_shape = json.dumps(chrome_current["reality_expected_shape"], sort_keys=True)
+        shape_ok = len(rust_shape) == 1 and rust_shape[0] == expected_shape
+        spacing = chrome_current["reality_record_length_ladder_spacing"]
+        rust_residues = {x % spacing for x in rust_buckets}
+        rust_span = rust_buckets[-1] - rust_buckets[0] if rust_buckets else 0
+        buckets_ok = bool(rust_buckets) and len(rust_residues) == 1 and rust_span <= 3 * spacing
+        expected_ja4 = chrome_current["reality_from_spec_ja4"]
+        current_rust_ja4 = sorted({p["derived"]["from_spec_ja4"] for p in rust})
+        ja4_ok = current_rust_ja4 == [expected_ja4]
+        res["blocking"]["chrome_current_reality_shape"] = {
+            "profile": chrome_current["provenance"]["version"],
+            "shape_match": shape_ok,
+            "record_buckets_observed": rust_buckets,
+            "record_ladder_spacing": spacing,
+            "record_ladder_match": buckets_ok,
+            "from_spec_ja4": current_rust_ja4,
+            "from_spec_ja4_expected": expected_ja4,
+            "from_spec_ja4_match": ja4_ok,
+            "pass": shape_ok and buckets_ok and ja4_ok,
+        }
+        res["advisory"]["go_compat_profile_parity"] = {
+            "field_set": legacy_field,
+            "normalized_digest": legacy_digest,
+            "_note": "pinned uTLS v1.8.4/Chrome133 lane; functional compatibility only",
+        }
+
     res["blocking_pass"] = all(res["blocking"][k]["pass"] for k in res["blocking"])
 
     # --- ADVISORY: from_spec_ja4 ---
     # The from-spec JA4 *algorithm* is now cross-checked offline against FoxIO's own published
     # reference vectors (fixtures/foxio_reference_vectors/; foxio_reference.py). This live
-    # go-vs-rust JA4 parity stays advisory in the run_check exit code — the authoritative
-    # blocking gate is the vendored-vector unit test — but the value is no longer "pending".
+    # Go-vs-Rust JA4 parity stays advisory because pinned Go targets Chrome133. Rust-vs-current
+    # Chrome JA4 is blocking above; algorithm authority is the vendored-vector unit test.
     go_ja4 = sorted({p["derived"]["from_spec_ja4"] for p in go})
     rust_ja4 = sorted({p["derived"]["from_spec_ja4"] for p in rust})
     res["advisory"]["from_spec_ja4"] = {
         "go": go_ja4, "rust": rust_ja4, "parity": go_ja4 == rust_ja4,
         "status": "FOXIO_REFERENCE_VERIFIED",
         "_note": "JA4 algorithm cross-checked against vendored FoxIO reference vectors "
-                 "(BSD-3 LICENSE-JA4); live go==rust under that verified algorithm. Advisory "
-                 "in run_check exit code; the vendored-vector unit test is the blocking gate"}
+                 "(BSD-3 LICENSE-JA4); pinned Go Chrome133 vs Rust Chrome-current difference "
+                 "is expected and advisory"}
 
     # --- ADVISORY: GREASE entropy ---
     res["advisory"]["grease_entropy"] = {
         "go": _grease_entropy(go), "rust": _grease_entropy(rust),
-        "_note": "Rust currently FIXED across slots — advisory only, does NOT fail T3-1B"}
+        "_note": "entropy observation only; structural constraints have deterministic tests"}
 
     # --- ADVISORY: extension-order distribution ---
     res["advisory"]["extension_order_distribution"] = {

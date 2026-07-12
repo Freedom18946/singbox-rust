@@ -8,8 +8,8 @@ use super::{RealityError, RealityResult};
 #[cfg(feature = "utls")]
 use crate::{UtlsConfig, UtlsFingerprint};
 use parking_lot::Mutex;
-use rand::RngCore;
 use rand::rngs::OsRng;
+use rand::{CryptoRng, RngCore};
 use ring::aead::{self, Aad, LessSafeKey, Nonce, UnboundKey};
 use rustls::client::{ClientHelloFingerprint, SessionIdGenerator, WebPkiServerVerifier};
 use rustls::crypto::{ActiveKeyExchange, SharedSecret, SupportedKxGroup};
@@ -50,6 +50,7 @@ const EXT_SESSION_TICKET: u16 = 0x0023;
 const EXT_SUPPORTED_VERSIONS: u16 = 0x002b;
 const EXT_PSK_KEY_EXCHANGE_MODES: u16 = 0x002d;
 const EXT_KEY_SHARE: u16 = 0x0033;
+const EXT_TRUST_ANCHORS: u16 = 0xca34;
 const EXT_APPLICATION_SETTINGS: u16 = 0x44cd;
 const EXT_ECH_OUTER: u16 = 0xfe0d;
 const EXT_RENEGOTIATION_INFO: u16 = 0xff01;
@@ -66,7 +67,9 @@ const UTLS_GREASE_ECH_KDF_ID: u16 = 0x0001;
 const UTLS_GREASE_ECH_AEAD_ID: u16 = 0x0001;
 const UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN: usize = 32;
 const UTLS_GREASE_ECH_PAYLOAD_LENS: [usize; 4] = [144, 176, 208, 240];
-const CHROME_BASELINE_MIDDLE_EXTENSIONS: [u16; 16] = [
+/// Chrome 150 stable full-browser extension set after REALITY removes the
+/// X25519MLKEM768 supported-group/key-share entries.
+const CHROME_CURRENT_MIDDLE_EXTENSIONS: [u16; 17] = [
     EXT_SERVER_NAME,
     EXT_STATUS_REQUEST,
     EXT_SUPPORTED_GROUPS,
@@ -80,124 +83,11 @@ const CHROME_BASELINE_MIDDLE_EXTENSIONS: [u16; 16] = [
     EXT_SUPPORTED_VERSIONS,
     EXT_PSK_KEY_EXCHANGE_MODES,
     EXT_KEY_SHARE,
+    EXT_TRUST_ANCHORS,
     EXT_APPLICATION_SETTINGS,
     EXT_ECH_OUTER,
     EXT_RENEGOTIATION_INFO,
 ];
-const CHROME_FE0D_POSITIONS_186: [usize; 12] = [2, 3, 4, 4, 6, 6, 8, 9, 10, 12, 15, 15];
-const CHROME_FE0D_POSITIONS_218: [usize; 14] = [2, 2, 3, 3, 5, 6, 6, 6, 9, 12, 12, 13, 16, 16];
-const CHROME_FE0D_POSITIONS_250: [usize; 20] = [
-    2, 3, 4, 6, 6, 9, 9, 11, 11, 12, 12, 14, 15, 15, 16, 16, 16, 16, 16, 16,
-];
-const CHROME_FE0D_POSITIONS_282: [usize; 14] = [2, 2, 3, 5, 5, 5, 6, 8, 10, 11, 13, 13, 15, 16];
-const CHROME_BUCKET_TARGETS_186: [(u16, u8); 15] = [
-    (EXT_SERVER_NAME, 6),
-    (EXT_SESSION_TICKET, 7),
-    (EXT_SUPPORTED_GROUPS, 8),
-    (EXT_SCT, 8),
-    (EXT_EC_POINT_FORMATS, 9),
-    (EXT_COMPRESS_CERTIFICATE, 9),
-    (EXT_STATUS_REQUEST, 9),
-    (EXT_SIGNATURE_ALGORITHMS, 9),
-    (EXT_RENEGOTIATION_INFO, 10),
-    (EXT_PSK_KEY_EXCHANGE_MODES, 10),
-    (EXT_KEY_SHARE, 10),
-    (EXT_ALPN, 10),
-    (EXT_EXTENDED_MASTER_SECRET, 11),
-    (EXT_APPLICATION_SETTINGS, 12),
-    (EXT_SUPPORTED_VERSIONS, 12),
-];
-const CHROME_BUCKET_TARGETS_218: [(u16, u8); 15] = [
-    (EXT_SERVER_NAME, 7),
-    (EXT_COMPRESS_CERTIFICATE, 7),
-    (EXT_SESSION_TICKET, 7),
-    (EXT_PSK_KEY_EXCHANGE_MODES, 8),
-    (EXT_SCT, 8),
-    (EXT_EXTENDED_MASTER_SECRET, 8),
-    (EXT_EC_POINT_FORMATS, 8),
-    (EXT_SUPPORTED_VERSIONS, 9),
-    (EXT_KEY_SHARE, 9),
-    (EXT_APPLICATION_SETTINGS, 10),
-    (EXT_SUPPORTED_GROUPS, 11),
-    (EXT_STATUS_REQUEST, 11),
-    (EXT_SIGNATURE_ALGORITHMS, 12),
-    (EXT_RENEGOTIATION_INFO, 12),
-    (EXT_ALPN, 13),
-];
-const CHROME_BUCKET_TARGETS_250: [(u16, u8); 15] = [
-    (EXT_ALPN, 7),
-    (EXT_APPLICATION_SETTINGS, 8),
-    (EXT_SIGNATURE_ALGORITHMS, 8),
-    (EXT_RENEGOTIATION_INFO, 8),
-    (EXT_SCT, 9),
-    (EXT_EXTENDED_MASTER_SECRET, 9),
-    (EXT_SUPPORTED_GROUPS, 9),
-    (EXT_EC_POINT_FORMATS, 9),
-    (EXT_SUPPORTED_VERSIONS, 10),
-    (EXT_COMPRESS_CERTIFICATE, 10),
-    (EXT_SESSION_TICKET, 10),
-    (EXT_KEY_SHARE, 10),
-    (EXT_SERVER_NAME, 11),
-    (EXT_STATUS_REQUEST, 11),
-    (EXT_PSK_KEY_EXCHANGE_MODES, 11),
-];
-const CHROME_BUCKET_TARGETS_282: [(u16, u8); 15] = [
-    (EXT_RENEGOTIATION_INFO, 6),
-    (EXT_APPLICATION_SETTINGS, 7),
-    (EXT_SUPPORTED_GROUPS, 7),
-    (EXT_PSK_KEY_EXCHANGE_MODES, 8),
-    (EXT_SERVER_NAME, 9),
-    (EXT_KEY_SHARE, 9),
-    (EXT_SCT, 10),
-    (EXT_SESSION_TICKET, 10),
-    (EXT_ALPN, 10),
-    (EXT_STATUS_REQUEST, 10),
-    (EXT_COMPRESS_CERTIFICATE, 10),
-    (EXT_SUPPORTED_VERSIONS, 11),
-    (EXT_EXTENDED_MASTER_SECRET, 12),
-    (EXT_EC_POINT_FORMATS, 12),
-    (EXT_SIGNATURE_ALGORITHMS, 12),
-];
-const CHROME_SIGNATURE_MODE_WEIGHT: i16 = 18;
-const CHROME_SIGNATURE_PERTURB_WEIGHT: i16 = 8;
-const CHROME_SIGNATURE_PAIRS: [(u16, u16); 5] = [
-    (EXT_SERVER_NAME, EXT_SUPPORTED_VERSIONS),
-    (EXT_SCT, EXT_ECH_OUTER),
-    (EXT_EXTENDED_MASTER_SECRET, EXT_ECH_OUTER),
-    (EXT_SUPPORTED_VERSIONS, EXT_ECH_OUTER),
-    (EXT_ECH_OUTER, EXT_RENEGOTIATION_INFO),
-];
-const CHROME_BUCKET_SIGNATURE_MODES_186: [[i8; 5]; 4] = [
-    [1, -1, -1, -1, 1],
-    [1, -1, -1, -1, -1],
-    [1, -1, 1, -1, -1],
-    [-1, -1, -1, -1, 1],
-];
-const CHROME_BUCKET_SIGNATURE_MODES_218: [[i8; 5]; 4] = [
-    [1, 1, 1, -1, -1],
-    [-1, 1, 1, 1, -1],
-    [-1, -1, -1, -1, -1],
-    [1, -1, -1, -1, 1],
-];
-const CHROME_BUCKET_SIGNATURE_MODES_250: [[i8; 5]; 4] = [
-    [-1, -1, -1, -1, 1],
-    [1, -1, -1, 1, -1],
-    [1, 1, 1, 1, -1],
-    [-1, -1, -1, 1, -1],
-];
-const CHROME_BUCKET_SIGNATURE_MODES_282: [[i8; 5]; 4] = [
-    [-1, 1, 1, 1, -1],
-    [-1, 1, -1, 1, -1],
-    [1, -1, -1, -1, 1],
-    [1, 1, 1, 1, -1],
-];
-
-#[derive(Clone, Copy, Debug, Eq, PartialEq)]
-enum ChromeFe0dPositionBand {
-    Early,
-    Mid,
-    Late,
-}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SocketTraceChunk {
@@ -562,39 +452,24 @@ fn build_chrome_client_hello_fingerprint(
         return None;
     }
 
-    let randomization_seed = generate_chrome_randomization_seed();
-    let payload_len = chrome_ech_payload_len_from_seed(randomization_seed);
-    let fe0d_full_position = select_fe0d_full_position(randomization_seed, payload_len);
+    let mut rng = OsRng;
+    let payload_len = select_chrome_ech_payload_len(&mut rng);
     debug!(
-        randomization_seed,
         fe0d_len = payload_len + 1 + 2 + 2 + 1 + 2 + UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN + 2,
-        fe0d_full_position,
-        fe0d_position_band = ?chrome_classify_fe0d_position_band(payload_len, fe0d_full_position),
+        profile = "chrome-150-stable-reality",
         "REALITY chrome fingerprint selected"
     );
-    Some(build_chrome_client_hello_fingerprint_with_seed(
-        randomization_seed,
+    Some(build_chrome_client_hello_fingerprint_with_rng(
+        payload_len,
+        &mut rng,
     ))
 }
 
-fn build_chrome_client_hello_fingerprint_with_seed(
-    randomization_seed: u16,
+fn build_chrome_client_hello_fingerprint_with_rng(
+    payload_len: usize,
+    rng: &mut (impl RngCore + CryptoRng),
 ) -> ClientHelloFingerprint {
-    // GREASE values are drawn from an INDEPENDENT per-ClientHello OsRng source, NOT from
-    // randomization_seed (which drives extension order / ECH bucket / padding). Reusing the
-    // seed would make all five GREASE slots an affine function of one 16-bit value: the
-    // exhaustive T3-1C.1 audit showed that collapsed to only 16 distinct profiles with every
-    // slot predictable from any other. Independent entropy restores Chrome-like behaviour.
-    build_chrome_client_hello_fingerprint_with_seed_and_grease(
-        randomization_seed,
-        ChromeGreaseProfile::random(&mut OsRng),
-    )
-}
-
-fn build_chrome_client_hello_fingerprint_with_seed_and_grease(
-    randomization_seed: u16,
-    grease: ChromeGreaseProfile,
-) -> ClientHelloFingerprint {
+    let grease = ChromeGreaseProfile::random(rng);
     ClientHelloFingerprint {
         opaque_extensions: vec![
             (grease.ext_head, Vec::new()),
@@ -603,16 +478,15 @@ fn build_chrome_client_hello_fingerprint_with_seed_and_grease(
             (EXT_APPLICATION_SETTINGS, vec![0x00, 0x03, 0x02, b'h', b'2']),
             (
                 EXT_ECH_OUTER,
-                build_utls_boring_grease_ech_extension(randomization_seed),
+                build_utls_boring_grease_ech_extension(payload_len, rng),
             ),
+            (EXT_TRUST_ANCHORS, vec![0x00, 0x00]),
             (grease.ext_tail, vec![0x00]),
         ],
-        randomization_seed: Some(randomization_seed),
-        extension_order: build_chrome_extension_order(
-            randomization_seed,
-            grease.ext_head,
-            grease.ext_tail,
-        ),
+        // Forced order is already randomized with independent wide entropy. Leaving rustls'
+        // legacy u16 seed unset prevents accidental second-stage reshuffling or coupling.
+        randomization_seed: None,
+        extension_order: build_chrome_extension_order(rng, grease.ext_head, grease.ext_tail),
         prefix_extension_order: vec![],
         suffix_extension_order: vec![],
         grease_ciphersuite: Some(grease.cipher),
@@ -624,24 +498,26 @@ fn build_chrome_client_hello_fingerprint_with_seed_and_grease(
         supported_versions_override: Some(vec![grease.supported_versions, 0x0304, 0x0303]),
         supported_groups_override: Some(vec![grease.group, 0x001d, 0x0017, 0x0018]),
         key_share_grease: Some((grease.group, vec![0x00])),
+        // Chrome 150 advertises ML-DSA before conventional schemes. This is wire shaping;
+        // current rustls provider does not verify ML-DSA certificates. Ordinary WebPKI peers
+        // select one of the conventional schemes below (covered by the local REALITY gate).
         signature_algorithms_override: Some(vec![
-            0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
+            0x0904, 0x0905, 0x0906, 0x0403, 0x0804, 0x0401, 0x0503, 0x0805, 0x0501, 0x0806, 0x0601,
         ]),
     }
 }
 
 /// Per-ClientHello GREASE value selection (RFC 8701).
 ///
-/// Chrome (via uTLS `HelloChrome_Auto`) draws fresh GREASE values for every
+/// Chrome draws fresh GREASE values for every
 /// ClientHello. The logical slots — cipher, supported_versions, group, ext_head,
 /// ext_tail — are drawn **independently** from [`GREASE_VALUES`]; `group` is shared by
 /// supported_groups and key_share so the two stay correlated (as Chrome emits them), and
 /// `ext_tail` is re-drawn until it differs from `ext_head` so the two GREASE extension
 /// types never collide. Every other slot may collide naturally, matching Chrome's 4–5
 /// distinct-value behaviour. The production entropy is an **independent per-ClientHello
-/// `OsRng` draw** — deliberately NOT the `randomization_seed` (which drives extension
-/// order / ECH bucket): deriving all slots from one 16-bit seed via the GF(2)-linear
-/// mixer made them affinely dependent (only 16 distinct profiles; see the T3-1C.1 audit).
+/// `OsRng` draw**. Extension order and ECH bucket consume independent draws rather than
+/// sharing rustls' legacy u16 randomization seed.
 /// No global mutable state, no timestamp seed, no static counter.
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 struct ChromeGreaseProfile {
@@ -696,220 +572,37 @@ impl ChromeGreaseProfile {
     }
 }
 
-fn generate_chrome_randomization_seed() -> u16 {
-    let mut rng = OsRng;
-    rng.next_u32() as u16
+fn select_chrome_ech_payload_len(rng: &mut impl RngCore) -> usize {
+    UTLS_GREASE_ECH_PAYLOAD_LENS[(rng.next_u32() as usize) % UTLS_GREASE_ECH_PAYLOAD_LENS.len()]
 }
 
-fn chrome_ech_payload_len_from_seed(randomization_seed: u16) -> usize {
-    UTLS_GREASE_ECH_PAYLOAD_LENS[(randomization_seed as usize) % UTLS_GREASE_ECH_PAYLOAD_LENS.len()]
-}
-
-// The payload_len buckets (144/176/208/240 + fallback) form an explicit lookup
-// table for the active uTLS fingerprint sampler. Arms that currently share a
-// body may diverge as MT-REAL-02 tuning continues, so keep them enumerated.
-#[allow(clippy::match_same_arms)]
-fn chrome_fe0d_position_profile(payload_len: usize) -> &'static [usize] {
-    match payload_len {
-        144 => &CHROME_FE0D_POSITIONS_186,
-        176 => &CHROME_FE0D_POSITIONS_218,
-        208 => &CHROME_FE0D_POSITIONS_250,
-        240 => &CHROME_FE0D_POSITIONS_282,
-        _ => &CHROME_FE0D_POSITIONS_250,
-    }
-}
-
-// Explicit payload_len bucket table; see chrome_fe0d_position_profile.
-#[allow(clippy::match_same_arms)]
-fn chrome_bucket_targets(payload_len: usize) -> &'static [(u16, u8)] {
-    match payload_len {
-        144 => &CHROME_BUCKET_TARGETS_186,
-        176 => &CHROME_BUCKET_TARGETS_218,
-        208 => &CHROME_BUCKET_TARGETS_250,
-        240 => &CHROME_BUCKET_TARGETS_282,
-        _ => &CHROME_BUCKET_TARGETS_250,
-    }
-}
-
-fn chrome_bucket_target_position(payload_len: usize, ext_type: u16) -> u8 {
-    chrome_bucket_targets(payload_len)
-        .iter()
-        .find(|(candidate, _)| *candidate == ext_type)
-        .map_or(9, |(_, position)| *position)
-}
-
-// Explicit payload_len bucket table; see chrome_fe0d_position_profile.
-#[allow(clippy::match_same_arms)]
-fn chrome_bucket_signature_modes(payload_len: usize) -> &'static [[i8; 5]] {
-    match payload_len {
-        144 => &CHROME_BUCKET_SIGNATURE_MODES_186,
-        176 => &CHROME_BUCKET_SIGNATURE_MODES_218,
-        208 => &CHROME_BUCKET_SIGNATURE_MODES_250,
-        240 => &CHROME_BUCKET_SIGNATURE_MODES_282,
-        _ => &CHROME_BUCKET_SIGNATURE_MODES_250,
-    }
-}
-
-fn chrome_apply_signature_mode_bias(mode: [i8; 5], ext_type: u16, weight: i16) -> i16 {
-    CHROME_SIGNATURE_PAIRS
-        .iter()
-        .zip(mode.iter())
-        .fold(0, |bias, ((left, right), direction)| match *direction {
-            1 if ext_type == *left => bias - weight,
-            1 if ext_type == *right => bias + weight,
-            -1 if ext_type == *left => bias + weight,
-            -1 if ext_type == *right => bias - weight,
-            _ => bias,
-        })
-}
-
-fn chrome_signature_mode_index(randomization_seed: u16, payload_len: usize, salt: u16) -> usize {
-    let modes = chrome_bucket_signature_modes(payload_len);
-    mix_randomization_seed(randomization_seed ^ salt, payload_len as u16 ^ 0x53c1) as usize
-        % modes.len()
-}
-
-fn chrome_bucket_pairwise_bias(randomization_seed: u16, payload_len: usize, ext_type: u16) -> i16 {
-    let modes = chrome_bucket_signature_modes(payload_len);
-    let primary_mode = modes[chrome_signature_mode_index(randomization_seed, payload_len, 0x2f91)];
-    let secondary_mode =
-        modes[chrome_signature_mode_index(randomization_seed, payload_len, 0x7b4d)];
-
-    chrome_apply_signature_mode_bias(primary_mode, ext_type, CHROME_SIGNATURE_MODE_WEIGHT)
-        + chrome_apply_signature_mode_bias(
-            secondary_mode,
-            ext_type,
-            CHROME_SIGNATURE_PERTURB_WEIGHT,
-        )
-}
-
+/// BoringSSL `ssl_setup_extension_permutation`: reverse Fisher-Yates using one
+/// independent u32 random word per swap and modulo `(i + 1)`. GREASE extensions
+/// remain fixed at both ends, matching Chrome's separate write path.
 fn build_chrome_extension_order(
-    randomization_seed: u16,
+    rng: &mut impl RngCore,
     grease_head: u16,
     grease_tail: u16,
 ) -> Vec<u16> {
-    let payload_len = chrome_ech_payload_len_from_seed(randomization_seed);
-    let fe0d_full_position = select_fe0d_full_position(randomization_seed, payload_len);
-    let fe0d_band = chrome_classify_fe0d_position_band(payload_len, fe0d_full_position);
-    let fe0d_target_position = chrome_adjust_fe0d_target_position(
-        blend_fe0d_target_position(fe0d_full_position as u8, payload_len) as u8,
-        payload_len,
-        fe0d_band,
-    );
-    let mut ranked_extensions = CHROME_BASELINE_MIDDLE_EXTENSIONS
-        .iter()
-        .copied()
-        .map(|ext_type| {
-            let target_position = if ext_type == EXT_ECH_OUTER {
-                fe0d_target_position
-            } else {
-                chrome_bucket_target_position(payload_len, ext_type)
-            };
-            let jitter = i32::from(
-                mix_randomization_seed(randomization_seed, ext_type ^ payload_len as u16) & 0x1f,
-            );
-            let pairwise_bias = i32::from(chrome_bucket_pairwise_bias(
-                randomization_seed,
-                payload_len,
-                ext_type,
-            ));
-            (
-                i32::from(target_position) * 32 + pairwise_bias + jitter,
-                ext_type,
-            )
-        })
-        .collect::<Vec<_>>();
-    ranked_extensions.sort_by_key(|(score, ext_type)| (*score, *ext_type));
-
-    let mut extension_order = Vec::with_capacity(ranked_extensions.len() + 2);
+    let mut middle = CHROME_CURRENT_MIDDLE_EXTENSIONS.to_vec();
+    for i in (1..middle.len()).rev() {
+        let j = (rng.next_u32() as usize) % (i + 1);
+        middle.swap(i, j);
+    }
+    let mut extension_order = Vec::with_capacity(middle.len() + 2);
     extension_order.push(grease_head);
-    extension_order.extend(ranked_extensions.into_iter().map(|(_, ext_type)| ext_type));
+    extension_order.extend(middle);
     extension_order.push(grease_tail);
     extension_order
 }
-
-fn select_fe0d_full_position(randomization_seed: u16, payload_len: usize) -> usize {
-    let fe0d_positions = chrome_fe0d_position_profile(payload_len);
-    fe0d_positions[mix_randomization_seed(randomization_seed ^ 0x9e37, 0x7f4a) as usize
-        % fe0d_positions.len()]
-}
-
-fn chrome_classify_fe0d_position_band(
+fn build_utls_boring_grease_ech_extension(
     payload_len: usize,
-    fe0d_full_position: usize,
-) -> ChromeFe0dPositionBand {
-    let mut sorted_profile = chrome_fe0d_position_profile(payload_len).to_vec();
-    sorted_profile.sort_unstable();
-    let count = sorted_profile.len();
-    let early_cut = sorted_profile[(count - 1) / 3];
-    let late_cut = sorted_profile[((count - 1) * 2) / 3];
-
-    if fe0d_full_position <= early_cut {
-        ChromeFe0dPositionBand::Early
-    } else if fe0d_full_position >= late_cut {
-        ChromeFe0dPositionBand::Late
-    } else {
-        ChromeFe0dPositionBand::Mid
-    }
-}
-
-// Explicit (payload_len, band) bias table; see chrome_fe0d_position_profile.
-#[allow(clippy::match_same_arms)]
-fn chrome_fe0d_band_target_bias(payload_len: usize, band: ChromeFe0dPositionBand) -> i8 {
-    match (payload_len, band) {
-        // Bucket 186 still lands too early. Nudge late-ish seeds a touch further back
-        // without letting band directly choose the precedence mode.
-        (144, ChromeFe0dPositionBand::Early | ChromeFe0dPositionBand::Mid) => 1,
-        (144, ChromeFe0dPositionBand::Late) => 2,
-        // Bucket 250 still over-samples mid/late clouds. Only early/mid raw bands get
-        // a slight push forward so late-band seeds keep some spread.
-        (208, ChromeFe0dPositionBand::Early | ChromeFe0dPositionBand::Mid) => -1,
-        (208, ChromeFe0dPositionBand::Late) => 0,
-        _ => 0,
-    }
-}
-
-// `len()` is a small compile-time array length and `clamp(1, ..)` keeps the value
-// positive and in range, so the i16/u8 casts cannot actually wrap or lose sign.
-#[allow(clippy::cast_sign_loss, clippy::cast_possible_wrap)]
-fn chrome_adjust_fe0d_target_position(
-    base_target_position: u8,
-    payload_len: usize,
-    band: ChromeFe0dPositionBand,
-) -> u8 {
-    let adjusted = i16::from(base_target_position)
-        + i16::from(chrome_fe0d_band_target_bias(payload_len, band));
-    adjusted.clamp(1, CHROME_BASELINE_MIDDLE_EXTENSIONS.len() as i16) as u8
-}
-
-// Explicit payload_len anchor table; see chrome_fe0d_position_profile.
-#[allow(clippy::match_same_arms)]
-fn blend_fe0d_target_position(raw_position: u8, payload_len: usize) -> u8 {
-    let anchor: u8 = match payload_len {
-        144 => 11,
-        176 => 12,
-        208 => 10,
-        240 => 10,
-        _ => 10,
-    };
-    ((u16::from(raw_position) + u16::from(anchor) * 2) / 3) as u8
-}
-
-fn mix_randomization_seed(seed: u16, salt: u16) -> u16 {
-    let mut state = u32::from(seed) << 16 | u32::from(salt);
-    state ^= state << 13;
-    state ^= state >> 17;
-    state ^= state << 5;
-    (state as u16) ^ ((state >> 16) as u16)
-}
-
-fn build_utls_boring_grease_ech_extension(randomization_seed: u16) -> Vec<u8> {
-    let mut rng = OsRng;
+    rng: &mut (impl RngCore + CryptoRng),
+) -> Vec<u8> {
     let mut config_id = [0u8; 1];
     rng.fill_bytes(&mut config_id);
 
-    let payload_len = chrome_ech_payload_len_from_seed(randomization_seed);
-    let encapsulated_key = PublicKey::from(&StaticSecret::random_from_rng(rng)).to_bytes();
+    let encapsulated_key = PublicKey::from(&StaticSecret::random_from_rng(&mut *rng)).to_bytes();
     let mut payload = vec![0u8; payload_len];
     rng.fill_bytes(&mut payload);
 
@@ -1922,6 +1615,7 @@ mod tests {
             EXT_SUPPORTED_VERSIONS,
             EXT_PSK_KEY_EXCHANGE_MODES,
             EXT_KEY_SHARE,
+            EXT_TRUST_ANCHORS,
             EXT_APPLICATION_SETTINGS,
             grease_head,
             EXT_ECH_OUTER,
@@ -1943,6 +1637,10 @@ mod tests {
                 .unwrap()
                 .data,
             vec![0x00, 0x03, 0x02, b'h', b'2']
+        );
+        assert_eq!(
+            parsed.find_extension(EXT_TRUST_ANCHORS).unwrap().data,
+            vec![0x00, 0x00]
         );
         let (client_hello_type, kdf_id, aead_id, _config_id, encapsulated_key_len, payload_len) =
             parse_utls_boring_grease_ech_extension(
@@ -1987,8 +1685,8 @@ mod tests {
                 .unwrap()
                 .data,
             vec![
-                0x00, 0x10, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01, 0x05, 0x03, 0x08, 0x05, 0x05, 0x01,
-                0x08, 0x06, 0x06, 0x01,
+                0x00, 0x16, 0x09, 0x04, 0x09, 0x05, 0x09, 0x06, 0x04, 0x03, 0x08, 0x04, 0x04, 0x01,
+                0x05, 0x03, 0x08, 0x05, 0x05, 0x01, 0x08, 0x06, 0x06, 0x01,
             ]
         );
         let key_share = &parsed.find_extension(EXT_KEY_SHARE).unwrap().data;
@@ -2003,225 +1701,40 @@ mod tests {
     }
 
     #[test]
-    fn test_chrome_baseline_randomization_seed_selects_ech_family_bucket() {
-        let expected = [
-            (0u16, 144usize),
-            (1u16, 176usize),
-            (2u16, 208usize),
-            (3u16, 240usize),
-            (4u16, 144usize),
-        ];
-
-        for (seed, expected_payload_len) in expected {
-            let fingerprint = build_chrome_client_hello_fingerprint_with_seed(seed);
-            assert_eq!(fingerprint.randomization_seed, Some(seed));
-            let ech_outer = fingerprint
-                .opaque_extensions
-                .iter()
-                .find(|(ext_type, _)| *ext_type == EXT_ECH_OUTER)
-                .map(|(_, payload)| payload)
-                .expect("ech outer extension");
-            let (
-                _client_hello_type,
-                _kdf_id,
-                _aead_id,
-                _config_id,
-                _encapsulated_key_len,
-                payload_len,
-            ) = parse_utls_boring_grease_ech_extension(ech_outer)
-                .expect("uTLS BoringGREASEECH-like extension");
-            assert_eq!(payload_len, expected_payload_len);
+    fn test_chrome_current_fisher_yates_matches_boringssl_word_semantics() {
+        let mut rng = SeqRng {
+            vals: (0..64).collect(),
+            i: 0,
+        };
+        let order = build_chrome_extension_order(&mut rng, 0x0a0a, 0x1a1a);
+        let mut expected_middle = CHROME_CURRENT_MIDDLE_EXTENSIONS.to_vec();
+        for (word, i) in (1..expected_middle.len()).rev().enumerate() {
+            expected_middle.swap(i, word % (i + 1));
         }
+        assert_eq!(order[0], 0x0a0a);
+        assert_eq!(order[order.len() - 1], 0x1a1a);
+        assert_eq!(&order[1..order.len() - 1], expected_middle);
     }
 
     #[test]
-    fn test_chrome_baseline_randomization_seed_preserves_family_constraints() {
-        let fingerprint = build_chrome_client_hello_fingerprint_with_seed(0x1234);
+    fn test_chrome_current_ech_bucket_is_independent_from_order_words() {
+        let mut bucket_rng = SeqRng {
+            vals: vec![2],
+            i: 0,
+        };
+        assert_eq!(select_chrome_ech_payload_len(&mut bucket_rng), 208);
 
-        assert_eq!(fingerprint.randomization_seed, Some(0x1234));
-        assert!(fingerprint.prefix_extension_order.is_empty());
-        assert!(fingerprint.suffix_extension_order.is_empty());
-        let head = fingerprint.extension_order.first().copied().unwrap();
-        let tail = fingerprint.extension_order.last().copied().unwrap();
-        assert!(is_grease(head));
-        assert!(is_grease(tail));
-        assert_ne!(head, tail);
-        assert_eq!(
-            fingerprint.extension_order.len(),
-            CHROME_BASELINE_MIDDLE_EXTENSIONS.len() + 2
-        );
-
-        let ech_outer = fingerprint
-            .opaque_extensions
-            .iter()
-            .find(|(ext_type, _)| *ext_type == EXT_ECH_OUTER)
-            .map(|(_, payload)| payload)
-            .expect("ech outer extension");
-        let (_client_hello_type, _kdf_id, _aead_id, _config_id, encapsulated_key_len, payload_len) =
-            parse_utls_boring_grease_ech_extension(ech_outer)
-                .expect("uTLS BoringGREASEECH-like extension");
-        assert_eq!(encapsulated_key_len, UTLS_GREASE_ECH_ENCAPSULATED_KEY_LEN);
-        assert_eq!(payload_len, chrome_ech_payload_len_from_seed(0x1234));
-    }
-
-    #[test]
-    fn test_chrome_baseline_randomization_seed_conditions_fe0d_position_family() {
-        let cases = [
-            (0u16, 144usize, &CHROME_FE0D_POSITIONS_186[..]),
-            (1u16, 176usize, &CHROME_FE0D_POSITIONS_218[..]),
-            (2u16, 208usize, &CHROME_FE0D_POSITIONS_250[..]),
-            (3u16, 240usize, &CHROME_FE0D_POSITIONS_282[..]),
-        ];
-
-        for (seed, payload_len, expected_positions) in cases {
-            assert_eq!(chrome_ech_payload_len_from_seed(seed), payload_len);
-            let fe0d_position = select_fe0d_full_position(seed, payload_len);
-            assert!(
-                expected_positions.contains(&fe0d_position),
-                "seed {seed:#06x} produced fe0d position {fe0d_position}, expected one of {expected_positions:?}"
-            );
-        }
-    }
-
-    #[test]
-    fn test_chrome_bucket_targets_bias_key_extensions_by_payload_family() {
-        assert!(
-            chrome_bucket_target_position(144, EXT_SERVER_NAME)
-                < chrome_bucket_target_position(144, EXT_SUPPORTED_VERSIONS)
-        );
-        assert!(
-            chrome_bucket_target_position(176, EXT_COMPRESS_CERTIFICATE)
-                < chrome_bucket_target_position(176, EXT_ALPN)
-        );
-        assert!(
-            chrome_bucket_target_position(208, EXT_ALPN)
-                < chrome_bucket_target_position(208, EXT_SERVER_NAME)
-        );
-        assert!(
-            chrome_bucket_target_position(240, EXT_RENEGOTIATION_INFO)
-                < chrome_bucket_target_position(240, EXT_SIGNATURE_ALGORITHMS)
-        );
-    }
-
-    #[test]
-    fn test_chrome_bucket_signature_modes_capture_go_top_signatures() {
-        assert!(chrome_bucket_signature_modes(144).contains(&[1, -1, -1, -1, 1]));
-        assert!(chrome_bucket_signature_modes(176).contains(&[1, 1, 1, -1, -1]));
-        assert!(chrome_bucket_signature_modes(176).contains(&[-1, -1, -1, -1, -1]));
-        assert!(chrome_bucket_signature_modes(208).contains(&[-1, -1, -1, -1, 1]));
-        assert!(chrome_bucket_signature_modes(208).contains(&[1, 1, 1, 1, -1]));
-        assert!(chrome_bucket_signature_modes(240).contains(&[-1, 1, 1, 1, -1]));
-    }
-
-    #[test]
-    fn test_chrome_bucket_pairwise_bias_keeps_seed_variability() {
-        let bucket_208_values = (0u16..16)
-            .map(|seed| {
-                (
-                    chrome_bucket_pairwise_bias(seed, 208, EXT_SERVER_NAME),
-                    chrome_bucket_pairwise_bias(seed, 208, EXT_SUPPORTED_VERSIONS),
-                )
-            })
-            .collect::<std::collections::BTreeSet<_>>();
-        let bucket_186_values = (0u16..16)
-            .map(|seed| {
-                (
-                    chrome_bucket_pairwise_bias(seed, 144, EXT_SUPPORTED_VERSIONS),
-                    chrome_bucket_pairwise_bias(seed, 144, EXT_ECH_OUTER),
-                )
-            })
-            .collect::<std::collections::BTreeSet<_>>();
-
-        assert!(bucket_208_values.len() > 1);
-        assert!(bucket_186_values.len() > 1);
-    }
-
-    #[test]
-    fn test_chrome_bucket_signature_mode_selection_varies_by_seed() {
-        let bucket_186_modes = (0u16..16)
-            .map(|seed| chrome_signature_mode_index(seed, 144, 0x2f91))
-            .collect::<std::collections::BTreeSet<_>>();
-        let bucket_282_modes = (0u16..16)
-            .map(|seed| chrome_signature_mode_index(seed, 240, 0x2f91))
-            .collect::<std::collections::BTreeSet<_>>();
-
-        assert!(bucket_186_modes.len() > 1);
-        assert!(bucket_282_modes.len() > 1);
-    }
-
-    #[test]
-    fn test_chrome_fe0d_position_band_classification_matches_profiles() {
-        assert_eq!(
-            chrome_classify_fe0d_position_band(144, 2),
-            ChromeFe0dPositionBand::Early
-        );
-        assert_eq!(
-            chrome_classify_fe0d_position_band(144, 8),
-            ChromeFe0dPositionBand::Mid
-        );
-        assert_eq!(
-            chrome_classify_fe0d_position_band(144, 15),
-            ChromeFe0dPositionBand::Late
-        );
-
-        assert_eq!(
-            chrome_classify_fe0d_position_band(208, 3),
-            ChromeFe0dPositionBand::Early
-        );
-        assert_eq!(
-            chrome_classify_fe0d_position_band(208, 11),
-            ChromeFe0dPositionBand::Mid
-        );
-        assert_eq!(
-            chrome_classify_fe0d_position_band(208, 16),
-            ChromeFe0dPositionBand::Late
-        );
-    }
-
-    #[test]
-    fn test_chrome_fe0d_band_target_bias_only_adjusts_186_and_250_buckets() {
-        assert_eq!(
-            chrome_fe0d_band_target_bias(144, ChromeFe0dPositionBand::Early),
-            1
-        );
-        assert_eq!(
-            chrome_fe0d_band_target_bias(144, ChromeFe0dPositionBand::Late),
-            2
-        );
-        assert_eq!(
-            chrome_fe0d_band_target_bias(208, ChromeFe0dPositionBand::Early),
-            -1
-        );
-        assert_eq!(
-            chrome_fe0d_band_target_bias(208, ChromeFe0dPositionBand::Late),
-            0
-        );
-        assert_eq!(
-            chrome_fe0d_band_target_bias(176, ChromeFe0dPositionBand::Late),
-            0
-        );
-        assert_eq!(
-            chrome_fe0d_band_target_bias(240, ChromeFe0dPositionBand::Early),
-            0
-        );
-    }
-
-    #[test]
-    fn test_chrome_fe0d_band_bias_nudges_target_in_expected_direction() {
-        let bucket_186_base = blend_fe0d_target_position(15, 144);
-        let bucket_250_base = blend_fe0d_target_position(3, 208);
-
-        assert!(
-            chrome_adjust_fe0d_target_position(bucket_186_base, 144, ChromeFe0dPositionBand::Late)
-                > bucket_186_base
-        );
-        assert!(
-            chrome_adjust_fe0d_target_position(bucket_250_base, 208, ChromeFe0dPositionBand::Early,)
-                < bucket_250_base
-        );
-        assert_eq!(
-            chrome_adjust_fe0d_target_position(bucket_186_base, 176, ChromeFe0dPositionBand::Late),
-            bucket_186_base
+        let mut order_a = SeqRng {
+            vals: vec![0],
+            i: 0,
+        };
+        let mut order_b = SeqRng {
+            vals: vec![1],
+            i: 0,
+        };
+        assert_ne!(
+            build_chrome_extension_order(&mut order_a, 0x0a0a, 0x1a1a),
+            build_chrome_extension_order(&mut order_b, 0x0a0a, 0x1a1a)
         );
     }
 
@@ -2340,7 +1853,7 @@ mod tests {
         assert!(
             record_lens
                 .iter()
-                .all(|len| [496, 528, 560, 592].contains(len)),
+                .all(|len| [508, 540, 572, 604].contains(len)),
             "unexpected record length family: {record_lens:?}"
         );
         assert!(
@@ -2399,6 +1912,7 @@ mod tests {
             Ok(())
         }
     }
+    impl rand::CryptoRng for SeqRng {}
 
     #[test]
     fn exhaustive_or_table_driven_slot_membership() {
@@ -2453,7 +1967,11 @@ mod tests {
             v
         });
         assert_eq!(g.group, GREASE_VALUES[7], "group is the single 3rd draw");
-        let fp = build_chrome_client_hello_fingerprint_with_seed_and_grease(0x1234, g);
+        let mut rng = SeqRng {
+            vals: vec![1, 4, 7, 10, 13, 0, 1, 2, 3, 4, 5, 6, 7, 8, 9],
+            i: 0,
+        };
+        let fp = build_chrome_client_hello_fingerprint_with_rng(144, &mut rng);
         let supported_groups = fp.supported_groups_override.expect("supported_groups");
         let (key_share_group, _) = fp.key_share_grease.expect("key_share_grease");
         assert!(is_grease(supported_groups[0]));
@@ -2524,8 +2042,12 @@ mod tests {
 
     #[test]
     fn no_duplicate_grease_extension_type() {
-        for seed in [0u16, 5, 0x1234, 0xbeef, 0xffff] {
-            let fp = build_chrome_client_hello_fingerprint_with_seed(seed);
+        for first_word in [0u32, 5, 0x1234, 0xbeef, 0xffff] {
+            let mut rng = SeqRng {
+                vals: vec![first_word, 1, 2, 3, 4, 5, 6, 7, 8],
+                i: 0,
+            };
+            let fp = build_chrome_client_hello_fingerprint_with_rng(144, &mut rng);
             let grease_exts: Vec<u16> = fp
                 .extension_order
                 .iter()
@@ -2546,86 +2068,5 @@ mod tests {
                 Some(grease_exts[1])
             );
         }
-    }
-
-    #[test]
-    fn production_selector_does_not_reuse_extension_order_seed() {
-        // Structural proof that GREASE is independent of the extension-order seed. `random`
-        // takes only an RNG (no seed parameter), so it CANNOT reuse the seed; this pins the
-        // consequence at the fingerprint-builder level.
-        let mut a = [0usize, 1, 2, 3, 4].into_iter();
-        let grease_a = ChromeGreaseProfile::from_index_source(|| a.next().unwrap());
-        let mut b = [8usize, 9, 10, 11, 12].into_iter();
-        let grease_b = ChromeGreaseProfile::from_index_source(|| b.next().unwrap());
-        assert_ne!(grease_a, grease_b);
-
-        let middle = |fp: &ClientHelloFingerprint| -> Vec<u16> {
-            fp.extension_order
-                .iter()
-                .copied()
-                .filter(|t| !is_grease(*t))
-                .collect()
-        };
-        let markers = |fp: &ClientHelloFingerprint| -> (Option<u16>, Vec<u16>) {
-            (
-                fp.grease_ciphersuite,
-                fp.extension_order
-                    .iter()
-                    .copied()
-                    .filter(|t| is_grease(*t))
-                    .collect(),
-            )
-        };
-
-        // Same seed, different GREASE → identical (seed-driven) middle order, different GREASE.
-        let fp_seed_a =
-            build_chrome_client_hello_fingerprint_with_seed_and_grease(0x1234, grease_a);
-        let fp_seed_b =
-            build_chrome_client_hello_fingerprint_with_seed_and_grease(0x1234, grease_b);
-        assert_eq!(
-            middle(&fp_seed_a),
-            middle(&fp_seed_b),
-            "seed drives the middle order"
-        );
-        assert_ne!(
-            markers(&fp_seed_a),
-            markers(&fp_seed_b),
-            "GREASE is a separate input"
-        );
-
-        // Different seed, same GREASE → different middle order, identical GREASE markers.
-        let fp_other = build_chrome_client_hello_fingerprint_with_seed_and_grease(0x9999, grease_a);
-        assert_ne!(
-            middle(&fp_seed_a),
-            middle(&fp_other),
-            "seed drives the order"
-        );
-        assert_eq!(
-            markers(&fp_seed_a),
-            markers(&fp_other),
-            "seed does NOT touch GREASE"
-        );
-    }
-
-    #[test]
-    fn selector_is_rebuilt_per_clienthello() {
-        // The builder is a pure function of (seed, grease) with no cached/global selector
-        // state: identical inputs → identical output, and two different injected sequences
-        // give two different profiles, so each construction consumes a fresh draw.
-        // Per-handshake invocation is guaranteed by perform_stream rebuilding
-        // build_client_config per connection (module audit), and `random` is called inside
-        // the builder, never stored on RealityHandshake / ClientConfig.
-        let mut s = [2usize, 4, 6, 8, 10].into_iter();
-        let g = ChromeGreaseProfile::from_index_source(|| s.next().unwrap());
-        let fp1 = build_chrome_client_hello_fingerprint_with_seed_and_grease(0x55aa, g);
-        let fp2 = build_chrome_client_hello_fingerprint_with_seed_and_grease(0x55aa, g);
-        assert_eq!(fp1.extension_order, fp2.extension_order);
-        assert_eq!(fp1.grease_ciphersuite, fp2.grease_ciphersuite);
-
-        let mut first = [0usize, 1, 2, 3, 4].into_iter();
-        let g1 = ChromeGreaseProfile::from_index_source(|| first.next().unwrap());
-        let mut second = [9usize, 10, 11, 12, 13].into_iter();
-        let g2 = ChromeGreaseProfile::from_index_source(|| second.next().unwrap());
-        assert_ne!(g1, g2);
     }
 }
