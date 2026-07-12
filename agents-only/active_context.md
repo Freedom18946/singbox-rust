@@ -10,6 +10,24 @@
 
 ---
 
+## Resume (2026-07-12) - REALITY official-JA4 FoxIO cross-check CLOSED (algorithm level)
+
+- **official-JA4 tail closed at the algorithm level.** The harness from-spec JA4 algorithm
+  (`parse_clienthello`) now reproduces FoxIO's OWN published reference values — canonical
+  worked example `t13d1516h2_8daaf6152771_e5627efa2ab1` + the full ALPN-segment table —
+  vendored under BSD-3 `LICENSE-JA4` at `reality_clienthello_parity/fixtures/foxio_reference_vectors/`
+  (FoxIO-LLC/ja4@`0e54bc83`), enforced by offline blocking test `tests/test_foxio_reference_vectors.py`.
+- Fixed a real from-spec bug the cross-check exposed: ALPN `a`-segment now implements FoxIO's
+  non-alphanumeric→hex rule (`parse_clienthello:_ja4_alpn_segment`); also empty-sigalg / empty-ext
+  `c`-segment edge cases. Mainstream `h2` path unchanged → reality golden `…_d8a2da3f94cd` unmoved.
+- Status token flipped `DIAGNOSTIC_PENDING_FOXIO_REFERENCE` → `FOXIO_REFERENCE_VERIFIED`; `run_check.py`
+  summary `foxio_reference_crosscheck` now carries the live verifier result (was a hard-coded DEFERRED
+  string). golden_spec `DEV-REALITY-01` + three-tier model updated.
+- **Scope caveat**: algorithm/vector conformance (our JA4 == FoxIO's published JA4), NOT a
+  second-tool (tshark) fingerprint of live captures, NOT byte identity. Still OPEN: ext-order
+  distribution, `HelloChrome_Auto` drift, tier-2 camouflage. No `52/56` BHV movement (REALITY
+  has no S3 BHV-ID). Evidence: `labs/interop-lab/reality_clienthello_parity/fixtures/foxio_reference_vectors/PROVENANCE.md`.
+
 ## Resume (2026-07-12) - MT-INTEROP-03 dual-kernel baseline cleanup DONE
 
 - **MT-INTEROP-03 accepted:** final 103-case run is 101 `PASS`, 1 `DIV-COVERED`,
@@ -198,32 +216,13 @@
 - **Scope note**: planning artifacts only. No behavior, parity/BHV, gate, or packaging
   movement is claimed.
 
-## Resume (2026-07-03) - app helper-CLI audit cleanup batch (15 rounds, all DONE locally)
-
-- **One batch, one pattern**: 15 consecutive audit-cleanup rounds hardened the `app` helper
-  CLIs — every round replaced panic paths (`unwrap`/`expect`/nested `block_on`) or silent
-  failure paths with structured errors, tightened the input/output contract, added focused
-  unit + real-binary integration tests, and passed the same verification set (app fmt, focused
-  tests, all-target/all-feature check, strict clippy, CLI smoke, `git diff --check`).
-- **Covered surfaces**: `metrics-serve` (bind-before-READY), `merge` (inline-resource read
-  errors, abort-before-write), `sb-bench` (invalid env targets; `SB_BENCH_PAR=0` fallback; CSV
-  write errors), `bench io` (zero requests/concurrency; HTTP method validation), `coverage-http`
-  (invalid `SB_COV_ADDR` non-zero exit), `prom` (async handlers off nested runtime; `--filter`
-  regex validation), `tools synctime` (pre-UNIX clock), `sb-handshake slice` (fallible JSONL
-  writes, `skipped_bad_lines`), metadata bins `version`/`sb-version`/`sb-rule-coverage` (JSON
-  `Result` paths), `sb-explaind` (invalid `SB_DEBUG_ADDR`, port-query 400), `generate
-  tls-keypair` (`--days` honored, `--days 0` rejected), `preflight` (missing/invalid config
-  fails), `subs` (structured read/parse/write errors), `prefetch` (byte/duration totals; SOCKS
-  UDP helper lint unblock in sb-adapters).
-- **Scope note**: app helper-CLI hygiene only. No REALITY closure, dual-kernel BHV/parity
-  movement, release packaging completion, or workflow automation is claimed. Full per-round
-  details: git history 2026-07-03 (`029e48d8`, `71bb2026`, `5a97b46d`, …) + `log.md`.
-
 ## Strategic State
 
 Phase: MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
 (non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, not in the
-S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, official-JA4 + camouflage OPEN.
+S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED; official-JA4
+algorithm cross-check CLOSED (vendored FoxIO BSD-3 vectors, 2026-07-12); ext-order distribution
++ `HelloChrome_Auto` drift + camouflage OPEN.
 
 ## Current Build And Gate
 
@@ -234,9 +233,10 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 ## T3 ClientHello Fingerprint Parity — T3-0…T3-2 DONE (2026-06-08)
 
 - CLOSED (local): functional dataplane, normalized-profile parity, required field-set parity,
-  coordinated GREASE structure, and local from-spec JA4 Go==Rust diagnostic.
-- OPEN: official FoxIO-tool JA4 crosscheck, extension-order statistical parity,
-  `HelloChrome_Auto` drift, tier-2 camouflage. NON-GOAL: L4 byte identity.
+  coordinated GREASE structure, and from-spec JA4 Go==Rust; **official FoxIO JA4 algorithm
+  cross-check CLOSED (2026-07-12)** via vendored FoxIO BSD-3 reference vectors.
+- OPEN: extension-order statistical parity, `HelloChrome_Auto` drift, tier-2 camouflage.
+  NON-GOAL: L4 byte identity; second-tool fingerprint of live captures.
 - A2.3 runtime status-JSON rehearsal DEFERRED. Detail: t32 governance; T3-1B `052d4392`.
 
 ## REALITY Acceptance (3-tier; golden_spec S4)
@@ -245,7 +245,8 @@ S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local profile parity CLOSED, off
 2. External healthy-cohort observation — pre-release, NON-gating (tri-state; no single node
    is a closure identity; outage ≠ regression).
 3. ClientHello fingerprint parity — tier-3: local profile parity CLOSED (see T3 section);
-   official-JA4 + ext-order distribution + camouflage OPEN.
+   official-JA4 algorithm cross-check CLOSED (FoxIO vectors); ext-order distribution +
+   `HelloChrome_Auto` drift + camouflage OPEN.
 
 ## Closed Tracks (compressed; detail in archive)
 

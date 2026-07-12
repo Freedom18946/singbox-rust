@@ -33,6 +33,7 @@ sys.path.insert(0, str(HERE))
 import capture_clienthello as cap          # noqa: E402
 import parse_clienthello as P              # noqa: E402
 import compare_profiles as C               # noqa: E402
+import foxio_reference as FR               # noqa: E402
 
 
 def spawn(name, argv, logdir):
@@ -205,8 +206,7 @@ def main():
             "rust_normalized_profile": rust[0]["normalized_profile"] if rust else None,
             "go_from_spec_ja4": sorted({p["derived"]["from_spec_ja4"] for p in go}),
             "rust_from_spec_ja4": sorted({p["derived"]["from_spec_ja4"] for p in rust}),
-            "foxio_reference_crosscheck": "DEFERRED (no public network this card; from-spec JA4 stays "
-                                          "a non-blocking diagnostic; official JA4 parity NOT claimed)",
+            "foxio_reference_crosscheck": FR.verify_against_vendored_vectors(),
             "counts": {"go": len(go), "rust": len(rust)},
         }
         (out / "summary.json").write_text(json.dumps(summary, indent=2, ensure_ascii=False) + "\n")

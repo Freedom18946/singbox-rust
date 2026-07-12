@@ -21,10 +21,13 @@ ClientHello records live only in a tempfile dir and are removed on exit.
 - **redaction guard**: the emitted summary carries no raw auth/key material.
 
 **2. Diagnostic** (recorded, never changes the exit code):
-- **from-spec JA4** (`from_spec_ja4`) — a from-spec reimplementation, **not** the FoxIO
-  reference tool; status `DIAGNOSTIC_PENDING_FOXIO_REFERENCE`. **Not** a blocking gate, and
-  **not** a claim of "official JA4 parity";
-- **FoxIO reference cross-check** status (`DEFERRED` when offline);
+- **from-spec JA4** (`from_spec_ja4`) — the JA4 algorithm is cross-checked against FoxIO's
+  OWN published reference values (`fixtures/foxio_reference_vectors/`, BSD-3 `LICENSE-JA4`),
+  so its status is now `FOXIO_REFERENCE_VERIFIED`. The live go-vs-rust JA4 parity stays
+  advisory in *this* run_check exit code; the authoritative blocking gate is the offline
+  vendored-vector test `tests/test_foxio_reference_vectors.py`. Scope: algorithm/vector
+  conformance, **not** a second-tool fingerprint of the live captures;
+- **FoxIO reference cross-check** result (`foxio_reference.verify_against_vendored_vectors()`);
 - **GREASE slot entropy** (fixed vs randomized) — the current Rust fixed values are
   **advisory only**;
 - **extension-order distribution** (per-hello Chrome shuffle);
@@ -58,7 +61,9 @@ contain REALITY auth material). Default is off (tempfile, removed on exit).
 | `compare_profiles.py` | blocking (token / field-set / digest / redaction) + advisory (JA4 / GREASE / order / drift) |
 | `run_check.py` | orchestrate capture→parse→compare; exit 0/non-0; sanitized summary |
 | `fixtures/expected_profile_shape.json` | **advisory-only** sanitized Go-reference shape snapshot |
-| `tests/` | parser/compare/hygiene unit tests (self-contained synthetic vectors) |
+| `fixtures/foxio_reference_vectors/` | vendored FoxIO BSD-3 JA4 reference vectors (`vectors.json` + `PROVENANCE.md` + `LICENSE-JA4`) |
+| `foxio_reference.py` | FoxIO algorithm cross-check: from-spec JA4 == FoxIO published values (offline) |
+| `tests/` | parser/compare/hygiene + FoxIO-vector unit tests (self-contained synthetic + FoxIO vectors) |
 
 ## Sanitization
 
@@ -76,6 +81,9 @@ snapshot.
 
 ## Status
 
-T3-1B harness. `from_spec_ja4` is a diagnostic pending a FoxIO-reference cross-check
-(`DEFERRED` offline). The coordinated GREASE-selector fix (so Rust randomizes GREASE values
-like Chrome) is **T3-1C** (not done here). golden_spec is amended later in **T3-2**.
+T3-1B harness. `from_spec_ja4`'s algorithm is now cross-checked against FoxIO's OWN published
+reference vectors (`fixtures/foxio_reference_vectors/`, BSD-3 `LICENSE-JA4`), enforced offline
+by `tests/test_foxio_reference_vectors.py` — the official-JA4 cross-check is **CLOSED at the
+algorithm level** (2026-07-12; scope: vector conformance, not a second-tool fingerprint of live
+captures). The coordinated GREASE-selector fix (Rust randomizes GREASE like Chrome) is **T3-1C**;
+golden_spec is amended in **T3-2** (`DEV-REALITY-01`).

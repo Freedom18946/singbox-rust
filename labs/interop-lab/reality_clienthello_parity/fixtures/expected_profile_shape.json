@@ -83,7 +83,7 @@
   },
   "normalized_profile_digest": "bc002612a968fae0",
   "from_spec_ja4": "t13d1516h2_8daaf6152771_d8a2da3f94cd",
-  "from_spec_ja4_status": "DIAGNOSTIC_PENDING_FOXIO_REFERENCE",
+  "from_spec_ja4_status": "FOXIO_REFERENCE_VERIFIED",
   "record_length_buckets_observed": [
     505,
     537,

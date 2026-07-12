@@ -24,8 +24,9 @@ Current REALITY state remains in `agents-only/active_context.md` and `agents-onl
 
 ## T3 / Release-Cleanup REALITY Notes
 
-- T3 local line closed functional dataplane, normalized-profile parity, required field-set parity, coordinated GREASE structure, and local from-spec JA4 Go==Rust diagnostic.
-- Still-open external/research tails: official FoxIO JA4 crosscheck, extension-order distribution, `HelloChrome_Auto` drift, and tier-2 camouflage.
+- T3 local line closed functional dataplane, normalized-profile parity, required field-set parity, coordinated GREASE structure, and from-spec JA4 Go==Rust diagnostic.
+- Official FoxIO JA4 cross-check CLOSED at the algorithm level (2026-07-12): from-spec JA4 == FoxIO published reference vectors (BSD-3 `LICENSE-JA4`, vendored at `labs/interop-lab/reality_clienthello_parity/fixtures/foxio_reference_vectors/`). Scope: vector conformance, not a second-tool fingerprint of live captures.
+- Still-open external/research tails: extension-order distribution, `HelloChrome_Auto` drift, and tier-2 camouflage.
 - Non-goal remains L4 byte identity.
 - Release-cleanup REALITY notes were moved into compressed form; do not use deleted raw files as current gate evidence.
 

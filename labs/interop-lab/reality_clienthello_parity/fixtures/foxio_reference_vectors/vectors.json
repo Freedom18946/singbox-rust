@@ -1,0 +1,42 @@
+{
+  "_meta": {
+    "purpose": "Authoritative FoxIO worked-example vectors used to cross-check this harness's from-spec JA4 algorithm (parse_clienthello._from_spec_ja4) against FoxIO's OWN published values. Fully offline, stdlib only. This is the independent reference that closes the official-JA4 crosscheck at the ALGORITHM level (see golden_spec DEV-REALITY-01).",
+    "source": "FoxIO-LLC/ja4",
+    "source_commit": "0e54bc8371de34df94a35f2442c05bda2e8b2034",
+    "source_file": "technical_details/JA4.md",
+    "license": "JA4 (TLS client) is BSD-3-Clause — see ./LICENSE-JA4 and ./PROVENANCE.md. This is NOT the FoxIO License 1.1 (that covers JA4+ only).",
+    "ja4_variant": "hashed+sorted 'JA4' (not JA4_r / JA4_o / JA4_ro). Cipher and extension lists are sorted in hex order; signature algorithms are kept in original order."
+  },
+  "ja4_vectors": [
+    {
+      "name": "foxio_ja4md_canonical_chrome",
+      "source_ref": "technical_details/JA4.md — 'Example' + 'Raw Output' sections",
+      "transport": "t",
+      "tls_version_2c": "13",
+      "sni_present": true,
+      "cipher_list_original_order": ["1301","1302","1303","c02b","c02f","c02c","c030","cca9","cca8","c013","c014","009c","009d","002f","0035"],
+      "ext_type_list_original_order": ["001b","0000","0033","0010","4469","0017","002d","000d","0005","0023","0012","002b","ff01","000b","000a","0015"],
+      "sig_alg_list_in_order": ["0403","0804","0401","0503","0805","0501","0806","0601"],
+      "alpn_first_hex": "6832",
+      "expected_ja4_a": "t13d1516h2",
+      "expected_ja4_b": "8daaf6152771",
+      "expected_ja4_c": "e5627efa2ab1",
+      "expected_ja4": "t13d1516h2_8daaf6152771_e5627efa2ab1",
+      "expected_ja4_b_sorted_input": "002f,0035,009c,009d,1301,1302,1303,c013,c014,c02b,c02c,c02f,c030,cca8,cca9",
+      "expected_ja4_c_input": "0005,000a,000b,000d,0012,0015,0017,001b,0023,002b,002d,0033,4469,ff01_0403,0804,0401,0503,0805,0501,0806,0601"
+    }
+  ],
+  "alpn_segment_vectors": [
+    {"name": "h2",            "alpn_first_hex": "6832",           "expected": "h2", "source_ref": "JA4.md ALPN Extension Value / Example"},
+    {"name": "http_1_1",      "alpn_first_hex": "687474702f312e31","expected": "h1", "source_ref": "JA4.md ALPN Extension Value"},
+    {"name": "single_0xAB",   "alpn_first_hex": "ab",             "expected": "ab", "source_ref": "JA4.md ALPN non-alnum hex rule"},
+    {"name": "single_0x20",   "alpn_first_hex": "20",             "expected": "20", "source_ref": "JA4.md ALPN non-alnum hex rule"},
+    {"name": "AB_CD",         "alpn_first_hex": "abcd",           "expected": "ad", "source_ref": "JA4.md ALPN non-alnum hex rule"},
+    {"name": "20_61",         "alpn_first_hex": "2061",           "expected": "21", "source_ref": "JA4.md ALPN non-alnum hex rule"},
+    {"name": "30_AB",         "alpn_first_hex": "30ab",           "expected": "3b", "source_ref": "JA4.md ALPN non-alnum hex rule"},
+    {"name": "61_20",         "alpn_first_hex": "6120",           "expected": "60", "source_ref": "JA4.md ALPN non-alnum hex rule"},
+    {"name": "30_31_AB_CD",   "alpn_first_hex": "3031abcd",       "expected": "3d", "source_ref": "JA4.md ALPN non-alnum hex rule"},
+    {"name": "30_AB_CD_31",   "alpn_first_hex": "30abcd31",       "expected": "01", "source_ref": "JA4.md ALPN non-alnum hex rule"},
+    {"name": "no_alpn",       "alpn_first_hex": "",               "expected": "00", "source_ref": "JA4.md ALPN empty rule"}
+  ]
+}

@@ -107,7 +107,7 @@ class TestParse(unittest.TestCase):
         d = self.p["derived"]
         self.assertEqual(len(d["normalized_profile_digest"]), 16)
         self.assertTrue(d["from_spec_ja4"].startswith("t13d"))
-        self.assertEqual(d["from_spec_ja4_status"], "DIAGNOSTIC_PENDING_FOXIO_REFERENCE")
+        self.assertEqual(d["from_spec_ja4_status"], "FOXIO_REFERENCE_VERIFIED")
 
     def test_reject_truncated_record(self):
         with self.assertRaises(ValueError):

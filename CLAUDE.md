@@ -99,7 +99,8 @@
 - **MIG-02**：ACCEPTED（2026-03-07，零隐式直连回退）。
 - **ARCH-LIMIT-REALITY**：REALITY live dataplane 4 个行为槽位登记为已接受偏差、不计入活动 parity debt；
   MT-REAL-02 经 T3 track 在本地重新挑战该上限并**封箱**（local 功能 / normalized-profile / GREASE
-  parity 已闭合，official-JA4 / camouflage 仍 OPEN；详见 `active_context.md`）。
+  parity 已闭合，official-JA4 算法交叉核验亦已闭合（FoxIO 官方向量），ext-order 分布 / camouflage
+  等外部尾巴仍 OPEN；详见 `active_context.md`）。
 
 ### 双核黄金基准规则（稳定，保留）
 

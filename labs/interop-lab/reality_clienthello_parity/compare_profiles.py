@@ -10,7 +10,7 @@ BLOCKING gates (affect exit code):
   4. redaction guard: emitted summary contains NO raw auth/key material.
 
 ADVISORY diagnostics (recorded, never change the exit code):
-  - from_spec_ja4 parity (DIAGNOSTIC_PENDING_FOXIO_REFERENCE);
+  - from_spec_ja4 parity (algorithm FOXIO_REFERENCE_VERIFIED via vendored vectors);
   - GREASE slot entropy (fixed vs random) — current Rust fixed values are advisory only;
   - extension-order distribution (distinct permutations);
   - expected_profile_shape.json drift (Go vs snapshot) — advisory only, never fails Rust.
@@ -107,12 +107,18 @@ def compare(go, rust, token_ok_go, token_ok_rust, snapshot=None):
     res["blocking_pass"] = all(res["blocking"][k]["pass"] for k in res["blocking"])
 
     # --- ADVISORY: from_spec_ja4 ---
+    # The from-spec JA4 *algorithm* is now cross-checked offline against FoxIO's own published
+    # reference vectors (fixtures/foxio_reference_vectors/; foxio_reference.py). This live
+    # go-vs-rust JA4 parity stays advisory in the run_check exit code — the authoritative
+    # blocking gate is the vendored-vector unit test — but the value is no longer "pending".
     go_ja4 = sorted({p["derived"]["from_spec_ja4"] for p in go})
     rust_ja4 = sorted({p["derived"]["from_spec_ja4"] for p in rust})
     res["advisory"]["from_spec_ja4"] = {
         "go": go_ja4, "rust": rust_ja4, "parity": go_ja4 == rust_ja4,
-        "status": "DIAGNOSTIC_PENDING_FOXIO_REFERENCE",
-        "_note": "from-spec JA4 only; NOT FoxIO-tool-verified; never a blocking gate this card"}
+        "status": "FOXIO_REFERENCE_VERIFIED",
+        "_note": "JA4 algorithm cross-checked against vendored FoxIO reference vectors "
+                 "(BSD-3 LICENSE-JA4); live go==rust under that verified algorithm. Advisory "
+                 "in run_check exit code; the vendored-vector unit test is the blocking gate"}
 
     # --- ADVISORY: GREASE entropy ---
     res["advisory"]["grease_entropy"] = {

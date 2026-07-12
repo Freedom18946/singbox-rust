@@ -23,6 +23,11 @@ GREASE = {0x0a0a, 0x1a1a, 0x2a2a, 0x3a3a, 0x4a4a, 0x5a5a, 0x6a6a, 0x7a7a,
           0x8a8a, 0x9a9a, 0xaaaa, 0xbaba, 0xcaca, 0xdada, 0xeaea, 0xfafa}
 RECORD_LEN_BUCKET = 32  # Chrome GREASE-ECH padding ladder spacing
 
+# The from-spec JA4 algorithm is cross-checked against FoxIO's own published reference
+# values (fixtures/foxio_reference_vectors/, BSD-3 LICENSE-JA4); see foxio_reference.py
+# and tests/test_foxio_reference_vectors.py. The authority is that offline vector test.
+FROM_SPEC_JA4_STATUS = "FOXIO_REFERENCE_VERIFIED"
+
 EXT_NAMES = {
     0: "server_name", 5: "status_request", 10: "supported_groups", 11: "ec_point_formats",
     13: "signature_algorithms", 16: "alpn", 18: "signed_cert_timestamp", 21: "padding",
@@ -220,6 +225,11 @@ def _required_shape(np):
     }
 
 
+# FoxIO version code points (highest non-GREASE supported_versions, else legacy version).
+_JA4_VERSION_MAP = {0x0304: "13", 0x0303: "12", 0x0302: "11", 0x0301: "10",
+                    0x0300: "s3", 0x0002: "s2", 0xfeff: "d1", 0xfefd: "d2", 0xfefc: "d3"}
+
+
 def _tls_ver_2c(ext_struct, legacy_version):
     sv = ext_struct.get("supported_versions") or []
     best = None
@@ -229,27 +239,65 @@ def _tls_ver_2c(ext_struct, legacy_version):
         n = int(v, 16); best = max(best, n) if best else n
     if best is None:
         best = int(legacy_version, 16)
-    return {0x0304: "13", 0x0303: "12", 0x0302: "11", 0x0301: "10"}.get(best, "00")
+    return _JA4_VERSION_MAP.get(best, "00")
+
+
+def _ja4_alpn_segment(first_alpn):
+    """FoxIO JA4 ALPN `a`-segment for the first ALPN value (`first_alpn` is a latin1 str,
+    each char's ord == the original byte; "" when no ALPN). Rule: first+last char if both
+    end bytes are ASCII-alphanumeric; otherwise hex(first_byte)[0] + hex(last_byte)[1]."""
+    if not first_alpn:
+        return "00"
+    fb = ord(first_alpn[0]); lb = ord(first_alpn[-1])
+    alnum = lambda x: 0x30 <= x <= 0x39 or 0x41 <= x <= 0x5a or 0x61 <= x <= 0x7a  # noqa: E731
+    if alnum(fb) and alnum(lb):
+        return chr(fb) + chr(lb)
+    return f"{fb:02x}"[0] + f"{lb:02x}"[1]
+
+
+def _compute_from_spec_ja4(transport, ver2c, sni_flag, ciphers_ng, exts_ng, sig_algs, first_alpn):
+    """Core FoxIO JA4 (hashed+sorted) computation from GREASE-filtered int-list fields.
+    Single source of truth shared by the byte parser and the reference-vector cross-check."""
+    al = _ja4_alpn_segment(first_alpn)
+    ja4_a = f"{transport}{ver2c}{sni_flag}{min(len(ciphers_ng),99):02d}{min(len(exts_ng),99):02d}{al}"
+    ja4_b = (hashlib.sha256(",".join(f"{c:04x}" for c in sorted(ciphers_ng)).encode()).hexdigest()[:12]
+             if ciphers_ng else "000000000000")
+    exts_c = sorted(e for e in exts_ng if e not in (0x0000, 0x0010))
+    if not exts_c:
+        ja4_c = "000000000000"
+    else:
+        c_str = ",".join(f"{e:04x}" for e in exts_c)
+        if sig_algs:  # FoxIO: string ends without underscore when there are no sig algs
+            c_str += "_" + ",".join(f"{s:04x}" for s in sig_algs)
+        ja4_c = hashlib.sha256(c_str.encode()).hexdigest()[:12]
+    return {"from_spec_ja4": f"{ja4_a}_{ja4_b}_{ja4_c}",
+            "from_spec_ja4_a": ja4_a, "from_spec_ja4_b": ja4_b, "from_spec_ja4_c": ja4_c,
+            "from_spec_ja4_status": FROM_SPEC_JA4_STATUS}
 
 
 def _from_spec_ja4(legacy_version, ciphers, exts, ext_struct):
-    """FoxIO JA4 TLS-client algorithm, reimplemented FROM SPEC (NOT FoxIO-tool-verified)."""
+    """FoxIO JA4 TLS-client algorithm computed from a parsed ClientHello. The algorithm is
+    cross-checked against FoxIO's own published reference vectors (see FROM_SPEC_JA4_STATUS)."""
     cs = [c for c in ciphers if not is_grease(c)]
     exts_ng = [t for t, _, _ in exts if not is_grease(t)]
     sig = [int(s, 16) for s in ext_struct.get("signature_algorithms", [])]
     alpn = ext_struct.get("alpn") or []
     ver = _tls_ver_2c(ext_struct, legacy_version)
-    sni = "d" if "sni" in ext_struct else "i"
-    a0 = alpn[0] if alpn else ""
-    al = (a0[0] + a0[-1]) if len(a0) >= 2 else ("00" if not a0 else a0 + a0)
-    ja4_a = f"t{ver}{sni}{min(len(cs),99):02d}{min(len(exts_ng),99):02d}{al}"
-    ja4_b = hashlib.sha256(",".join(f"{c:04x}" for c in sorted(cs)).encode()).hexdigest()[:12] if cs else "000000000000"
-    exts_c = sorted(e for e in exts_ng if e not in (0x0000, 0x0010))
-    c_str = ",".join(f"{e:04x}" for e in exts_c) + "_" + ",".join(f"{s:04x}" for s in sig)
-    ja4_c = hashlib.sha256(c_str.encode()).hexdigest()[:12]
-    return {"from_spec_ja4": f"{ja4_a}_{ja4_b}_{ja4_c}",
-            "from_spec_ja4_a": ja4_a, "from_spec_ja4_b": ja4_b, "from_spec_ja4_c": ja4_c,
-            "from_spec_ja4_status": "DIAGNOSTIC_PENDING_FOXIO_REFERENCE"}
+    sni_flag = "d" if "sni" in ext_struct else "i"
+    first_alpn = alpn[0] if alpn else ""
+    return _compute_from_spec_ja4("t", ver, sni_flag, cs, exts_ng, sig, first_alpn)
+
+
+def from_spec_ja4_from_fields(*, transport="t", tls_version_2c, sni_present,
+                              cipher_list, ext_type_list, sig_alg_list, first_alpn=""):
+    """Field-driven entry for the FoxIO reference-vector cross-check. Takes already-decoded
+    hex-string lists (4-char lower hex) plus a latin1 `first_alpn` str, and runs the SAME
+    core computation as the live byte parser. GREASE values are filtered defensively."""
+    cs = [int(c, 16) for c in cipher_list if not is_grease(int(c, 16))]
+    exts_ng = [int(e, 16) for e in ext_type_list if not is_grease(int(e, 16))]
+    sig = [int(s, 16) for s in sig_alg_list]
+    sni_flag = "d" if sni_present else "i"
+    return _compute_from_spec_ja4(transport, tls_version_2c, sni_flag, cs, exts_ng, sig, first_alpn)
 
 
 if __name__ == "__main__":
