@@ -43,7 +43,17 @@
 
 ## 断言算子（L6.2.1）
 
-支持：`eq` `ne` `exists` `not_exists` `gt` `gte` `lt` `lte` `contains` `regex`。
+支持：`eq` `ne` `exists` `not_exists` `gt` `gte` `lt` `lte` `contains` `regex`，以及
+reference 比较 `eq_ref` `ne_ref` `gt_ref` `gte_ref`。断言可用 `kernel: rust|go` 锁定 S4
+差异。
+
+## Case outcome
+
+- `PASS`：断言通过，无 S4 标签。
+- `DIV-COVERED`：断言通过，且 `covered_divergences` 非空。
+- `ENV-LIMITED`：环境受限 case 的失败全部完成环境归因，或精确匹配其
+  `expected_env_failures` kernel/stage allowlist；额外失败仍阻断。
+- `FAIL`：其余失败；验收阻断。
 
 扩展键空间：
 

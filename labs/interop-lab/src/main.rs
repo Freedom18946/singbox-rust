@@ -124,6 +124,13 @@ async fn handle_case_command(
                     .await
                     .with_context(|| format!("running case {id}"))?;
                 println!("case={} run_id={}", output.case_id, output.run_id);
+                println!("outcome={}", output.outcome);
+                if !output.env_limited_attributions.is_empty() {
+                    println!(
+                        "env_limited_attributions={}",
+                        output.env_limited_attributions.len()
+                    );
+                }
                 println!("run_dir={}", canonicalize_or(&output.run_dir).display());
                 if let Some(diff_path) = &output.diff_report_path {
                     println!("diff_report={}", canonicalize_or(diff_path).display());
@@ -169,6 +176,13 @@ async fn handle_case_command(
             let mut failed_count = 0usize;
             for output in &outputs {
                 println!("case={} run_id={}", output.case_id, output.run_id);
+                println!("outcome={}", output.outcome);
+                if !output.env_limited_attributions.is_empty() {
+                    println!(
+                        "env_limited_attributions={}",
+                        output.env_limited_attributions.len()
+                    );
+                }
                 println!("run_dir={}", canonicalize_or(&output.run_dir).display());
                 if output.is_failed() {
                     failed_count += 1;

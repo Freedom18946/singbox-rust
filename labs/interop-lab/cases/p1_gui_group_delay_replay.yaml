@@ -35,20 +35,23 @@ upstream_topology:
   - name: local_http
     kind: http_echo
     bind: 127.0.0.1:18898
-gui_sequence:
-  - kind: http
+gui_sequence: []
+traffic_plan:
+  - kind: api_http
     name: get_group_delay
     method: GET
     path: "/meta/group/my-group/delay?url=http%3A%2F%2F127.0.0.1%3A18898%2F&timeout=5000"
+    path_go: "/group/my-group/delay?url=http%3A%2F%2F127.0.0.1%3A18898%2F&timeout=5000"
     expect_status: 200
 assertions:
   - key: errors.count
     op: eq
     expected: 0
-  - key: http.get_group_delay.status
+  - key: traffic.get_group_delay.success
     op: eq
-    expected: 200
+    expected: true
 oracle:
   tolerate_counter_jitter: true
   ignore_http_paths:
     - "/meta/group/*/delay*"
+    - "/group/*/delay*"

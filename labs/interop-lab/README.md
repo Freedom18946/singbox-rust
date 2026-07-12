@@ -30,7 +30,7 @@ cargo run -p interop-lab -- report open p0_clash_api_contract --print
 Cases that launch the Rust app binary now require Clash API support in the built artifact.
 
 ```bash
-cargo build -p app --features acceptance,clash_api --bin app
+cargo build -p app --features acceptance,clash_api,adapters --bin app
 ```
 
 If `bootstrap.<kernel>.command` is omitted, `interop-lab` treats that kernel as externally running and only probes its API readiness.
@@ -55,6 +55,7 @@ Top-level fields:
 - `id`
 - `kernel_mode` (`rust|go|both`)
 - `env_class` (`strict|env_limited`, default `strict`)
+- `expected_env_failures` (optional exact kernel/stage allowlist for an `env_limited` case)
 - `tags` (optional string array)
 - `owner` (optional)
 - `bootstrap` (`rust` / `go` launch config)
@@ -75,6 +76,16 @@ Top-level fields:
 `assertions` operators:
 
 - `eq`, `ne`, `exists`, `not_exists`, `gt`, `gte`, `lt`, `lte`, `contains`, `regex`
+- `eq_ref`, `ne_ref`, `gt_ref`, `gte_ref`; optional `kernel: rust|go`
+
+Each run summary reports one outcome: `PASS`, `DIV-COVERED`, `ENV-LIMITED`, or `FAIL`.
+`covered_divergences` must reference S4 entries and never suppresses a runtime/assertion failure.
+Case loading rejects unknown S4 IDs, non-dual divergence cases, and divergence cases without a
+kernel-scoped assertion.
+`expected_env_failures` accepts only exact declared stages; extra failures remain `FAIL`.
+Cases referencing legacy `target/debug/app` paths and protocol-local cases resolve through
+`scripts/run_acceptance_app.sh`. It self-builds a full-feature app in an isolated target, so
+benchmark/unit builds cannot replace the runtime binary between case runs.
 
 A run writes `NormalizedSnapshot` JSON with:
 
@@ -90,6 +101,8 @@ A run writes `NormalizedSnapshot` JSON with:
 
 - String placeholders support `${ENV_VAR}` and `{{upstream.<name>}}`.
 - `case run` supports filters: `--priority`, `--tag`, `--exclude-tag`, `--env-class`.
+- Multi-case runs execute `benchmark`-tagged cases last so CPU saturation cannot pollute
+  functional timing/soak acceptance.
 
 ## `/connections` WS soak workflows
 

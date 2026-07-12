@@ -29,6 +29,13 @@ pub struct CaseSpec {
     pub tags: Vec<String>,
     #[serde(default)]
     pub env_class: EnvClass,
+    /// Exact failure stages accepted only as explicit environment/harness limits.
+    /// Any additional failure keeps the case outcome at FAIL.
+    #[serde(default)]
+    pub expected_env_failures: Vec<ExpectedEnvFailure>,
+    /// S4 divergence IDs whose kernel-specific expectations are asserted by this case.
+    #[serde(default)]
+    pub covered_divergences: Vec<String>,
     pub bootstrap: BootstrapSpec,
     #[serde(default)]
     pub gui_sequence: Vec<GuiStep>,
@@ -63,6 +70,14 @@ pub enum EnvClass {
     #[default]
     Strict,
     EnvLimited,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct ExpectedEnvFailure {
+    #[serde(default)]
+    pub kernel: Option<KernelTarget>,
+    pub stage: String,
+    pub reason: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -565,6 +580,10 @@ pub struct AssertionSpec {
     pub key: String,
     pub op: String,
     pub expected: Value,
+    /// Limit this assertion to one kernel. Used to lock an S4 divergence without
+    /// weakening assertions for the other kernel.
+    #[serde(default)]
+    pub kernel: Option<KernelTarget>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, Default)]
@@ -605,6 +624,8 @@ pub fn load_cases(cases_dir: &Path) -> Result<Vec<CaseSpec>> {
             .with_context(|| format!("reading case file {}", path.display()))?;
         let case: CaseSpec = serde_yaml::from_str(&raw)
             .with_context(|| format!("parsing yaml {}", path.display()))?;
+        validate_case_spec(&case, cases_dir)
+            .with_context(|| format!("validating case {}", path.display()))?;
         out.push(case);
     }
     Ok(out)
@@ -620,6 +641,8 @@ pub fn load_case_by_id(cases_dir: &Path, id: &str) -> Result<CaseSpec> {
             let case: CaseSpec = serde_yaml::from_str(&raw)
                 .with_context(|| format!("parsing yaml {}", path.display()))?;
             if case.id == id {
+                validate_case_spec(&case, cases_dir)
+                    .with_context(|| format!("validating case {}", path.display()))?;
                 return Ok(case);
             }
         }
@@ -631,6 +654,56 @@ pub fn load_case_by_id(cases_dir: &Path, id: &str) -> Result<CaseSpec> {
         .into_iter()
         .find(|case| case.id == id)
         .with_context(|| format!("case '{id}' not found in {}", cases_dir.display()))
+}
+
+fn validate_case_spec(case: &CaseSpec, cases_dir: &Path) -> Result<()> {
+    if !case.expected_env_failures.is_empty() {
+        anyhow::ensure!(
+            case.env_class == EnvClass::EnvLimited,
+            "expected_env_failures requires env_class: env_limited"
+        );
+        for expected in &case.expected_env_failures {
+            anyhow::ensure!(
+                !expected.stage.trim().is_empty(),
+                "expected_env_failures stage must not be empty"
+            );
+            anyhow::ensure!(
+                !expected.reason.trim().is_empty(),
+                "expected_env_failures reason must not be empty"
+            );
+        }
+    }
+
+    if case.covered_divergences.is_empty() {
+        return Ok(());
+    }
+
+    anyhow::ensure!(
+        case.kernel_mode == KernelMode::Both,
+        "covered_divergences requires kernel_mode: both"
+    );
+    anyhow::ensure!(
+        case.assertions
+            .iter()
+            .any(|assertion| assertion.kernel.is_some()),
+        "covered_divergences requires at least one kernel-scoped assertion"
+    );
+
+    let registry_path = cases_dir
+        .parent()
+        .unwrap_or(cases_dir)
+        .join("docs/dual_kernel_golden_spec.md");
+    let registry = fs::read_to_string(&registry_path)
+        .with_context(|| format!("reading S4 registry {}", registry_path.display()))?;
+    for divergence_id in &case.covered_divergences {
+        let row_prefix = format!("| {divergence_id} |");
+        anyhow::ensure!(
+            registry.lines().any(|line| line.starts_with(&row_prefix)),
+            "covered divergence {divergence_id} is not registered in S4"
+        );
+    }
+
+    Ok(())
 }
 
 #[cfg(test)]
@@ -668,5 +741,63 @@ gui_sequence:
         assert_eq!(case.env_class, EnvClass::Strict);
         assert!(case.tags.is_empty());
         assert!(case.owner.is_none());
+    }
+
+    #[test]
+    fn repository_cases_validate_against_s4_registry() {
+        let cases_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("cases");
+        let cases = load_cases(&cases_dir).expect("repository cases must validate");
+        assert_eq!(cases.len(), 103);
+    }
+
+    #[test]
+    fn expected_env_failures_require_env_limited_case() {
+        let case: CaseSpec = serde_yaml::from_str(
+            r#"
+id: invalid-env-limit
+expected_env_failures:
+  - stage: launch_kernel
+    reason: fixture unavailable
+bootstrap: {}
+"#,
+        )
+        .unwrap();
+        let err = validate_case_spec(&case, Path::new("cases")).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("expected_env_failures requires env_class: env_limited"));
+    }
+
+    #[test]
+    fn covered_divergence_must_exist_in_s4_registry() {
+        let temp = tempfile::tempdir().unwrap();
+        let cases_dir = temp.path().join("cases");
+        let docs_dir = temp.path().join("docs");
+        fs::create_dir_all(&cases_dir).unwrap();
+        fs::create_dir_all(&docs_dir).unwrap();
+        fs::write(
+            docs_dir.join("dual_kernel_golden_spec.md"),
+            "| DIV-M-012 | COSMETIC | registered |\n",
+        )
+        .unwrap();
+        let case: CaseSpec = serde_yaml::from_str(
+            r#"
+id: invalid-divergence
+kernel_mode: both
+covered_divergences:
+  - DIV-M-999
+bootstrap: {}
+assertions:
+  - key: errors.count
+    op: eq
+    expected: 0
+    kernel: rust
+"#,
+        )
+        .unwrap();
+        let err = validate_case_spec(&case, &cases_dir).unwrap_err();
+        assert!(err
+            .to_string()
+            .contains("covered divergence DIV-M-999 is not registered in S4"));
     }
 }

@@ -14,12 +14,12 @@
 //!
 //! Protocol flow:
 //! 协议流程：
-//! 1. Client sends request: version (1) + UUID (16) + additional (1) + command (1) + address
-//! 1. 客户端发送请求：版本 (1) + UUID (16) + 附加信息 (1) + 命令 (1) + 地址
+//! 1. Client sends request: version (0) + UUID (16) + additional (1) + command (1) + address
+//! 1. 客户端发送请求：版本 (0) + UUID (16) + 附加信息 (1) + 命令 (1) + 地址
 //! 2. Server validates UUID
 //! 2. 服务端验证 UUID
-//! 3. Server sends response: version (1) + additional length (1) + [additional data]
-//! 3. 服务端发送响应：版本 (1) + 附加信息长度 (1) + [附加数据]
+//! 3. Server sends response: version (0) + additional length (1) + [additional data]
+//! 3. 服务端发送响应：版本 (0) + 附加信息长度 (1) + [附加数据]
 //! 4. Bidirectional relay
 //! 4. 双向转发
 
@@ -85,7 +85,7 @@ pub struct VlessInboundConfig {
 
 // VLESS protocol constants
 // VLESS 协议常量
-const VLESS_VERSION: u8 = 0x01;
+const VLESS_VERSION: u8 = 0x00;
 const CMD_TCP: u8 = 0x01;
 const ATYP_IPV4: u8 = 0x01;
 const ATYP_DOMAIN: u8 = 0x02;
@@ -575,39 +575,52 @@ async fn handle_conn_impl(
 async fn parse_vless_address(
     r: &mut (impl tokio::io::AsyncRead + Unpin + ?Sized),
 ) -> Result<(String, u16)> {
+    // VLESS encodes destination port before address type/address.
+    let port = r.read_u16().await?;
     let atyp = r.read_u8().await?;
 
     match atyp {
         ATYP_IPV4 => {
-            // IPv4: 4 bytes + 2 bytes port
-            // IPv4: 4 字节 + 2 字节端口
+            // IPv4: 4 bytes
+            // IPv4: 4 字节
             let mut ip_bytes = [0u8; 4];
             r.read_exact(&mut ip_bytes).await?;
             let ip = IpAddr::V4(Ipv4Addr::from(ip_bytes));
-            let port = r.read_u16().await?;
             Ok((ip.to_string(), port))
         }
         ATYP_DOMAIN => {
-            // Domain: 1 byte length + domain + 2 bytes port
-            // 域名: 1 字节长度 + 域名 + 2 字节端口
+            // Domain: 1 byte length + domain
+            // 域名: 1 字节长度 + 域名
             let domain_len = r.read_u8().await?;
             let mut domain_bytes = vec![0u8; domain_len as usize];
             r.read_exact(&mut domain_bytes).await?;
             let domain =
                 String::from_utf8(domain_bytes).map_err(|e| anyhow!("invalid domain: {}", e))?;
-            let port = r.read_u16().await?;
             Ok((domain, port))
         }
         ATYP_IPV6 => {
-            // IPv6: 16 bytes + 2 bytes port
-            // IPv6: 16 字节 + 2 字节端口
+            // IPv6: 16 bytes
+            // IPv6: 16 字节
             let mut ip_bytes = [0u8; 16];
             r.read_exact(&mut ip_bytes).await?;
             let ip = IpAddr::V6(Ipv6Addr::from(ip_bytes));
-            let port = r.read_u16().await?;
             Ok((ip.to_string(), port))
         }
         _ => Err(anyhow!("vless: unknown address type: {}", atyp)),
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn parses_standard_port_before_ipv4_address() {
+        let bytes = [0x46, 0xb5, ATYP_IPV4, 127, 0, 0, 1];
+        let mut input = &bytes[..];
+        let (host, port) = parse_vless_address(&mut input).await.unwrap();
+        assert_eq!(host, "127.0.0.1");
+        assert_eq!(port, 18_101);
     }
 }
 

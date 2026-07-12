@@ -17,9 +17,9 @@
         "strategy": "ipv4_only"
       }
     ],
-    "ttl": {
-      "min": 1
-    },
+    "ttl_default_s": 1,
+    "ttl_min_s": 1,
+    "ttl_max_s": 30,
     "final": "cache",
     "strategy": "ipv4_only"
   },

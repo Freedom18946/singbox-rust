@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-12) - MT-INTEROP-03 dual-kernel baseline cleanup DONE
+
+- **MT-INTEROP-03 accepted:** final 103-case run is 101 `PASS`, 1 `DIV-COVERED`,
+  1 `ENV-LIMITED`, 0 `FAIL`. This replaces WP14's historical 87/103 noisy baseline.
+- Four former `INTEROP_*` cases are self-managed. DNS TTL reference direction and cache bounds,
+  WS memory warm-up, shutdown drain ordering, reload readiness debounce, Go group-delay route,
+  FakeIP fixture/oracle, WireGuard compatibility fields, and isolated Rust/Go bootstrap are closed.
+- VLESS local dual-kernel dataplane is strict PASS after fixing request version/address order.
+  VMess remains explicit `ENV-LIMITED`: local Rust upstream uses a non-canonical test dialect;
+  only two declared assertion stages are accepted, while launch or any extra failure remains FAIL.
+- FakeIP cursor behavior is locked as S4 `DIV-M-012`; static S4 labels never suppress failures.
+  Evidence: `archive/mt_interop_03/acceptance.md`.
+- **Recommended next:** REALITY external research tail (official FoxIO JA4, extension-order
+  distribution, HelloChrome_Auto drift), then tier-2 camouflage. GUI desktop remains paused until
+  explicitly reopened.
+
 ## Resume (2026-07-12) - MIG-03 WP14 final acceptance DONE
 
 - **MIG-03 accepted and archived:** WP01-WP14 closed. Final D17 metrics meet every target;

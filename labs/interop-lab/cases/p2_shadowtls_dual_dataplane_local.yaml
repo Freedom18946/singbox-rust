@@ -12,20 +12,14 @@ tags:
   - detour
 bootstrap:
   rust:
-    command: cargo
+    command: ./labs/interop-lab/scripts/run_acceptance_app.sh
     args:
-      - run
-      - -p
-      - app
-      - --features
-      - adapters,clash_api
-      - --
       - -c
       - labs/interop-lab/configs/protocol_shadowtls_rust.json
       - run
       - --admin-listen
       - 127.0.0.1:19190
-    startup_timeout_ms: 240000
+    startup_timeout_ms: 600000
     ready_path: /version
     api:
       base_url: http://127.0.0.1:19191

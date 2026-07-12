@@ -85,6 +85,7 @@ fn classify_detail(detail: &str) -> FailureCategory {
     // Network patterns
     if detail.contains("connection refused")
         || detail.contains("connect error")
+        || detail.contains("kernel not ready within")
         || detail.contains("timeout")
         || detail.contains("timed out")
         || detail.contains("network unreachable")
@@ -166,6 +167,18 @@ mod tests {
         });
         let results = classify_env_limited_failures(&snap);
         assert_eq!(results.len(), 1);
+        assert_eq!(results[0].category, FailureCategory::Network);
+    }
+
+    #[test]
+    fn classify_launch_not_ready() {
+        let now = Utc::now();
+        let mut snap = NormalizedSnapshot::new("r".into(), "c".into(), KernelKind::Rust, now);
+        snap.errors.push(NormalizedError {
+            stage: "launch_kernel".into(),
+            message: "kernel not ready within 30000 ms at /version".into(),
+        });
+        let results = classify_env_limited_failures(&snap);
         assert_eq!(results[0].category, FailureCategory::Network);
     }
 

@@ -10,14 +10,14 @@ tags:
   - vless
 bootstrap:
   rust:
-    command: ./target/debug/app
+    command: ./labs/interop-lab/scripts/run_acceptance_app.sh
     args:
       - -c
       - labs/interop-lab/configs/protocol_vless_rust.json
       - run
       - --admin-listen
       - 127.0.0.1:19190
-    startup_timeout_ms: 15000
+    startup_timeout_ms: 600000
     ready_path: /version
     api:
       base_url: http://127.0.0.1:19191

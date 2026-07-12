@@ -94,7 +94,7 @@ assertions:
     op: eq_ref
     expected: traffic.dns_queries_after_first.detail.count
   - key: traffic.dns_queries_after_ttl.detail.count
-    op: ne_ref
+    op: gt_ref
     expected: traffic.dns_queries_after_second.detail.count
 oracle:
   tolerate_counter_jitter: true

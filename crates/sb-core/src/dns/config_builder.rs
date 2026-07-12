@@ -1117,10 +1117,30 @@ fn maybe_wrap_cache(
         .cache_capacity
         .map(|v| v as usize)
         .unwrap_or(options.cache_capacity);
-    let cache =
-        Arc::new(DnsCache::new(cap).with_disable_expire(dns.disable_expire.unwrap_or(false)));
+    let cache_options = answer_cache_options(dns, options);
+    let cache = Arc::new(
+        DnsCache::with_options(cap, &cache_options)
+            .with_disable_expire(dns.disable_expire.unwrap_or(false)),
+    );
 
     Arc::new(CachedResolver { inner: base, cache })
+}
+
+fn answer_cache_options(
+    dns: &sb_config::ir::DnsIR,
+    options: &DnsRuntimeOptions,
+) -> DnsRuntimeOptions {
+    let mut cache_options = options.clone();
+    if let Some(value) = dns.ttl_min_s {
+        cache_options.answer_cache_min_ttl_s = value;
+    }
+    if let Some(value) = dns.ttl_max_s {
+        cache_options.answer_cache_max_ttl_s = value;
+    }
+    if let Some(value) = dns.ttl_neg_s {
+        cache_options.answer_cache_negative_ttl_s = value;
+    }
+    cache_options
 }
 
 struct CachedResolver {
@@ -1788,6 +1808,21 @@ mod tests {
         };
         let hydrated = hydrate_dns_ir_from_options(&ir, &options);
         assert_eq!(hydrated.ttl_default_s, Some(120));
+    }
+
+    #[test]
+    fn answer_cache_uses_configured_ttl_bounds() {
+        let options = DnsRuntimeOptions::default();
+        let ir = sb_config::ir::DnsIR {
+            ttl_min_s: Some(1),
+            ttl_max_s: Some(30),
+            ttl_neg_s: Some(2),
+            ..Default::default()
+        };
+        let cache_options = answer_cache_options(&ir, &options);
+        assert_eq!(cache_options.answer_cache_min_ttl_s, 1);
+        assert_eq!(cache_options.answer_cache_max_ttl_s, 30);
+        assert_eq!(cache_options.answer_cache_negative_ttl_s, 2);
     }
 
     struct DummyResolver;

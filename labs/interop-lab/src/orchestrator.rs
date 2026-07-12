@@ -1,3 +1,4 @@
+use crate::attribution::{classify_env_limited_failures, AttributionResult, FailureCategory};
 use crate::case_spec::{
     load_case_by_id, load_cases, CaseSpec, EnvClass, KernelControlAction, KernelLaunchSpec,
     KernelMode, KernelTarget, Priority, TrafficAction,
@@ -5,7 +6,7 @@ use crate::case_spec::{
 use crate::diff_report::{build_diff_report, to_markdown as diff_to_markdown};
 use crate::go_collector::{collect_go_snapshot, save_go_snapshot_to_dir};
 use crate::gui_replay::run_gui_sequence;
-use crate::kernel::{launch_kernel, wait_until_ready, KernelSession};
+use crate::kernel::{launch_kernel, wait_until_ready, wait_until_unready, KernelSession};
 use crate::leak_detector::{detect_fd_leak, detect_memory_leak, sample_fd_count};
 use crate::snapshot::{HttpResult, KernelKind, NormalizedError, NormalizedSnapshot, TrafficResult};
 use crate::upstream::{apply_faults, run_traffic_plan, start_upstreams};
@@ -17,6 +18,7 @@ use chrono::Utc;
 use futures_util::StreamExt;
 use regex::Regex;
 use reqwest::StatusCode;
+use serde::{Deserialize, Serialize};
 use serde_json::{json, Value};
 use std::collections::{BTreeMap, HashMap};
 use std::io::ErrorKind;
@@ -38,8 +40,31 @@ pub struct RunOutput {
     pub run_dir: PathBuf,
     pub snapshot_files: Vec<PathBuf>,
     pub failures: Vec<CaseFailure>,
+    pub outcome: CaseOutcome,
+    pub env_limited_attributions: Vec<AttributionResult>,
     /// Path to the diff report markdown, if dual-kernel diff was executed.
     pub diff_report_path: Option<PathBuf>,
+}
+
+#[derive(Debug, Clone, Copy, Serialize, Deserialize, PartialEq, Eq)]
+#[serde(rename_all = "SCREAMING-KEBAB-CASE")]
+pub enum CaseOutcome {
+    Pass,
+    DivCovered,
+    EnvLimited,
+    Fail,
+}
+
+impl std::fmt::Display for CaseOutcome {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        let value = match self {
+            Self::Pass => "PASS",
+            Self::DivCovered => "DIV-COVERED",
+            Self::EnvLimited => "ENV-LIMITED",
+            Self::Fail => "FAIL",
+        };
+        f.write_str(value)
+    }
 }
 
 #[derive(Debug, Clone)]
@@ -81,7 +106,7 @@ async fn terminate_background_process(
 
 impl RunOutput {
     pub fn is_failed(&self) -> bool {
-        !self.failures.is_empty()
+        self.outcome == CaseOutcome::Fail
     }
 }
 
@@ -139,10 +164,16 @@ pub fn load_single_case(cases_dir: &Path, id: &str) -> Result<CaseSpec> {
 }
 
 pub fn apply_case_filter(cases: Vec<CaseSpec>, filter: &CaseFilter) -> Vec<CaseSpec> {
-    cases
+    let mut selected = cases
         .into_iter()
         .filter(|case| filter.matches(case))
-        .collect()
+        .collect::<Vec<_>>();
+    // Performance benchmarks saturate CPU and can transiently starve the
+    // immediately following WS timing suites. Keep functional acceptance first
+    // and run benchmark-tagged cases last; stable sort preserves ID order inside
+    // both groups.
+    selected.sort_by_key(|case| case.tags.iter().any(|tag| tag == "benchmark"));
+    selected
 }
 
 pub fn render_run_plan_summary(
@@ -221,6 +252,7 @@ pub async fn run_case(
 
     let mut snapshot_files = Vec::new();
     let mut failures = Vec::new();
+    let mut env_limited_attributions = Vec::new();
 
     for mode in modes {
         let started_at = Utc::now();
@@ -332,6 +364,9 @@ pub async fn run_case(
 
         snapshot.finished_at = Utc::now();
         failures.extend(collect_case_failures(case, &mode, &snapshot));
+        if case.env_class == EnvClass::EnvLimited {
+            env_limited_attributions.extend(classify_env_limited_failures(&snapshot));
+        }
         let snapshot_name = format!("{:?}.snapshot.json", mode).to_lowercase();
         let snapshot_path = run_dir.join(snapshot_name);
         let content = serde_json::to_vec_pretty(&snapshot)
@@ -345,12 +380,22 @@ pub async fn run_case(
 
     harness.shutdown().await;
 
+    let outcome = classify_case_outcome(case, &failures, &env_limited_attributions);
     let summary_path = run_dir.join("summary.json");
     let summary = json!({
         "case_id": case.id,
         "run_id": run_id,
         "snapshots": snapshot_files,
         "generated_at": Utc::now(),
+        "outcome": outcome,
+        "failures": failures.iter().map(|failure| json!({
+            "kernel": failure.kernel,
+            "stage": failure.stage,
+            "message": failure.message,
+        })).collect::<Vec<_>>(),
+        "covered_divergences": case.covered_divergences,
+        "expected_env_failures": case.expected_env_failures,
+        "env_limited_attributions": env_limited_attributions,
     });
     let summary_json =
         serde_json::to_vec_pretty(&summary).with_context(|| "serializing run summary")?;
@@ -420,8 +465,54 @@ pub async fn run_case(
         run_dir,
         snapshot_files,
         failures,
+        outcome,
+        env_limited_attributions,
         diff_report_path,
     })
+}
+
+fn classify_case_outcome(
+    case: &CaseSpec,
+    failures: &[CaseFailure],
+    env_attributions: &[AttributionResult],
+) -> CaseOutcome {
+    if failures.is_empty() {
+        return if case.covered_divergences.is_empty() {
+            CaseOutcome::Pass
+        } else {
+            CaseOutcome::DivCovered
+        };
+    }
+
+    let all_explicitly_expected = !case.expected_env_failures.is_empty()
+        && failures.iter().all(|failure| {
+            case.expected_env_failures.iter().any(|expected| {
+                expected.stage == failure.stage
+                    && expected.kernel.as_ref().is_none_or(|kernel| {
+                        matches!(
+                            (kernel, &failure.kernel),
+                            (KernelTarget::Rust, KernelKind::Rust)
+                                | (KernelTarget::Go, KernelKind::Go)
+                        )
+                    })
+            })
+        });
+    let all_attributed = !env_attributions.is_empty()
+        && env_attributions
+            .iter()
+            .all(|item| item.category != FailureCategory::Unknown);
+
+    let environment_limit_accepted = if case.expected_env_failures.is_empty() {
+        all_attributed
+    } else {
+        all_explicitly_expected
+    };
+
+    if case.env_class == EnvClass::EnvLimited && environment_limit_accepted {
+        CaseOutcome::EnvLimited
+    } else {
+        CaseOutcome::Fail
+    }
 }
 
 async fn sample_kernel_fd_count(session: &KernelSession, snapshot: &mut NormalizedSnapshot) {
@@ -1383,8 +1474,8 @@ async fn execute_tcp_drain_during_shutdown_action(
     wait_ready_ms: u64,
     timeout_ms: u64,
     mode: &KernelKind,
-    launch_spec: &KernelLaunchSpec,
-    kernel_log_dir: &Path,
+    _launch_spec: &KernelLaunchSpec,
+    _kernel_log_dir: &Path,
     session: &mut KernelSession,
 ) -> TrafficResult {
     use crate::upstream::socks5_connect;
@@ -1502,27 +1593,31 @@ async fn execute_tcp_drain_during_shutdown_action(
         }
     }
 
-    // Step 3: Trigger kernel shutdown (SIGTERM + wait for process exit)
-    let shutdown_start = Instant::now();
-    let kernel_result = perform_kernel_control(
-        action,
-        wait_ready_ms,
-        mode,
-        launch_spec,
-        kernel_log_dir,
-        session,
-    )
-    .await;
-    let shutdown_elapsed_ms = shutdown_start.elapsed().as_millis() as u64;
-
-    // Step 4: After shutdown, try to send more data through the connection
-    // This tests whether the connection was still alive during shutdown.
-    // The kernel may have already completed shutdown by now; the key question
-    // is whether data sent during shutdown was properly relayed.
+    // Step 3: Queue traffic before SIGTERM. Reading its echo while shutdown is
+    // active proves in-flight traffic drains; waiting for process exit first
+    // would only test a dead socket and made both kernels false-positive.
     let drain_payload = b"drain-verify";
+    if let Err(err) = stream.write_all(drain_payload).await {
+        return TrafficResult {
+            name: name.to_string(),
+            success: false,
+            detail: json!({
+                "action": "tcp_drain_during_shutdown",
+                "error": format!("drain write before shutdown: {err}"),
+            }),
+        };
+    }
+
+    let shutdown_start = Instant::now();
+    let signaled = if *action == KernelControlAction::Shutdown {
+        signal_kernel_process(session).await
+    } else {
+        Err(anyhow!("tcp drain requires shutdown action"))
+    };
+
+    // Step 4: Read queued echo while process is draining, then reap process.
     let drain_echo_ok = matches!(
         timeout(Duration::from_millis(hold_ms.max(500)), async {
-            stream.write_all(drain_payload).await?;
             let mut buf = vec![0u8; drain_payload.len()];
             stream.read_exact(&mut buf).await?;
             Ok::<bool, std::io::Error>(buf == drain_payload)
@@ -1530,6 +1625,13 @@ async fn execute_tcp_drain_during_shutdown_action(
         .await,
         Ok(Ok(true))
     );
+    let kernel_result = match signaled {
+        Ok((child, pid, signaled_at)) => {
+            finish_signaled_kernel_shutdown(session, child, pid, signaled_at, wait_ready_ms).await
+        }
+        Err(err) => Err(err),
+    };
+    let shutdown_elapsed_ms = shutdown_start.elapsed().as_millis() as u64;
 
     match kernel_result {
         Ok(kernel_detail) => {
@@ -1770,6 +1872,16 @@ async fn perform_kernel_control(
         }
         KernelControlAction::Reload => {
             let reload_detail = trigger_reload(session).await;
+            let down_observed = wait_until_unready(
+                &session.api,
+                &launch_spec.ready_path,
+                wait_ready_ms.clamp(100, 3_000),
+            )
+            .await
+            .is_ok();
+            // Some Go reloads briefly drop API readiness; others reload in
+            // place. Waiting through this observation window debounces the old
+            // ready response either way, then readiness is verified again.
             match wait_until_ready(
                 &session.api,
                 &launch_spec.ready_path,
@@ -1780,6 +1892,7 @@ async fn perform_kernel_control(
                 Ok(()) => Ok(json!({
                     "wait_ready_ms": wait_ready_ms,
                     "reload_detail": reload_detail,
+                    "down_observed": down_observed,
                 })),
                 Err(err) => {
                     let info =
@@ -1813,6 +1926,13 @@ fn parse_ws_payload_binary(raw: &[u8], path: &str) -> Option<Value> {
 }
 
 async fn shutdown_kernel_process(session: &mut KernelSession, wait_exit_ms: u64) -> Result<Value> {
+    let (child, pid, signaled_at) = signal_kernel_process(session).await?;
+    finish_signaled_kernel_shutdown(session, child, pid, signaled_at, wait_exit_ms).await
+}
+
+async fn signal_kernel_process(
+    session: &mut KernelSession,
+) -> Result<(Child, u32, tokio::time::Instant)> {
     let Some(mut child) = session.child.take() else {
         return Err(anyhow!(
             "kernel_control shutdown requires a managed child process"
@@ -1836,6 +1956,16 @@ async fn shutdown_kernel_process(session: &mut KernelSession, wait_exit_ms: u64)
         ));
     }
 
+    Ok((child, pid, signaled_at))
+}
+
+async fn finish_signaled_kernel_shutdown(
+    session: &mut KernelSession,
+    mut child: Child,
+    pid: u32,
+    signaled_at: tokio::time::Instant,
+    wait_exit_ms: u64,
+) -> Result<Value> {
     let wait_timeout_ms = wait_exit_ms.max(100);
     let exit_status = match timeout(Duration::from_millis(wait_timeout_ms), child.wait()).await {
         Ok(Ok(status)) => status,
@@ -1979,6 +2109,9 @@ async fn trigger_reload(session: &KernelSession) -> Option<String> {
 
 fn evaluate_assertions(case: &CaseSpec, snapshot: &mut NormalizedSnapshot) {
     for assertion in &case.assertions {
+        if !assertion_applies_to_kernel(assertion.kernel.as_ref(), &snapshot.kernel) {
+            continue;
+        }
         let actual = resolve_assertion_value(snapshot, &assertion.key);
         let expected = resolve_expected_value(snapshot, assertion.op.as_str(), &assertion.expected);
         let passed =
@@ -2001,6 +2134,14 @@ fn evaluate_assertions(case: &CaseSpec, snapshot: &mut NormalizedSnapshot) {
                 ),
             });
         }
+    }
+}
+
+fn assertion_applies_to_kernel(target: Option<&KernelTarget>, mode: &KernelKind) -> bool {
+    match target {
+        None => true,
+        Some(KernelTarget::Rust) => *mode == KernelKind::Rust,
+        Some(KernelTarget::Go) => *mode == KernelKind::Go,
     }
 }
 
@@ -2040,7 +2181,7 @@ fn resolve_expected_value(
     expected: &Value,
 ) -> Option<Value> {
     match op {
-        "eq_ref" | "ne_ref" => expected
+        "eq_ref" | "ne_ref" | "gt_ref" | "gte_ref" => expected
             .as_str()
             .and_then(|path| resolve_assertion_value(snapshot, path)),
         _ => Some(expected.clone()),
@@ -2053,6 +2194,8 @@ fn evaluate_assertion_op(op: &str, actual: Option<&Value>, expected: Option<&Val
         ("ne", Some(value), Some(expected)) => value != expected,
         ("eq_ref", Some(value), Some(expected)) => value == expected,
         ("ne_ref", Some(value), Some(expected)) => value != expected,
+        ("gt_ref", Some(value), Some(expected)) => compare_numeric(value, expected, |a, b| a > b),
+        ("gte_ref", Some(value), Some(expected)) => compare_numeric(value, expected, |a, b| a >= b),
         ("exists", Some(_), _) => true,
         ("exists", None, _) => false,
         ("not_exists", Some(_), _) => false,
@@ -2554,5 +2697,96 @@ mod tests {
             Some(&json!("abc-123")),
             Some(&json!("^abc-\\d+$"))
         ));
+        assert!(evaluate_assertion_op(
+            "gt_ref",
+            Some(&json!(3)),
+            Some(&json!(2))
+        ));
+    }
+
+    #[test]
+    fn explicit_env_limit_matches_only_declared_stage_and_kernel() {
+        let case: CaseSpec = serde_yaml::from_str(
+            r#"
+id: env
+kernel_mode: both
+env_class: env_limited
+expected_env_failures:
+  - kernel: go
+    stage: assertion:traffic.probe.success
+    reason: canonical peer unavailable
+bootstrap: {}
+"#,
+        )
+        .unwrap();
+        let expected = CaseFailure {
+            kernel: KernelKind::Go,
+            stage: "assertion:traffic.probe.success".into(),
+            message: "failed".into(),
+        };
+        assert_eq!(
+            classify_case_outcome(&case, &[expected], &[]),
+            CaseOutcome::EnvLimited
+        );
+
+        let unexpected = CaseFailure {
+            kernel: KernelKind::Rust,
+            stage: "assertion:traffic.probe.success".into(),
+            message: "failed".into(),
+        };
+        assert_eq!(
+            classify_case_outcome(
+                &case,
+                &[unexpected],
+                &[AttributionResult {
+                    action_name: "launch_kernel".into(),
+                    category: FailureCategory::Network,
+                    evidence: "connection refused".into(),
+                }],
+            ),
+            CaseOutcome::Fail
+        );
+    }
+
+    #[test]
+    fn covered_divergence_never_suppresses_failure() {
+        let case: CaseSpec = serde_yaml::from_str(
+            r#"
+id: divergence
+kernel_mode: both
+covered_divergences:
+  - DIV-M-012
+bootstrap: {}
+"#,
+        )
+        .unwrap();
+        let failure = CaseFailure {
+            kernel: KernelKind::Rust,
+            stage: "assertion:traffic.probe.success".into(),
+            message: "failed".into(),
+        };
+        assert_eq!(
+            classify_case_outcome(&case, &[failure], &[]),
+            CaseOutcome::Fail
+        );
+    }
+
+    #[test]
+    fn case_filter_orders_benchmarks_after_functional_cases() {
+        fn case(id: &str, tags: &[&str]) -> CaseSpec {
+            let tags = tags
+                .iter()
+                .map(|tag| format!("  - {tag}"))
+                .collect::<Vec<_>>()
+                .join("\n");
+            serde_yaml::from_str(&format!("id: {id}\nbootstrap: {{}}\ntags:\n{tags}\n")).unwrap()
+        }
+
+        let ordered = apply_case_filter(
+            vec![case("bench", &["benchmark"]), case("functional", &["soak"])],
+            &CaseFilter::default(),
+        );
+        assert_eq!(ordered[0].id, "functional");
+        assert_eq!(ordered[1].id, "bench");
     }
 }

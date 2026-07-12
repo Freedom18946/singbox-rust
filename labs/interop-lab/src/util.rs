@@ -34,11 +34,20 @@ pub fn resolve_with_env(input: &str) -> String {
 
 pub fn resolve_command_with_fallback(input: &str) -> String {
     let resolved = resolve_with_env(input);
+    if input == "${INTEROP_GO_BINARY}" {
+        if !resolved.is_empty() {
+            return resolved;
+        }
+        return find_go_runtime_fallback().unwrap_or(resolved);
+    }
     if !looks_like_legacy_debug_app(&resolved) {
         return resolved;
     }
     if let Some(override_cmd) = find_rust_runtime_env_override() {
         return override_cmd;
+    }
+    if let Some(managed_cmd) = find_managed_acceptance_app() {
+        return managed_cmd;
     }
     if Path::new(&resolved).exists() {
         return resolved;
@@ -46,11 +55,34 @@ pub fn resolve_command_with_fallback(input: &str) -> String {
     find_rust_runtime_fallback().unwrap_or(resolved)
 }
 
+fn find_go_runtime_fallback() -> Option<String> {
+    for candidate in [
+        "go_fork_source/sing-box-1.13.13/sing-box",
+        "./go_fork_source/sing-box-1.13.13/sing-box",
+    ] {
+        if Path::new(candidate).is_file() {
+            return Some(candidate.to_string());
+        }
+    }
+    None
+}
+
 fn looks_like_legacy_debug_app(path: &str) -> bool {
     let normalized = path.replace('\\', "/");
     normalized == "./target/debug/app"
         || normalized == "target/debug/app"
         || normalized.ends_with("/target/debug/app")
+}
+
+fn find_managed_acceptance_app() -> Option<String> {
+    let candidates = [
+        PathBuf::from("./labs/interop-lab/scripts/run_acceptance_app.sh"),
+        Path::new(env!("CARGO_MANIFEST_DIR")).join("scripts/run_acceptance_app.sh"),
+    ];
+    candidates
+        .into_iter()
+        .find(|candidate| candidate.is_file())
+        .map(|candidate| candidate.display().to_string())
 }
 
 fn find_rust_runtime_fallback() -> Option<String> {
@@ -134,4 +166,30 @@ pub fn percentile_us(samples: &[u64], percentile: usize) -> u64 {
     sorted.sort_unstable();
     let rank = ((sorted.len() * percentile).saturating_add(99) / 100).saturating_sub(1);
     sorted[rank.min(sorted.len() - 1)]
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn go_binary_placeholder_uses_repo_bootstrap() {
+        if let Ok(explicit) = env::var("INTEROP_GO_BINARY") {
+            assert_eq!(
+                resolve_command_with_fallback("${INTEROP_GO_BINARY}"),
+                explicit
+            );
+        } else if Path::new("go_fork_source/sing-box-1.13.13/sing-box").is_file() {
+            assert_eq!(
+                resolve_command_with_fallback("${INTEROP_GO_BINARY}"),
+                "go_fork_source/sing-box-1.13.13/sing-box"
+            );
+        }
+    }
+
+    #[test]
+    fn legacy_debug_app_uses_isolated_acceptance_launcher() {
+        let launcher = find_managed_acceptance_app().expect("managed launcher");
+        assert!(launcher.ends_with("labs/interop-lab/scripts/run_acceptance_app.sh"));
+    }
 }

@@ -38,11 +38,15 @@ const DEFAULT_FD_SLOPE_THRESHOLD: f64 = 1.0;
 /// exceeds the threshold the function returns `Some(LeakSignal)`.
 pub fn detect_memory_leak(series: &[MemoryPoint], threshold: Option<f64>) -> Option<LeakSignal> {
     let threshold = threshold.unwrap_or(DEFAULT_MEMORY_SLOPE_THRESHOLD);
-    if series.len() < 3 {
+    // Clash-compatible /memory emits a synthetic zero as its first sample. Treat
+    // leading zeroes as warm-up markers; including one creates a false positive
+    // even when every real sample is flat.
+    let steady_series = &series[series.iter().take_while(|point| point.inuse == 0).count()..];
+    if steady_series.len() < 3 {
         return None;
     }
 
-    let values: Vec<f64> = series.iter().map(|p| p.inuse as f64).collect();
+    let values: Vec<f64> = steady_series.iter().map(|p| p.inuse as f64).collect();
     let slope = linear_regression_slope(&values);
 
     if slope > threshold {
@@ -158,6 +162,33 @@ mod tests {
         let signal = detect_memory_leak(&series, None);
         assert!(signal.is_some());
         assert_eq!(signal.unwrap().kind, LeakKind::Memory);
+    }
+
+    #[test]
+    fn leading_zero_warmup_is_not_a_leak() {
+        let series = vec![
+            MemoryPoint {
+                inuse: 0,
+                oslimit: 0,
+            },
+            MemoryPoint {
+                inuse: 32_178_176,
+                oslimit: 0,
+            },
+            MemoryPoint {
+                inuse: 32_178_176,
+                oslimit: 0,
+            },
+            MemoryPoint {
+                inuse: 32_178_176,
+                oslimit: 0,
+            },
+            MemoryPoint {
+                inuse: 32_178_176,
+                oslimit: 0,
+            },
+        ];
+        assert!(detect_memory_leak(&series, None).is_none());
     }
 
     #[test]

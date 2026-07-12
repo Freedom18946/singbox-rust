@@ -422,6 +422,7 @@ gate).
 | DIV-M-009 | COSMETIC | `/proxies/{name}/delay` exact millisecond values are timing-sensitive across kernels even when status is consistent. | BHV-CP-005 | Path-specific `ignore_http_paths` until numeric tolerance exists |
 | DIV-M-010 | COSMETIC | `/dns/query` on non-resolvable name: Rust propagates the internal resolver's lookup error as HTTP 500; Go's internal DNS router synthesizes a fake-IP-shaped answer (`198.18.x.x`, `"Server":"internal"`) and returns 200. Distinct axis from DIV-M-005 (which covers body shape of successful answers). Design divergence, not a parity gap — Rust should not adopt Go's fake-answer path. Evidence: `agents-only/archive/MT-GUI/mt_gui_02_evidence/control_plane.txt` CP-13, `extra_shape_probe.txt`. Classified by MT-GUI-03 (2026-04-12). | BHV-CP-021 | Already covered by `ignore_http_paths: ["/dns/query*"]` (inherited from DIV-M-005); dual-kernel cases that probe non-resolvable names should assert `status in {200, 500}` |
 | DIV-M-011 | COSMETIC | `/connections` top-level `downloadTotal`/`uploadTotal`: Rust scopes byte counters per-active-connection only and does not retain accumulated totals after connections close; Go accumulates across the process lifetime. Per-connection live counters (`connections[].upload`/`.download`) match on both kernels (verified by `p1_gui_connections_tracking`). Only the top-level aggregate diverges once the active list is empty. Distinct axis from DIV-M-008 (which covers the `memory` field). GUI bandwidth chart (WS `/traffic`) is unaffected; only the connection panel's "total transferred" stat reads 0 on Rust after closes. Evidence: `agents-only/archive/MT-GUI/mt_gui_01_acceptance.md §5`, `agents-only/archive/MT-GUI/mt_gui_02_evidence/data_plane.txt` DP-16. Classified by MT-GUI-03 (2026-04-12). | BHV-CP-006 | Already covered by `ignore_http_paths: ["/connections"]` (inherited from DIV-M-008); dual-kernel cases should assert per-connection fields on live connections, not top-level aggregates after close |
+| DIV-M-012 | COSMETIC | FakeIP flush clears persisted/in-memory mappings on both kernels. Go `Store.Reset()` delegates only to storage and keeps live allocation cursors; Rust reset also rewinds cursors. A new domain therefore gets the next Go address but the initial Rust address. | BHV-DP-017 | `p1_fakeip_cache_flush_contract` uses kernel-scoped assertions and declares `covered_divergences: [DIV-M-001, DIV-M-012]` |
 
 ---
 
@@ -498,7 +499,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 25 | `p1_clash_api_auth_enforcement` | both | E2 | BHV-CP-012…017 | Promoted on 2026-03-16 with Go config at port 18907/9090; strict auth coverage (no-auth→401, correct→200, wrong→401) |
 | 26 | `p1_gui_group_delay_replay` | both | E2 | BHV-CP-005 (group variant) | Promoted on 2026-03-16 reusing `l18_gui_go.json`; `ignore_http_paths` for timing-sensitive group delay path (DIV-M-009 pattern) |
 | 27 | `p2_vless_dual_dataplane_local` | both | E3 | BHV-DP-001 (VLESS variant) | New on 2026-03-16: VlessInbound upstream kind + Rust/Go configs (port 12083); TCP round-trip with UUID auth (ok/bad). No UDP (inbound TCP-only). |
-| 28 | `p2_vmess_dual_dataplane_local` | both | E3 | BHV-DP-001 (VMess variant) | New on 2026-03-16: VmessInbound upstream kind + Rust/Go configs (port 12084); TCP round-trip with UUID auth + aes-128-gcm encryption. No UDP (inbound TCP-only). |
+| 28 | `p2_vmess_dual_dataplane_local` | both | E3 | — (ENV-LIMITED) | MT-INTEROP-03 reclassified the local Rust upstream as a non-canonical test dialect rejected by production clients. Kernel launch remains strict; only exact declared traffic assertion stages are environment-limited. |
 
 ### T4: Long-term (+4 cases) — Partially Delivered
 
@@ -507,7 +508,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 1 | `p2_trojan_dual_dataplane_local` | E4 | BHV-DP-001 (Trojan variant) | ✅ pre-existing both |
 | 2 | `p2_shadowsocks_dual_dataplane_local` | E4 | BHV-DP-001 (SS variant) | ✅ pre-existing both |
 | 3 | `p2_vless_dual_dataplane_local` | E3 | BHV-DP-001 (VLESS variant) | ✅ delivered 2026-03-16 |
-| 4 | `p2_vmess_dual_dataplane_local` | E3 | BHV-DP-001 (VMess variant) | ✅ delivered 2026-03-16 |
+| 4 | `p2_vmess_dual_dataplane_local` | E3 | — | ENV-LIMITED: canonical local VMess peer still required |
 | 5 | `p2_bench_socks5_throughput` | E3 | coverage-neutral perf stress (BHV-PF-001 now covered by `p1_rust_core_http_via_socks`) | pending |
 
 ### Non-Promotable Cases

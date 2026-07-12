@@ -65,9 +65,8 @@ pub async fn run_gui_sequence(
                     Ok(response) => {
                         let status = response.status().as_u16();
                         let bytes = response.bytes().await.unwrap_or_default();
-                        let parsed = match serde_json::from_slice::<Value>(&bytes) {
-                            Ok(value) => Some(value),
-                            Err(_) if bytes.is_empty() => None,
+                        let parsed = match decode_http_json(status, &bytes) {
+                            Ok(value) => value,
                             Err(err) => {
                                 snapshot.errors.push(NormalizedError {
                                     stage: format!("http:{name}:parse"),
@@ -221,6 +220,17 @@ pub async fn run_gui_sequence(
     Ok(())
 }
 
+fn decode_http_json(status: u16, bytes: &[u8]) -> serde_json::Result<Option<Value>> {
+    if bytes.is_empty() {
+        return Ok(None);
+    }
+    match serde_json::from_slice(bytes) {
+        Ok(value) => Ok(Some(value)),
+        Err(_) if status >= 400 => Ok(None),
+        Err(err) => Err(err),
+    }
+}
+
 async fn run_ws_parallel(
     name: &str,
     streams: &[WsStreamSpec],
@@ -354,5 +364,28 @@ fn ingest_special_series(path: &str, frame: &Value, snapshot: &mut NormalizedSna
             down,
             extra: Default::default(),
         });
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn non_json_error_body_is_not_a_replay_error() {
+        assert_eq!(decode_http_json(404, b"404 page not found").unwrap(), None);
+    }
+
+    #[test]
+    fn non_json_success_body_remains_a_replay_error() {
+        assert!(decode_http_json(200, b"not-json").is_err());
+    }
+
+    #[test]
+    fn json_error_body_is_preserved() {
+        assert_eq!(
+            decode_http_json(401, br#"{"error":"unauthorized"}"#).unwrap(),
+            Some(serde_json::json!({"error": "unauthorized"}))
+        );
     }
 }

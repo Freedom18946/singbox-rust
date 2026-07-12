@@ -50,6 +50,23 @@ fn allowed_outbound_keys() -> HashSet<String> {
             "default",
         ],
     );
+    // Deprecated WireGuard outbounds remain accepted so callers can migrate
+    // them to endpoint form. These compatibility keys are consumed below but
+    // are omitted when serializing `OutboundIR::default()`.
+    insert_keys(
+        &mut set,
+        &[
+            "private_key",
+            "peer_public_key",
+            "pre_shared_key",
+            "local_address",
+            "allowed_ips",
+            "peers",
+            "persistent_keepalive_interval",
+            "mtu",
+            "reserved",
+        ],
+    );
     set
 }
 
@@ -1457,6 +1474,25 @@ mod tests {
             "valid direct outbound should produce no issues: {:?}",
             issues
         );
+    }
+
+    #[test]
+    fn deprecated_wireguard_compatibility_fields_are_known() {
+        let doc = serde_json::json!({
+            "outbounds": [{
+                "type": "wireguard",
+                "name": "wg",
+                "server": "198.51.100.1",
+                "port": 51820,
+                "private_key": "private",
+                "peer_public_key": "public",
+                "local_address": ["10.0.0.2/32"],
+                "allowed_ips": ["0.0.0.0/0"]
+            }]
+        });
+        let mut issues = Vec::new();
+        validate_outbounds(&doc, false, &mut issues);
+        assert!(issues.is_empty(), "compatibility fields: {issues:?}");
     }
 
     #[test]

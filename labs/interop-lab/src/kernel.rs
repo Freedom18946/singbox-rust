@@ -205,3 +205,39 @@ pub async fn wait_until_ready(api: &ApiAccess, ready_path: &str, timeout_ms: u64
         normalized_path
     ))
 }
+
+/// Wait until readiness endpoint stops answering. Reload needs this edge before
+/// waiting for readiness again; otherwise it can observe old process as ready
+/// before SIGHUP teardown starts.
+pub async fn wait_until_unready(api: &ApiAccess, ready_path: &str, timeout_ms: u64) -> Result<()> {
+    let deadline = Instant::now() + Duration::from_millis(timeout_ms.max(100));
+    let client = reqwest::Client::builder()
+        .timeout(Duration::from_millis(500))
+        .build()
+        .with_context(|| "building readiness http client")?;
+    let normalized_path = if ready_path.starts_with('/') {
+        ready_path.to_string()
+    } else {
+        format!("/{ready_path}")
+    };
+
+    while Instant::now() < deadline {
+        let url = format!("{}{}", api.base_url.trim_end_matches('/'), normalized_path);
+        let mut request = client.get(url);
+        if let Some(secret) = &api.secret {
+            request = request.bearer_auth(secret);
+        }
+        match request.send().await {
+            Ok(response)
+                if response.status().is_success()
+                    || response.status() == StatusCode::NO_CONTENT
+                    || response.status() == StatusCode::UNAUTHORIZED => {}
+            Ok(_) | Err(_) => return Ok(()),
+        }
+        tokio::time::sleep(Duration::from_millis(50)).await;
+    }
+
+    Err(anyhow!(
+        "kernel stayed ready for {timeout_ms} ms at {normalized_path}"
+    ))
+}
