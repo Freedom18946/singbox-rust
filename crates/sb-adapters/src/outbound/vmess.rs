@@ -443,13 +443,10 @@ impl VmessConnector {
     /// Validate configuration
     /// 验证配置
     fn validate_config(&self) -> Result<()> {
-        if self.config.auth.uuid.is_nil() {
-            return Err(AdapterError::InvalidConfig("VMess UUID cannot be nil"));
-        }
-
-        // alter_id is u16, so it's always <= 65535
-        // Validation passes automatically
-
+        // Go-equivalence: sing-vmess's `vmess.NewClient` accepts any well-formed UUID including
+        // `uuid.Nil` (all-zeros) — the UUID only derives the auth key, and a nil UUID is rejected
+        // by the server, not client-side. Fast-failing nil here would diverge from Go.
+        // alter_id is u16, so it's always <= 65535 — validation passes automatically.
         Ok(())
     }
 }

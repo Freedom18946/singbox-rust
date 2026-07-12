@@ -22,9 +22,10 @@
   (`start`/`dial`), added Go-equivalence comments; inverted `test_vless_connector_start_with_nil_uuid`.
   Now nil uuid dials, reaches the VLESS data stage, and the server rejects it (early eof).
 - **Verified**: tier-1 gate `local_deterministic_gate: PASS` (positive 20/20, `negative_all_pass:true`,
-  bad_uuid now `vless_dial ok / vless_probe_io fail`); `vless_integration` 17-pass. **Parallel note**:
-  VMess has the same nil-uuid guard (`vmess.rs:446`) — not exercised by this gate, left for a
-  separate Go-checked decision.
+  bad_uuid now `vless_dial ok / vless_probe_io fail`); `vless_integration` 17-pass. **VMess aligned
+  too**: Go `sing-vmess.NewClient` has the identical `uuid.FromString`/nil-accepting pattern, so the
+  matching guard in `vmess.rs:validate_config` was removed the same way (`vmess_unit` 11-pass) — the
+  UUID only derives the auth key and a nil UUID is rejected by the server, not client-side.
 
 ## Resume (2026-07-12) - REALITY official-JA4 FoxIO cross-check CLOSED (algorithm level)
 
