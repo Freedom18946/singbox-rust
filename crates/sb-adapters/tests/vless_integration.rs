@@ -168,7 +168,8 @@ fn test_vless_connector_reports_transport_metadata() {
 
 #[tokio::test]
 async fn test_vless_connector_start_with_nil_uuid() {
-    // Connector with nil UUID should fail start
+    // Go-equivalence: sing-box's `vless.NewClient` accepts a nil (all-zeros) UUID and lets the
+    // server authenticate it at the VLESS data stage. Rust must not fail-fast here.
     let config = VlessConfig {
         uuid: Uuid::nil(),
         ..VlessConfig::default()
@@ -176,7 +177,7 @@ async fn test_vless_connector_start_with_nil_uuid() {
     let connector = VlessConnector::new(config);
 
     let result = connector.start().await;
-    assert!(result.is_err(), "Start with nil UUID should fail");
+    assert!(result.is_ok(), "Start with nil UUID must succeed (Go-equivalent)");
 }
 
 #[tokio::test]

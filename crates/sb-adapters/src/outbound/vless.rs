@@ -173,9 +173,10 @@ impl VlessConnector {
     }
 
     pub async fn start(&self) -> Result<()> {
-        if self.config.uuid.is_nil() {
-            return Err(AdapterError::InvalidConfig("vless UUID must not be nil"));
-        }
+        // Go-equivalence: sing-box's `vless.NewClient` never rejects a nil (all-zeros) UUID —
+        // any well-formed UUID (including `uuid.Nil`) is used as-is and authenticated by the
+        // server at the VLESS data stage. Rejecting nil here would fail-fast where Go proceeds,
+        // diverging from the reference kernel; leave authentication to the server.
         Ok(())
     }
 
@@ -440,9 +441,8 @@ impl VlessConnector {
         let target = &session.target;
         tracing::debug!("VLESS dialing target: {:?}", target);
 
-        if self.config.uuid.is_nil() {
-            return Err(AdapterError::InvalidConfig("VLESS UUID cannot be nil"));
-        }
+        // Go-equivalence (see `start`): a nil UUID is not a client-side error — it is sent in
+        // the VLESS request header and rejected by the server if unknown. Do not fail-fast here.
 
         // Create connection to VLESS server
         #[cfg(not(any(feature = "tls_reality", feature = "transport_ech")))]

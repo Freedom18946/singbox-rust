@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-12) - tier-1 REALITY gate RED→GREEN: VLESS nil-uuid Go-alignment
+
+- **Surfaced while building JA4 bins**: `make verify-reality-local` was FAILING at HEAD `ec97f112`
+  (`negative_all_pass:false`) — the `bad_uuid` negative control. Positive 20/20 always passed.
+- **Root cause = real Rust/Go divergence** (not a fixture flaw): the fixture's `bad_uuid` is the
+  nil/all-zeros UUID; Rust VLESS rejected nil at config/dial (`vless UUID must not be nil` /
+  `VLESS UUID cannot be nil`), but Go `vless.NewClient` accepts any well-formed UUID incl.
+  `uuid.Nil` and lets the server authenticate at the data stage. Rust fail-fast diverged from Go.
+- **Fix = align Rust to Go**: removed both nil-uuid guards in `crates/sb-adapters/src/outbound/vless.rs`
+  (`start`/`dial`), added Go-equivalence comments; inverted `test_vless_connector_start_with_nil_uuid`.
+  Now nil uuid dials, reaches the VLESS data stage, and the server rejects it (early eof).
+- **Verified**: tier-1 gate `local_deterministic_gate: PASS` (positive 20/20, `negative_all_pass:true`,
+  bad_uuid now `vless_dial ok / vless_probe_io fail`); `vless_integration` 17-pass. **Parallel note**:
+  VMess has the same nil-uuid guard (`vmess.rs:446`) — not exercised by this gate, left for a
+  separate Go-checked decision.
+
 ## Resume (2026-07-12) - REALITY official-JA4 FoxIO cross-check CLOSED (algorithm level)
 
 - **official-JA4 tail closed at the algorithm level.** The harness from-spec JA4 algorithm
