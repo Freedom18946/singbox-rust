@@ -12,6 +12,8 @@
 1. agents-only/active_context.md          # 当前状态唯一权威（必读）
 2. agents-only/workpackage_latest.md       # 阶段地图 / 全局位置
 3. CLAUDE.md  +  AGENTS.md                 # 稳定约定 / 硬规则 / 单一真相源
+4. ${CODEX_HOME:-$HOME/.codex}/skills/singbox-docker-lab/SKILL.md
+                                             # 本机 Docker 诊断/构建技能（必读）
 ```
 
 > REALITY 已封箱：历史长报告/intake 在 `archive/mt_real_02/`，**不在启动必读路径**；
@@ -59,6 +61,8 @@ agents-only/reference/SCRIPTS-MAP.md       # scripts/ 与 06-scripts/ 全景
 4. **记录经验**：学到模式/踩到坑 → 更新 `agents-only/memory/`（注意：是 `memory/`，不是 `07-memory/`）。
 5. **关闭即归档**：工作线关闭后产物 `git mv` 进 `archive/{track}/`，不留顶层、不在根目录建工作目录。
 6. **查阅术语**：不确定术语查 `reference/GLOSSARY.md`；操作规则参考 `archive/README.md`（C-tier）。
+7. **Docker 入口**：任何 Docker Desktop / image / container / volume / cache / Linux 容器任务，
+   必须遵循 `singbox-docker-lab`；技能缺失或不可读时先报告。
 
 ---
 

@@ -10,6 +10,9 @@ set -e
 AGENTS_DIR="$(cd "$(dirname "$0")/.." && pwd)"
 ACTIVE_CONTEXT="$AGENTS_DIR/active_context.md"
 WORKPACKAGE="$AGENTS_DIR/workpackage_latest.md"
+INIT_CHECKLIST="$AGENTS_DIR/init.md"
+ROOT_AGENTS="$AGENTS_DIR/../AGENTS.md"
+DOCKER_SKILL_POINTER="singbox-docker-lab/SKILL.md"
 
 # 颜色输出
 RED='\033[0;31m'
@@ -39,6 +42,11 @@ else
     echo -e "${GREEN}✓ workpackage_latest.md 存在${NC}"
 fi
 
+if [[ ! -f "$INIT_CHECKLIST" || ! -f "$ROOT_AGENTS" ]]; then
+    echo -e "${RED}❌ 启动入口缺失: init.md 或根 AGENTS.md${NC}"
+    ERRORS=$((ERRORS + 1))
+fi
+
 # 如果基础文件不存在，提前退出
 if [[ $ERRORS -gt 0 ]]; then
     echo -e "\n${RED}❌ 基础文件缺失，无法继续验证${NC}"
@@ -54,6 +62,16 @@ if [[ ! -s "$ACTIVE_CONTEXT" ]]; then
 else
     LINES=$(wc -l < "$ACTIVE_CONTEXT")
     echo -e "${GREEN}✓ active_context.md 有内容 ($LINES 行)${NC}"
+fi
+
+echo -e "\n检查 Docker skill 启动指针..."
+if grep -Fq "$DOCKER_SKILL_POINTER" "$ROOT_AGENTS" \
+    && grep -Fq "$DOCKER_SKILL_POINTER" "$INIT_CHECKLIST"; then
+    echo -e "${GREEN}✓ Docker skill 已接入 AGENTS.md + init.md 必读路径${NC}"
+else
+    echo -e "${RED}❌ Docker skill 启动指针缺失${NC}"
+    echo -e "   期望: AGENTS.md 与 agents-only/init.md 均包含 $DOCKER_SKILL_POINTER"
+    ERRORS=$((ERRORS + 1))
 fi
 
 # 3. 工作包标识（advisory）+ active_context 指针完整性（hard）

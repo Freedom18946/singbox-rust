@@ -10,6 +10,13 @@
 
 ---
 
+## Resume (2026-07-13) - local Docker skill startup hook DONE
+
+- Root `AGENTS.md` and S-tier `init.md` now require startup loading of local
+  `singbox-docker-lab`; all Docker work routes through it.
+- Consistency gate locks both startup pointers. Skill readability/validation, Docker restart,
+  arm64 Rust 1.92 smoke, and locked Cargo metadata pass; no product/parity movement claimed.
+
 ## Resume (2026-07-13) - VLESS multiplex E2E routing lifecycle FIXED
 
 - Classified **B (portable logic bug)**, not macOS sandbox: mux and non-mux handshakes completed,
@@ -208,22 +215,6 @@
   failures, plus stale-Resume / oversized-log advisories. `log.md` pre-2026-06 bulk rolled into
   `archive/logs/`.
 - **Scope note**: documentation/process hygiene only. No code, parity/BHV, gate, or packaging
-  movement is claimed.
-
-## Resume (2026-07-06) - MIG-03 architecture de-dup migration PLANNED
-
-- **MIG-03 planning snapshot (later executed and archived)**: `agents-only/archive/mig03/` holds the full
-  planning set (README index + overview + WP01-WP14; this initial snapshot predated WP01
-  execution) for the in-repo
-  strangler-fig migration: trait unification, scaffold retirement, router-stack merge,
-  control-plane/env convergence, feature slimming. User rejected the new-repo rewrite path.
-- Baseline metrics snapshot lives in `archive/mig03/mig03_00_overview.md` §1/§6 (sb-core 108k LOC /
-  103 features / 161 SB_* env vars; register.rs 4,264 lines; ≥6 OutboundConnector defs).
-- All optional technical choices pre-decided by user delegation (2026-07-06): see
-  `archive/mig03/mig03_01_decisions.md` D1-D18; user gates removed from packages (only D18 escalation
-  remains). This planning snapshot initially exposed WP01 + WP04; live WP status is in each
-  package header and the current update above; lane rules are in the README.
-- **Scope note**: planning artifacts only. No behavior, parity/BHV, gate, or packaging
   movement is claimed.
 
 ## Strategic State

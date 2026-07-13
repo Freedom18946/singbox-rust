@@ -26,6 +26,13 @@ truth — do not assert a stale phase here).
 - **Phase map**: `agents-only/workpackage_latest.md`.
 - **Stable project memory / conventions**: `CLAUDE.md`.
 
+## Required Local Skill Bootstrap
+
+- At every repository session startup, after the S-tier project sources, read
+  `${CODEX_HOME:-$HOME/.codex}/skills/singbox-docker-lab/SKILL.md`.
+- If that file is absent or unreadable, report it before Docker work. Every Docker Desktop,
+  image, container, volume, cache, or Linux-container task must follow that skill.
+
 ## Hard Rules
 
 - GitHub Actions / workflow automation is permanently disabled in this repository; do not add or restore `.github/workflows/*`.
