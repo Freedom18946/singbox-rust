@@ -89,6 +89,11 @@ async fn start_echo_server() -> SocketAddr {
 
 /// Helper: Start VLESS server with Multiplex support
 async fn start_vless_server(multiplex_enabled: bool) -> (SocketAddr, Uuid, mpsc::Sender<()>) {
+    assert!(
+        sb_core::router::rules::global().is_none(),
+        "test must exercise the injected RouterHandle without process-global routing"
+    );
+
     let listener = TcpListener::bind("127.0.0.1:0")
         .await
         .expect("Failed to bind VLESS server");

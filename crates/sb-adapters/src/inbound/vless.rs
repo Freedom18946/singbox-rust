@@ -50,9 +50,8 @@ use crate::inbound::connect::{
 use crate::outbound::pool_selector::PoolSelector;
 use sb_core::net::metered;
 use sb_core::outbound::registry;
-use sb_core::router;
-use sb_core::router::rules as rules_global;
-use sb_core::router::rules::{Decision as RDecision, RouteCtx};
+use sb_core::router::rules::Decision as RDecision;
+use sb_core::router::{self, RouteCtx, Transport};
 use sb_core::v2ray_stats::StatsManager;
 
 #[derive(Clone, Debug)]
@@ -433,31 +432,19 @@ async fn handle_conn_impl(
 
     // Step 7: Router decision
     // 步骤 7: 路由决策
-    let (decision, rule) = match rules_global::global() {
-        Some(eng) => {
-            let ctx = RouteCtx {
-                domain: Some(target_host.as_str()),
-                ip: None,
-                transport_udp: false,
-                port: Some(target_port),
-                network: Some("tcp"),
-                ..Default::default()
-            };
-            let (d, r) = eng.decide_with_meta(&ctx);
-            if matches!(d, RDecision::Reject) {
-                return Err(anyhow!("vless: rejected by rules"));
-            }
-            (d, r)
-        }
-        None => {
-            tracing::warn!(
-                "vless: router engine not initialized; implicit direct fallback is disabled"
-            );
-            return Err(anyhow!(
-                "vless: router engine not initialized, implicit direct fallback is disabled"
-            ));
-        }
+    let target_ip = target_host.parse::<IpAddr>().ok();
+    let route_ctx = RouteCtx {
+        host: target_ip.is_none().then_some(target_host.as_str()),
+        ip: target_ip,
+        port: Some(target_port),
+        transport: Transport::Tcp,
+        network: "tcp",
+        inbound_tag: cfg.tag.as_deref(),
+        ..Default::default()
     };
+    let route_meta = cfg.router.decide_with_meta(&route_ctx);
+    let decision = route_meta.decision;
+    let rule = route_meta.rule;
 
     // Step 8: Connect to upstream
     // 步骤 8: 连接上游

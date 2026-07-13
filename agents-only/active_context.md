@@ -10,6 +10,19 @@
 
 ---
 
+## Resume (2026-07-13) - VLESS multiplex E2E routing lifecycle FIXED
+
+- Classified **B (portable logic bug)**, not macOS sandbox: mux and non-mux handshakes completed,
+  then server ignored `cfg.router`, queried unset global routing, and closed before payload relay.
+- VLESS inbound now routes through injected `RouterHandle::decide_with_meta` using canonical
+  `RouteCtx`; boundary gate requires injected ownership and forbids `rules_global::global` reuse.
+- Regression test explicitly keeps process-global routing unset. Exact five-case VLESS multiplex
+  E2E passes with real assertions and zero skips; `sb-transport` tests, related clippy, fmt,
+  strict boundaries, and consistency pass.
+- Linux replay was blocked before tests by unrelated existing compile gaps (`socket2` TFO, libc
+  pointer type, redirect/tproxy guards). Platform-neutral path evidence plus mux/non-mux identical
+  closure and injected-router regression establish classification.
+
 ## Resume (2026-07-13) - REALITY Chrome-current drift + extension-order tail CLOSED locally
 
 - Production profile now targets **full Chrome 150.0.7871.115**, not pinned uTLS

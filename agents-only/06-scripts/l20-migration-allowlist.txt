@@ -479,7 +479,8 @@ forbid|W200-06-no-anytls-direct-default|crates/sb-adapters/src/inbound/anytls.rs
 forbid|W200-07-no-redirect-direct-default|crates/sb-adapters/src/inbound/redirect.rs|let mut decision = RDecision::Direct|redirect inbound must not default to Direct when router missing
 forbid|W200-08-no-tproxy-direct-default|crates/sb-adapters/src/inbound/tproxy.rs|let mut decision = RDecision::Direct|tproxy inbound must not default to Direct when router missing
 require|W200-09-trojan-explicit-disabled|crates/sb-adapters/src/inbound/trojan.rs|implicit direct fallback is disabled|trojan must explicitly refuse when router missing
-require|W200-10-vless-explicit-disabled|crates/sb-adapters/src/inbound/vless.rs|implicit direct fallback is disabled|vless must explicitly refuse when router missing
+require|W200-10-vless-injected-router|crates/sb-adapters/src/inbound/vless.rs|cfg.router.decide_with_meta|vless must route through required injected RouterHandle
+forbid|W200-10b-no-vless-global-router|crates/sb-adapters/src/inbound/vless.rs|rules_global::global|vless must not bypass injected RouterHandle through process-global routing
 require|W200-11-vmess-explicit-disabled|crates/sb-adapters/src/inbound/vmess.rs|implicit direct fallback is disabled|vmess must explicitly refuse when router missing
 require|W200-12-shadowsocks-injected-router|crates/sb-adapters/src/inbound/shadowsocks.rs|cfg.router.decide_with_meta|ss must route through explicitly injected router ownership
 require|W200-13-shadowtls-explicit-disabled|crates/sb-adapters/src/inbound/shadowtls.rs|implicit fallback is disabled|shadowtls must explicitly refuse when router missing
