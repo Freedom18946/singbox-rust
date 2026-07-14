@@ -24,7 +24,7 @@ mod dbus_impl {
     /// 1. **D-Bus Server Mode**: Exports `org.freedesktop.resolve1.Manager` interface
     ///    allowing external programs to configure per-link DNS settings.
     /// 2. **DNS Stub Listener**: Listens on configured address for DNS queries.
-    pub struct ResolvedService {
+    pub(super) struct ResolvedService {
         tag: String,
         listen_addr: String,
         listen_port: u16,
@@ -46,7 +46,7 @@ mod dbus_impl {
     }
 
     impl ResolvedService {
-        pub fn new(
+        pub(super) fn new(
             ir: &ServiceIR,
             ctx: &ServiceContext,
         ) -> Result<Self, Box<dyn std::error::Error + Send + Sync>> {
@@ -274,7 +274,6 @@ mod dbus_impl {
                     // Register network monitor callback if available
                     #[cfg(feature = "network_monitor")]
                     if let Some(monitor) = &self.network_monitor {
-                        let resolve1_state = self.resolve1_state.clone();
                         let tag = self.tag.clone();
                         monitor.register_callback(Box::new(move |event| {
                             use sb_platform::NetworkEvent;

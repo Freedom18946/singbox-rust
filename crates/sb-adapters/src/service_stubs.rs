@@ -147,28 +147,11 @@ mod tests {
         assert_eq!(service.service_type(), "resolved");
         assert_eq!(service.tag(), "resolved-dns");
 
-        #[cfg(all(target_os = "linux", feature = "service_resolved"))]
-        {
-            // With service_resolved feature on Linux, the real implementation is used
-            // Initialization might succeed or fail depending on D-Bus availability
-            let result = service.start(StartStage::Initialize);
-            // Either succeeds or fails gracefully
-            if result.is_err() {
-                // Expected in environments without systemd-resolved
-                assert!(
-                    result.unwrap_err().to_string().contains("D-Bus")
-                        || result.unwrap_err().to_string().contains("systemd-resolved")
-                );
-            }
-        }
-
-        #[cfg(not(all(target_os = "linux", feature = "service_resolved")))]
-        {
-            // Without service_resolved or on non-Linux, stub is used
-            let result = service.start(StartStage::Initialize);
-            assert!(result.is_err());
-            assert!(result.unwrap_err().to_string().contains("not implemented"));
-        }
+        // This registry intentionally uses the stub builder directly. Platform
+        // selection of the real service is covered by register_service_stubs().
+        let result = service.start(StartStage::Initialize);
+        assert!(result.is_err());
+        assert!(result.unwrap_err().to_string().contains("not implemented"));
     }
 
     #[test]

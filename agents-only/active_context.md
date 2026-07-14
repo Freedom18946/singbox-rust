@@ -10,6 +10,15 @@
 
 ---
 
+## Resume (2026-07-14) - Linux Rust 1.92 workspace build RESTORED
+
+- Linux all-feature compile gaps closed across socket2, libc ABI, tun 0.8, zbus 3,
+  routing feature gates, and app hardening.
+- Added local Rust 1.92 Debian compile gate for x86_64 GNU + aarch64 GNU; no workflow
+  automation. Both architecture checks, Linux adapter/unit regressions, TCP Fast Open
+  socket-option tests, app bench-I/O contract, formatting, boundaries, and consistency pass.
+- Scope: Linux portability/quality only; no dual-kernel parity or REALITY movement.
+
 ## Resume (2026-07-13) - local Docker skill startup hook DONE
 
 - Root `AGENTS.md` and S-tier `init.md` now require startup loading of local

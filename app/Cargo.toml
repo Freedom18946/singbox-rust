@@ -99,7 +99,7 @@ handshake_alpha = ["sb-runtime", "sb-runtime/handshake_alpha"]
 preview_route = ["sb-core/preview_route"]
 failpoints = ["sb-core/chaos"]
 sbcore_rules_tool = ["sb-core/rules_tool"]
-hardening = []
+hardening = ["dep:nix"]
 panic_log = []
 schema-v2 = []
 metrics-support = ["metrics"]
@@ -401,6 +401,7 @@ clap_complete = "4"
 clap_mangen = "0.2"
 indicatif = "0.17"
 parking_lot = "0.12"
+nix = { version = "0.27", features = ["process", "resource"], optional = true }
 
 chrono = { workspace = true }
 arc-swap = "1.7"

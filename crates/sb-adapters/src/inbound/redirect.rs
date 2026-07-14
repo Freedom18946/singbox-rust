@@ -14,15 +14,13 @@ use crate::inbound::connect::{
 use crate::outbound::pool_selector::PoolSelector;
 use anyhow::{anyhow, Result};
 use sb_core::net::metered;
-use sb_core::outbound::{health as ob_health, registry};
-use sb_core::router;
+use sb_core::outbound::registry;
 use sb_core::router::rules as rules_global;
 use sb_core::router::rules::{Decision as RDecision, RouteCtx};
 use sb_core::v2ray_stats::StatsManager;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::os::fd::AsRawFd;
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::select;
 use tokio::sync::mpsc;
@@ -86,7 +84,7 @@ async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr)
                 domain_opt = Some(name);
             }
             let ctx = RouteCtx {
-                domain: domain_opt,
+                domain: domain_opt.as_deref(),
                 ip: if domain_opt.is_some() {
                     None
                 } else {
@@ -96,14 +94,25 @@ async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr)
                 port: Some(port),
                 process_name: None,
                 process_path: None,
+                network: Some("tcp"),
+                ..Default::default()
             };
             let (d, r) = eng.decide_with_meta(&ctx);
             #[cfg(feature = "metrics")]
             {
                 metrics::counter!(
                     "router_decide_total",
-                    "decision" => match &d { RDecision::Direct=>"direct", RDecision::Proxy(_)=>"proxy", RDecision::Reject=>"reject" }
-                ).increment(1);
+                    "decision" => match &d {
+                        RDecision::Direct => "direct",
+                        RDecision::Proxy(_) => "proxy",
+                        RDecision::Reject | RDecision::RejectDrop => "reject",
+                        RDecision::Hijack { .. } => "hijack",
+                        RDecision::Sniff { .. } => "sniff",
+                        RDecision::Resolve => "resolve",
+                        RDecision::HijackDns => "hijack-dns",
+                    }
+                )
+                .increment(1);
             }
             if matches!(d, RDecision::Reject) {
                 return Err(anyhow!("redirect: rejected by rules"));
@@ -121,39 +130,38 @@ async fn handle_conn(cfg: &RedirectConfig, mut cli: TcpStream, peer: SocketAddr)
     };
 
     let opts = ConnectOpts;
-    let mut outbound_tag: Option<String> = None;
-    let mut upstream = match decision {
-        RDecision::Direct => {
-            outbound_tag = Some("direct".to_string());
-            direct_connect_hostport(&host, port, &opts).await?
-        }
+    let (mut upstream, outbound_tag) = match &decision {
+        RDecision::Direct => (
+            direct_connect_hostport(&host, port, &opts).await?,
+            Some("direct".to_string()),
+        ),
         RDecision::Proxy(Some(name)) => {
             // Resolve named pool from registry; fallback path is disabled.
             let sel = PoolSelector::new("redirect".into(), "default".into());
             if let Some(reg) = registry::global() {
-                if let Some(pool) = reg.pools.get(&name) {
-                    if let Some(ep) = sel.select(&name, peer, &format!("{}:{}", host, port), &()) {
+                if reg.pools.contains_key(name) {
+                    if let Some(ep) = sel.select(name, peer, &format!("{}:{}", host, port), &()) {
                         match ep.kind {
-                            sb_core::outbound::endpoint::ProxyKind::Http => {
-                                outbound_tag = Some("http".to_string());
+                            sb_core::outbound::endpoint::ProxyKind::Http => (
                                 http_proxy_connect_through_proxy(
                                     &ep.addr.to_string(),
                                     &host,
                                     port,
                                     &opts,
                                 )
-                                .await?
-                            }
-                            sb_core::outbound::endpoint::ProxyKind::Socks5 => {
-                                outbound_tag = Some("socks5".to_string());
+                                .await?,
+                                Some("http".to_string()),
+                            ),
+                            sb_core::outbound::endpoint::ProxyKind::Socks5 => (
                                 socks5_connect_through_socks5(
                                     &ep.addr.to_string(),
                                     &host,
                                     port,
                                     &opts,
                                 )
-                                .await?
-                            }
+                                .await?,
+                                Some("socks5".to_string()),
+                            ),
                         }
                     } else {
                         return Err(anyhow!(

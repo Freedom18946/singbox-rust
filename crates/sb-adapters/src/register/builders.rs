@@ -60,9 +60,9 @@ canonical_inbound_builder!(canonical_build_anytls_inbound, build_anytls_inbound)
 canonical_inbound_builder!(canonical_build_direct_inbound, build_direct_inbound);
 #[cfg(all(feature = "adapter-tun", feature = "tun", feature = "router"))]
 canonical_inbound_builder!(canonical_build_tun_inbound, build_tun_inbound);
-#[cfg(all(target_os = "linux", feature = "router"))]
+#[cfg(all(target_os = "linux", feature = "redirect", feature = "router"))]
 canonical_inbound_builder!(canonical_build_redirect_inbound, build_redirect_inbound);
-#[cfg(all(target_os = "linux", feature = "router"))]
+#[cfg(all(target_os = "linux", feature = "tproxy", feature = "router"))]
 canonical_inbound_builder!(canonical_build_tproxy_inbound, build_tproxy_inbound);
 #[cfg(feature = "dns")]
 canonical_inbound_builder!(canonical_build_dns_inbound, build_dns_inbound);
@@ -368,9 +368,13 @@ fn populate_default_registry(snapshot: &mut registry::RegistrySnapshot) {
         let _ = snapshot.register_inbound("tun", canonical_build_tun_inbound);
     }
 
-    #[cfg(all(target_os = "linux", feature = "router"))]
+    #[cfg(all(target_os = "linux", feature = "redirect", feature = "router"))]
     {
         let _ = snapshot.register_inbound("redirect", canonical_build_redirect_inbound);
+    }
+
+    #[cfg(all(target_os = "linux", feature = "tproxy", feature = "router"))]
+    {
         let _ = snapshot.register_inbound("tproxy", canonical_build_tproxy_inbound);
     }
 
@@ -3583,7 +3587,7 @@ fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
 
 // ========== Redirect Inbound (Linux only) ==========
 
-#[cfg(all(target_os = "linux", feature = "router"))]
+#[cfg(all(target_os = "linux", feature = "redirect", feature = "router"))]
 #[allow(dead_code)]
 fn build_redirect_inbound(
     param: &InboundParam,
@@ -3605,7 +3609,7 @@ fn build_redirect_inbound(
 
 // ========== TProxy Inbound (Linux only) ==========
 
-#[cfg(all(target_os = "linux", feature = "router"))]
+#[cfg(all(target_os = "linux", feature = "tproxy", feature = "router"))]
 #[allow(dead_code)]
 fn build_tproxy_inbound(
     param: &InboundParam,

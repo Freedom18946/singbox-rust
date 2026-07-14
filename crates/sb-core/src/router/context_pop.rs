@@ -131,7 +131,7 @@ fn get_user_name(uid: u32) -> Option<String> {
     // storage buffer so there is no shared global state.
     unsafe {
         let mut pwd: libc::passwd = std::mem::zeroed();
-        let mut buf = vec![0i8; 4096];
+        let mut buf = vec![0 as libc::c_char; 4096];
         let mut result: *mut libc::passwd = std::ptr::null_mut();
         let ret = libc::getpwuid_r(uid, &mut pwd, buf.as_mut_ptr(), buf.len(), &mut result);
         if ret == 0 && !result.is_null() {
@@ -150,7 +150,7 @@ fn get_group_name(gid: u32) -> Option<String> {
     // storage buffer so there is no shared global state.
     unsafe {
         let mut grp: libc::group = std::mem::zeroed();
-        let mut buf = vec![0i8; 4096];
+        let mut buf = vec![0 as libc::c_char; 4096];
         let mut result: *mut libc::group = std::ptr::null_mut();
         let ret = libc::getgrgid_r(gid, &mut grp, buf.as_mut_ptr(), buf.len(), &mut result);
         if ret == 0 && !result.is_null() {

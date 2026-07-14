@@ -69,7 +69,12 @@ pub fn write_temp_config(content: &str) -> NamedTempFile {
 /// }
 /// ```
 pub fn run_check(cfg_path: &str) -> Option<(bool, String)> {
-    let bin = workspace_bin("check").to_string_lossy().to_string();
+    // Cargo exposes integration-test binaries at compile time. Runtime
+    // `CARGO_BIN_EXE_*` variables are not guaranteed, and the generic
+    // fallback cannot infer a custom `CARGO_TARGET_DIR` reliably.
+    let bin = option_env!("CARGO_BIN_EXE_check")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| workspace_bin("check"));
     let out = Command::new(bin)
         .args(["--config", cfg_path, "--format", "json"])
         .output()

@@ -265,12 +265,12 @@ impl DerpService {
 
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if let Some(ref iface) = self.bind_interface {
-            socket.bind_to_device(Some(iface.as_bytes()))?;
+            socket.bind_device(Some(iface.as_bytes()))?;
         }
 
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if self.tcp_fast_open {
-            socket.set_tcp_fastopen(256)?;
+            set_tcp_fast_open_listener(&socket, 256)?;
         }
 
         if self.tcp_multi_path {
@@ -328,7 +328,7 @@ impl DerpService {
 
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if let Some(ref iface) = stun.bind_interface {
-            socket.bind_to_device(Some(iface.as_bytes()))?;
+            socket.bind_device(Some(iface.as_bytes()))?;
         }
 
         socket.bind(&self.stun_addr.into())?;

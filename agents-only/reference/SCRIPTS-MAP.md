@@ -1,6 +1,6 @@
 # Scripts Map
 
-> Last updated: 2026-03-21
+> Last updated: 2026-07-13
 > Scope: top-level `scripts/` only. This file exists to stop agents from guessing old paths, old binary names, or stale CI assumptions.
 
 ## What `scripts/` is
@@ -17,6 +17,9 @@ Do not confuse it with `agents-only/06-scripts/`:
 
 - `scripts/` = repo runtime/test/release scripts
 - `agents-only/06-scripts/` = AI governance and boundary-check helpers
+
+Linux workspace compile gate: `agents-only/06-scripts/check-linux-build.sh`. Runs all-feature
+workspace checks in Debian Rust 1.92 containers for x86_64 GNU and aarch64 GNU; no GitHub Actions.
 
 ## Current directory map
 

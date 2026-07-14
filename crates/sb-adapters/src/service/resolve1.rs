@@ -11,7 +11,7 @@ use tracing::warn;
 #[cfg(all(target_os = "linux", feature = "service_resolved"))]
 use tracing::{debug, info, warn};
 
-use sb_core::dns::transport::resolved::Resolve1ManagerState;
+pub use sb_core::dns::transport::resolved::Resolve1ManagerState;
 
 // D-Bus interface implementation (zbus)
 #[cfg(all(target_os = "linux", feature = "service_resolved"))]
@@ -20,9 +20,9 @@ pub mod dbus_server {
     use sb_core::dns::message::{pack_rr_uncompressed, parse_answer_records};
     use sb_core::dns::transport::resolved::{LinkDNS, LinkDNSEx, LinkDomainConfig};
     use sb_core::dns::udp;
-    use sb_core::dns::{DnsQueryContext, DnsRouter};
+    use sb_core::dns::DnsQueryContext;
     use std::net::IpAddr;
-    use zbus::{interface, Connection, Result as ZbusResult};
+    use zbus::{dbus_interface, fdo::Result, Connection};
 
     /// D-Bus interface for org.freedesktop.resolve1.Manager.
     ///
@@ -39,7 +39,7 @@ pub mod dbus_server {
         }
 
         async fn get_sender_pid(&self, sender: &str) -> Option<u32> {
-            let proxy = zbus::ProxyBuilder::new_bare(&self.system_bus)
+            let proxy: zbus::Proxy<'_> = zbus::ProxyBuilder::new_bare(&self.system_bus)
                 .destination("org.freedesktop.DBus")
                 .ok()?
                 .path("/org/freedesktop/DBus")
@@ -210,14 +210,10 @@ pub mod dbus_server {
         }
     }
 
-    #[interface(name = "org.freedesktop.resolve1.Manager")]
+    #[dbus_interface(name = "org.freedesktop.resolve1.Manager")]
     impl Resolve1Manager {
         /// Set DNS servers for a link (simple format).
-        async fn set_link_dns(
-            &self,
-            if_index: i32,
-            addresses: Vec<(i32, Vec<u8>)>,
-        ) -> ZbusResult<()> {
+        async fn set_link_dns(&self, if_index: i32, addresses: Vec<(i32, Vec<u8>)>) -> Result<()> {
             let if_name = get_interface_name(if_index);
             let mut link = self.state.get_or_create_link(if_index, &if_name);
 
@@ -243,7 +239,7 @@ pub mod dbus_server {
 
             self.state
                 .update_link(link)
-                .map_err(|e| zbus::Error::Failure(e))?;
+                .map_err(zbus::fdo::Error::Failed)?;
             Ok(())
         }
 
@@ -252,7 +248,7 @@ pub mod dbus_server {
             &self,
             if_index: i32,
             addresses: Vec<(i32, Vec<u8>, u16, String)>,
-        ) -> ZbusResult<()> {
+        ) -> Result<()> {
             let if_name = get_interface_name(if_index);
             let mut link = self.state.get_or_create_link(if_index, &if_name);
 
@@ -290,7 +286,7 @@ pub mod dbus_server {
 
             self.state
                 .update_link(link)
-                .map_err(|e| zbus::Error::Failure(e))?;
+                .map_err(zbus::fdo::Error::Failed)?;
             Ok(())
         }
 
@@ -299,7 +295,7 @@ pub mod dbus_server {
             &self,
             if_index: i32,
             domains: Vec<(String, bool)>,
-        ) -> ZbusResult<()> {
+        ) -> Result<()> {
             let if_name = get_interface_name(if_index);
             let mut link = self.state.get_or_create_link(if_index, &if_name);
 
@@ -331,16 +327,12 @@ pub mod dbus_server {
 
             self.state
                 .update_link(link)
-                .map_err(|e| zbus::Error::Failure(e))?;
+                .map_err(zbus::fdo::Error::Failed)?;
             Ok(())
         }
 
         /// Set whether this link is a default route for DNS.
-        async fn set_link_default_route(
-            &self,
-            if_index: i32,
-            default_route: bool,
-        ) -> ZbusResult<()> {
+        async fn set_link_default_route(&self, if_index: i32, default_route: bool) -> Result<()> {
             let if_name = get_interface_name(if_index);
             let mut link = self.state.get_or_create_link(if_index, &if_name);
             link.default_route = default_route;
@@ -362,12 +354,12 @@ pub mod dbus_server {
 
             self.state
                 .update_link(link)
-                .map_err(|e| zbus::Error::Failure(e))?;
+                .map_err(zbus::fdo::Error::Failed)?;
             Ok(())
         }
 
         /// Set DNS-over-TLS mode for a link.
-        async fn set_link_dns_over_tls(&self, if_index: i32, dot_mode: &str) -> ZbusResult<()> {
+        async fn set_link_dns_over_tls(&self, if_index: i32, dot_mode: &str) -> Result<()> {
             let if_name = get_interface_name(if_index);
             let mut link = self.state.get_or_create_link(if_index, &if_name);
 
@@ -388,20 +380,20 @@ pub mod dbus_server {
 
             self.state
                 .update_link(link)
-                .map_err(|e| zbus::Error::Failure(e))?;
+                .map_err(zbus::fdo::Error::Failed)?;
             Ok(())
         }
 
         /// Stub implementations for unused methods.
-        async fn set_link_llmnr(&self, _if_index: i32, _mode: &str) -> ZbusResult<()> {
+        async fn set_link_llmnr(&self, _if_index: i32, _mode: &str) -> Result<()> {
             Ok(())
         }
 
-        async fn set_link_multicast_dns(&self, _if_index: i32, _mode: &str) -> ZbusResult<()> {
+        async fn set_link_multicast_dns(&self, _if_index: i32, _mode: &str) -> Result<()> {
             Ok(())
         }
 
-        async fn set_link_dnssec(&self, _if_index: i32, _mode: &str) -> ZbusResult<()> {
+        async fn set_link_dnssec(&self, _if_index: i32, _mode: &str) -> Result<()> {
             Ok(())
         }
 
@@ -409,12 +401,12 @@ pub mod dbus_server {
             &self,
             _if_index: i32,
             _domains: Vec<String>,
-        ) -> ZbusResult<()> {
+        ) -> Result<()> {
             Ok(())
         }
 
         /// Revert link configuration.
-        async fn revert_link(&self, if_index: i32) -> ZbusResult<()> {
+        async fn revert_link(&self, if_index: i32) -> Result<()> {
             let if_name = get_interface_name(if_index);
             info!(if_name = %if_name, "RevertLink");
             self.state.delete_link(if_index);
@@ -422,23 +414,23 @@ pub mod dbus_server {
         }
 
         /// Flush DNS caches (wired to DNS router).
-        async fn flush_caches(&self) -> ZbusResult<()> {
+        async fn flush_caches(&self) -> Result<()> {
             info!("FlushCaches");
             self.state.clear_cache();
             Ok(())
         }
 
         /// Reset server features (no-op).
-        async fn reset_server_features(&self) -> ZbusResult<()> {
+        async fn reset_server_features(&self) -> Result<()> {
             Ok(())
         }
 
         /// Reset statistics (no-op).
-        async fn reset_statistics(&self) -> ZbusResult<()> {
+        async fn reset_statistics(&self) -> Result<()> {
             Ok(())
         }
 
-        #[zbus(name = "ResolveHostname")]
+        #[dbus_interface(name = "ResolveHostname")]
         async fn resolve_hostname(
             &self,
             if_index: i32,
@@ -446,8 +438,8 @@ pub mod dbus_server {
             family: i32,
             _flags: u64,
             #[zbus(header)] header: zbus::MessageHeader<'_>,
-        ) -> ZbusResult<(Vec<(i32, i32, Vec<u8>)>, String, u64)> {
-            let sender = header.sender().map(|s| s.to_string());
+        ) -> Result<(Vec<(i32, i32, Vec<u8>)>, String, u64)> {
+            let sender = header.sender().ok().flatten().map(ToString::to_string);
             let ctx = self.build_query_context("dbus", sender.as_deref()).await;
 
             let router = self
@@ -456,12 +448,12 @@ pub mod dbus_server {
                 .read()
                 .as_ref()
                 .cloned()
-                .ok_or_else(|| zbus::Error::Failure("resolved: dns_router not wired".into()))?;
+                .ok_or_else(|| zbus::fdo::Error::Failed("resolved: dns_router not wired".into()))?;
 
             let ips = router
                 .lookup(&ctx, hostname)
                 .await
-                .map_err(|e| zbus::Error::Failure(format!("ResolveHostname failed: {e}")))?;
+                .map_err(|e| zbus::fdo::Error::Failed(format!("ResolveHostname failed: {e}")))?;
 
             let mut addrs = Vec::new();
             for ip in ips {
@@ -485,7 +477,7 @@ pub mod dbus_server {
             Ok((addrs, Self::canonical_name(hostname), 0))
         }
 
-        #[zbus(name = "ResolveAddress")]
+        #[dbus_interface(name = "ResolveAddress")]
         async fn resolve_address(
             &self,
             if_index: i32,
@@ -493,8 +485,8 @@ pub mod dbus_server {
             address: Vec<u8>,
             _flags: u64,
             #[zbus(header)] header: zbus::MessageHeader<'_>,
-        ) -> ZbusResult<(Vec<(i32, String)>, u64)> {
-            let sender = header.sender().map(|s| s.to_string());
+        ) -> Result<(Vec<(i32, String)>, u64)> {
+            let sender = header.sender().ok().flatten().map(ToString::to_string);
             let ctx = self.build_query_context("dbus", sender.as_deref()).await;
 
             let router = self
@@ -503,7 +495,7 @@ pub mod dbus_server {
                 .read()
                 .as_ref()
                 .cloned()
-                .ok_or_else(|| zbus::Error::Failure("resolved: dns_router not wired".into()))?;
+                .ok_or_else(|| zbus::fdo::Error::Failed("resolved: dns_router not wired".into()))?;
 
             // Go parity: build reverse domain by nibbles (even for IPv4).
             let mut nibbles: Vec<String> = Vec::with_capacity(address.len() * 2);
@@ -519,7 +511,7 @@ pub mod dbus_server {
             let ptr_domain = format!("{}.{}", nibbles.join("."), suffix);
 
             let req = udp::build_query(ptr_domain.trim_end_matches('.'), 12)
-                .map_err(|e| zbus::Error::Failure(format!("build PTR query failed: {e}")))?;
+                .map_err(|e| zbus::fdo::Error::Failed(format!("build PTR query failed: {e}")))?;
 
             let resp = match router.exchange(&ctx, &req).await {
                 Ok(r) => r,
@@ -532,21 +524,21 @@ pub mod dbus_server {
                         let b: [u8; 16] = address[..16].try_into().unwrap();
                         IpAddr::V6(b.into())
                     } else {
-                        return Err(zbus::Error::Failure(
+                        return Err(zbus::fdo::Error::Failed(
                             format!("invalid address bytes: {err}").into(),
                         ));
                     };
                     if let Some(name) = router.lookup_reverse_mapping(&ip) {
                         return Ok((vec![(if_index, Self::ensure_fqdn(&name))], 0));
                     }
-                    return Err(zbus::Error::Failure(
+                    return Err(zbus::fdo::Error::Failed(
                         format!("ResolveAddress exchange failed: {err}").into(),
                     ));
                 }
             };
 
             if Self::rcode(&resp).unwrap_or(2) != 0 {
-                return Err(zbus::Error::Failure(
+                return Err(zbus::fdo::Error::Failed(
                     "ResolveAddress: upstream returned error rcode".into(),
                 ));
             }
@@ -564,7 +556,7 @@ pub mod dbus_server {
             Ok((names, 0))
         }
 
-        #[zbus(name = "ResolveRecord")]
+        #[dbus_interface(name = "ResolveRecord")]
         async fn resolve_record(
             &self,
             if_index: i32,
@@ -573,8 +565,8 @@ pub mod dbus_server {
             qtype: u16,
             _flags: u64,
             #[zbus(header)] header: zbus::MessageHeader<'_>,
-        ) -> ZbusResult<(Vec<(i32, u16, u16, Vec<u8>)>, u64)> {
-            let sender = header.sender().map(|s| s.to_string());
+        ) -> Result<(Vec<(i32, u16, u16, Vec<u8>)>, u64)> {
+            let sender = header.sender().ok().flatten().map(ToString::to_string);
             let ctx = self.build_query_context("dbus", sender.as_deref()).await;
 
             let router = self
@@ -583,17 +575,16 @@ pub mod dbus_server {
                 .read()
                 .as_ref()
                 .cloned()
-                .ok_or_else(|| zbus::Error::Failure("resolved: dns_router not wired".into()))?;
+                .ok_or_else(|| zbus::fdo::Error::Failed("resolved: dns_router not wired".into()))?;
 
             let req = Self::build_query_with_class(hostname, qtype, qclass)
-                .map_err(|e| zbus::Error::Failure(format!("build query failed: {e}")))?;
-            let resp = router
-                .exchange(&ctx, &req)
-                .await
-                .map_err(|e| zbus::Error::Failure(format!("ResolveRecord exchange failed: {e}")))?;
+                .map_err(|e| zbus::fdo::Error::Failed(format!("build query failed: {e}")))?;
+            let resp = router.exchange(&ctx, &req).await.map_err(|e| {
+                zbus::fdo::Error::Failed(format!("ResolveRecord exchange failed: {e}"))
+            })?;
 
             if Self::rcode(&resp).unwrap_or(2) != 0 {
-                return Err(zbus::Error::Failure(
+                return Err(zbus::fdo::Error::Failed(
                     "ResolveRecord: upstream returned error rcode".into(),
                 ));
             }
@@ -603,7 +594,7 @@ pub mod dbus_server {
                 for rr in ans {
                     let data = pack_rr_uncompressed(&rr.name, rr.rtype, rr.class, rr.ttl, &rr.data)
                         .ok_or_else(|| {
-                            zbus::Error::Failure(
+                            zbus::fdo::Error::Failed(
                                 "ResolveRecord: rtype not supported for packing".into(),
                             )
                         })?;
@@ -613,7 +604,7 @@ pub mod dbus_server {
             Ok((records, 0))
         }
 
-        #[zbus(name = "ResolveService")]
+        #[dbus_interface(name = "ResolveService")]
         async fn resolve_service(
             &self,
             if_index: i32,
@@ -623,7 +614,7 @@ pub mod dbus_server {
             family: i32,
             _flags: u64,
             #[zbus(header)] header: zbus::MessageHeader<'_>,
-        ) -> ZbusResult<(
+        ) -> Result<(
             Vec<(u16, u16, u16, String, Vec<(i32, i32, Vec<u8>)>, String)>,
             Vec<Vec<u8>>,
             String,
@@ -631,7 +622,7 @@ pub mod dbus_server {
             String,
             u64,
         )> {
-            let sender = header.sender().map(|s| s.to_string());
+            let sender = header.sender().ok().flatten().map(ToString::to_string);
             let ctx = self.build_query_context("dbus", sender.as_deref()).await;
 
             let router = self
@@ -640,7 +631,7 @@ pub mod dbus_server {
                 .read()
                 .as_ref()
                 .cloned()
-                .ok_or_else(|| zbus::Error::Failure("resolved: dns_router not wired".into()))?;
+                .ok_or_else(|| zbus::fdo::Error::Failed("resolved: dns_router not wired".into()))?;
 
             let mut service_name = hostname.to_string();
             if !service_name.is_empty() && !service_name.ends_with('.') {
@@ -656,23 +647,23 @@ pub mod dbus_server {
             }
 
             let srv_req = udp::build_query(service_name.trim_end_matches('.'), 33)
-                .map_err(|e| zbus::Error::Failure(format!("build SRV query failed: {e}")))?;
+                .map_err(|e| zbus::fdo::Error::Failed(format!("build SRV query failed: {e}")))?;
             let srv_resp = router
                 .exchange(&ctx, &srv_req)
                 .await
-                .map_err(|e| zbus::Error::Failure(format!("SRV exchange failed: {e}")))?;
+                .map_err(|e| zbus::fdo::Error::Failed(format!("SRV exchange failed: {e}")))?;
             if Self::rcode(&srv_resp).unwrap_or(2) != 0 {
-                return Err(zbus::Error::Failure(
+                return Err(zbus::fdo::Error::Failed(
                     "ResolveService: SRV rcode != 0".into(),
                 ));
             }
 
             let txt_req = udp::build_query(service_name.trim_end_matches('.'), 16)
-                .map_err(|e| zbus::Error::Failure(format!("build TXT query failed: {e}")))?;
+                .map_err(|e| zbus::fdo::Error::Failed(format!("build TXT query failed: {e}")))?;
             let txt_resp = router
                 .exchange(&ctx, &txt_req)
                 .await
-                .map_err(|e| zbus::Error::Failure(format!("TXT exchange failed: {e}")))?;
+                .map_err(|e| zbus::fdo::Error::Failed(format!("TXT exchange failed: {e}")))?;
 
             let srv_records = parse_answer_records(&srv_resp).unwrap_or_default();
             let txt_records = parse_answer_records(&txt_resp).unwrap_or_default();
@@ -758,8 +749,9 @@ pub mod dbus_server {
         {
             use std::ffi::CStr;
             let mut buf = [0u8; libc::IF_NAMESIZE];
-            let result =
-                unsafe { libc::if_indextoname(if_index as u32, buf.as_mut_ptr() as *mut i8) };
+            let result = unsafe {
+                libc::if_indextoname(if_index as u32, buf.as_mut_ptr().cast::<libc::c_char>())
+            };
             if !result.is_null() {
                 if let Ok(name) = unsafe { CStr::from_ptr(result) }.to_str() {
                     return name.to_string();
@@ -772,7 +764,7 @@ pub mod dbus_server {
     /// Start the D-Bus server and export the resolve1 Manager.
     pub async fn start_dbus_server(
         state: Arc<Resolve1ManagerState>,
-    ) -> Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> std::result::Result<Connection, Box<dyn std::error::Error + Send + Sync>> {
         let connection = Connection::system().await?;
 
         // Export the interface
@@ -785,7 +777,10 @@ pub mod dbus_server {
         // Request the well-known name
         use zbus::fdo::{RequestNameFlags, RequestNameReply};
         let reply = connection
-            .request_name_with_flags("org.freedesktop.resolve1", RequestNameFlags::DoNotQueue)
+            .request_name_with_flags(
+                "org.freedesktop.resolve1",
+                RequestNameFlags::DoNotQueue.into(),
+            )
             .await?;
         match reply {
             RequestNameReply::PrimaryOwner => {}

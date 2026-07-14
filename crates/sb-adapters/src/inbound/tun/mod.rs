@@ -1203,7 +1203,7 @@ mod sys_linux {
     use std::net::{IpAddr, Ipv4Addr, Ipv6Addr};
 
     #[allow(dead_code)]
-    pub fn probe() -> io::Result<()> {
+    fn probe() -> io::Result<()> {
         // Check if /dev/net/tun exists and is accessible
         std::fs::metadata("/dev/net/tun").map(|_| ()).map_err(|e| {
             io::Error::new(
@@ -1215,16 +1215,12 @@ mod sys_linux {
 
     /// Open Linux TUN device and return async device
     #[cfg(feature = "tun")]
-    pub fn open_tun_device(name_hint: &str, mtu: u32) -> io::Result<tun::platform::Device> {
+    fn open_tun_device(name_hint: &str, mtu: u32) -> io::Result<tun::Device> {
         let mut config = tun::Configuration::default();
+        let mtu = u16::try_from(mtu)
+            .map_err(|_| io::Error::new(io::ErrorKind::InvalidInput, "TUN MTU exceeds u16"))?;
 
-        config.name(name_hint).mtu(mtu as i32).up();
-
-        // Configure as TUN (layer 3) not TAP (layer 2)
-        #[cfg(target_os = "linux")]
-        config.platform(|config| {
-            config.packet_information(false);
-        });
+        config.tun_name(name_hint).mtu(mtu).up();
 
         let dev = tun::create(&config)?;
 
@@ -1235,7 +1231,7 @@ mod sys_linux {
     /// Parse IP packet from TUN device (similar to macOS implementation)
     /// Returns (L4 protocol, destination IP, destination port)
     #[cfg(feature = "tun")]
-    pub fn parse_tun_packet(
+    fn parse_tun_packet(
         pkt: &[u8],
     ) -> Option<(crate::inbound::tun::L4, Option<IpAddr>, Option<u16>)> {
         if pkt.is_empty() {

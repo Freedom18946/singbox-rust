@@ -23,6 +23,8 @@ use crate::retry::{retry_conditions, RetryPolicy};
 use async_trait::async_trait;
 use futures::future::{select_ok, FutureExt};
 use std::net::SocketAddr;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::os::fd::AsRawFd;
 use std::time::Duration;
 use thiserror::Error;
 #[cfg(target_os = "android")]
@@ -31,6 +33,27 @@ use tokio::net::{lookup_host, TcpStream};
 use tokio::time::sleep;
 use tokio_util::sync::CancellationToken;
 use tracing::debug;
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn enable_tcp_fast_open_connect(socket: &socket2::Socket) -> std::io::Result<()> {
+    let enabled: libc::c_int = 1;
+    // SAFETY: socket owns a valid TCP file descriptor; enabled points to a live c_int with
+    // matching length for setsockopt. Linux and Android define TCP_FASTOPEN_CONNECT at IPPROTO_TCP.
+    let result = unsafe {
+        libc::setsockopt(
+            socket.as_raw_fd(),
+            libc::IPPROTO_TCP,
+            libc::TCP_FASTOPEN_CONNECT,
+            (&enabled as *const libc::c_int).cast(),
+            std::mem::size_of_val(&enabled) as libc::socklen_t,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
 
 /// Errors that may occur during dialing
 /// 拨号过程中可能出现的错误类型
@@ -502,7 +525,9 @@ impl TcpDialer {
             // TCP Fast Open (Linux/Android only)
             #[cfg(any(target_os = "linux", target_os = "android"))]
             if self.tcp_fast_open {
-                let _ = socket.set_tcp_fastopen_connect(true);
+                if let Err(error) = enable_tcp_fast_open_connect(&socket) {
+                    tracing::debug!(%error, "TCP_FASTOPEN_CONNECT unavailable; using normal connect");
+                }
             }
 
             // Set non-blocking before connecting (required for tokio)
@@ -932,4 +957,32 @@ pub(crate) mod priv_io {
     /// 注意：该类型当前未被使用，但保留以备将来扩展
     #[allow(dead_code)]
     pub type DuplexStream = tokio::io::DuplexStream;
+}
+
+#[cfg(all(test, target_os = "linux"))]
+mod linux_tests {
+    use super::enable_tcp_fast_open_connect;
+    use socket2::{Domain, Protocol, Socket, Type};
+    use std::os::fd::AsRawFd;
+
+    #[test]
+    fn enables_tcp_fast_open_connect_on_linux_socket() {
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+        enable_tcp_fast_open_connect(&socket).unwrap();
+
+        let mut enabled: libc::c_int = 0;
+        let mut length = std::mem::size_of_val(&enabled) as libc::socklen_t;
+        // SAFETY: enabled and length are valid writable buffers for getsockopt.
+        let result = unsafe {
+            libc::getsockopt(
+                socket.as_raw_fd(),
+                libc::IPPROTO_TCP,
+                libc::TCP_FASTOPEN_CONNECT,
+                (&mut enabled as *mut libc::c_int).cast(),
+                &mut length,
+            )
+        };
+        assert_eq!(result, 0, "{}", std::io::Error::last_os_error());
+        assert_eq!(enabled, 1);
+    }
 }

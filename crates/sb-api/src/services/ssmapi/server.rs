@@ -9,10 +9,31 @@ use std::collections::{BTreeMap, HashMap, HashSet};
 
 use socket2::{Domain, Protocol, Socket, Type};
 use std::net::SocketAddr;
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::os::fd::AsRawFd;
 use std::path::PathBuf;
 use std::sync::Arc;
 use tokio::sync::oneshot;
 use tokio::time::Duration;
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn set_tcp_fast_open_listener(socket: &Socket, backlog: libc::c_int) -> std::io::Result<()> {
+    // SAFETY: socket owns a valid TCP fd; backlog points to a live c_int of matching length.
+    let result = unsafe {
+        libc::setsockopt(
+            socket.as_raw_fd(),
+            libc::IPPROTO_TCP,
+            libc::TCP_FASTOPEN,
+            (&backlog as *const libc::c_int).cast(),
+            std::mem::size_of_val(&backlog) as libc::socklen_t,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(std::io::Error::last_os_error())
+    }
+}
 
 /// Go-parity cache structure: per-endpoint traffic + users.
 /// Go reference: `service/ssmapi/cache.go`
@@ -420,14 +441,14 @@ impl SsmapiService {
         // Note: socket2 bind_device_by_index_v4 is available, but string binding requires unsafe or libc
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if let Some(ref iface) = self.bind_interface {
-            socket.bind_to_device(Some(iface.as_bytes()))?;
+            socket.bind_device(Some(iface.as_bytes()))?;
         }
 
         // Apply TCP Fast Open
         #[cfg(any(target_os = "linux", target_os = "android"))]
         if self.tcp_fast_open {
             // 256 is a common backlog size for TFO
-            socket.set_tcp_fastopen(256)?;
+            set_tcp_fast_open_listener(&socket, 256)?;
         }
 
         // Bind and listen
@@ -1086,6 +1107,30 @@ mod tests {
     use sb_config::ir::ServiceType;
     use std::collections::HashMap;
     use std::sync::atomic::{AtomicUsize, Ordering};
+
+    #[cfg(target_os = "linux")]
+    #[test]
+    fn enables_tcp_fast_open_on_linux_listener() {
+        use std::os::fd::AsRawFd;
+
+        let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+        set_tcp_fast_open_listener(&socket, 256).unwrap();
+
+        let mut backlog: libc::c_int = 0;
+        let mut length = std::mem::size_of_val(&backlog) as libc::socklen_t;
+        // SAFETY: backlog and length are valid writable buffers for getsockopt.
+        let result = unsafe {
+            libc::getsockopt(
+                socket.as_raw_fd(),
+                libc::IPPROTO_TCP,
+                libc::TCP_FASTOPEN,
+                (&mut backlog as *mut libc::c_int).cast(),
+                &mut length,
+            )
+        };
+        assert_eq!(result, 0, "{}", std::io::Error::last_os_error());
+        assert!(backlog > 0, "TCP_FASTOPEN backlog was not enabled");
+    }
 
     struct DummyManagedServer {
         tag: String,

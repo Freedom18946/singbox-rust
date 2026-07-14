@@ -39,7 +39,7 @@ impl LinuxTun {
         // - 并发/别名：ifr 为局部变量，file 由当前线程独占访问
         // - FFI/平台契约：TUNSETIFF 是 Linux 上有效的 ioctl 命令，返回值已检查
         unsafe {
-            let result = libc::ioctl(file.as_raw_fd(), TUNSETIFF, &ifr);
+            let result = libc::ioctl(file.as_raw_fd(), TUNSETIFF as _, &ifr);
             if result < 0 {
                 let err = std::io::Error::last_os_error();
                 return match err.kind() {

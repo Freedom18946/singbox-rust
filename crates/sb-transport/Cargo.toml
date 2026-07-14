@@ -69,6 +69,10 @@ smoltcp = { version = "0.11", optional = true, default-features = false, feature
 
 [target.'cfg(target_os = "android")'.dependencies]
 sb-platform = { path = "../sb-platform" }
+libc = "0.2"
+
+[target.'cfg(target_os = "linux")'.dependencies]
+libc = "0.2"
 
 [build-dependencies]
 tonic-build = { version = "0.12", optional = true }

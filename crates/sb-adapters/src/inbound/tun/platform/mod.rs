@@ -136,8 +136,15 @@ mod tests {
     #[test]
     fn test_create_platform_hook() {
         let hook = create_platform_hook();
-        // Should be supported on Linux, macOS, Windows; unsupported elsewhere
-        #[cfg(any(target_os = "linux", target_os = "macos", target_os = "windows"))]
+        #[cfg(target_os = "linux")]
+        {
+            assert_eq!(hook.platform_name(), "linux");
+            assert_eq!(
+                hook.is_supported(),
+                std::path::Path::new("/dev/net/tun").exists()
+            );
+        }
+        #[cfg(any(target_os = "macos", target_os = "windows"))]
         assert!(hook.is_supported());
         #[cfg(not(any(target_os = "linux", target_os = "macos", target_os = "windows")))]
         assert!(!hook.is_supported());

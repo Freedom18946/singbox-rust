@@ -61,6 +61,7 @@ fn build_app(features: &str) -> PathBuf {
 
 #[cfg(all(not(feature = "reqwest"), feature = "bench-cli"))]
 #[test]
+#[serial_test::serial]
 fn bench_io_h2_without_feature_shows_actionable_error_and_exit2() {
     let bin = build_app("bench-cli");
     let mut cmd = Command::new(bin);
@@ -86,6 +87,7 @@ fn bench_io_h2_without_feature_shows_actionable_error_and_exit2() {
 
 #[cfg(all(feature = "reqwest", feature = "bench-cli"))]
 #[test]
+#[serial_test::serial]
 fn bench_io_with_feature_outputs_fixed_schema_json() {
     let bin = build_app("bench-cli,reqwest");
     let mut cmd = Command::new(bin);
@@ -112,6 +114,7 @@ fn bench_io_with_feature_outputs_fixed_schema_json() {
 
 #[cfg(all(feature = "reqwest", feature = "bench-cli"))]
 #[test]
+#[serial_test::serial]
 fn bench_io_rejects_zero_concurrency() {
     let bin = build_app("bench-cli,reqwest");
     let out = Command::new(bin)

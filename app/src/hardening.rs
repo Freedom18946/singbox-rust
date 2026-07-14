@@ -18,13 +18,13 @@
 #[cfg(target_os = "linux")]
 pub fn apply() {
     use nix::sys::prctl::{set_dumpable, set_no_new_privs};
-    use nix::sys::resource::{setrlimit, Resource, Rlim};
+    use nix::sys::resource::{rlim_t, setrlimit, Resource};
 
     if std::env::var("SB_HARDEN").ok().as_deref() != Some("1") {
         return;
     }
 
-    let limit = Rlim::from_raw(1_048_576);
+    let limit: rlim_t = 1_048_576;
     if let Err(e) = setrlimit(Resource::RLIMIT_NOFILE, limit, limit) {
         tracing::warn!(error = %e, "hardening: failed to set RLIMIT_NOFILE");
     }

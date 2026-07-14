@@ -35,6 +35,8 @@ use std::convert::Infallible;
 use std::fs;
 use std::io::{self};
 use std::net::{IpAddr, SocketAddr};
+#[cfg(any(target_os = "linux", target_os = "android"))]
+use std::os::fd::AsRawFd;
 use std::pin::Pin;
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::Arc;
@@ -58,6 +60,25 @@ use tokio_tungstenite::WebSocketStream;
 /// - DERP protocol server (real frame-based client-to-client relay)
 /// - TCP mock relay (legacy, for backward compatibility)
 use futures::{FutureExt, SinkExt, StreamExt};
+
+#[cfg(any(target_os = "linux", target_os = "android"))]
+fn set_tcp_fast_open_listener(socket: &Socket, backlog: libc::c_int) -> io::Result<()> {
+    // SAFETY: socket owns a valid TCP fd; backlog points to a live c_int of matching length.
+    let result = unsafe {
+        libc::setsockopt(
+            socket.as_raw_fd(),
+            libc::IPPROTO_TCP,
+            libc::TCP_FASTOPEN,
+            (&backlog as *const libc::c_int).cast(),
+            std::mem::size_of_val(&backlog) as libc::socklen_t,
+        )
+    };
+    if result == 0 {
+        Ok(())
+    } else {
+        Err(io::Error::last_os_error())
+    }
+}
 
 trait AsyncReadWrite: AsyncRead + AsyncWrite {}
 impl<T: AsyncRead + AsyncWrite> AsyncReadWrite for T {}

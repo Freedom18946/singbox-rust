@@ -92,6 +92,30 @@ async fn abort_observable_task(flag: Arc<AtomicBool>, ready: tokio::sync::onesho
     pending::<()>().await;
 }
 
+#[cfg(target_os = "linux")]
+#[test]
+fn enables_tcp_fast_open_on_linux_listener() {
+    use std::os::fd::AsRawFd;
+
+    let socket = Socket::new(Domain::IPV4, Type::STREAM, Some(Protocol::TCP)).unwrap();
+    set_tcp_fast_open_listener(&socket, 256).unwrap();
+
+    let mut backlog: libc::c_int = 0;
+    let mut length = std::mem::size_of_val(&backlog) as libc::socklen_t;
+    // SAFETY: backlog and length are valid writable buffers for getsockopt.
+    let result = unsafe {
+        libc::getsockopt(
+            socket.as_raw_fd(),
+            libc::IPPROTO_TCP,
+            libc::TCP_FASTOPEN,
+            (&mut backlog as *mut libc::c_int).cast(),
+            &mut length,
+        )
+    };
+    assert_eq!(result, 0, "{}", std::io::Error::last_os_error());
+    assert!(backlog > 0, "TCP_FASTOPEN backlog was not enabled");
+}
+
 #[test]
 fn test_stun_packet_parsing() {
     // Binding Request

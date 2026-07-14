@@ -32,6 +32,9 @@ tokio-rustls = { version = "0.26", default-features = false, features = ["ring",
 tokio-tungstenite = "0.24"
 tracing = "0.1"
 
+[target.'cfg(any(target_os = "linux", target_os = "android"))'.dependencies]
+libc = "0.2"
+
 [dev-dependencies]
 async-trait = "0.1"
 rcgen = "0.13"
