@@ -336,3 +336,26 @@ impl sb_core::adapter::InboundTaskDriver for RedirectInboundDriver {
         }
     }
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[tokio::test]
+    async fn linux_redirect_listener_binds_and_stops() {
+        let (stop_tx, stop_rx) = mpsc::channel(1);
+        stop_tx.send(()).await.expect("queue redirect shutdown");
+
+        let cfg = RedirectConfig {
+            listen: "127.0.0.1:0".parse().unwrap(),
+            tag: Some("linux-redirect-smoke".to_string()),
+            stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::default()),
+        };
+
+        tokio::time::timeout(Duration::from_secs(2), serve(cfg, stop_rx))
+            .await
+            .expect("redirect shutdown timed out")
+            .expect("redirect listener failed");
+    }
+}

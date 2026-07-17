@@ -40,8 +40,8 @@
     {
       "type": "ssmapi",
       "tag": "aaa-broken",
-      "listen": "127.0.0.1",
-      "listen_port": 1,
+      "listen": "192.0.2.1",
+      "listen_port": 39201,
       "servers": { "/": "ss-in" }
     }
   ]

@@ -284,6 +284,7 @@ mod tests {
 
     #[tokio::test]
     async fn test_dns_forwarder_service() {
+        let _dns_guard = crate::dns::global::test_guard().await;
         // Setup global resolver
         crate::dns::global::set(Arc::new(MockResolver));
 

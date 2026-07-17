@@ -17,6 +17,7 @@ agents-only/
 ├── init.md                      # S: 启动检查清单
 ├── README.md                    # 本索引
 ├── log.md                       # C: 终极流水帐（勿主动读；旧段在 archive/logs/）
+├── lnx_rt_01/                   # B: 活动轨迹，Linux 运行时双核验证证据
 ├── post1313/                    # 活动轨迹：Go 1.13.13 / GUI 1.25.1 差异任务包
 ├── fable5审计报告/               # B: 2026-06 审计快照 + post_fable_packages（有处置决定，勿移动）
 ├── mt_real_01_evidence/         # 封箱证据（scripts/tools 测试硬编码路径，勿移动）
@@ -42,6 +43,7 @@ agents-only/
 | 阶段总览 / 全局位置 | [workpackage_latest.md](./workpackage_latest.md) |
 | MIG-03 架构去重迁移 | [archive/mig03/README.md](./archive/mig03/README.md) |
 | Go 1.13.13 / GUI 1.25.1 后续差异规划 | [post1313/README.md](./post1313/README.md) |
+| Linux 运行时双核验证 | [lnx_rt_01/README.md](./lnx_rt_01/README.md) |
 | 稳定约定 / 硬规则 | [../CLAUDE.md](../CLAUDE.md)、[../AGENTS.md](../AGENTS.md) |
 | 后续开发准则 | [reference/AGENT-DEVELOPMENT-GUIDELINES.md](./reference/AGENT-DEVELOPMENT-GUIDELINES.md) |
 | Rust 规则原文 | [reference/Rust_spec_v2.md](./reference/Rust_spec_v2.md) |

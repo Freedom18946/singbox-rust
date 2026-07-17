@@ -2204,7 +2204,7 @@ impl Bridge {
 mod tests {
     use super::*;
     use std::sync::atomic::{AtomicBool, AtomicUsize, Ordering};
-    use std::sync::{Mutex, OnceLock};
+    use std::sync::Mutex;
 
     static SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK: once_cell::sync::Lazy<tokio::sync::Mutex<()>> =
         once_cell::sync::Lazy::new(|| tokio::sync::Mutex::new(()));
@@ -2629,24 +2629,6 @@ mod tests {
         assert_eq!(resolver.closes.load(Ordering::SeqCst), 1);
     }
 
-    struct DnsGlobalGuard(Option<Arc<dyn crate::dns::Resolver>>);
-
-    impl DnsGlobalGuard {
-        fn capture() -> Self {
-            Self(crate::dns::global::get())
-        }
-    }
-
-    impl Drop for DnsGlobalGuard {
-        fn drop(&mut self) {
-            if let Some(resolver) = self.0.take() {
-                crate::dns::global::set(resolver);
-            } else {
-                crate::dns::global::clear();
-            }
-        }
-    }
-
     struct RuntimeRegistryGuard(crate::adapter::registry::RuntimeRegistrySnapshot);
 
     impl RuntimeRegistryGuard {
@@ -2661,15 +2643,9 @@ mod tests {
         }
     }
 
-    fn dns_global_test_lock() -> &'static tokio::sync::Mutex<()> {
-        static LOCK: OnceLock<tokio::sync::Mutex<()>> = OnceLock::new();
-        LOCK.get_or_init(|| tokio::sync::Mutex::new(()))
-    }
-
-    #[test]
-    fn runtime_dns_global_publish_is_commit_only() {
-        let _lock = dns_global_test_lock().blocking_lock();
-        let _guard = DnsGlobalGuard::capture();
+    #[tokio::test(flavor = "current_thread")]
+    async fn runtime_dns_global_publish_is_commit_only() {
+        let _dns_guard = crate::dns::global::test_guard().await;
         let old_resolver = test_dns_resolver("old-dns");
         let new_resolver = test_dns_resolver("new-dns");
         crate::dns::global::set(old_resolver);
@@ -2689,11 +2665,12 @@ mod tests {
         let mut ir = sb_config::ir::ConfigIR::default();
         ir.dns = Some(sb_config::ir::DnsIR {
             servers: vec![sb_config::ir::DnsServerIR {
-                tag: "bad-resolved".to_string(),
-                server_type: Some("resolved".to_string()),
+                tag: "bad-udp".to_string(),
+                server_type: Some("udp".to_string()),
+                address: "udp://".to_string(),
                 ..Default::default()
             }],
-            default: Some("bad-resolved".to_string()),
+            default: Some("bad-udp".to_string()),
             ..Default::default()
         });
 
@@ -2702,15 +2679,14 @@ mod tests {
             None,
             Arc::new(crate::runtime_options::DnsRuntimeOptions::default()),
         )
-        .expect_err("unsupported resolved DNS transport should block activation");
-        assert!(format!("{err:#}").contains("resolved"));
+        .expect_err("invalid UDP DNS transport should block activation");
+        assert!(format!("{err:#}").contains("invalid socket address syntax"));
     }
 
     #[tokio::test(flavor = "current_thread")]
     async fn reload_dns_build_failure_keeps_global_resolver_and_registries() {
         let _adapter_serial = SUPERVISOR_ADAPTER_REGISTRY_TEST_LOCK.lock().await;
-        let _dns_serial = dns_global_test_lock().lock().await;
-        let _dns_guard = DnsGlobalGuard::capture();
+        let _dns_guard = crate::dns::global::test_guard().await;
         let _registry_guard = RuntimeRegistryGuard::capture();
         crate::adapter::registry::clear_runtime_registries();
         crate::dns::global::set(test_dns_resolver("old-global-dns"));
@@ -2740,11 +2716,12 @@ mod tests {
         let mut new_ir = direct_ir("new-direct-dns");
         new_ir.dns = Some(sb_config::ir::DnsIR {
             servers: vec![sb_config::ir::DnsServerIR {
-                tag: "bad-resolved".to_string(),
-                server_type: Some("resolved".to_string()),
+                tag: "bad-udp".to_string(),
+                server_type: Some("udp".to_string()),
+                address: "udp://".to_string(),
                 ..Default::default()
             }],
-            default: Some("bad-resolved".to_string()),
+            default: Some("bad-udp".to_string()),
             ..Default::default()
         });
 

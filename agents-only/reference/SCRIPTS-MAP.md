@@ -20,6 +20,8 @@ Do not confuse it with `agents-only/06-scripts/`:
 
 Linux workspace compile gate: `agents-only/06-scripts/check-linux-build.sh`. Runs all-feature
 workspace checks in Debian Rust 1.92 containers for x86_64 GNU and aarch64 GNU; no GitHub Actions.
+Linux runtime entrypoint: `agents-only/06-scripts/run-linux-runtime.sh`. Runs pinned Debian
+Rust/Go toolchains with host bind-caches for runtime tests and dual-kernel interop replay.
 
 ## Current directory map
 

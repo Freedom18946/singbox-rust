@@ -107,8 +107,9 @@ async fn dns_ir_builds_with_dhcp_resolved_tailscale_servers() {
     // On other platforms/builds we still expect a clear, stable error message.
     if cfg!(all(target_os = "linux", feature = "service_resolved")) {
         let resolver = res.expect("build resolver with dhcp/resolved/tailscale upstreams");
-        // With no rules, resolver should be the base dns_ir resolver.
-        assert_eq!(resolver.name(), "dns_ir");
+        // With no rules and cache enabled by default, the dns_ir resolver is
+        // wrapped by the shared answer cache.
+        assert_eq!(resolver.name(), "cached_resolver");
     } else {
         let err = match res {
             Ok(_) => panic!("non-Linux or without service_resolved should fail for resolved"),

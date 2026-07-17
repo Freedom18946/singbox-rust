@@ -179,7 +179,7 @@ fi
 echo -e "\n检查 agents-only 顶层白名单..."
 
 ALLOWED_FILES="active_context.md workpackage_latest.md init.md README.md log.md"
-ALLOWED_DIRS="06-scripts archive fable5审计报告 memory mig03 mt_real_01_evidence mt_real_02_evidence post1313 reference templates"
+ALLOWED_DIRS="06-scripts archive fable5审计报告 lnx_rt_01 memory mig03 mt_real_01_evidence mt_real_02_evidence post1313 reference templates"
 
 TOPLEVEL_VIOLATION=0
 for entry in "$AGENTS_DIR"/*; do

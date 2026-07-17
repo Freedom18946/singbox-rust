@@ -47,7 +47,9 @@ traffic_plan:
     args:
       - -lc
       - |
-        pkill -f 'labs/interop-lab/configs/go_core_second_hop_socks.json' >/dev/null 2>&1 || true
+        if [ -f /tmp/interop-chain-hop.pid ]; then
+          kill "$(cat /tmp/interop-chain-hop.pid)" >/dev/null 2>&1 || true
+        fi
         rm -f /tmp/interop-chain-hop.pid
         nohup go_fork_source/sing-box-1.13.13/sing-box run -c labs/interop-lab/configs/go_core_second_hop_socks.json >/tmp/interop-chain-hop.log 2>&1 &
         echo $! >/tmp/interop-chain-hop.pid
@@ -70,7 +72,6 @@ traffic_plan:
           kill "$(cat /tmp/interop-chain-hop.pid)" >/dev/null 2>&1 || true
           rm -f /tmp/interop-chain-hop.pid
         fi
-        pkill -f 'labs/interop-lab/configs/go_core_second_hop_socks.json' >/dev/null 2>&1 || true
     timeout_ms: 5000
     expect_exit: 0
 assertions:

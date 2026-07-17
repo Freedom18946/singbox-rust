@@ -1,6 +1,6 @@
-# Prerequisite: must run as non-root user. The broken service binds to port 1
-# (privileged) to deterministically trigger EACCES on bind. Running as root
-# would cause the bind to succeed and the test would fail.
+# The broken service binds a TEST-NET address that is not assigned locally.
+# This deterministically fails on hosts and containers even when Linux sets
+# net.ipv4.ip_unprivileged_port_start=0 or the process runs as root.
 id: p1_service_failure_isolation
 title: broken service does not prevent core kernel startup
 priority: p1
