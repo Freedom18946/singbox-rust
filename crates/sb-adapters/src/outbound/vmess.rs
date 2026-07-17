@@ -8,9 +8,8 @@
 
 use crate::outbound::prelude::*;
 use crate::transport_config::TransportConfig;
-use rand::Rng;
+use crate::vmess::{client_connect, command_key, SECURITY_AES128_GCM, SECURITY_CHACHA20_POLY1305};
 use std::collections::HashMap;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use uuid::Uuid;
 
 /// VMess security levels
@@ -41,16 +40,6 @@ impl Security {
             Security::ChaCha20Poly1305 => "chacha20-poly1305",
             Security::Auto => "auto",
             Security::Zero => "zero",
-        }
-    }
-
-    fn cipher_id(&self) -> u8 {
-        match self {
-            Security::None => 0,
-            Security::Aes128Gcm => 3,
-            Security::ChaCha20Poly1305 => 4,
-            Security::Auto => 0, // Will be negotiated
-            Security::Zero => 0,
         }
     }
 }
@@ -167,21 +156,6 @@ impl Default for VmessConfig {
     }
 }
 
-/// VMess request header structure
-/// VMess 请求头结构
-#[derive(Debug)]
-struct VmessRequestHeader {
-    version: u8,
-    iv: [u8; 16],
-    key: [u8; 16],
-    response_auth: [u8; 4],
-    command: u8,
-    port: u16,
-    address_type: u8,
-    address: Vec<u8>,
-    random: [u8; 16],
-}
-
 /// VMess outbound connector
 /// VMess 出站连接器
 #[derive(Clone)]
@@ -244,149 +218,16 @@ impl VmessConnector {
         }
     }
 
-    /// Generate VMess authentication data
-    /// 生成 VMess 认证数据
-    fn generate_auth_data(&self) -> Vec<u8> {
-        let mut auth_data = Vec::new();
-        let timestamp = std::time::SystemTime::now()
-            .duration_since(std::time::UNIX_EPOCH)
-            .unwrap_or_default()
-            .as_secs();
-
-        // Add timestamp (8 bytes)
-        auth_data.extend_from_slice(&timestamp.to_be_bytes());
-
-        // Add UUID (16 bytes)
-        auth_data.extend_from_slice(self.config.auth.uuid.as_bytes());
-
-        // Add alter ID (2 bytes)
-        auth_data.extend_from_slice(&self.config.auth.alter_id.to_be_bytes());
-
-        // Add security method (1 byte)
-        auth_data.push(self.config.auth.security.cipher_id());
-
-        // Add random padding (4 bytes)
-        let mut rng = rand::thread_rng();
-        for _ in 0..4 {
-            auth_data.push(rng.gen());
+    /// Resolve the effective VMess body security byte (wire constant), mapping
+    /// `Auto` to AES-128-GCM as Go does on amd64/arm64.
+    fn security_byte(&self) -> Result<u8> {
+        match self.config.auth.security {
+            Security::Auto | Security::Aes128Gcm => Ok(SECURITY_AES128_GCM),
+            Security::ChaCha20Poly1305 => Ok(SECURITY_CHACHA20_POLY1305),
+            Security::None | Security::Zero => Err(AdapterError::Other(
+                "VMess 'none'/'zero' security is not supported for the AEAD dataplane".to_string(),
+            )),
         }
-
-        auth_data
-    }
-
-    /// Build VMess request header
-    /// 构建 VMess 请求头
-    fn build_request_header(&self, target: &TargetAddr) -> VmessRequestHeader {
-        let host = target.host();
-        let mut rng = rand::thread_rng();
-
-        // Generate random IV and key
-        let mut iv = [0u8; 16];
-        let mut key = [0u8; 16];
-        let mut response_auth = [0u8; 4];
-        let mut random_data = [0u8; 16];
-
-        rng.fill(&mut iv);
-        rng.fill(&mut key);
-        rng.fill(&mut response_auth);
-        rng.fill(&mut random_data);
-
-        // Determine address type and encode address
-        let (address_type, address) = match host.parse::<std::net::IpAddr>() {
-            Ok(std::net::IpAddr::V4(ipv4)) => (1u8, ipv4.octets().to_vec()),
-            Ok(std::net::IpAddr::V6(ipv6)) => (3u8, ipv6.octets().to_vec()),
-            Err(_) => {
-                let mut addr_bytes = Vec::new();
-                addr_bytes.push(host.len() as u8);
-                addr_bytes.extend_from_slice(host.as_bytes());
-                (2u8, addr_bytes)
-            }
-        };
-
-        VmessRequestHeader {
-            version: 1,
-            iv,
-            key,
-            response_auth,
-            command: 1, // TCP
-            port: target.port(),
-            address_type,
-            address,
-            random: random_data,
-        }
-    }
-
-    /// Serialize VMess request header
-    /// 序列化 VMess 请求头
-    fn serialize_request_header(&self, header: &VmessRequestHeader) -> Vec<u8> {
-        let mut data = Vec::new();
-
-        // Version
-        data.push(header.version);
-
-        // IV
-        data.extend_from_slice(&header.iv);
-
-        // Key
-        data.extend_from_slice(&header.key);
-
-        // Response auth
-        data.extend_from_slice(&header.response_auth);
-
-        // Command
-        data.push(header.command);
-
-        // Port (big endian)
-        data.extend_from_slice(&header.port.to_be_bytes());
-
-        // Address type
-        data.push(header.address_type);
-
-        // Address
-        data.extend_from_slice(&header.address);
-
-        // Random data
-        data.extend_from_slice(&header.random);
-
-        data
-    }
-
-    /// Perform VMess handshake
-    /// 执行 VMess 握手
-    async fn handshake(&self, stream: &mut BoxedStream, target: &TargetAddr) -> Result<()> {
-        // Generate authentication data
-        let auth_data = self.generate_auth_data();
-
-        // Send authentication data
-        stream
-            .write_all(&auth_data)
-            .await
-            .map_err(AdapterError::Io)?;
-
-        // Build and send request header
-        let request_header = self.build_request_header(target);
-        let header_data = self.serialize_request_header(&request_header);
-
-        stream
-            .write_all(&header_data)
-            .await
-            .map_err(AdapterError::Io)?;
-
-        // Read response
-        let mut response = [0u8; 4];
-        stream
-            .read_exact(&mut response)
-            .await
-            .map_err(AdapterError::Io)?;
-
-        // Verify response authentication
-        if response != request_header.response_auth {
-            return Err(AdapterError::Other(
-                "VMess authentication failed".to_string(),
-            ));
-        }
-
-        Ok(())
     }
 
     /// Create connection to VMess server
@@ -464,15 +305,22 @@ impl VmessConnector {
 
         self.validate_config()?;
 
-        // Create connection to VMess server
-        let mut stream = self.create_connection().await?;
+        let security = self.security_byte()?;
+        let cmd_key = command_key(self.config.auth.uuid.as_bytes());
+        let host = target.host();
+        let port = target.port();
 
-        // Perform VMess handshake
-        self.handshake(&mut stream, target).await?;
+        // Create connection to VMess server (transport/TLS/mux layers already applied)
+        let inner = self.create_connection().await?;
+
+        // Perform the canonical VMess handshake and return the body stream.
+        let stream = client_connect(inner, cmd_key, security, &host, port)
+            .await
+            .map_err(|e| AdapterError::Other(format!("VMess handshake failed: {e}")))?;
 
         tracing::debug!("VMess connection established to: {:?}", target);
 
-        Ok(stream)
+        Ok(Box::new(stream))
     }
 }
 

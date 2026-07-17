@@ -1,37 +1,25 @@
 //! VMess AEAD inbound (TCP) server implementation
 //! VMess AEAD 入站 (TCP) 服务端实现
 //!
-//! Minimal VMess server supporting:
-//! 最小化 VMess 服务端，支持：
-//! - UUID-based authentication (HMAC validation)
-//! - 基于 UUID 的认证 (HMAC 验证)
-//! - AEAD encryption (AES-128-GCM, ChaCha20-Poly1305)
-//! - AEAD 加密 (AES-128-GCM, ChaCha20-Poly1305)
-//! - Target address parsing and routing
-//! - 目标地址解析和路由
-//! - Bidirectional encrypted relay
-//! - 双向加密转发
+//! Canonical VMess server, wire-compatible with Go `sing-vmess`. The AEAD
+//! request header, response header, and chunked AEAD body framing all live in
+//! [`crate::vmess`]; this file drives the accept loop, routing, and relay.
+//! 与 Go `sing-vmess` 线上兼容的 canonical VMess 服务端。AEAD 请求头、响应头与分块
+//! 正文帧位于 [`crate::vmess`]；本文件负责 accept 循环、路由与转发。
 //!
-//! Protocol flow:
-//! 协议流程：
-//! 1. Client sends auth header: timestamp (8 bytes) + HMAC(UUID, timestamp) (16 bytes)
-//! 1. 客户端发送认证头：时间戳 (8 字节) + HMAC(UUID, 时间戳) (16 字节)
-//! 2. Server validates HMAC
-//! 2. 服务端验证 HMAC
-//! 3. Client sends encrypted request (target address + security type + padding)
-//! 3. 客户端发送加密请求 (目标地址 + 安全类型 + 填充)
-//! 4. Server sends response tag (16 bytes)
-//! 4. 服务端发送响应标签 (16 字节)
-//! 5. Bidirectional encrypted relay
-//! 5. 双向加密转发
+//! Protocol flow / 协议流程:
+//! 1. Read AuthID + AEAD-sealed request header; verify and parse the target.
+//! 1. 读取 AuthID + AEAD 请求头，验证并解析目标地址。
+//! 2. Route; connect upstream.
+//! 2. 路由决策；连接上游。
+//! 3. Write AEAD response header.
+//! 3. 写出 AEAD 响应头。
+//! 4. Relay through the chunked AEAD body stream.
+//! 4. 通过分块 AEAD 正文流双向转发。
 
-use aes_gcm::{aead::Aead, Aes128Gcm, KeyInit, Nonce as AesNonce};
 use anyhow::{anyhow, Result};
-use chacha20poly1305::{ChaCha20Poly1305, Key as ChaChaKey, Nonce as ChaNonce};
-use hmac::{Hmac, Mac};
-use sha2::{Digest, Sha256};
 use std::collections::HashMap;
-use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, SocketAddr};
 use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
@@ -45,11 +33,12 @@ use crate::inbound::connect::{
     ConnectOpts,
 };
 use crate::outbound::pool_selector::PoolSelector;
+use crate::vmess;
 use sb_core::net::metered;
 use sb_core::outbound::registry;
 use sb_core::router;
-use sb_core::router::rules as rules_global;
-use sb_core::router::rules::{Decision as RDecision, RouteCtx};
+use sb_core::router::rules::Decision as RDecision;
+use sb_core::router::{RouteCtx, Transport};
 use sb_core::v2ray_stats::StatsManager;
 
 #[derive(Clone, Debug)]
@@ -75,30 +64,14 @@ pub struct VmessInboundConfig {
     pub fallback_for_alpn: HashMap<String, SocketAddr>,
 }
 
-#[derive(Clone, Debug)]
-enum SecurityMethod {
-    Aes128Gcm,
-    ChaCha20Poly1305,
-}
-
-impl SecurityMethod {
-    fn from_str(s: &str) -> Option<Self> {
-        match s.to_ascii_lowercase().as_str() {
-            "aes-128-gcm" => Some(Self::Aes128Gcm),
-            "chacha20-poly1305" => Some(Self::ChaCha20Poly1305),
-            _ => None,
-        }
-    }
-}
-
-// VMess protocol constants
-// VMess 协议常量
-const AUTH_HEADER_LEN: usize = 24; // 8 bytes timestamp + 16 bytes HMAC
-const RESPONSE_TAG_LEN: usize = 16;
-
 pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
-    let security = SecurityMethod::from_str(&cfg.security)
-        .ok_or_else(|| anyhow!("Unsupported VMess security: {}", cfg.security))?;
+    // The server honors the security type the client selects in its request
+    // header (canonical VMess behavior); `cfg.security` is validated only to
+    // reject obvious misconfiguration.
+    match cfg.security.to_ascii_lowercase().as_str() {
+        "aes-128-gcm" | "chacha20-poly1305" | "auto" | "" => {}
+        other => return Err(anyhow!("Unsupported VMess security: {other}")),
+    }
 
     // Create listener based on transport configuration (defaults to TCP if not specified)
     // 根据传输配置创建监听器 (如果未指定则默认为 TCP)
@@ -114,15 +87,6 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         "vmess: inbound bound"
     );
 
-    // Note: Multiplex support for VMess inbound is configured but not yet fully implemented
-    // VMess protocol has its own encryption layer, and multiplex integration would require
-    // careful coordination with the VMess protocol state machine
-    // 注意：VMess 入站的多路复用支持已配置，但尚未完全实现
-    // VMess 协议有自己的加密层，多路复用集成需要与 VMess 协议状态机仔细协调
-    if cfg.multiplex.is_some() {
-        warn!("Multiplex configuration present but not yet fully implemented for VMess inbound");
-    }
-
     let mut hb = interval(Duration::from_secs(5));
     loop {
         select! {
@@ -131,7 +95,7 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                 // debug!("vmess: accept-loop heartbeat");
             }
             r = listener.accept() => {
-                let (mut stream, peer) = match r {
+                let (stream, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
                         warn!(error=%e, "vmess: accept error");
@@ -141,18 +105,50 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                     }
                 };
                 let cfg_clone = cfg.clone();
-                let security_clone = security.clone();
 
                 tokio::spawn(async move {
-                    // Use &mut *stream to dereference Box<dyn InboundStream>
-                    // 使用 &mut *stream 解引用 Box<dyn InboundStream>
-                    if let Err(e) =
-                        handle_conn_stream(&cfg_clone, security_clone, peer, &mut *stream).await
-                    {
-                        sb_core::metrics::http::record_error_display(&e);
-                        sb_core::metrics::record_inbound_error_display("vmess", &e);
-                        warn!(error=%e, "vmess: session error");
-                        let _ = stream.shutdown().await;
+                    if let Some(mux_cfg) = &cfg_clone.multiplex {
+                        use futures::future::poll_fn;
+                        use sb_transport::yamux::{Config, Connection, Mode};
+                        use tokio_util::compat::TokioAsyncReadCompatExt;
+
+                        let mut config = Config::default();
+                        config.set_max_num_streams(mux_cfg.max_num_streams);
+                        let mut connection = Connection::new(stream.compat(), config, Mode::Server);
+                        while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
+                            match result {
+                                Ok(stream) => {
+                                    let cfg_inner = cfg_clone.clone();
+                                    tokio::spawn(async move {
+                                        use tokio_util::compat::FuturesAsyncReadCompatExt;
+                                        let mut stream = stream.compat();
+                                        if let Err(e) = handle_conn_stream(
+                                            &cfg_inner,
+                                            peer,
+                                            &mut stream,
+                                        ).await {
+                                            warn!(%peer, error=%e, "vmess: mux stream error");
+                                        }
+                                    });
+                                }
+                                Err(e) => {
+                                    warn!(%peer, error=%e, "vmess: mux connection error");
+                                    break;
+                                }
+                            }
+                        }
+                    } else {
+                        let mut stream = stream;
+                        if let Err(e) = handle_conn_stream(
+                            &cfg_clone,
+                            peer,
+                            &mut *stream,
+                        ).await {
+                            sb_core::metrics::http::record_error_display(&e);
+                            sb_core::metrics::record_inbound_error_display("vmess", &e);
+                            warn!(error=%e, "vmess: session error");
+                            let _ = stream.shutdown().await;
+                        }
                     }
                 });
             }
@@ -182,117 +178,76 @@ async fn handle_fallback(
 // 处理来自通用流 (trait 对象) 连接的辅助函数
 async fn handle_conn_stream(
     cfg: &VmessInboundConfig,
-    security: SecurityMethod,
     peer: SocketAddr,
     stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
 ) -> Result<()> {
-    handle_conn(cfg, security, peer, stream).await
+    handle_conn(cfg, peer, stream).await
 }
 
 async fn handle_conn(
     cfg: &VmessInboundConfig,
-    security: SecurityMethod,
     peer: SocketAddr,
     cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
 ) -> Result<()> {
-    // Step 1: Read and validate authentication header
-    // 步骤 1: 读取并验证认证头
-    let mut auth_header = [0u8; AUTH_HEADER_LEN];
-    match cli.read_exact(&mut auth_header).await {
-        Ok(_) => {}
+    let cmd_key = vmess::command_key(cfg.uuid.as_bytes());
+
+    // Step 1: read the AuthID + AEAD-sealed request header, honoring fallback on
+    // authentication or parse failure (forwarding the consumed bytes).
+    // 步骤 1: 读取 AuthID + AEAD 请求头，鉴权/解析失败时按 fallback 转发已消费字节。
+    let mut prefix = [0u8; vmess::SERVER_PREFIX_LEN];
+    if let Err(e) = cli.read_exact(&mut prefix).await {
+        return Err(anyhow!("vmess: failed to read request prefix: {e}"));
+    }
+    let (header_len, auth_id, conn_nonce) = match vmess::server_parse_length(&cmd_key, &prefix) {
+        Ok(v) => v,
         Err(e) => {
-            // Read failed. If we have fallback, we can't do much because we don't have data.
-            // But if it's EOF, maybe it's a probe?
-            // If we read partial data, we could fallback.
-            // For simplicity, just error.
-            return Err(anyhow!("vmess: failed to read auth header: {}", e));
-        }
-    }
-
-    let timestamp = u64::from_be_bytes(
-        auth_header[..8]
-            .try_into()
-            .map_err(|_| anyhow!("vmess: invalid auth header length"))?,
-    );
-    let received_hmac = &auth_header[8..];
-
-    // Validate timestamp (within 2 minutes)
-    // 验证时间戳 (2 分钟内)
-    let now = std::time::SystemTime::now()
-        .duration_since(std::time::UNIX_EPOCH)
-        .map_err(|_| anyhow!("vmess: system clock before Unix epoch"))?
-        .as_secs();
-    if timestamp.abs_diff(now) > 120 {
-        if let Some(fallback_addr) = cfg.fallback {
-            debug!(%timestamp, "vmess: timestamp out of range, falling back to {}", fallback_addr);
-            return handle_fallback(cli, fallback_addr, &auth_header).await;
-        }
-        return Err(anyhow!("vmess: timestamp out of range"));
-    }
-
-    // Validate HMAC
-    // 验证 HMAC
-    let mut mac = <Hmac<Sha256> as Mac>::new_from_slice(cfg.uuid.as_bytes())
-        .map_err(|e| anyhow!("HMAC init error: {}", e))?;
-    mac.update(&auth_header[..8]); // Hash timestamp only
-    let expected_hmac = mac.finalize().into_bytes();
-
-    if received_hmac != &expected_hmac[..16] {
-        if let Some(fallback_addr) = cfg.fallback {
-            debug!("vmess: hmac mismatch, falling back to {}", fallback_addr);
-            return handle_fallback(cli, fallback_addr, &auth_header).await;
-        }
-        return Err(anyhow!("vmess: authentication failed"));
-    }
-
-    debug!("vmess: authentication successful");
-
-    // Step 2: Read encrypted request
-    // 步骤 2: 读取加密请求
-    let request_key = generate_request_key(&cfg.uuid);
-    let encrypted_request = read_encrypted_request(cli).await?;
-    let request = decrypt_request(&security, &request_key, &encrypted_request)?;
-
-    // Step 3: Parse request
-    // 步骤 3: 解析请求
-    let (target_host, target_port, _request_security) = parse_vmess_request(&request)?;
-
-    debug!(host=%target_host, port=%target_port, "vmess: parsed target");
-
-    // Step 4: Send response tag
-    // 步骤 4: 发送响应标签
-    let response_key = generate_response_key(&cfg.uuid);
-    let response_tag = generate_response_tag(&request_key, &response_key)?;
-    debug_assert_eq!(response_tag.len(), RESPONSE_TAG_LEN);
-    cli.write_all(&response_tag).await?;
-
-    // Step 5: Router decision
-    // 步骤 5: 路由决策
-    let (decision, rule) = match rules_global::global() {
-        Some(eng) => {
-            let ctx = RouteCtx {
-                domain: Some(target_host.as_str()),
-                ip: None,
-                transport_udp: false,
-                port: Some(target_port),
-                network: Some("tcp"),
-                ..Default::default()
-            };
-            let (d, r) = eng.decide_with_meta(&ctx);
-            if matches!(d, RDecision::Reject) {
-                return Err(anyhow!("vmess: rejected by rules"));
+            if let Some(fallback_addr) = cfg.fallback {
+                debug!("vmess: auth failure, falling back to {}", fallback_addr);
+                return handle_fallback(cli, fallback_addr, &prefix).await;
             }
-            (d, r)
-        }
-        None => {
-            tracing::warn!(
-                "vmess: router engine not initialized; implicit direct fallback is disabled"
-            );
-            return Err(anyhow!(
-                "vmess: router engine not initialized, implicit direct fallback is disabled"
-            ));
+            return Err(e);
         }
     };
+    let mut enc_header = vec![0u8; header_len + vmess::CIPHER_OVERHEAD];
+    cli.read_exact(&mut enc_header).await?;
+    let request = match vmess::server_parse_header(&cmd_key, &auth_id, &conn_nonce, &enc_header) {
+        Ok(r) => r,
+        Err(e) => {
+            if let Some(fallback_addr) = cfg.fallback {
+                let mut consumed = prefix.to_vec();
+                consumed.extend_from_slice(&enc_header);
+                debug!(
+                    "vmess: header parse failure, falling back to {}",
+                    fallback_addr
+                );
+                return handle_fallback(cli, fallback_addr, &consumed).await;
+            }
+            return Err(e);
+        }
+    };
+
+    let target_host = request.host.clone();
+    let target_port = request.port;
+    debug!(host=%target_host, port=%target_port, "vmess: parsed target");
+
+    // Step 2: Router decision
+    // 步骤 2: 路由决策
+    let target_ip = target_host.parse::<IpAddr>().ok();
+    let route_ctx = RouteCtx {
+        host: target_ip.is_none().then_some(target_host.as_str()),
+        ip: target_ip,
+        port: Some(target_port),
+        transport: Transport::Tcp,
+        network: "tcp",
+        inbound_tag: cfg.tag.as_deref(),
+        ..Default::default()
+    };
+    let route_meta = cfg.router.decide_with_meta(&route_ctx);
+    let decision = route_meta.decision;
+    let rule = route_meta.rule;
+    if matches!(decision, RDecision::Reject) {
+        return Err(anyhow!("vmess: rejected by rules"));
+    }
 
     // Step 6: Connect to upstream
     // 步骤 6: 连接上游
@@ -369,12 +324,14 @@ async fn handle_conn(
         _ => return Err(anyhow!("vmess: unsupported routing action")),
     };
 
-    // Step 7: Bidirectional relay
-    // Note: VMess AEAD encryption/decryption is handled in the protocol layer
-    // The stream here is already decrypted by the VMess protocol handler
-    // 步骤 7: 双向转发
-    // 注意：VMess AEAD 加密/解密在协议层处理
-    // 这里的流已经被 VMess 协议处理程序解密
+    // Step 4: write the AEAD response header and wrap the body stream.
+    // 步骤 4: 写出 AEAD 响应头并包装 canonical 正文流。
+    let mut svr = vmess::server_finish(&mut *cli, &request.keys)
+        .await
+        .map_err(|e| anyhow!("vmess: response handshake failed: {e}"))?;
+
+    // Step 5: bidirectional relay through the chunked AEAD body stream.
+    // 步骤 5: 通过分块 AEAD 正文流双向转发。
     let traffic = cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
     });
@@ -400,7 +357,7 @@ async fn handle_conn(
     );
     let _guard = wiring.guard;
     let copy_res = metered::copy_bidirectional_streaming_ctl(
-        cli,
+        &mut svr,
         &mut upstream,
         "vmess",
         Duration::from_secs(1),
@@ -419,180 +376,12 @@ async fn handle_conn(
     Ok(())
 }
 
-fn generate_request_key(uuid: &Uuid) -> [u8; 16] {
-    let mut hasher = Sha256::new();
-    hasher.update(uuid.as_bytes());
-    hasher.update(b"c48619fe-8f02-49e0-b9e9-edf763e17e21");
-    let hash = hasher.finalize();
-    let mut key = [0u8; 16];
-    key.copy_from_slice(&hash[..16]);
-    key
-}
-
-fn generate_response_key(uuid: &Uuid) -> [u8; 16] {
-    let mut hasher = Sha256::new();
-    hasher.update(uuid.as_bytes());
-    hasher.update(b"c42f7b3e-64e6-4396-8e01-eb28c8c7d56c");
-    let hash = hasher.finalize();
-    let mut key = [0u8; 16];
-    key.copy_from_slice(&hash[..16]);
-    key
-}
-
-fn generate_response_tag(request_key: &[u8; 16], response_key: &[u8; 16]) -> Result<[u8; 16]> {
-    // Simplified response tag generation
-    // 简化的响应标签生成
-    let mut hasher = Sha256::new();
-    hasher.update(request_key);
-    hasher.update(response_key);
-    let hash = hasher.finalize();
-    let mut tag = [0u8; 16];
-    tag.copy_from_slice(&hash[..16]);
-    Ok(tag)
-}
-
-async fn read_encrypted_request(
-    r: &mut (impl tokio::io::AsyncRead + Unpin + ?Sized),
-) -> Result<Vec<u8>> {
-    // Read nonce (12 bytes) + encrypted data
-    // For AES-128-GCM: nonce (12) + ciphertext + tag (16)
-    // 读取 nonce (12 字节) + 加密数据
-    // 对于 AES-128-GCM: nonce (12) + 密文 + tag (16)
-    let mut nonce = [0u8; 12];
-    r.read_exact(&mut nonce).await?;
-
-    // Read ciphertext + tag (variable length, max 512 bytes for request)
-    // 读取密文 + tag (可变长度，请求最大 512 字节)
-    let mut encrypted = vec![0u8; 512];
-    let n = r.read(&mut encrypted).await?;
-    encrypted.truncate(n);
-
-    let mut result = nonce.to_vec();
-    result.extend_from_slice(&encrypted);
-    Ok(result)
-}
-
-fn decrypt_request(security: &SecurityMethod, key: &[u8; 16], data: &[u8]) -> Result<Vec<u8>> {
-    if data.len() < 12 {
-        return Err(anyhow!("encrypted request too short"));
-    }
-
-    let nonce = &data[..12];
-    let ciphertext = &data[12..];
-
-    match security {
-        SecurityMethod::Aes128Gcm => {
-            let cipher =
-                Aes128Gcm::new_from_slice(key).map_err(|e| anyhow!("AES key error: {}", e))?;
-            cipher
-                .decrypt(AesNonce::from_slice(nonce), ciphertext)
-                .map_err(|e| anyhow!("AES decryption failed: {}", e))
-        }
-        SecurityMethod::ChaCha20Poly1305 => {
-            let cipher_key = ChaChaKey::from_slice(key);
-            let cipher = ChaCha20Poly1305::new(cipher_key);
-            cipher
-                .decrypt(ChaNonce::from_slice(nonce), ciphertext)
-                .map_err(|e| anyhow!("ChaCha decryption failed: {}", e))
-        }
-    }
-}
-
+/// Parse a decrypted VMess request header into `(host, port, security)`.
+/// Retained as a stable entry point for fuzzing the header parser.
+/// 解析已解密的 VMess 请求头，供 fuzz 复用。
 pub fn parse_vmess_request(data: &[u8]) -> Result<(String, u16, u8)> {
-    if data.len() < 10 {
-        return Err(anyhow!("request too short"));
-    }
-
-    let mut offset = 0;
-
-    // Version (1 byte)
-    let _version = data[offset];
-    offset += 1;
-
-    // IV (16 bytes)
-    if data.len() < offset + 16 {
-        return Err(anyhow!("missing IV"));
-    }
-    offset += 16;
-
-    // Key (16 bytes)
-    if data.len() < offset + 16 {
-        return Err(anyhow!("missing key"));
-    }
-    offset += 16;
-
-    // Response auth (1 byte)
-    offset += 1;
-
-    // Options (1 byte)
-    offset += 1;
-
-    // Padding and Security (4 bits each)
-    let security_byte = data[offset];
-    offset += 1;
-
-    // Reserved (1 byte)
-    offset += 1;
-
-    // Command (1 byte) - should be 0x01 for TCP
-    let _command = data[offset];
-    offset += 1;
-
-    // Parse address
-    if data.len() < offset + 1 {
-        return Err(anyhow!("missing address type"));
-    }
-
-    let atyp = data[offset];
-    offset += 1;
-
-    let (host, port) = match atyp {
-        0x01 => {
-            // IPv4
-            if data.len() < offset + 4 + 2 {
-                return Err(anyhow!("truncated IPv4 address"));
-            }
-            let ip = IpAddr::V4(Ipv4Addr::new(
-                data[offset],
-                data[offset + 1],
-                data[offset + 2],
-                data[offset + 3],
-            ));
-            offset += 4;
-            let port = u16::from_be_bytes([data[offset], data[offset + 1]]);
-            (ip.to_string(), port)
-        }
-        0x02 => {
-            // Domain
-            if data.len() < offset + 1 {
-                return Err(anyhow!("missing domain length"));
-            }
-            let dlen = data[offset] as usize;
-            offset += 1;
-            if data.len() < offset + dlen + 2 {
-                return Err(anyhow!("truncated domain"));
-            }
-            let domain = String::from_utf8_lossy(&data[offset..offset + dlen]).to_string();
-            offset += dlen;
-            let port = u16::from_be_bytes([data[offset], data[offset + 1]]);
-            (domain, port)
-        }
-        0x03 => {
-            // IPv6
-            if data.len() < offset + 16 + 2 {
-                return Err(anyhow!("truncated IPv6 address"));
-            }
-            let mut ipb = [0u8; 16];
-            ipb.copy_from_slice(&data[offset..offset + 16]);
-            let ip = IpAddr::V6(Ipv6Addr::from(ipb));
-            offset += 16;
-            let port = u16::from_be_bytes([data[offset], data[offset + 1]]);
-            (ip.to_string(), port)
-        }
-        _ => return Err(anyhow!("unknown address type: {}", atyp)),
-    };
-
-    Ok((host, port, security_byte))
+    let p = vmess::parse_request_header(data)?;
+    Ok((p.host, p.port, p.security))
 }
 
 use parking_lot::Mutex;

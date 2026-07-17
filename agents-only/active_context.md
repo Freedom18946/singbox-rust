@@ -10,6 +10,24 @@
 
 ---
 
+## Resume (2026-07-17) - canonical VMess (Go sing-vmess wire-compatible) DONE
+
+- Replaced the non-canonical Rust-to-Rust VMess dialect with a faithful port of Go `sing-vmess`:
+  MD5 cmdKey, nested HMAC-SHA256 KDF, AES-ECB AuthID+crc32, AEAD request/response headers
+  (PortThenAddress, fnv1a), chunked AEAD body with SHAKE128 masked-length framing. New module
+  `crates/sb-adapters/src/vmess/`; in/outbound rewired; client reads response lazily to match
+  Go's lazy server write.
+- Verified against REAL Go `sing-vmess` both directions (aes-128-gcm + chacha20, incl. 20 KB
+  multi-chunk): Rust outbound → Go Service PASS; Go Client → Rust inbound PASS. Crypto locked to
+  Go-generated vectors (cmdKey/KDF/AuthID). `multiplex_vmess_e2e` 6/6 (was 6 fail). Adapters suite,
+  vmess/websocket/tls app tests, fmt, clippy, boundaries (W200-11 → injected-router like VLESS,
+  +W200-11b forbid `rules_global::global`), consistency all PASS.
+- Resolves the LNX-RT-01 VMess decision (`lnx_rt_01/vmess_canonical_plan.md`): chose canonical Go
+  interop over the bespoke patch / deferral, per the highest-goal mandate. `p2_vmess_dual_dataplane_local`
+  ENV-LIMITED can now be re-challenged by the interop-lab (Linux/Docker; not run this session).
+- Scope: VMess TCP AEAD dataplane only. Non-goals: legacy aes-128-cfb (alterId>0), canonical
+  v1.mux.cool CommandMux (repo keeps yamux-outer), UDP/packet.
+
 ## Resume (2026-07-14) - Linux Rust 1.92 workspace build RESTORED
 
 - Linux all-feature compile gaps closed across socket2, libc ABI, tun 0.8, zbus 3,
@@ -209,22 +227,6 @@
 - **Authorized transition:** `adapter/inbound_transition.rs` and scaffold-era
   core direct ownership remain scheduled for WP06; selector family dedup remains
   WP12. Next MIG-03 dependency step: WP04 semantic audit, then WP05.
-
-## Resume (2026-07-07) - agents-only doc compression + maintenance automation
-
-- **agents-only top level compressed**: boxed MT-REAL-02 docs (baseline long report, 3 fresh
-  intakes, a41/a42 spikes, mt_mixed_fresh_evidence) moved via `git mv` into
-  `archive/mt_real_02/`; workflow notes moved to `memory/workflow_notes.md`. All repo references updated
-  (incl. `trojan.rs` comment, golden spec, AGENTS.md). Nothing deleted.
-- **NOT moved (hard constraints)**: `mt_real_01_evidence/` + `mt_real_02_evidence/` (paths
-  hard-coded in `scripts/tools/*.py` regression tests); `fable5审计报告/` (2026-06-29 disposition:
-  stays put, anchored by root README / docs / capabilities generator); `post1313/` remains active.
-- **Maintenance automation upgraded**: `06-scripts/verify-consistency.sh` now enforces S-tier
-  line caps (active_context ≤300, workpackage ≤120) and a top-level file whitelist as hard
-  failures, plus stale-Resume / oversized-log advisories. `log.md` pre-2026-06 bulk rolled into
-  `archive/logs/`.
-- **Scope note**: documentation/process hygiene only. No code, parity/BHV, gate, or packaging
-  movement is claimed.
 
 ## Strategic State
 

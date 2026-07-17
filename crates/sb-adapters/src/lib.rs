@@ -163,6 +163,9 @@ pub mod service_stubs;
 pub mod service;
 pub mod socks5_codec;
 
+/// Canonical VMess AEAD protocol codec (Go `sing-vmess` compatible).
+pub mod vmess;
+
 #[cfg(feature = "legacy_tailscale_outbound")]
 #[doc(hidden)]
 pub mod tailscale_control;
