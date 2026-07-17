@@ -20,7 +20,7 @@ if [[ $# -ne 1 ]]; then
 fi
 
 repo_root="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
-task_dir="${repo_root}/agents-only/lnx_rt_01"
+task_dir="${repo_root}/agents-only/archive/lnx_rt_01"
 dockerfile="${task_dir}/Dockerfile"
 platform="${SINGBOX_LINUX_PLATFORM:-linux/amd64}"
 command="$1"

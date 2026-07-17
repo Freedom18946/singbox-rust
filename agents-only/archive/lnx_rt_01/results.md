@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # LNX-RT-01 dual-kernel Linux result table
 
-Aggregate counts and current closure state live only in `../active_context.md`.
+Aggregate counts and current closure state live only in `../../active_context.md` after archival.
 Raw artifacts stay outside Git under
 `/private/tmp/singbox-rust-lnx-rt-01/amd64/interop-artifacts/`.
 
@@ -47,8 +47,8 @@ Raw artifacts stay outside Git under
 | `p2_shadowtls_dual_dataplane_local` | `PASS` | `20260716T200236Z-1a324000-798d-4416-a5a9-91b279000b0b` |
 | `p2_trojan_dual_dataplane_local` | `PASS` | `20260716T194953Z-de68efd2-fdb3-4297-bbd7-85557863fba0` |
 | `p2_vless_dual_dataplane_local` | `PASS` | `20260716T194958Z-7ecd6e43-216b-4ed4-b5e5-31fc03e03801` |
-| `p2_vmess_dual_dataplane_local` | `ENV-LIMITED` | `20260716T200242Z-ae860ec3-84b6-48bb-be3a-09965faf8022` |
+| `p2_vmess_dual_dataplane_local` | `PASS` | `20260717T142243Z-34b05275-47aa-41ff-bcfa-39220788da3d` |
 
 `p1_fakeip_cache_flush_contract` uses only `DIV-M-001` and `DIV-M-012` from S4.
-`p2_vmess_dual_dataplane_local` retains its pre-existing stage-exact environment limit;
-no Linux-only environment limit was added.
+`p2_vmess_dual_dataplane_local` ran the committed strict case with complete assertions on both
+kernels. Its summary has no covered divergence or environment-limited attribution.

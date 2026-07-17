@@ -7,7 +7,7 @@ maybe_failpoint_prom_pull() {
   local cfg="${SB_FAILPOINTS:-}"
   [[ -z "$cfg" ]] && return
   local decision
-  decision=$(python - "$cfg" <<'PY'
+  decision=$(python3 - "$cfg" <<'PY'
 import random, sys
 cfg = sys.argv[1]
 site = "prom::pull"
@@ -57,7 +57,7 @@ PY
       ;;
     delay:*)
       local ms="${decision#delay:}"
-      python - "$ms" <<'PY'
+      python3 - "$ms" <<'PY'
 import sys, time
 ms = float(sys.argv[1])
 time.sleep(ms / 1000.0)
@@ -70,7 +70,7 @@ PY
 
 qurl() {
   local q="$1"
-  python - "$q" <<'PY'
+  python3 - "$q" <<'PY'
 import sys, urllib.parse
 print(urllib.parse.urlencode({'query': sys.argv[1]}))
 PY

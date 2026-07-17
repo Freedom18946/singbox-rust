@@ -5,6 +5,16 @@ set -euo pipefail
 # Implements task 24: RC package version metadata system
 
 ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+WORKSPACE_ROOT="$(cd "${ROOT}/.." && pwd)"
+if [[ -n "${CARGO_TARGET_DIR:-}" ]]; then
+    if [[ "${CARGO_TARGET_DIR}" = /* ]]; then
+        BUILD_TARGET_DIR="${CARGO_TARGET_DIR}"
+    else
+        BUILD_TARGET_DIR="${WORKSPACE_ROOT}/${CARGO_TARGET_DIR}"
+    fi
+else
+    BUILD_TARGET_DIR="${WORKSPACE_ROOT}/target"
+fi
 export PROFILE="${PROFILE:-release}"
 
 log() {
@@ -91,18 +101,18 @@ generate_version_metadata() {
         rustc_version="not_available"
     fi
 
-    if [[ -f "Cargo.toml" ]]; then
-        project_version=$(grep '^version' Cargo.toml | head -1 | cut -d'"' -f2 2>/dev/null || echo "unknown")
+    if [[ -f "${ROOT}/Cargo.toml" ]]; then
+        project_version=$(grep '^version' "${ROOT}/Cargo.toml" | head -1 | cut -d'"' -f2 2>/dev/null || echo "unknown")
     else
         project_version="unknown"
     fi
 
     # Generate basic version info first
     local sb_version_output=""
-    if [[ -x "target/${PROFILE}/sb-version" ]]; then
-        sb_version_output=$(target/${PROFILE}/sb-version 2>/dev/null || echo "{}")
-    elif [[ -x "target/debug/sb-version" ]]; then
-        sb_version_output=$(target/debug/sb-version 2>/dev/null || echo "{}")
+    if [[ -x "${BUILD_TARGET_DIR}/${PROFILE}/sb-version" ]]; then
+        sb_version_output=$("${BUILD_TARGET_DIR}/${PROFILE}/sb-version" 2>/dev/null || echo "{}")
+    elif [[ -x "${BUILD_TARGET_DIR}/debug/sb-version" ]]; then
+        sb_version_output=$("${BUILD_TARGET_DIR}/debug/sb-version" 2>/dev/null || echo "{}")
     else
         sb_version_output="{}"
     fi
@@ -213,9 +223,9 @@ main() {
     mkdir -p "$rc_dir"
 
     # Build binaries if not present
-    if [[ ! -x "target/${PROFILE}/sb-version" && ! -x "target/debug/sb-version" ]]; then
+    if [[ ! -x "${BUILD_TARGET_DIR}/${PROFILE}/sb-version" && ! -x "${BUILD_TARGET_DIR}/debug/sb-version" ]]; then
         log "Building sb-version binary..."
-        cargo build --bin sb-version
+        (cd "${WORKSPACE_ROOT}" && cargo build -p app --bin sb-version)
     fi
 
     # Generate version metadata files

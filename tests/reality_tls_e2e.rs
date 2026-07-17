@@ -31,6 +31,12 @@ fn workspace_bin(name: &str) -> PathBuf {
     path
 }
 
+fn rust_check_bin() -> String {
+    option_env!("CARGO_BIN_EXE_check")
+        .map(str::to_owned)
+        .unwrap_or_else(|| workspace_bin("check").to_string_lossy().into_owned())
+}
+
 fn write_cfg(content: &str) -> NamedTempFile {
     let f = NamedTempFile::new().expect("tmp");
     fs::write(f.path(), content.as_bytes()).expect("write cfg");
@@ -40,8 +46,14 @@ fn write_cfg(content: &str) -> NamedTempFile {
 fn run(bin: &str, args: &[&str]) -> Option<(bool, String)> {
     let out = Command::new(bin).args(args).output().ok()?;
     let success = out.status.success();
-    let stdout = String::from_utf8(out.stdout).ok()?;
-    Some((success, stdout))
+    let stdout = String::from_utf8_lossy(&out.stdout);
+    let stderr = String::from_utf8_lossy(&out.stderr);
+    let output = if success && stdout.is_empty() && stderr.is_empty() {
+        String::new()
+    } else {
+        format!("bin={bin}\nstatus={}\n{stdout}\n{stderr}", out.status)
+    };
+    Some((success, output))
 }
 
 #[allow(dead_code)]
@@ -105,7 +117,7 @@ fn e2e_reality_vless_config_validation() {
     let tmp = write_cfg(&cfg);
 
     // Test Rust implementation
-    let rust = workspace_bin("check").to_string_lossy().to_string();
+    let rust = rust_check_bin();
     let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     if result.is_none() {
@@ -170,7 +182,7 @@ fn e2e_reality_invalid_public_key() {
     }"#;
 
     let tmp = write_cfg(cfg);
-    let rust = workspace_bin("check").to_string_lossy().to_string();
+    let rust = rust_check_bin();
     let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     // Config should pass basic structure check (check command doesn't validate REALITY fields deeply)
@@ -222,7 +234,7 @@ fn e2e_reality_invalid_short_id() {
     );
 
     let tmp = write_cfg(&cfg_odd);
-    let rust = workspace_bin("check").to_string_lossy().to_string();
+    let rust = rust_check_bin();
     let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     // Basic structure check should pass
@@ -270,7 +282,7 @@ fn e2e_reality_missing_server_name() {
     );
 
     let tmp = write_cfg(&cfg);
-    let rust = workspace_bin("check").to_string_lossy().to_string();
+    let rust = rust_check_bin();
     let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     // Basic structure check should pass
@@ -319,7 +331,7 @@ fn e2e_reality_empty_short_id() {
     );
 
     let tmp = write_cfg(&cfg);
-    let rust = workspace_bin("check").to_string_lossy().to_string();
+    let rust = rust_check_bin();
     let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     if result.is_none() {
@@ -374,7 +386,7 @@ fn e2e_reality_max_short_id() {
     );
 
     let tmp = write_cfg(&cfg);
-    let rust = workspace_bin("check").to_string_lossy().to_string();
+    let rust = rust_check_bin();
     let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     if result.is_none() {
@@ -430,7 +442,7 @@ fn e2e_reality_with_alpn() {
     );
 
     let tmp = write_cfg(&cfg);
-    let rust = workspace_bin("check").to_string_lossy().to_string();
+    let rust = rust_check_bin();
     let result = run(&rust, &["--config", tmp.path().to_str().unwrap()]);
 
     if result.is_none() {

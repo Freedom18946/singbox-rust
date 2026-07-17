@@ -46,6 +46,7 @@
 | MT-REAL-01（ARCH-LIMIT-REALITY 收口，2026-04-15） | `archive/reality_summary.md` |
 | MIG-03（架构去重迁移，WP01-WP14） | `archive/mig03/`（2026-07-12） |
 | MT-INTEROP-03（双核验收基线净化） | `archive/mt_interop_03/`（2026-07-12） |
+| LNX-RT-01（Linux 运行时回归 + VMess strict dual-kernel 收口） | `archive/lnx_rt_01/`（2026-07-17） |
 | 旧 deployment-acceptance 下一阶段口径（已被 MT-REAL-02 取代） | `archive/mt_summary.md` |
 
 ### MT-GUI-04 结论（验收基线，非 parity completion）

@@ -17,8 +17,17 @@ pub fn workspace_bin(name: &str) -> PathBuf {
     if let Ok(path) = std::env::var(&env_key) {
         return PathBuf::from(path);
     }
-    let mut path = workspace_root();
-    path.push("target");
+    let root = workspace_root();
+    let mut path = std::env::var_os("CARGO_TARGET_DIR")
+        .map(PathBuf::from)
+        .map(|target| {
+            if target.is_absolute() {
+                target
+            } else {
+                root.join(target)
+            }
+        })
+        .unwrap_or_else(|| root.join("target"));
     let profile = std::env::var("CARGO_PROFILE")
         .unwrap_or_else(|_| std::env::var("PROFILE").unwrap_or_else(|_| "debug".to_string()));
     path.push(profile);

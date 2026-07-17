@@ -22,13 +22,22 @@ fn run_check(bin: &str, cfg_path: &str) -> Option<(bool, String)> {
     let success = out.status.success();
     let stdout = String::from_utf8_lossy(&out.stdout).to_string();
     let stderr = String::from_utf8_lossy(&out.stderr).to_string();
-    Some((success, format!("{}\n{}", stdout, stderr)))
+    Some((
+        success,
+        format!("bin={bin}\nstatus={}\n{}\n{}", out.status, stdout, stderr),
+    ))
 }
 
 fn go_bin() -> Option<String> {
     std::env::var("GO_SINGBOX_BIN")
         .ok()
         .filter(|s| !s.is_empty())
+}
+
+fn rust_check_bin() -> String {
+    option_env!("CARGO_BIN_EXE_check")
+        .map(str::to_owned)
+        .unwrap_or_else(|| workspace_bin("check").to_string_lossy().into_owned())
 }
 
 /// Test REALITY config compatibility with upstream
@@ -76,7 +85,7 @@ fn test_reality_config_compatibility() {
     let tmp = write_temp_config(cfg);
 
     // Test Rust implementation
-    let rust_bin = workspace_bin("check").to_string_lossy().to_string();
+    let rust_bin = rust_check_bin();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
@@ -146,7 +155,7 @@ fn test_hysteria2_config_compatibility() {
 
     let tmp = write_temp_config(cfg);
 
-    let rust_bin = workspace_bin("check").to_string_lossy().to_string();
+    let rust_bin = rust_check_bin();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
@@ -205,7 +214,7 @@ fn test_ssh_config_compatibility() {
 
     let tmp = write_temp_config(cfg);
 
-    let rust_bin = workspace_bin("check").to_string_lossy().to_string();
+    let rust_bin = rust_check_bin();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
@@ -265,7 +274,7 @@ fn test_tuic_config_compatibility() {
 
     let tmp = write_temp_config(cfg);
 
-    let rust_bin = workspace_bin("check").to_string_lossy().to_string();
+    let rust_bin = rust_check_bin();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
@@ -331,7 +340,7 @@ fn test_ech_config_compatibility() {
 
     let tmp = write_temp_config(cfg);
 
-    let rust_bin = workspace_bin("check").to_string_lossy().to_string();
+    let rust_bin = rust_check_bin();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
@@ -392,7 +401,7 @@ fn test_hysteria_v1_config_compatibility() {
 
     let tmp = write_temp_config(cfg);
 
-    let rust_bin = workspace_bin("check").to_string_lossy().to_string();
+    let rust_bin = rust_check_bin();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();
@@ -500,7 +509,7 @@ fn test_mixed_p0_protocols_compatibility() {
 
     let tmp = write_temp_config(cfg);
 
-    let rust_bin = workspace_bin("check").to_string_lossy().to_string();
+    let rust_bin = rust_check_bin();
     let rust_result = run_check(&rust_bin, tmp.path().to_str().unwrap());
     assert!(rust_result.is_some(), "Rust check should execute");
     let (rust_success, rust_output) = rust_result.unwrap();

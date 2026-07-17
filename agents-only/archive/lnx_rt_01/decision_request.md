@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # LNX-RT-01 VMess scope decision
 
-## Blocking finding
+## Historical blocking finding
 
 Linux workspace replay exposed six deterministic failures in
 `app/tests/multiplex_vmess_e2e.rs`. The isolated single-stream case also fails with
@@ -18,16 +18,22 @@ Code inspection proves a pre-existing protocol mismatch:
 The mismatch predates LNX-RT-01. macOS did not provide positive evidence: its test helper treats
 `early eof` as a constrained-environment skip. Linux correctly turns the same result into FAIL.
 
-## Decision needed
+## Resolution (2026-07-17)
 
-Recommended: keep LNX-RT-01 scoped. Record these six T1 failures as a pre-existing VMess
-implementation/test gap, finish remaining Linux gates, and open a dedicated VMess protocol + mux
-card. This honors the explicit non-goal excluding VMess canonical-upstream work and avoids a
-non-canonical local protocol patch.
+Decision closed by implementing canonical Go-compatible VMess TCP AEAD, as specified and accepted
+in `vmess_canonical_plan.md`. Linux focused/workspace replay and strict dual-kernel evidence then
+passed. LNX-RT-01 did not expand into legacy CFB, canonical CommandMux, UDP/packet VMess, or
+redirect/tproxy app composition.
 
-Alternative: expand LNX-RT-01 to implement and validate canonical VMess client/server plus mux.
-This is materially larger than Linux runtime replay and requires Go/upstream interoperability
-evidence, not only making the Rust-to-Rust tests pass.
+## Historical options
+
+Original scoped option: record the failures as a pre-existing VMess implementation/test gap and
+open a dedicated protocol card. This avoided a non-canonical local patch but left the replacement
+goal incomplete.
+
+Chosen option: implement and validate canonical VMess client/server framing with real Go/upstream
+interoperability evidence, not only Rust-to-Rust agreement. Repository yamux-outer behavior was
+preserved; canonical `v1.mux.cool` stayed outside scope.
 
 Rejected: restore Linux `early eof` skipping, ignore the tests, or attach a static S4 label. Those
 choices would suppress a real failure without evidence.

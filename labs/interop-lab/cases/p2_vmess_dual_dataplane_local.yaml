@@ -2,12 +2,7 @@ id: p2_vmess_dual_dataplane_local
 title: vmess dual-kernel local dataplane parity
 priority: p2
 kernel_mode: both
-env_class: env_limited
-expected_env_failures:
-  - stage: assertion:traffic.vmess_tcp_ok.success
-    reason: local Rust VMess upstream implements a non-canonical test dialect rejected by both production clients
-  - stage: assertion:errors.count
-    reason: consequence of the declared local VMess upstream incompatibility
+env_class: strict
 tags:
   - protocol
   - dataplane

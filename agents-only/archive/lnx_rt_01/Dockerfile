@@ -55,8 +55,11 @@ ENV PATH="/usr/local/go/bin:/usr/local/cargo/bin:${PATH}" \
 
 WORKDIR /workspace
 
-RUN rustc --version \
+RUN rustup component add clippy rustfmt \
+    && rustc --version \
     && cargo --version \
+    && cargo clippy --version \
+    && cargo fmt --version \
     && go version \
     && protoc --version \
     && test -f "${PROTOC_INCLUDE}/google/protobuf/empty.proto"

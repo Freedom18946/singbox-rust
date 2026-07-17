@@ -21,13 +21,13 @@ use sb_core::net::rate_limit_metrics;
 use sb_core::net::tcp_rate_limit::TcpRateLimiter;
 use sb_core::outbound::registry;
 use sb_core::router;
-use sb_core::router::rules as rules_global;
-use sb_core::router::rules::{Decision as RDecision, RouteCtx};
+use sb_core::router::rules::Decision as RDecision;
+use sb_core::router::{RouteCtx, Transport};
 use sb_core::v2ray_stats::StatsManager;
 use sha2::{Digest, Sha224};
 use std::collections::HashMap;
 use std::io;
-use std::net::{Ipv4Addr, Ipv6Addr, SocketAddr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::Mutex;
 use tokio::io::AsyncReadExt;
@@ -771,33 +771,27 @@ async fn handle_tcp_connect(
     port: u16,
     auth_user: &str,
 ) -> Result<()> {
-    // Router decision
-    let (decision, rule) = match rules_global::global() {
-        Some(eng) => {
-            let ctx = RouteCtx {
-                domain: Some(host),
-                ip: None,
-                transport_udp: false,
-                port: Some(port),
-                auth_user: Some(auth_user),
-                network: Some("tcp"),
-                ..Default::default()
-            };
-            let (d, r) = eng.decide_with_meta(&ctx);
-            if matches!(d, RDecision::Reject) {
-                return Err(anyhow!("trojan: rejected by rules"));
-            }
-            (d, r)
-        }
-        None => {
-            tracing::warn!(
-                "trojan: router engine not initialized; implicit direct fallback is disabled"
-            );
-            return Err(anyhow!(
-                "trojan: router engine not initialized, implicit direct fallback is disabled"
-            ));
-        }
+    // Route through the required per-inbound owner. Process-global routing can
+    // belong to another runtime/test and must not override this config.
+    let target_ip = host.parse::<IpAddr>().ok();
+    let route_ctx = RouteCtx {
+        host: target_ip.is_none().then_some(host),
+        ip: target_ip,
+        port: Some(port),
+        transport: Transport::Tcp,
+        network: "tcp",
+        source_ip: Some(peer.ip()),
+        source_port: Some(peer.port()),
+        inbound_tag: cfg.tag.as_deref().or(Some("trojan")),
+        auth_user: Some(auth_user),
+        ..Default::default()
     };
+    let route_meta = cfg.router.decide_with_meta(&route_ctx);
+    let decision = route_meta.decision;
+    let rule = route_meta.rule;
+    if matches!(decision, RDecision::Reject | RDecision::RejectDrop) {
+        return Err(anyhow!("trojan: rejected by rules"));
+    }
 
     let opts = ConnectOpts;
     let (mut upstream, outbound_tag) = match decision {

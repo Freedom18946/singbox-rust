@@ -25,6 +25,7 @@ use sb_adapters::transport_config::TransportConfig;
 use sb_core::net::rate_limit_metrics;
 use sb_core::router::engine::RouterHandle;
 use sb_types::{Session, TargetAddr};
+use serial_test::serial;
 
 // Initialize crypto provider for TLS operations
 fn init_crypto() {
@@ -234,12 +235,15 @@ async fn start_ss_server_with_rate_limit(
 // =============================================================================
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial]
 async fn test_trojan_high_load_rate_limiting() {
+    const MAX_CONNECTIONS: usize = 10;
     init_crypto();
     let Some(echo_addr) = start_echo_server().await else {
         return;
     };
-    let Some((server_addr, _stop_tx, _files)) = start_trojan_server_with_rate_limit(10, 2).await
+    let Some((server_addr, _stop_tx, _files)) =
+        start_trojan_server_with_rate_limit(MAX_CONNECTIONS, 2).await
     else {
         return;
     };
@@ -296,7 +300,7 @@ async fn test_trojan_high_load_rate_limiting() {
                             )
                             .await
                             {
-                                Ok(Ok(_)) => (i, true, false),
+                                Ok(Ok(_)) => (i, true, false, "ok"),
                                 Ok(Err(e)) => {
                                     let constrained =
                                         matches!(
@@ -305,9 +309,9 @@ async fn test_trojan_high_load_rate_limiting() {
                                                 | io::ErrorKind::BrokenPipe
                                                 | io::ErrorKind::PermissionDenied
                                         ) || is_constrained_dial_error_str(&e.to_string());
-                                    (i, false, constrained)
+                                    (i, false, constrained, "read_error")
                                 }
-                                Err(_) => (i, false, false),
+                                Err(_) => (i, false, false, "read_timeout"),
                             }
                         }
                         Err(e) => {
@@ -317,13 +321,13 @@ async fn test_trojan_high_load_rate_limiting() {
                                     | io::ErrorKind::BrokenPipe
                                     | io::ErrorKind::PermissionDenied
                             ) || is_constrained_dial_error_str(&e.to_string());
-                            (i, false, constrained)
+                            (i, false, constrained, "write_error")
                         }
                     }
                 }
                 Err(e) => {
                     let constrained = is_constrained_dial_error_str(&e.to_string());
-                    (i, false, constrained)
+                    (i, false, constrained, "dial_error")
                 }
             }
         }));
@@ -334,16 +338,24 @@ async fn test_trojan_high_load_rate_limiting() {
         results.push(handle.await.unwrap());
     }
 
-    let successful = results.iter().filter(|(_, success, _)| *success).count();
-    let constrained_failures = results.iter().filter(|(_, _, c)| *c).count();
+    let successful = results.iter().filter(|(_, success, _, _)| *success).count();
+    let constrained_failures = results.iter().filter(|(_, _, c, _)| *c).count();
     let failed = results.len() - successful;
+
+    if successful == 0 {
+        let mut failure_kinds = HashMap::new();
+        for (_, _, _, kind) in &results {
+            *failure_kinds.entry(*kind).or_insert(0usize) += 1;
+        }
+        eprintln!("Trojan failure kinds: {failure_kinds:?}");
+    }
 
     println!(
         "Trojan high load test: {} successful, {} rate-limited",
         successful, failed
     );
 
-    if constrained_failures > 0 && successful < 10 {
+    if constrained_failures > 0 && successful == 0 {
         eprintln!(
             "Skipping rate limit assertion due to constrained networking: {} constrained failures",
             constrained_failures
@@ -353,10 +365,11 @@ async fn test_trojan_high_load_rate_limiting() {
 
     // We expect some connections to be rate-limited
     assert!(failed > 0, "Expected some connections to be rate-limited");
-    // But not all should fail
+    // Preflight consumes exactly one slot in the same window.
     assert!(
-        successful >= 10,
-        "Expected at least 10 connections to succeed"
+        successful == MAX_CONNECTIONS - 1,
+        "Expected {} connections to succeed after preflight, got {successful}",
+        MAX_CONNECTIONS - 1
     );
 }
 
@@ -365,12 +378,15 @@ async fn test_trojan_high_load_rate_limiting() {
 // =============================================================================
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
+#[serial]
 async fn test_shadowsocks_high_load_rate_limiting() {
+    const MAX_CONNECTIONS: usize = 10;
     init_crypto();
     let Some(echo_addr) = start_echo_server().await else {
         return;
     };
-    let Some((server_addr, _stop_tx)) = start_ss_server_with_rate_limit(10, 2).await else {
+    let Some((server_addr, _stop_tx)) = start_ss_server_with_rate_limit(MAX_CONNECTIONS, 2).await
+    else {
         return;
     };
 
@@ -466,7 +482,7 @@ async fn test_shadowsocks_high_load_rate_limiting() {
         successful, failed
     );
 
-    if constrained_failures > 0 && successful < 10 {
+    if constrained_failures > 0 && successful == 0 {
         eprintln!(
             "Skipping rate limit assertion due to constrained networking: {} constrained failures",
             constrained_failures
@@ -476,8 +492,9 @@ async fn test_shadowsocks_high_load_rate_limiting() {
 
     assert!(failed > 0, "Expected some connections to be rate-limited");
     assert!(
-        successful >= 10,
-        "Expected at least 10 connections to succeed"
+        successful == MAX_CONNECTIONS - 1,
+        "Expected {} connections to succeed after preflight, got {successful}",
+        MAX_CONNECTIONS - 1
     );
 }
 
@@ -486,6 +503,7 @@ async fn test_shadowsocks_high_load_rate_limiting() {
 // =============================================================================
 
 #[tokio::test]
+#[serial]
 async fn test_rate_limit_metrics_recording() {
     init_crypto();
     // Get initial metrics values
@@ -566,6 +584,7 @@ async fn test_rate_limit_metrics_recording() {
 // =============================================================================
 
 #[tokio::test]
+#[serial]
 async fn test_auth_failure_ban() {
     init_crypto();
     let Some(echo_addr) = start_echo_server().await else {

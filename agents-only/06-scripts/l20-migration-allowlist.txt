@@ -478,7 +478,8 @@ forbid|W200-05-no-shadowtls-direct-default|crates/sb-adapters/src/inbound/shadow
 forbid|W200-06-no-anytls-direct-default|crates/sb-adapters/src/inbound/anytls.rs|let mut decision = RDecision::Direct|anytls inbound must not default to Direct when router missing
 forbid|W200-07-no-redirect-direct-default|crates/sb-adapters/src/inbound/redirect.rs|let mut decision = RDecision::Direct|redirect inbound must not default to Direct when router missing
 forbid|W200-08-no-tproxy-direct-default|crates/sb-adapters/src/inbound/tproxy.rs|let mut decision = RDecision::Direct|tproxy inbound must not default to Direct when router missing
-require|W200-09-trojan-explicit-disabled|crates/sb-adapters/src/inbound/trojan.rs|implicit direct fallback is disabled|trojan must explicitly refuse when router missing
+require|W200-09-trojan-injected-router|crates/sb-adapters/src/inbound/trojan.rs|cfg.router.decide_with_meta|trojan must route through required injected RouterHandle
+forbid|W200-09b-no-trojan-global-router|crates/sb-adapters/src/inbound/trojan.rs|rules_global::global|trojan must not bypass injected RouterHandle through process-global routing
 require|W200-10-vless-injected-router|crates/sb-adapters/src/inbound/vless.rs|cfg.router.decide_with_meta|vless must route through required injected RouterHandle
 forbid|W200-10b-no-vless-global-router|crates/sb-adapters/src/inbound/vless.rs|rules_global::global|vless must not bypass injected RouterHandle through process-global routing
 require|W200-11-vmess-injected-router|crates/sb-adapters/src/inbound/vmess.rs|cfg.router.decide_with_meta|vmess must route through required injected RouterHandle

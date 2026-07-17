@@ -23,6 +23,7 @@ No product behavior, REALITY closure, dual-kernel BHV movement, workflow automat
 | `legacy_research_summary.md` | Old analysis, dumps, workflow notes, Layer 1/2 review, logs, and TBD material. |
 | `release_cleanup_2026_06_summary.md` | 2026-06 release-cleanup batches that were previously under `release-cleanup-2026-06/`. |
 | `adr_l19_3_1_sb_core_role.md` | Condensed stable ADR for the `sb-core` Kernel Aggregate role. |
+| `lnx_rt_01/` | Pinned Linux runtime regression, VMess strict dual-kernel closure, and arm64 evidence. |
 
 ## Rules Preserved From Old AI-RULES
 

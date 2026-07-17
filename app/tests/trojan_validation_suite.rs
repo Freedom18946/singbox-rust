@@ -576,8 +576,9 @@ async fn test_trojan_connection_pooling() {
     let connector = Arc::new(TrojanConnector::new(client_config));
 
     // macOS test processes commonly inherit a 256-FD soft limit; each in-process proxy flow
-    // consumes several sockets.
-    let total: usize = if cfg!(target_os = "macos") { 60 } else { 120 };
+    // consumes several sockets. Other platforms stay below the production default of 100
+    // accepted connections per IP/window; rate-limit saturation belongs to the dedicated suite.
+    let total: usize = if cfg!(target_os = "macos") { 60 } else { 90 };
     let mut handles = vec![];
     for i in 0..total {
         let connector = connector.clone();

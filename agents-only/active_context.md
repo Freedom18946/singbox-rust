@@ -10,6 +10,22 @@
 
 ---
 
+## Resume (2026-07-17) - LNX-RT-01 Linux runtime closure DONE
+
+- Pinned Debian Rust 1.92.0 / Go 1.24.7 amd64 lane: VMess multiplex 6/6, workspace
+  all-feature test, all-target/all-feature check, repository-policy clippy, and fmt PASS.
+- Rebuilt `with_clash_api` Go oracle and interop runner. Committed
+  `p2_vmess_dual_dataplane_local` now has strict full assertions and passes `--kernel both`;
+  evidence `20260717T142243Z-34b05275-47aa-41ff-bcfa-39220788da3d`.
+- Linux dual-kernel result: **40 PASS / 1 DIV-COVERED / 0 ENV-LIMITED**. FakeIP keeps only
+  its registered S4 coverage; VMess uses no S4 label. BHV denominator remains 52/56.
+- Native arm64 best-effort image built with the same pins; focused VMess suite 6/6 PASS.
+- Closed portability/isolation defects in custom-target binary discovery, Python helper,
+  rate-limit env/accounting, Trojan router ownership/pooling, and test binary lookup.
+- Track archived at `archive/lnx_rt_01/`; raw logs remain in `/private/tmp`.
+- **Recommended next:** REALITY external research tail: tier-2 camouflage, active probing,
+  healthy-cohort observation. GUI desktop stays paused unless explicitly reopened.
+
 ## Resume (2026-07-17) - canonical VMess (Go sing-vmess wire-compatible) DONE
 
 - Replaced the non-canonical Rust-to-Rust VMess dialect with a faithful port of Go `sing-vmess`:
@@ -22,9 +38,8 @@
   Go-generated vectors (cmdKey/KDF/AuthID). `multiplex_vmess_e2e` 6/6 (was 6 fail). Adapters suite,
   vmess/websocket/tls app tests, fmt, clippy, boundaries (W200-11 → injected-router like VLESS,
   +W200-11b forbid `rules_global::global`), consistency all PASS.
-- Resolves the LNX-RT-01 VMess decision (`lnx_rt_01/vmess_canonical_plan.md`): chose canonical Go
-  interop over the bespoke patch / deferral, per the highest-goal mandate. `p2_vmess_dual_dataplane_local`
-  ENV-LIMITED can now be re-challenged by the interop-lab (Linux/Docker; not run this session).
+- Resolves the LNX-RT-01 VMess decision (`archive/lnx_rt_01/vmess_canonical_plan.md`): chose
+  canonical Go interop over the bespoke patch / deferral. Linux strict closure is recorded above.
 - Scope: VMess TCP AEAD dataplane only. Non-goals: legacy aes-128-cfb (alterId>0), canonical
   v1.mux.cool CommandMux (repo keeps yamux-outer), UDP/packet.
 
@@ -74,14 +89,13 @@
 
 ## Resume (2026-07-12) - MT-INTEROP-03 dual-kernel baseline cleanup DONE
 
-- **MT-INTEROP-03 accepted:** final 103-case run is 101 `PASS`, 1 `DIV-COVERED`,
-  1 `ENV-LIMITED`, 0 `FAIL`. This replaces WP14's historical 87/103 noisy baseline.
+- **MT-INTEROP-03 accepted:** its historical 103-case run replaced WP14's noisy baseline;
+  LNX-RT-01 later superseded its VMess environment-limit classification.
 - Four former `INTEROP_*` cases are self-managed. DNS TTL reference direction and cache bounds,
   WS memory warm-up, shutdown drain ordering, reload readiness debounce, Go group-delay route,
   FakeIP fixture/oracle, WireGuard compatibility fields, and isolated Rust/Go bootstrap are closed.
 - VLESS local dual-kernel dataplane is strict PASS after fixing request version/address order.
-  VMess remains explicit `ENV-LIMITED`: local Rust upstream uses a non-canonical test dialect;
-  only two declared assertion stages are accepted, while launch or any extra failure remains FAIL.
+  VMess canonical strict closure is recorded in the 2026-07-17 resume above.
 - FakeIP cursor behavior is locked as S4 `DIV-M-012`; static S4 labels never suppress failures.
   Evidence: `archive/mt_interop_03/acceptance.md`.
 - **Recommended next:** REALITY external research tail: tier-2 camouflage, active probing, and
@@ -211,26 +225,9 @@
 - **Scope note:** documentation audit only. No production code, feature, test, packaging,
   parity/BHV, or REALITY denominator movement is claimed.
 
-## Resume (2026-07-10) - MIG-03 WP01 + combined WP02/WP03 DONE
-
-- **WP01-03 accepted:** census/ADR red-team omissions corrected; one canonical
-  `sb-types` outbound/inbound/packet contract now owns adapter and core holders.
-  Legacy connector/UDP traits, compatibility aliases, `connect_io`, and
-  `sb-proto` are removed.
-- Registration wrappers are 0; `register.rs` is a 7-line façade. Packet paths
-  snapshot finalized route controls, enforce idle/explicit deadlines, report
-  effective timeout duration, and reject I/O after close. Named stream routing
-  always uses canonical boxed dialing.
-- Validation: global five gates, crate/focused tests, scaffold smoke, feature
-  isolation, and dual-kernel SOCKS TCP/UDP replay+diff pass clean. No parity/BHV,
-  packaging, or REALITY denominator movement claimed.
-- **Authorized transition:** `adapter/inbound_transition.rs` and scaffold-era
-  core direct ownership remain scheduled for WP06; selector family dedup remains
-  WP12. Next MIG-03 dependency step: WP04 semantic audit, then WP05.
-
 ## Strategic State
 
-Phase: MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
+Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
 (non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, not in the
 S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local Chrome-current profile, wide-entropy
 BoringSSL order semantics, and official-JA4 algorithm cross-check CLOSED; real-network camouflage,
@@ -238,13 +235,11 @@ active probing, and tier-2 cohort remain OPEN.
 
 ## Current Build And Gate
 
-- 2026-07-13 REALITY: focused sb-tls, Python canary/parity, Chrome-current 10-run lane,
-  tier-1 20-run local fixture, boundaries, consistency, fmt/check/clippy PASS. Workspace
-  all-features test reaches unrelated existing `app/tests/multiplex_vless_e2e.rs` failure
-  (5/5 `connection is closed`, reproduced isolated); no TLS/REALITY test failure.
-- 2026-07-11 WP07 final: workspace all-feature check, strict workspace clippy, fmt, boundaries,
-  diff-check, core+adapters tests, Hysteria v1 E2E, Hysteria2 integration/UDP E2E, and benchmark
-  execution **PASS**. Exact evidence and dependency handoffs: WP07 package.
+- 2026-07-17 LNX-RT-01 final: pinned Linux amd64 workspace all-feature test/check,
+  repository-policy clippy, fmt, focused VMess, and strict both-kernel replay PASS.
+- Native arm64 focused VMess PASS. Repository closure gates: boundaries 430, consistency,
+  diff-check, and post-archive pinned-Linux fmt/clippy PASS. Raw logs remain under
+  `/private/tmp/singbox-rust-lnx-rt-01/`.
 
 ## T3 ClientHello Fingerprint Parity — Chrome-current refresh DONE (2026-07-13)
 

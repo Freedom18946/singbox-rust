@@ -1,24 +1,9 @@
 use serde_json::Value;
-use std::path::PathBuf;
 use std::process::Command;
 
 #[test]
 fn check_json_shape() {
-    let workspace_root = PathBuf::from(env!("CARGO_MANIFEST_DIR"))
-        .parent()
-        .expect("workspace root")
-        .to_path_buf();
-    let bin = workspace_root.join("target").join("debug").join("app");
-    if !bin.exists() {
-        let status = Command::new("cargo")
-            .args(["build", "-p", "app"])
-            .status()
-            .expect("build app");
-        assert!(
-            status.success(),
-            "failed to build app binary for check_schema"
-        );
-    }
+    let bin = xtests::ensure_workspace_bin("app", "app", &[]);
     let out = Command::new(&bin)
         .current_dir(env!("CARGO_MANIFEST_DIR"))
         .args([

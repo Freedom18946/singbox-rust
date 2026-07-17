@@ -1,7 +1,7 @@
 <!-- tier: B -->
 # LNX-RT-01 Linux runtime dual-kernel acceptance
 
-Status and volatile result counts live only in `../active_context.md`.
+Status and volatile result counts live only in `../../active_context.md` after archival.
 
 This directory owns task-scoped Linux runtime evidence, result tables, and reproduction
 instructions. It does not change the dual-kernel BHV denominator.
@@ -12,7 +12,7 @@ instructions. It does not change the dual-kernel BHV denominator.
 
 ## Container entrypoint
 
-`../06-scripts/run-linux-runtime.sh` builds and runs a pinned Debian toolchain containing
+`../../06-scripts/run-linux-runtime.sh` builds and runs a pinned Debian toolchain containing
 Rust 1.92.0 and Go 1.24.7. Cargo, Go, target, and raw interop artifacts use a host bind-cache
 under `/private/tmp` by default so Docker's project cache volume is not expanded by runtime
 replay.
