@@ -69,6 +69,7 @@ class RealityVlessEnvFromConfigTests(unittest.TestCase):
         self.assertEqual(env["SB_VLESS_REALITY_PUBLIC_KEY"], "PUB")
         self.assertEqual(env["SB_VLESS_REALITY_SHORT_ID"], "abcd")
         self.assertEqual(env["SB_VLESS_FINGERPRINT"], "chrome")
+        self.assertEqual(env["SB_VLESS_FLOW"], "xtls-rprx-vision")
         self.assertEqual(env["SB_VLESS_TARGET_HOST"], "example.com")
         self.assertEqual(env["SB_VLESS_TARGET_PORT"], "80")
         self.assertEqual(env["SB_VLESS_ALPN"], "h2,http/1.1")
@@ -96,6 +97,7 @@ class RealityVlessEnvFromConfigTests(unittest.TestCase):
         self.assertEqual(env["SB_VLESS_PORT"], "8443")
         self.assertEqual(env["SB_VLESS_SERVER_NAME"], "cdn.example")
         self.assertEqual(env["SB_VLESS_FINGERPRINT"], "firefox")
+        self.assertEqual(env["SB_VLESS_FLOW"], "")
         self.assertEqual(env["SB_VLESS_ALPN"], "h2,http/1.1")
         self.assertNotIn("SB_VLESS_PHASE_TIMEOUT_MS", env)
 

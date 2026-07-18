@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "observation_id": "obs-20260718-public-flow-parity-r92",
+  "cohort_id": "public-fresh-replacement",
+  "round_id": "R92",
+  "timestamp": "2026-07-18T14:55:41Z",
+  "config_fingerprint": "sha256:42723ad8c4add236c6ff59a9d10816ce6473ebc7632890845a8addd8a6138391",
+  "run_plan": {
+    "subset_schema_gate_passed": true,
+    "violations": [],
+    "planned_node_ids": [
+      "public-20260718-005",
+      "public-20260718-007",
+      "public-20260718-001"
+    ],
+    "no_silent_expansion": true
+  },
+  "intake_counts": {
+    "fresh_ready": 3,
+    "covered_existing": 0,
+    "duplicate": 0,
+    "not_ready": 0
+  },
+  "nodes": [
+    {
+      "node_id": "public-20260718-005",
+      "replacement_for": null,
+      "replacement_reason": null,
+      "credential_present": true,
+      "config_parse_ok": true,
+      "tcp_reachable": true,
+      "reality_dest_usable": true,
+      "direct_reality": true,
+      "transport_reality": true,
+      "vless_dial": true,
+      "vless_probe_io": false,
+      "infra_health": "unknown",
+      "phase_class": "post_dial_eof",
+      "exclusion_reason": "REALITY and VLESS dial passed 3/3, but both app and minimal payload probes ended with post_dial_eof; incomplete healthy-node evidence",
+      "included_in_client_verdict": false
+    },
+    {
+      "node_id": "public-20260718-007",
+      "replacement_for": null,
+      "replacement_reason": null,
+      "credential_present": true,
+      "config_parse_ok": true,
+      "tcp_reachable": true,
+      "reality_dest_usable": true,
+      "direct_reality": true,
+      "transport_reality": true,
+      "vless_dial": false,
+      "vless_probe_io": false,
+      "infra_health": "unknown",
+      "phase_class": "vless_timeout",
+      "exclusion_reason": "REALITY passed 3/3, but config-faithful no-flow VLESS and payload phases timed out identically in app and minimal probes; incomplete healthy-node evidence",
+      "included_in_client_verdict": false
+    },
+    {
+      "node_id": "public-20260718-001",
+      "replacement_for": null,
+      "replacement_reason": null,
+      "credential_present": true,
+      "config_parse_ok": true,
+      "tcp_reachable": true,
+      "reality_dest_usable": false,
+      "direct_reality": false,
+      "transport_reality": false,
+      "vless_dial": false,
+      "vless_probe_io": false,
+      "infra_health": "infrastructure-dead",
+      "phase_class": "same_failure_reality_dial_eof",
+      "exclusion_reason": "uniform reality_dial_eof across every app and minimal phase for 3/3 runs; node-level infrastructure failure excluded from client verdict",
+      "included_in_client_verdict": false
+    }
+  ],
+  "summary": {
+    "healthy_node_count": 0,
+    "excluded_infra_dead_count": 1,
+    "run_all_ok": false,
+    "run_same_failure": 1,
+    "run_divergence": 0,
+    "matrix_status": 0,
+    "matrix_timeout": false,
+    "banked": false,
+    "consecutive_all_ok_rounds": 0,
+    "source_threshold_note": "INCONCLUSIVE: zero admitted nodes completed every phase; one uniform infrastructure-dead node was excluded. All nine post-fix runs had zero app/minimal mismatch."
+  },
+  "verdict": "INCONCLUSIVE",
+  "notes": "Public-source cohort observation only; not a merge gate and not a 52/56 BHV increment. A pre-fix no-flow candidate exposed a harness-only false divergence because the minimal probe hard-coded xtls-rprx-vision. After propagating configured flow, the formal 3-node x3 post-fix round had zero mismatch. Raw credentials and endpoints were never committed."
+}

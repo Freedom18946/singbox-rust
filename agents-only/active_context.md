@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-18) - R92 external probe flow parity FIXED; observation INCONCLUSIVE
+
+- Fresh public REALITY/VLESS intake passed production config parsing and R81 subset-schema
+  admission. A no-flow node exposed a repeatable harness-only false divergence: the env extractor
+  omitted outbound `flow`, while the minimal phase probe hard-coded `xtls-rprx-vision`.
+- Probe tooling now carries and validates exact flow (`none` / Vision / Direct). Same no-flow
+  replay changed from two mismatches to zero; explicit Vision replay stayed at zero mismatches.
+- Formal post-fix public observation: three nodes x three runs, 9/9 matrices completed, zero
+  app/minimal mismatch. No all-phase healthy node: one uniform infrastructure-dead node, one
+  post-dial EOF node, one no-flow VLESS-timeout node. Tier verdict **INCONCLUSIVE**, not banked;
+  no Rust regression, tier-2 closure, real-network camouflage, or BHV movement claimed.
+- Evidence: `mt_real_02_evidence/round92_external_public_observation.{json,md}`. Raw public
+  credentials/endpoints were not committed.
+
 ## Resume (2026-07-18) - TLS global certificate-test isolation DONE
 
 - Fixed a real concurrent-test race in `crates/sb-tls/src/global.rs`: store-mode tests mutated

@@ -177,6 +177,7 @@ def extract_env(
         "SB_VLESS_REALITY_PUBLIC_KEY": public_key,
         "SB_VLESS_REALITY_SHORT_ID": short_id,
         "SB_VLESS_FINGERPRINT": fingerprint,
+        "SB_VLESS_FLOW": optional_string(outbound.get("flow")) or "",
         "SB_VLESS_UUID": string_value(outbound.get("uuid"), "uuid"),
         "SB_VLESS_TARGET_HOST": target_host,
         "SB_VLESS_TARGET_PORT": str(target_port),

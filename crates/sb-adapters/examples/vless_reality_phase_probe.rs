@@ -23,6 +23,7 @@ struct ProbeOutput {
     server: String,
     port: u16,
     server_name: String,
+    flow: String,
     alpn: Vec<String>,
     transport_type: String,
     uses_transport_dialer: bool,
@@ -57,6 +58,18 @@ fn parse_alpn_list(raw: &str) -> Vec<String> {
         .filter(|value| !value.is_empty())
         .map(ToOwned::to_owned)
         .collect()
+}
+
+fn parse_flow_control(raw: &str) -> std::io::Result<FlowControl> {
+    match raw {
+        "" => Ok(FlowControl::None),
+        "xtls-rprx-vision" => Ok(FlowControl::XtlsRprxVision),
+        "xtls-rprx-direct" => Ok(FlowControl::XtlsRprxDirect),
+        value => Err(std::io::Error::new(
+            std::io::ErrorKind::InvalidInput,
+            format!("unsupported VLESS flow: {value}"),
+        )),
+    }
 }
 
 impl PhaseResult {
@@ -254,6 +267,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .map(|raw| parse_alpn_list(&raw))
         .unwrap_or_default();
     let uuid = env_uuid("SB_VLESS_UUID", "550e8400-e29b-41d4-a716-446655440000")?;
+    let flow_name = env::var("SB_VLESS_FLOW").unwrap_or_else(|_| "xtls-rprx-vision".to_string());
+    let flow = parse_flow_control(&flow_name)?;
     let target_host = env_or("SB_VLESS_TARGET_HOST", "example.com");
     let target_port = env_port("SB_VLESS_TARGET_PORT", 80)?;
     let probe_io_timeout_ms = env::var("SB_VLESS_PROBE_IO_TIMEOUT_MS")
@@ -281,7 +296,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         server: server.clone(),
         port,
         uuid,
-        flow: FlowControl::XtlsRprxVision,
+        flow,
         encryption: sb_adapters::outbound::vless::Encryption::None,
         headers: HashMap::new(),
         timeout: Some(60),
@@ -301,6 +316,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         server,
         port,
         server_name,
+        flow: flow_name,
         alpn,
         transport_type: format!("{:?}", connector.transport_type()),
         uses_transport_dialer: connector.uses_transport_dialer(),
@@ -326,6 +342,23 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn parse_flow_control_preserves_configured_mode() {
+        assert_eq!(parse_flow_control("").unwrap(), FlowControl::None);
+        assert_eq!(
+            parse_flow_control("xtls-rprx-vision").unwrap(),
+            FlowControl::XtlsRprxVision
+        );
+        assert_eq!(
+            parse_flow_control("xtls-rprx-direct").unwrap(),
+            FlowControl::XtlsRprxDirect
+        );
+        assert_eq!(
+            parse_flow_control("vision").unwrap_err().to_string(),
+            "unsupported VLESS flow: vision"
+        );
+    }
 
     #[test]
     fn classify_probe_error_text_covers_reality_live_failures() {
