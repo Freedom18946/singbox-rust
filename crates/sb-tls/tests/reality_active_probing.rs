@@ -14,6 +14,9 @@
 //! Oracle: a client connecting directly to the decoy records the decoy leaf
 //! certificate. Each non-authenticated probe against the REALITY port must
 //! observe the identical certificate (relay) rather than an error.
+//! First-flight timing is checked independently: the decoy must be connected
+//! before client input, receive partial input immediately, and return data before
+//! the first TLS record is complete.
 
 #![allow(
     clippy::unwrap_used,
@@ -29,6 +32,7 @@ use std::time::Duration;
 
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::net::{TcpListener, TcpStream};
+use tokio::sync::mpsc;
 use tokio::time::timeout;
 
 use sb_tls::reality::generate_keypair;
@@ -124,6 +128,25 @@ async fn spawn_decoy() -> (SocketAddr, Vec<u8>) {
     (addr, cert_bytes)
 }
 
+async fn spawn_partial_timing_decoy() -> (SocketAddr, mpsc::UnboundedReceiver<&'static str>) {
+    let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+    let addr = listener.local_addr().unwrap();
+    let (events_tx, events_rx) = mpsc::unbounded_channel();
+
+    tokio::spawn(async move {
+        let (mut tcp, _) = listener.accept().await.unwrap();
+        let _ = events_tx.send("accepted");
+        let mut first = [0u8; 1];
+        tcp.read_exact(&mut first).await.unwrap();
+        assert_eq!(first[0], 0x16);
+        let _ = events_tx.send("first_byte");
+        tcp.write_all(b"partial-decoy-response").await.unwrap();
+        tcp.flush().await.unwrap();
+    });
+
+    (addr, events_rx)
+}
+
 /// Spawn the REALITY server; authenticated connections receive `PROXY_PAYLOAD`,
 /// non-authenticated connections are relayed to the decoy target.
 async fn spawn_reality(config: RealityServerConfig) -> SocketAddr {
@@ -138,21 +161,16 @@ async fn spawn_reality(config: RealityServerConfig) -> SocketAddr {
             };
             let acceptor = acceptor.clone();
             tokio::spawn(async move {
-                match acceptor.accept(tcp).await {
-                    Ok(conn) => match conn.handle().await {
-                        Ok(Some(mut proxy)) => {
-                            // Authenticated tunnel: emit a payload distinct from
-                            // the decoy banner so the client can prove it is the
-                            // proxy and not a relay.
-                            let _ = proxy.write_all(PROXY_PAYLOAD).await;
-                            let _ = proxy.flush().await;
-                            let mut buf = [0u8; 64];
-                            let _ = proxy.read(&mut buf).await;
-                        }
-                        Ok(None) => {} // relayed to target
-                        Err(_) => {}
-                    },
-                    Err(_) => {}
+                if let Ok(conn) = acceptor.accept(tcp).await
+                    && let Ok(Some(mut proxy)) = conn.handle().await
+                {
+                    // Authenticated tunnel: emit a payload distinct from
+                    // the decoy banner so the client can prove it is the
+                    // proxy and not a relay.
+                    let _ = proxy.write_all(PROXY_PAYLOAD).await;
+                    let _ = proxy.flush().await;
+                    let mut buf = [0u8; 64];
+                    let _ = proxy.read(&mut buf).await;
                 }
             });
         }
@@ -195,6 +213,38 @@ fn server_config(target: SocketAddr, priv_hex: &str) -> RealityServerConfig {
         max_time_difference: None,
         enable_fallback: true,
     }
+}
+
+#[tokio::test]
+async fn target_preconnects_and_mirrors_partial_input() {
+    init_crypto();
+    let (decoy_addr, mut events) = spawn_partial_timing_decoy().await;
+    let (priv_hex, _pub_hex) = generate_keypair();
+    let reality_addr = spawn_reality(server_config(decoy_addr, &priv_hex)).await;
+
+    let mut client = TcpStream::connect(reality_addr).await.unwrap();
+    assert_eq!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("decoy was not preconnected before client data"),
+        Some("accepted")
+    );
+
+    client.write_all(&[0x16]).await.unwrap();
+    client.flush().await.unwrap();
+    assert_eq!(
+        timeout(Duration::from_secs(1), events.recv())
+            .await
+            .expect("first byte was not mirrored before record completion"),
+        Some("first_byte")
+    );
+
+    let mut response = vec![0u8; b"partial-decoy-response".len()];
+    timeout(Duration::from_secs(1), client.read_exact(&mut response))
+        .await
+        .expect("decoy response was not relayed before record completion")
+        .expect("partial-input decoy response failed");
+    assert_eq!(response, b"partial-decoy-response");
 }
 
 /// A plain-TLS probe whose SNI is NOT in the server's accepted list must be

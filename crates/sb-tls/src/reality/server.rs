@@ -8,7 +8,7 @@ use rustls::pki_types::{CertificateDer, PrivateKeyDer};
 use std::io;
 use std::sync::Arc;
 use std::time::Duration;
-use tokio::io::{AsyncRead, AsyncWrite};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::net::TcpStream;
 use tokio::sync::RwLock;
 use tokio::time::timeout;
@@ -57,7 +57,7 @@ struct FirstRecord {
     content_type: Option<super::tls_record::ContentType>,
     /// The record payload (the ClientHello handshake message).
     handshake_data: Vec<u8>,
-    /// Full record bytes (5-byte header + payload) retained for replay/relay.
+    /// Full record bytes (5-byte header + payload) retained for authenticated replay.
     buffered: Vec<u8>,
 }
 
@@ -67,6 +67,11 @@ struct AuthOk {
     auth_key: [u8; 32],
     /// The accepted SNI (also the temporary-certificate server name).
     sni: String,
+}
+
+enum FirstFlight {
+    ClientRecord(Option<FirstRecord>),
+    TargetResponse(Vec<u8>),
 }
 
 impl RealityAcceptor {
@@ -119,8 +124,8 @@ impl RealityAcceptor {
     /// 3. 根据认证结果进行代理或回退
     /// # Errors
     /// # 错误
-    /// Returns an error if the handshake times out or validation fails.
-    /// 如果握手超时或验证失败，则返回错误。
+    /// Returns an error if target setup or the authenticated TLS handshake fails.
+    /// 如果目标连接建立或认证后的 TLS 握手失败，则返回错误。
     pub async fn accept<S>(&self, stream: S) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -135,10 +140,11 @@ impl RealityAcceptor {
     /// Handle REALITY handshake
     ///
     /// Canonical REALITY server flow (parity with Go `utls.RealityServer`):
-    /// 1. Read and buffer the first TLS record (the ClientHello).
-    /// 2. Authenticate entirely in-memory via the session_id AEAD.
-    /// 3. On success: terminate TLS locally with a REALITY temporary certificate.
-    /// 4. On any non-authenticated input (plain TLS, wrong SNI, bad short_id,
+    /// 1. Connect the decoy before reading client input.
+    /// 2. Mirror client reads to the decoy while buffering the first TLS record.
+    /// 3. Authenticate entirely in-memory via the session_id AEAD.
+    /// 4. On success: terminate TLS locally with a REALITY temporary certificate.
+    /// 5. On any non-authenticated input (plain TLS, wrong SNI, bad short_id,
     ///    failed decrypt, unparsable): transparently relay the connection to the
     ///    real target so an active prober cannot distinguish this port from the
     ///    decoy site.
@@ -148,68 +154,140 @@ impl RealityAcceptor {
     {
         debug!("Handling REALITY handshake");
 
-        // Step 1: buffer the first TLS record. If we cannot read a record at all,
-        // there is nothing to relay — surface the IO error.
-        let record = self.read_first_record(&mut stream).await?;
+        // Go REALITY dials the decoy before reading client bytes, then mirrors
+        // every read into that connection. Preserve that ordering so target
+        // connect latency and partial-input behavior cannot fingerprint Rust.
+        let target = TcpStream::connect(&self.config.target)
+            .await
+            .map_err(|error| RealityError::TargetFailed(format!("failed to connect: {error}")))?;
+        let (mut target_read, mut target_write) = target.into_split();
+        let first_flight = self
+            .read_first_flight(&mut stream, &mut target_read, &mut target_write)
+            .await;
+        let target = target_read.reunite(target_write).map_err(|error| {
+            RealityError::TargetFailed(format!("failed to reunite target stream: {error}"))
+        })?;
 
-        // Step 2: authenticate in-memory, then either terminate locally (proxy) or
+        let record = match first_flight {
+            FirstFlight::ClientRecord(Some(record)) => record,
+            FirstFlight::ClientRecord(None) => {
+                debug!(
+                    "REALITY input ended before a complete first record; continuing decoy relay"
+                );
+                return Ok(RealityConnection::Fallback {
+                    client: Box::new(stream),
+                    target,
+                });
+            }
+            FirstFlight::TargetResponse(response) => {
+                if !response.is_empty() {
+                    stream
+                        .write_all(&response)
+                        .await
+                        .map_err(RealityError::Io)?;
+                    stream.flush().await.map_err(RealityError::Io)?;
+                }
+                debug!(
+                    response_len = response.len(),
+                    "REALITY decoy responded before authentication; committing relay"
+                );
+                return Ok(RealityConnection::Fallback {
+                    client: Box::new(stream),
+                    target,
+                });
+            }
+        };
+
+        // Step 3: authenticate in-memory, then either terminate locally (proxy) or
         // relay to the real target (disguise).
-        match self.authenticate(&record) {
-            Some(auth) => {
-                info!("REALITY authentication successful (SNI={})", auth.sni);
-                let target_chain = self.ensure_target_chain(&auth.sni).await;
-                let replay_stream = ReplayStream::new(stream, record.buffered);
-                let tls_stream = self
-                    .complete_tls_handshake(
-                        replay_stream,
-                        &auth.sni,
-                        &auth.auth_key,
-                        target_chain.as_ref(),
-                    )
-                    .await?;
-                Ok(RealityConnection::Proxy(tls_stream))
-            }
-            None => {
-                debug!("REALITY connection not authenticated; relaying to target");
-                let replay_stream = ReplayStream::new(stream, record.buffered);
-                self.fallback_to_target(replay_stream).await
-            }
+        if let Some(auth) = self.authenticate(&record) {
+            info!("REALITY authentication successful (SNI={})", auth.sni);
+            drop(target);
+            let target_chain = self.ensure_target_chain(&auth.sni).await;
+            let replay_stream = ReplayStream::new(stream, record.buffered);
+            let tls_stream = self
+                .complete_tls_handshake(
+                    replay_stream,
+                    &auth.sni,
+                    &auth.auth_key,
+                    target_chain.as_ref(),
+                )
+                .await?;
+            Ok(RealityConnection::Proxy(tls_stream))
+        } else {
+            debug!("REALITY connection not authenticated; relaying to target");
+            Ok(RealityConnection::Fallback {
+                client: Box::new(stream),
+                target,
+            })
         }
     }
 
-    /// Read and buffer the first TLS record (the ClientHello) from the client.
+    /// Race client input against the decoy's first response while buffering the
+    /// first TLS record (the ClientHello).
     ///
-    /// The raw bytes are retained so they can be replayed either into the local
-    /// rustls acceptor (authenticated path) or into the real target (relay path).
-    async fn read_first_record<S>(&self, stream: &mut S) -> RealityResult<FirstRecord>
+    /// Raw bytes are retained for authenticated rustls replay and mirrored into
+    /// the already-connected decoy as each client read completes. A completed
+    /// client read wins over a simultaneous target response, and its mirror write
+    /// finishes outside `select!`; this preserves Go's mutex priority without a
+    /// cancellation gap that could lose consumed client bytes.
+    async fn read_first_flight<S, R, W>(
+        &self,
+        stream: &mut S,
+        target_read: &mut R,
+        target_write: &mut W,
+    ) -> FirstFlight
     where
-        S: AsyncRead + AsyncWrite + Unpin,
+        S: AsyncRead + Unpin,
+        R: AsyncRead + Unpin,
+        W: AsyncWrite + Unpin,
     {
         use super::tls_record::ContentType;
-        use tokio::io::AsyncReadExt;
 
-        let mut header_buf = [0u8; 5];
-        stream.read_exact(&mut header_buf).await.map_err(|e| {
-            RealityError::HandshakeFailed(format!("Failed to read TLS record header: {e}"))
-        })?;
+        let mut buffered = Vec::with_capacity(5);
+        let mut record_len = None;
+        let mut target_response = vec![0u8; 8192];
 
-        let content_type = ContentType::try_from(header_buf[0]).ok();
-        let length = usize::from(u16::from_be_bytes([header_buf[3], header_buf[4]]));
+        loop {
+            let required = record_len.unwrap_or(5);
+            if buffered.len() == required {
+                let content_type = ContentType::try_from(buffered[0]).ok();
+                let handshake_data = buffered[5..].to_vec();
+                return FirstFlight::ClientRecord(Some(FirstRecord {
+                    content_type,
+                    handshake_data,
+                    buffered,
+                }));
+            }
 
-        let mut handshake_data = vec![0u8; length];
-        stream.read_exact(&mut handshake_data).await.map_err(|e| {
-            RealityError::HandshakeFailed(format!("Failed to read record body: {e}"))
-        })?;
+            let start = buffered.len();
+            buffered.resize(required, 0);
+            let client_read = tokio::select! {
+                biased;
+                read = stream.read(&mut buffered[start..]) => read,
+                response = target_read.read(&mut target_response) => {
+                    let read = response.unwrap_or_default();
+                    target_response.truncate(read);
+                    return FirstFlight::TargetResponse(target_response);
+                }
+            };
+            let read = match client_read {
+                Ok(0) | Err(_) => return FirstFlight::ClientRecord(None),
+                Ok(read) => read,
+            };
+            buffered.truncate(start + read);
 
-        let mut buffered = Vec::with_capacity(5 + handshake_data.len());
-        buffered.extend_from_slice(&header_buf);
-        buffered.extend_from_slice(&handshake_data);
+            // Ignore decoy write errors like Go realityMirrorConn. This write is
+            // intentionally outside select so it cannot be cancelled after a
+            // client read consumed bytes.
+            let _ = target_write.write_all(&buffered[start..]).await;
 
-        Ok(FirstRecord {
-            content_type,
-            handshake_data,
-            buffered,
-        })
+            if record_len.is_none() && buffered.len() == 5 {
+                let payload_len = usize::from(u16::from_be_bytes([buffered[3], buffered[4]]));
+                record_len = Some(5 + payload_len);
+                buffered.reserve(payload_len);
+            }
+        }
     }
 
     /// Attempt REALITY authentication against the buffered first record.
@@ -345,31 +423,6 @@ impl RealityAcceptor {
         })?;
 
         Ok((cert_der, key_der))
-    }
-
-    /// Fallback to target website
-    /// 回退到目标网站
-    ///
-    /// When authentication fails, proxy the connection to the real target
-    /// to make it appear as legitimate traffic.
-    /// 当认证失败时，将连接代理到真实目标，使其看起来像合法流量。
-    async fn fallback_to_target<S>(&self, stream: S) -> RealityResult<RealityConnection>
-    where
-        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
-    {
-        debug!("Falling back to target: {}", self.config.target);
-
-        // Connect to real target
-        let target_stream = TcpStream::connect(&self.config.target)
-            .await
-            .map_err(|e| RealityError::TargetFailed(format!("failed to connect: {e}")))?;
-
-        info!("Fallback connection established to {}", self.config.target);
-
-        Ok(RealityConnection::Fallback {
-            client: Box::new(stream),
-            target: target_stream,
-        })
     }
 }
 
@@ -909,6 +962,46 @@ mod tests {
             Some(Duration::from_secs(60)),
             1_000
         ));
+    }
+
+    #[tokio::test]
+    async fn client_mirror_write_is_not_cancelled_by_ready_target_response() -> Result<(), String> {
+        let config = RealityServerConfig {
+            target: "127.0.0.1:1".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            short_ids: vec!["01ab".to_string()],
+            handshake_timeout: 5,
+            max_time_difference: None,
+            enable_fallback: true,
+        };
+        let acceptor = RealityAcceptor::new(config).unwrap();
+
+        let record = [0x16, 0x03, 0x01, 0x00, 0x00];
+        let (mut client_writer, mut client_reader) = tokio::io::duplex(record.len());
+        client_writer.write_all(&record).await.unwrap();
+
+        let (mut response_writer, mut response_reader) = tokio::io::duplex(1);
+        response_writer.write_all(b"x").await.unwrap();
+
+        let (mut target_writer, mut target_sink) = tokio::io::duplex(1);
+        let drain = tokio::spawn(async move {
+            let mut mirrored = [0u8; 5];
+            target_sink.read_exact(&mut mirrored).await.unwrap();
+            mirrored
+        });
+
+        let flight = acceptor
+            .read_first_flight(&mut client_reader, &mut response_reader, &mut target_writer)
+            .await;
+
+        let FirstFlight::ClientRecord(Some(first_record)) = flight else {
+            return Err("ready client record lost priority to target response".to_string());
+        };
+        assert_eq!(first_record.buffered, record);
+        assert_eq!(drain.await.unwrap(), record);
+        Ok(())
     }
 
     #[test]
