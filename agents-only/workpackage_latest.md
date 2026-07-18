@@ -47,6 +47,7 @@
 | MIG-03（架构去重迁移，WP01-WP14） | `archive/mig03/`（2026-07-12） |
 | MT-INTEROP-03（双核验收基线净化） | `archive/mt_interop_03/`（2026-07-12） |
 | LNX-RT-01（Linux 运行时回归 + VMess strict dual-kernel 收口） | `archive/lnx_rt_01/`（2026-07-17） |
+| S5/T4（SOCKS5 strict 双核吞吐压测） | `archive/s5_t4_socks5_throughput/`（2026-07-18） |
 | 旧 deployment-acceptance 下一阶段口径（已被 MT-REAL-02 取代） | `archive/mt_summary.md` |
 
 ### MT-GUI-04 结论（验收基线，非 parity completion）

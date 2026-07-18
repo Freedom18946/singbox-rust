@@ -59,6 +59,7 @@
 | Selector switch via SOCKS | blocked->direct | — | — | — | `p1_selector_switch_traffic_replay` (both) |
 | URLTest auto-select via SOCKS | auto-selects lowest latency | — | — | — | `p1_urltest_auto_select_replay` (both) |
 | TCP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_tcp_via_socks` (both) `p1_fault_*_tcp_*` `p1_recovery_*_tcp_*` |
+| TCP via SOCKS throughput | 1 MiB connect+echo, minimum 10 MiB/s | — | — | — | `p2_bench_socks5_throughput` (both) |
 | UDP via SOCKS | yes | disconnect/delay | reconnect | yes | `p1_rust_core_udp_via_socks` (both) `p1_fault_*_udp_*` `p1_recovery_*_udp_*` |
 | DNS via SOCKS UDP | yes | disconnect/delay | reconnect | yes | `p1_rust_core_dns_via_socks` (both) `p1_fault_*_dns_*` `p1_recovery_dns_*` |
 | DNS cache TTL via SOCKS | cache hit within TTL, refresh after expiry | — | — | — | `p1_dns_cache_ttl_via_socks` (both) |
@@ -102,7 +103,7 @@
 | `BHV-LC-008` | `Connection close notification` | `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_closes_on_server_shutdown` |
 | `BHV-LC-009` | `Resource cleanup on exit` | `labs/interop-lab/cases/p1_lifecycle_restart_reload_replay.yaml`, `crates/sb-core/tests/shutdown_lifecycle.rs::graceful_shutdown_releases_listener_and_clears_runtime_trackers` |
 | `BHV-PF-003` | `Peak RSS within bounds` | `labs/interop-lab/src/diff_report.rs::peak_memory_ratio_over_2x_is_mismatch`, `labs/interop-lab/cases/p2_connections_ws_soak_dual_core.yaml` |
-| `BHV-PF-001` | `HTTP proxy p95 latency` | `labs/interop-lab/cases/p1_rust_core_http_via_socks.yaml`, `benches/benches/socks5_throughput.rs` |
+| `BHV-PF-001` | `HTTP proxy p95 latency` | `labs/interop-lab/cases/p1_rust_core_http_via_socks.yaml` |
 | `BHV-PF-002` | `API response p95 latency` | `labs/interop-lab/cases/p0_clash_api_contract_strict.yaml`, `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxies_p95_latency` |
 | `BHV-PF-004` | `WS connection memory stable` | `crates/sb-api/tests/clash_websocket_e2e.rs::test_connections_ws_memory_remains_bounded_over_time` |
 | `BHV-SV-005` | `Proxy provider list via API` | `crates/sb-api/tests/clash_http_e2e.rs::test_get_proxy_providers`, `test_get_proxy_providers_with_data` (DIV-H-005: Go structural block) |

@@ -187,7 +187,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-PF-001 | HTTP proxy p95 latency | HTTP via SOCKS5 under load | p95 < threshold | Traffic | `p1_rust_core_http_via_socks` | `p2_bench_socks5_throughput` | — |
+| BHV-PF-001 | HTTP proxy p95 latency | HTTP via SOCKS5 under load | p95 < threshold | Traffic | `p1_rust_core_http_via_socks` | — | — |
 | BHV-PF-002 | API response p95 latency | GET /proxies repeated | p95 < threshold | Traffic | `p0_clash_api_contract_strict` | — | — |
 
 ### PF.2: Memory
@@ -514,8 +514,9 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 26 | `p1_gui_group_delay_replay` | both | E2 | BHV-CP-005 (group variant) | Promoted on 2026-03-16 reusing `l18_gui_go.json`; `ignore_http_paths` for timing-sensitive group delay path (DIV-M-009 pattern) |
 | 27 | `p2_vless_dual_dataplane_local` | both | E3 | BHV-DP-001 (VLESS variant) | New on 2026-03-16: VlessInbound upstream kind + Rust/Go configs (port 12083); TCP round-trip with UUID auth (ok/bad). No UDP (inbound TCP-only). |
 | 28 | `p2_vmess_dual_dataplane_local` | both | E3 | — (coverage-neutral VMess variant) | Canonical Go-compatible VMess TCP AEAD replaced the former local dialect. Linux committed-case replay is strict PASS on both kernels (`20260717T142243Z-34b05275-47aa-41ff-bcfa-39220788da3d`); no S4 label or denominator change. |
+| 29 | `p2_bench_socks5_throughput` | both | E3 | — (coverage-neutral perf stress) | Promoted on 2026-07-18 from a Rust-only Criterion wrapper that bypassed both kernels to a strict live 1 MiB SOCKS5 connect+echo floor on Rust and Go. |
 
-### T4: Long-term (+4 cases) — Partially Delivered
+### T4: Long-term — CLOSED (2026-07-18)
 
 | # | Case ID | Effort | New BHVs Covered | Status |
 |---|---------|--------|------------------|--------|
@@ -523,7 +524,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 2 | `p2_shadowsocks_dual_dataplane_local` | E4 | BHV-DP-001 (SS variant) | ✅ pre-existing both |
 | 3 | `p2_vless_dual_dataplane_local` | E3 | BHV-DP-001 (VLESS variant) | ✅ delivered 2026-03-16 |
 | 4 | `p2_vmess_dual_dataplane_local` | E3 | — | ✅ delivered 2026-07-17; canonical local peer, strict both-kernel PASS |
-| 5 | `p2_bench_socks5_throughput` | E3 | coverage-neutral perf stress (BHV-PF-001 now covered by `p1_rust_core_http_via_socks`) | pending |
+| 5 | `p2_bench_socks5_throughput` | E3 | coverage-neutral perf stress (BHV-PF-001 covered by `p1_rust_core_http_via_socks`) | ✅ delivered 2026-07-18; strict live both-kernel throughput floor |
 
 ### Non-Promotable Cases
 

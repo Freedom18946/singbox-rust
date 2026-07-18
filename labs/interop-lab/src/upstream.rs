@@ -1190,6 +1190,104 @@ pub async fn run_traffic_plan(
                     },
                 }
             }
+            TrafficAction::TcpThroughput {
+                name,
+                addr,
+                proxy,
+                payload_size,
+                samples,
+                warmup,
+                timeout_ms,
+                min_mib_per_sec,
+            } => {
+                let addr = normalize_addr(&harness.resolve_templates(addr));
+                let resolved_proxy = harness.resolve_templates(proxy);
+                let payload = resolve_payload("", Some(*payload_size), false);
+                let total_samples = warmup.saturating_add(*samples);
+                let mut rates = Vec::with_capacity(*samples);
+                let mut failed_detail = None;
+
+                for idx in 0..total_samples {
+                    let started = tokio::time::Instant::now();
+                    let result = tokio::time::timeout(
+                        Duration::from_millis((*timeout_ms).max(1)),
+                        tcp_roundtrip_via_proxy(&resolved_proxy, &addr, &payload),
+                    )
+                    .await;
+                    let echoed = match result {
+                        Ok(Ok(echoed)) => echoed,
+                        Ok(Err(err)) => {
+                            failed_detail = Some(json!({
+                                "sample": idx,
+                                "error": err.to_string(),
+                            }));
+                            break;
+                        }
+                        Err(_) => {
+                            failed_detail = Some(json!({
+                                "sample": idx,
+                                "error": format!("tcp throughput timeout after {}ms", timeout_ms),
+                            }));
+                            break;
+                        }
+                    };
+                    if echoed != payload {
+                        failed_detail = Some(json!({
+                            "sample": idx,
+                            "error": "tcp throughput echo mismatch",
+                            "payload_hash": sha256_hex(&payload),
+                            "echo_hash": sha256_hex(&echoed),
+                        }));
+                        break;
+                    }
+                    if idx >= *warmup {
+                        rates.push(throughput_bytes_per_sec(
+                            *payload_size,
+                            started.elapsed().as_micros() as u64,
+                        ));
+                    }
+                }
+
+                if let Some(detail) = failed_detail {
+                    TrafficResult {
+                        name: name.clone(),
+                        success: false,
+                        detail: json!({
+                            "action": "tcp_throughput",
+                            "addr": addr,
+                            "proxy": resolved_proxy,
+                            "payload_size": payload_size,
+                            "samples": samples,
+                            "warmup": warmup,
+                            "timeout_ms": timeout_ms,
+                            "min_mib_per_sec": min_mib_per_sec,
+                            "detail": detail,
+                        }),
+                    }
+                } else {
+                    let min_bytes_per_sec = rates.iter().copied().min().unwrap_or(0);
+                    let median_bytes_per_sec = percentile_us(&rates, 50);
+                    let required_bytes_per_sec = (*min_mib_per_sec * 1_048_576.0).ceil() as u64;
+                    TrafficResult {
+                        name: name.clone(),
+                        success: min_bytes_per_sec >= required_bytes_per_sec,
+                        detail: json!({
+                            "action": "tcp_throughput",
+                            "addr": addr,
+                            "proxy": resolved_proxy,
+                            "payload_size": payload_size,
+                            "samples": samples,
+                            "warmup": warmup,
+                            "timeout_ms": timeout_ms,
+                            "rate_basis": "payload bytes per full SOCKS5 connect+echo second",
+                            "bytes_per_sec": rates,
+                            "min_mib_per_sec": min_bytes_per_sec as f64 / 1_048_576.0,
+                            "median_mib_per_sec": median_bytes_per_sec as f64 / 1_048_576.0,
+                            "required_min_mib_per_sec": min_mib_per_sec,
+                        }),
+                    }
+                }
+            }
             TrafficAction::UdpRoundTrip {
                 name,
                 addr,
@@ -1652,6 +1750,11 @@ fn resolve_payload(
         }
         _ => payload.as_bytes().to_vec(),
     }
+}
+
+fn throughput_bytes_per_sec(payload_size: usize, elapsed_us: u64) -> u64 {
+    let elapsed_us = elapsed_us.max(1) as u128;
+    ((payload_size as u128).saturating_mul(1_000_000) / elapsed_us).min(u64::MAX as u128) as u64
 }
 
 fn build_tls_client_hello(sni: &str, alpn: &str) -> Vec<u8> {
@@ -2460,5 +2563,16 @@ impl rustls::client::danger::ServerCertVerifier for DangerousVerifier {
             rustls::SignatureScheme::RSA_PSS_SHA512,
             rustls::SignatureScheme::ED25519,
         ]
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::throughput_bytes_per_sec;
+
+    #[test]
+    fn throughput_rate_uses_payload_bytes_and_never_divides_by_zero() {
+        assert_eq!(throughput_bytes_per_sec(1_048_576, 1_000_000), 1_048_576);
+        assert_eq!(throughput_bytes_per_sec(1024, 0), 1_024_000_000);
     }
 }

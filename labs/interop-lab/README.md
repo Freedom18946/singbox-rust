@@ -69,6 +69,8 @@ Top-level fields:
 
 `traffic_plan` additional actions:
 
+- `tcp_throughput` (`addr`, SOCKS5 `proxy`, `payload_size`, `samples`, `warmup`,
+  `timeout_ms`, `min_mib_per_sec`); each sample includes a fresh SOCKS5 negotiation and full echo
 - `kernel_control` (`action=restart|reload`, `target=rust|go`, `wait_ready_ms`)
 - `fault_jitter` (`target`, `base_ms`, `jitter_ms`, `ratio`)
 - `api_ws_soak` (`path`, `clients_per_wave`, `waves`, `wave_delay_ms`, `min_success_ratio`, `frame_timeout_ms`)

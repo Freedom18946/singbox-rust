@@ -10,6 +10,18 @@
 
 ---
 
+## Resume (2026-07-18) - S5/T4 dual-kernel SOCKS5 throughput DONE
+
+- Closed the last S5/T4 pending case. `p2_bench_socks5_throughput` previously ran a Rust-only
+  Criterion echo loop that never traversed either kernel; it now drives the same live 1 MiB TCP
+  echo workload through fresh SOCKS5 connections on Rust and Go.
+- New validated `tcp_throughput` action records per-sample rates and enforces a strict 10 MiB/s
+  minimum. Both kernels passed with large local headroom; case is `kernel_mode: both`, `strict`.
+- Coverage-neutral: BHV-PF-001 remains owned by the existing HTTP p95 both-case; parity denominator
+  unchanged. Evidence: `archive/s5_t4_socks5_throughput/acceptance.md`.
+- **Recommended next:** REALITY external research tail (healthy cohort / real-network camouflage).
+  A2.3 capstone remains deferred and overlaps uncommitted user work; GUI remains paused.
+
 ## Resume (2026-07-18) - R92 external probe flow parity FIXED; observation INCONCLUSIVE
 
 - Fresh public REALITY/VLESS intake passed production config parsing and R81 subset-schema
@@ -199,6 +211,8 @@ Real-network camouflage and tier-2 cohort remain OPEN.
 
 ## Current Build And Gate
 
+- 2026-07-18 S5/T4: interop-lab suite PASS; strict both-kernel SOCKS5 throughput replay
+  PASS; fmt and focused implementation checks PASS. Durable metrics in the S5/T4 archive.
 - 2026-07-18 REALITY A1 v3: bidirectional Vision Go/Rust functional fixture, config checks,
   phase probe, and negative controls PASS; active-probing harness also locks target preconnect,
   partial-input mirror, and early target response; exact repeated evidence lives in fixture summary.

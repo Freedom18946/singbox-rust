@@ -185,7 +185,7 @@
 
 | Case ID | Goal | Env Class | Status |
 | --- | --- | --- | --- |
-| `p2_bench_socks5_throughput` | SOCKS5 throughput Criterion benchmark exit 0 | `env_limited` | implemented |
+| `p2_bench_socks5_throughput` | SOCKS5 live 1 MiB connect+echo throughput floor, both kernels | `strict` | implemented |
 | `p2_bench_shadowsocks_throughput` | Shadowsocks throughput Criterion benchmark exit 0 | `env_limited` | implemented |
 
 ## 协议 × 故障类型矩阵（L5.2.1）

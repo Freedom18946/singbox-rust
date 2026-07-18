@@ -255,6 +255,22 @@ pub enum TrafficAction {
         #[serde(default)]
         payload_tls_client_hello: bool,
     },
+    /// Measures end-to-end TCP echo throughput through a SOCKS5 proxy. Each
+    /// sample opens a new connection, so results include SOCKS5 negotiation.
+    TcpThroughput {
+        name: String,
+        addr: String,
+        proxy: String,
+        #[serde(default = "default_tcp_throughput_payload_size")]
+        payload_size: usize,
+        #[serde(default = "default_tcp_throughput_samples")]
+        samples: usize,
+        #[serde(default = "default_tcp_throughput_warmup")]
+        warmup: usize,
+        #[serde(default = "default_tcp_throughput_timeout_ms")]
+        timeout_ms: u64,
+        min_mib_per_sec: f64,
+    },
     UdpRoundTrip {
         name: String,
         addr: String,
@@ -493,6 +509,22 @@ fn default_http_get_latency_timeout_ms() -> u64 {
     5_000
 }
 
+fn default_tcp_throughput_payload_size() -> usize {
+    1_048_576
+}
+
+fn default_tcp_throughput_samples() -> usize {
+    5
+}
+
+fn default_tcp_throughput_warmup() -> usize {
+    1
+}
+
+fn default_tcp_throughput_timeout_ms() -> u64 {
+    10_000
+}
+
 fn default_api_ws_soak_clients_per_wave() -> usize {
     24
 }
@@ -674,6 +706,25 @@ fn validate_case_spec(case: &CaseSpec, cases_dir: &Path) -> Result<()> {
         }
     }
 
+    for action in &case.traffic_plan {
+        if let TrafficAction::TcpThroughput {
+            payload_size,
+            samples,
+            timeout_ms,
+            min_mib_per_sec,
+            ..
+        } = action
+        {
+            anyhow::ensure!(*payload_size > 0, "tcp_throughput payload_size must be > 0");
+            anyhow::ensure!(*samples > 0, "tcp_throughput samples must be > 0");
+            anyhow::ensure!(*timeout_ms > 0, "tcp_throughput timeout_ms must be > 0");
+            anyhow::ensure!(
+                min_mib_per_sec.is_finite() && *min_mib_per_sec > 0.0,
+                "tcp_throughput min_mib_per_sec must be finite and > 0"
+            );
+        }
+    }
+
     if case.covered_divergences.is_empty() {
         return Ok(());
     }
@@ -748,6 +799,49 @@ gui_sequence:
         let cases_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("cases");
         let cases = load_cases(&cases_dir).expect("repository cases must validate");
         assert_eq!(cases.len(), 103);
+    }
+
+    #[test]
+    fn tcp_throughput_defaults_and_validation() {
+        let case: CaseSpec = serde_yaml::from_str(
+            r#"
+id: throughput
+bootstrap: {}
+traffic_plan:
+  - kind: tcp_throughput
+    name: live
+    addr: 127.0.0.1:8080
+    proxy: socks5://127.0.0.1:1080
+    min_mib_per_sec: 1.0
+"#,
+        )
+        .unwrap();
+
+        let TrafficAction::TcpThroughput {
+            payload_size,
+            samples,
+            warmup,
+            timeout_ms,
+            ..
+        } = &case.traffic_plan[0]
+        else {
+            panic!("expected tcp_throughput action");
+        };
+        assert_eq!(*payload_size, 1_048_576);
+        assert_eq!(*samples, 5);
+        assert_eq!(*warmup, 1);
+        assert_eq!(*timeout_ms, 10_000);
+
+        let temp = tempfile::tempdir().unwrap();
+        validate_case_spec(&case, temp.path()).unwrap();
+
+        let mut invalid = case;
+        let TrafficAction::TcpThroughput { samples, .. } = &mut invalid.traffic_plan[0] else {
+            unreachable!();
+        };
+        *samples = 0;
+        let err = validate_case_spec(&invalid, temp.path()).unwrap_err();
+        assert!(err.to_string().contains("samples must be > 0"));
     }
 
     #[test]
