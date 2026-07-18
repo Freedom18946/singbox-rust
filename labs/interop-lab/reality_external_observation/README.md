@@ -22,9 +22,9 @@ checked by tooling instead of by hand.
    Pre-release real-network observation. **NOT a merge gate.** No single public
    node (e.g. the historical `fresh09`) is a mandatory closure identity; dead
    nodes are excluded and replaced with a recorded reason.
-3. **ClientHello byte-level fingerprint parity** — residual **open** item. Not
-   closed by a passing local gate, and not closed by occasional external-cohort
-   success.
+3. **ClientHello fingerprint parity** — Chrome-current local shape/order/JA4 is
+   closed by the local canary; real-network camouflage remains open and is not
+   closed by occasional external-cohort success.
 
 ## Files
 

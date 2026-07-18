@@ -10,7 +10,7 @@
 
 ---
 
-## Resume (2026-07-18) - REALITY active-probing + canonical server rewrite DONE
+## Resume (2026-07-18) - REALITY canonical server + reverse Go interop DONE
 
 - **active-probing tail closed (local, decidable).** Rewrote the REALITY server
   (`crates/sb-tls/src/reality/server.rs`) to Go-canonical: any non-authenticated input
@@ -30,15 +30,19 @@
 - **Decidable evidence:** `crates/sb-tls/tests/reality_active_probing.rs` (decoy + 4 probe classes,
   cert-DER equality vs direct-to-decoy; authenticated proxy receives distinct payload) + seal/open
   round-trip unit test. Rust-server↔Rust-client canonical interop now works (impossible under 0xFFCE).
+- **Reverse cross-kernel empirical fixture closed.** `make verify-reality-local` now includes Go uTLS
+  REALITY client → Rust `RealityAcceptor` + VLESS inbound → local HTTP target, using the standard
+  VLESS flow to isolate REALITY server interoperability. Committed A1 v2 evidence and per-run rows
+  live under `labs/interop-lab/reality_local_fixture/evidence/`; reverse lane and both forward lanes
+  all pass the fixture's full repeated matrix.
 - **Gates all green:** sb-tls 121+4+1 PASS; sb-adapters PASS; boundaries 0; consistency exit0;
   diff-check clean; clippy exit0 (only non-blocking nursery/pedantic); fmt clean;
-  **`make verify-reality-local` PASS** (forward Go-server↔Rust-client 20/20 — rustls patch did not
-  regress client interop).
-- **No 52/56 movement** (REALITY has no S3 BHV-ID). Differential: `reality_active_probing/`.
-- **OPEN (NON-gating):** reverse Go-client↔Rust-server empirical fixture (server Go-compat is
-  established by construction + forward fixture, not yet empirically run); success-path ServerHello
-  cipher/keyshare/record-framing borrow = rustls ARCH-LIMIT (prober can't reach); precise cross-net
-  timing; configurable MaxTimeDiff; `enable_fallback=false` footgun (default true).
+  **`make verify-reality-local` PASS** (bidirectional Go/Rust server-client matrix + negative controls).
+- **No 52/56 movement** (REALITY has no S3 BHV-ID). Differential archived at
+  `archive/reality_active_probing/`.
+- **OPEN (NON-gating):** success-path ServerHello cipher/keyshare/record-framing borrow = rustls
+  ARCH-LIMIT (prober can't reach); precise cross-net timing; configurable MaxTimeDiff;
+  `enable_fallback=false` footgun (default true); Rust inbound Vision framing.
 
 ## Resume (2026-07-17) - LNX-RT-01 Linux runtime closure DONE
 
@@ -153,12 +157,15 @@ Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-re
 (non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, not in the
 S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local Chrome-current profile, wide-entropy
 BoringSSL order semantics, official-JA4 algorithm cross-check, **and active-probing relay
-resistance + canonical session_id server auth CLOSED** (2026-07-18; see Resume); residual
+resistance + canonical session_id server auth + reverse Go-client empirical interop CLOSED**
+(2026-07-18; see Resume); residual
 success-path ServerHello framing-borrow stays rustls ARCH-LIMIT (unreachable by probers).
-Real-network camouflage, reverse Go-client↔Rust-server empirical run, and tier-2 cohort remain OPEN.
+Real-network camouflage and tier-2 cohort remain OPEN.
 
 ## Current Build And Gate
 
+- 2026-07-18 REALITY A1 v2: bidirectional Go/Rust functional fixture, config checks, phase probe,
+  and negative controls PASS; exact per-run evidence lives in the fixture summary.
 - 2026-07-17 LNX-RT-01 final: pinned Linux amd64 workspace all-feature test/check,
   repository-policy clippy, fmt, focused VMess, and strict both-kernel replay PASS.
 - Native arm64 focused VMess PASS. Repository closure gates: boundaries 430, consistency,
@@ -182,8 +189,8 @@ Real-network camouflage, reverse Go-client↔Rust-server empirical run, and tier
 2. External healthy-cohort observation — pre-release, NON-gating (tri-state; no single node
    is a closure identity; outage ≠ regression).
 3. ClientHello fingerprint parity — tier-3: Chrome-current local shape/order/JA4 CLOSED;
-   pinned Go lane compatibility-only; active-probing relay resistance + canonical server auth
-   CLOSED (2026-07-18); real-network camouflage OPEN.
+   pinned Go lane compatibility-only; active-probing relay resistance + canonical server auth +
+   reverse Go-client empirical interop CLOSED (2026-07-18); real-network camouflage OPEN.
 
 ## Closed Tracks (compressed; detail in archive)
 

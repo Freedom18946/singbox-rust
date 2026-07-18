@@ -5,6 +5,7 @@ Outputs (to --out-dir):
   go_server.json             Go VLESS+REALITY inbound, handshake.dest -> local tls-dest
   go_server_dead_dest.json   ditto, but handshake.dest -> dead port (negative: dead_dest)
   go_client.json             Go VLESS+REALITY outbound (base64url pubkey, uTLS chrome)
+  go_reverse_client.json     Go client -> Rust VLESS+REALITY server (standard VLESS flow)
   rust_client.json           Rust app VLESS+REALITY outbound (64-hex pubkey, v2 schema)
   rust_client_bad_pubkey.json wrong (valid-format) public key   (negative: bad_public_key)
   rust_client_bad_uuid.json   wrong uuid, correct keys          (negative: bad_uuid)
@@ -56,22 +57,23 @@ def render(m: dict) -> dict[str, dict]:
             "outbounds": [{"type": "direct", "tag": "direct"}],
         }
 
-    def go_client() -> dict:
+    def go_client(server_port: int, socks_port: int, client_flow: str) -> dict:
+        outbound = {
+            "type": "vless", "tag": "vless-reality-out",
+            "server": "127.0.0.1", "server_port": server_port,
+            "uuid": uuid,
+            "tls": {
+                "enabled": True, "server_name": sni,
+                "utls": {"enabled": True, "fingerprint": fp},
+                "reality": {"enabled": True, "public_key": pub_b64, "short_id": sid},
+            },
+        }
+        if client_flow:
+            outbound["flow"] = client_flow
         return {
             "log": {"level": "error", "timestamp": True},
-            "inbounds": [{"type": "mixed", "tag": "in", "listen": "127.0.0.1", "listen_port": p["go_client_socks"]}],
-            "outbounds": [
-                {
-                    "type": "vless", "tag": "vless-reality-out",
-                    "server": "127.0.0.1", "server_port": p["reality_server"],
-                    "uuid": uuid, "flow": flow,
-                    "tls": {
-                        "enabled": True, "server_name": sni,
-                        "utls": {"enabled": True, "fingerprint": fp},
-                        "reality": {"enabled": True, "public_key": pub_b64, "short_id": sid},
-                    },
-                },
-            ],
+            "inbounds": [{"type": "mixed", "tag": "in", "listen": "127.0.0.1", "listen_port": socks_port}],
+            "outbounds": [outbound],
             # No 'direct' outbound on purpose: with vless-reality-out as the only
             # outbound, a silent fallback is impossible, so a passing end-to-end
             # token proves the request actually traversed REALITY (not a fallback).
@@ -104,7 +106,10 @@ def render(m: dict) -> dict[str, dict]:
     return {
         "go_server.json": go_server(p["tls_dest"]),
         "go_server_dead_dest.json": go_server(neg["dead_dest_port"]),
-        "go_client.json": go_client(),
+        "go_client.json": go_client(p["reality_server"], p["go_client_socks"], flow),
+        "go_reverse_client.json": go_client(
+            p["rust_reality_server"], p["go_reverse_client_socks"], m["reverse_flow"]
+        ),
         "rust_client.json": rust_client(pub_hex, uuid),
         "rust_client_bad_pubkey.json": rust_client(neg["bad_public_key_hex"], uuid),
         "rust_client_bad_uuid.json": rust_client(pub_hex, neg["bad_uuid"]),

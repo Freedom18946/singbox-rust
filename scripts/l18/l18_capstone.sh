@@ -415,15 +415,17 @@ check_port_free() {
 }
 
 # REALITY local deterministic gate (A1 fixture) — tier-1 of the REALITY three-tier
-# acceptance model. Runs `make verify-reality-local` (20x Go + Rust + phase-probe
+# acceptance model. Runs `make verify-reality-local` (20x Go->Go + Rust->Go +
+# Go->Rust + phase-probe
 # positive matrix + 4 negative controls), the normative LOCAL merge-precheck for
-# REALITY client dataplane parity.
+# REALITY functional parity.
 #
 # This is an L18 LOCAL capstone gate, NOT server-side merge enforcement: GitHub
 # Actions is permanently disabled and there is no required-check layer.
 #
 # Single-instance / serialized constraint: the fixture binds FIXED loopback ports
-# (18443/18444/18445/11180/11181). Concurrent standalone `make verify-reality-local`
+# (18443/18444/18445/18446/11180/11181/11182). Concurrent standalone
+# `make verify-reality-local`
 # runs are unsupported and can fail via cross-run port contamination (readiness
 # probes by port, not by pid). This is an inherited fixed-port constraint, NOT silent
 # corruption; parallel-runner support would need dynamic ports or an explicit lock and
@@ -452,7 +454,7 @@ run_reality_local_gate() {
   # lsof. lsof, when present, only adds a best-effort diagnostic below.
   local busy=()
   local port
-  for port in 18443 18444 18445 11180 11181; do
+  for port in 18443 18444 18445 18446 11180 11181 11182; do
     if python3 -c "import socket,sys; s=socket.socket(); s.settimeout(0.5); sys.exit(0 if s.connect_ex(('127.0.0.1',$port))==0 else 1)" 2>/dev/null; then
       busy+=("$port")
     fi
@@ -465,7 +467,7 @@ run_reality_local_gate() {
     fi
     return 1
   fi
-  echo "[REALITY_LOCAL] deps present; fixed ports {18443,18444,18445,11180,11181} free; running make verify-reality-local"
+  echo "[REALITY_LOCAL] deps present; fixed ports {18443,18444,18445,18446,11180,11181,11182} free; running make verify-reality-local"
   make -C "${ROOT_DIR}" verify-reality-local
 }
 

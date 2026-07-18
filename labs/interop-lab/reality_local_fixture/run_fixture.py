@@ -1,19 +1,20 @@
 #!/usr/bin/env python3
-"""A1 controlled local REALITY client functional-parity fixture orchestrator.
+"""A1 controlled local REALITY functional-parity fixture orchestrator.
 
 Pipeline: build -> render -> bring up local topology (readiness/timeout/log/teardown)
--> positive matrix (Go client + Rust client 20x e2e token; Rust phase probe Nx) ->
+-> positive matrix (both clients -> Go server; Go client -> Rust server; phase probe) ->
 negative matrix (bad_public_key / bad_uuid / dead_dest / occupied_port) -> emit
 round-summary.json + per_run/*.json + rendered configs + process logs.
 
 Topology (all 127.0.0.1, NO public node / NO openssl s_server / NO socat):
-  reality_server  Go VLESS+REALITY inbound (-tags with_utls)
+  reality_server       Go VLESS+REALITY inbound (-tags with_utls)
+  rust_reality_server  Rust VLESS+REALITY inbound helper
   tls_dest        in-repo concurrent Go tls.Listener (handshake target)
   http_target     in-repo Go HTTP server returning a fixed token
-  {go,rust}_client_socks  the two client kernels' SOCKS entrypoints
+  {go,rust}_client_socks + go_reverse_client_socks client entrypoints
 
-Scope: Go-client AND Rust-client FUNCTIONAL dataplane parity vs ONE Go REALITY server.
-Does NOT assert REALITY server bidirectional interop; does NOT move 52/56 BHV parity.
+Scope: bidirectional Go/Rust REALITY interoperability plus local VLESS dataplane.
+Does NOT validate real-network camouflage or move 52/56 BHV parity.
 """
 import argparse
 import datetime
@@ -27,6 +28,8 @@ import socket
 import subprocess
 import sys
 import time
+
+from render_configs import b64url_to_hex
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -123,10 +126,18 @@ def build_all(bindir: pathlib.Path, skip: bool) -> dict:
     helper = bindir / "fixture-helper"
     app = REPO / "target/debug/app"
     probe = REPO / "target/debug/examples/vless_reality_phase_probe"
+    rust_server = REPO / "target/debug/examples/vless_reality_server_fixture"
     info = {"go_build_tags": GO_BUILD_TAGS}
     if skip:
         info["skipped"] = True
-        return {"go_sb": go_sb, "helper": helper, "app": app, "probe": probe, "info": info}
+        return {
+            "go_sb": go_sb,
+            "helper": helper,
+            "app": app,
+            "probe": probe,
+            "rust_server": rust_server,
+            "info": info,
+        }
 
     print("[build] Go sing-box (-tags %s) ..." % GO_BUILD_TAGS, flush=True)
     r = sh(["go", "-C", str(go_fork_dir()), "build", "-tags", GO_BUILD_TAGS, "-o", str(go_sb), "./cmd/sing-box"])
@@ -149,7 +160,20 @@ def build_all(bindir: pathlib.Path, skip: bool) -> dict:
     if r.returncode:
         raise SystemExit("rust probe build failed:\n" + r.stderr[-3000:])
 
-    return {"go_sb": go_sb, "helper": helper, "app": app, "probe": probe, "info": info}
+    print("[build] Rust VLESS+REALITY server fixture ...", flush=True)
+    r = sh(["cargo", "build", "-p", "sb-adapters", "--example", "vless_reality_server_fixture",
+            "--features", "adapter-vless,tls_reality"], cwd=REPO)
+    if r.returncode:
+        raise SystemExit("rust server fixture build failed:\n" + r.stderr[-3000:])
+
+    return {
+        "go_sb": go_sb,
+        "helper": helper,
+        "app": app,
+        "probe": probe,
+        "rust_server": rust_server,
+        "info": info,
+    }
 
 
 def probe_env(rust_cfg: pathlib.Path, target: str, m: dict) -> dict:
@@ -244,6 +268,7 @@ def main() -> None:
     val = {}
     val["go_server"] = sh([str(bins["go_sb"]), "check", "-c", str(rendered / "go_server.json")]).returncode
     val["go_client"] = sh([str(bins["go_sb"]), "check", "-c", str(rendered / "go_client.json")]).returncode
+    val["go_reverse_client"] = sh([str(bins["go_sb"]), "check", "-c", str(rendered / "go_reverse_client.json")]).returncode
     val["rust_client"] = sh([str(bins["app"]), "check", "-c", str(rendered / "rust_client.json")]).returncode
     print("[validate]", val, flush=True)
 
@@ -254,10 +279,10 @@ def main() -> None:
         "manifest_checksum": manifest_checksum,
         "run_id": run_id,
         "generated_at": datetime.datetime.now().isoformat(timespec="seconds"),
-        "scope": "Go-client + Rust-client FUNCTIONAL dataplane parity vs one Go REALITY server; NOT server interop; NOT a 52/56 BHV increment.",
+        "scope": "Bidirectional Go/Rust REALITY interoperability plus local VLESS dataplane; NOT real-network camouflage; NOT a 52/56 BHV increment.",
         "acceptance_model": {
             "tier": "local_deterministic_gate",
-            "meaning": "This fixture is the merge-blocking tier: functional local REALITY client dataplane parity against a controlled Go REALITY server. ClientHello byte-level uTLS fingerprint parity and real-network camouflage are NOT validated here; those belong to the external healthy-cohort pre-release observation tier (no single public node is a mandatory closure gate).",
+            "meaning": "This fixture is the merge-blocking tier: both clients reach a controlled Go REALITY server, and a Go uTLS REALITY client reaches the Rust REALITY server. ClientHello fingerprint shape is covered by the separate local Chrome canary; real-network camouflage belongs to external healthy-cohort observation.",
         },
         "topology": {**{k: f"127.0.0.1:{v}" for k, v in p.items()}, "sni": m["sni"], "flow": m["flow"], "token": token},
         "artifacts": {"per_run": "per_run/", "rendered_configs": "rendered/", "process_logs": "logs/"},
@@ -275,14 +300,26 @@ def main() -> None:
         pm.start("http_target", [str(bins["helper"]), "-mode", "http-target",
                                  "-listen", f"127.0.0.1:{p['http_target']}", "-token", token])
         pm.start("reality_server", [str(bins["go_sb"]), "run", "-c", str(rendered / "go_server.json")])
+        rust_server_env = {
+            "SB_REALITY_SERVER_LISTEN": f"127.0.0.1:{p['rust_reality_server']}",
+            "SB_REALITY_SERVER_TARGET": f"127.0.0.1:{p['tls_dest']}",
+            "SB_REALITY_SERVER_NAMES": m["sni"],
+            "SB_REALITY_SERVER_PRIVATE_KEY_HEX": b64url_to_hex(m["x25519"]["private_key_b64"]),
+            "SB_REALITY_SERVER_SHORT_IDS": m["short_id"],
+            "SB_VLESS_UUID": m["uuid"],
+        }
+        pm.start("rust_reality_server", [str(bins["rust_server"])], env=rust_server_env)
         pm.start("go_client", [str(bins["go_sb"]), "run", "-c", str(rendered / "go_client.json")])
+        pm.start("go_reverse_client", [str(bins["go_sb"]), "run", "-c", str(rendered / "go_reverse_client.json")])
         pm.start("rust_client", [str(bins["app"]), "run", "-c", str(rendered / "rust_client.json")])
 
         ready = {
             "tls_dest": wait_port("127.0.0.1", p["tls_dest"], T["startup_timeout_s"]),
             "http_target": wait_port("127.0.0.1", p["http_target"], T["startup_timeout_s"]),
             "reality_server": wait_port("127.0.0.1", p["reality_server"], T["startup_timeout_s"]),
+            "rust_reality_server": wait_port("127.0.0.1", p["rust_reality_server"], T["startup_timeout_s"]),
             "go_client": wait_port("127.0.0.1", p["go_client_socks"], T["startup_timeout_s"]),
+            "go_reverse_client": wait_port("127.0.0.1", p["go_reverse_client_socks"], T["startup_timeout_s"]),
             "rust_client": wait_port("127.0.0.1", p["rust_client_socks"], T["startup_timeout_s"]),
         }
         summary["positive"]["readiness"] = ready
@@ -311,6 +348,16 @@ def main() -> None:
             go_runs.append(rec)
         (per_run_dir / "positive_go_client.json").write_text(json.dumps(go_runs, indent=2))
 
+        # Go uTLS REALITY client -> Rust REALITY+VLESS server x N
+        go_reverse_runs = []
+        for i in range(1, N + 1):
+            rec = {"case": "positive", "kernel": "go_client_to_rust_server", "run_index": i,
+                   **curl_token(p["go_reverse_client_socks"], target_url, token, T["request_timeout_s"], bodyfile)}
+            go_reverse_runs.append(rec)
+        (per_run_dir / "positive_go_client_to_rust_server.json").write_text(
+            json.dumps(go_reverse_runs, indent=2)
+        )
+
         # Rust client (app) e2e token x N
         rust_runs = []
         for i in range(1, N + 1):
@@ -329,15 +376,27 @@ def main() -> None:
         (per_run_dir / "positive_rust_phase_probe.json").write_text(json.dumps(probe_runs, indent=2))
 
         go_ok = sum(1 for r in go_runs if r["token_match"])
+        go_reverse_ok = sum(1 for r in go_reverse_runs if r["token_match"])
         rust_ok = sum(1 for r in rust_runs if r["token_match"])
         probe_ok = sum(1 for r in probe_runs if r["phase_results"] and all(
             r["phase_results"][k]["ok"] for k in r["phase_results"]))
         # Embed the auto-collected per_run rows so round-summary.json is self-contained
         # (case / kernel / run_index / phase_results / token_match / elapsed all present).
         summary["positive"]["go_client"] = {"runs": N, "token_match_count": go_ok, "all_ok": go_ok == N, "per_run": go_runs}
+        summary["positive"]["go_client_to_rust_server"] = {
+            "runs": N,
+            "token_match_count": go_reverse_ok,
+            "all_ok": go_reverse_ok == N,
+            "flow": m["reverse_flow"],
+            "per_run": go_reverse_runs,
+        }
         summary["positive"]["rust_client"] = {"runs": N, "token_match_count": rust_ok, "all_ok": rust_ok == N, "per_run": rust_runs}
         summary["positive"]["rust_phase_probe"] = {"runs": N, "all_phases_ok_count": probe_ok, "all_ok": probe_ok == N, "per_run": probe_runs}
-        print(f"[positive] go={go_ok}/{N} rust={rust_ok}/{N} probe_all_ok={probe_ok}/{N}", flush=True)
+        print(
+            f"[positive] go->go={go_ok}/{N} go->rust={go_reverse_ok}/{N} "
+            f"rust->go={rust_ok}/{N} probe_all_ok={probe_ok}/{N}",
+            flush=True,
+        )
     finally:
         summary["teardown"]["positive"] = pm.teardown()
 
@@ -437,8 +496,12 @@ def main() -> None:
 
     # ---------------- VERDICT ----------------
     pos = summary["positive"]
-    pos_ok = all([pos.get("go_client", {}).get("all_ok"), pos.get("rust_client", {}).get("all_ok"),
-                  pos.get("rust_phase_probe", {}).get("all_ok")])
+    pos_ok = all([
+        pos.get("go_client", {}).get("all_ok"),
+        pos.get("go_client_to_rust_server", {}).get("all_ok"),
+        pos.get("rust_client", {}).get("all_ok"),
+        pos.get("rust_phase_probe", {}).get("all_ok"),
+    ])
     neg_ok = all(summary["negative"][k]["pass"] for k in summary["negative"])
     cfg_ok = all(v == 0 for v in val.values())
     summary["verdict"] = {

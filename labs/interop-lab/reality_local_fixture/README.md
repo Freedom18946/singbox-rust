@@ -1,26 +1,25 @@
 <!-- tier: B -->
-# A1 — Controlled Local REALITY Client Functional-Parity Fixture
+# A1 — Controlled Local REALITY Bidirectional Functional-Parity Fixture
 
-Reproducible, self-validating fixture that exercises **both** the Go client and
-the Rust client against **one** local Go `vless+reality` server, with zero
-public-network dependency. It is the **local deterministic gate** (merge-blocking
-tier) for REALITY *client dataplane* parity.
+Reproducible, self-validating fixture that exercises Go and Rust clients against
+one local Go `vless+reality` server, then a Go uTLS client against the Rust
+`vless+reality` server, with zero public-network dependency. It is the **local
+deterministic gate** (merge-blocking tier) for REALITY functional parity.
 
 ## Scope (read before citing this)
 
 - **What it proves:** functional REALITY handshake + VLESS dataplane parity for
-  the Rust client, side-by-side with the Go client, against a controlled Go
-  REALITY server. The Rust client fetches a fixed HTTP token end-to-end exactly
-  like the Go client does.
+  the Rust client against the Go server, and empirical Go uTLS client ↔ Rust
+  server interoperability. Every path fetches the same fixed HTTP token end-to-end.
 - **What it does NOT prove:**
-  - It does **not** assert REALITY *server* bidirectional interop (the topology
-    is Go=server, {Go,Rust}=clients — the Rust REALITY server is a bespoke,
-    library-only path that does not interop with Go).
+  - The reverse Go→Rust lane uses standard VLESS flow (`flow=""`) to isolate
+    REALITY server interoperability; Rust inbound Vision framing remains outside
+    this fixture.
   - It does **not** validate ClientHello byte-level uTLS fingerprint parity or
     real-network anti-censorship camouflage — those remain open and belong to
     the *external healthy-cohort* pre-release observation tier.
-  - It is **not** a `52/56` BHV behavior-parity increment. This is client-only /
-    Rust-only functional evidence, not a dual-kernel behavior-registry change.
+  - It is **not** a `52/56` BHV behavior-parity increment. REALITY has no S3
+    BHV-ID in that denominator.
 
 See `labs/interop-lab/docs/dual_kernel_golden_spec.md` → `DEV-REALITY-01` for the
 two-tier acceptance model this fixture anchors.
@@ -36,6 +35,12 @@ Rust client  (app, rust_client.json, socks 11181)          ─┤
               │ VLESS forward ──►
               ▼
    18445  in-repo Go HTTP target (helper -mode http-target) → returns token "reality-fixture-ok"
+
+Go client (go_reverse_client.json, socks 11182)
+              │
+              ▼
+   18446  Rust VLESS+REALITY server (vless_reality_server_fixture)
+              │ VLESS forward ─────────────────────────────► 18445 HTTP target
 ```
 
 The TLS dest and HTTP target are stdlib-only Go servers (`helper/main.go`): each
@@ -47,7 +52,7 @@ on stdout (readiness), and is torn down via process-group SIGTERM.
 `manifest.json` holds the **only** copy of the committed test parameters:
 X25519 keypair (base64url *and* 64-hex, cross-checked), `short_id`, `uuid`, SNI,
 flow, every port, the HTTP target path, the expected token, timeouts, and the
-negative-case parameters. `render_configs.py` generates all six kernel configs
+negative-case parameters. `render_configs.py` generates all seven kernel configs
 from it; the Rust phase-probe env is derived from the rendered `rust_client.json`
 via `scripts/tools/reality_vless_env_from_config.py`. **Do not hand-edit rendered
 configs and do not duplicate any parameter** — change `manifest.json` and re-run.
@@ -70,7 +75,7 @@ overwrites the committed `evidence/` snapshot, and it exits non-zero on any
 positive / negative / config-validation / readiness / teardown failure.
 
 That single command: builds the Go kernel (`-tags with_utls`), the Go helper, the
-Rust `app`, and the Rust phase probe → renders configs from the manifest →
+Rust `app`, Rust server helper, and Rust phase probe → renders configs from the manifest →
 validates them with the real kernels → brings up the local topology (readiness +
 timeout + per-process log capture) → runs the full acceptance matrix → emits
 evidence → tears everything down.
@@ -93,6 +98,7 @@ evidence → tears everything down.
 **Positive** (topology up):
 - Go client: `--runs` consecutive end-to-end requests, every response token must equal `reality-fixture-ok`.
 - Rust client (`app` SOCKS→VLESS+REALITY): `--runs` consecutive end-to-end token requests.
+- Go client → Rust VLESS+REALITY server: `--runs` consecutive end-to-end token requests.
 - Rust phase probe ×`--runs`, recording each of `direct_reality`,
   `transport_reality`, `vless_dial`, `vless_probe_io` (ok / class / error).
 
@@ -111,8 +117,9 @@ evidence → tears everything down.
   `go_build_tags`, `manifest_checksum`, `run_id`, `acceptance_model`, `topology`,
   `config_validation`, per-case + per-run rows (`case` / `kernel` / `run_index` /
   `phase_results` / `token_match` / `elapsed`), `teardown`, and the `verdict`.
-- `per_run/*.json` — auto-emitted per-run rows (positive go/rust/probe + negatives).
-- `rendered/*.json` — the six configs actually used this run.
+- `per_run/*.json` — auto-emitted per-run rows (positive Go→Go, Rust→Go,
+  Go→Rust, probe + negatives).
+- `rendered/*.json` — the seven configs actually used this run.
 - `logs/` — per-process stdout/stderr (positive top-level + a subdir per negative case).
 
 `local_deterministic_gate` in the verdict is `PASS` iff all positive runs match
@@ -130,15 +137,16 @@ the reference run with the one-command above plus
 | File | Role |
 |------|------|
 | `manifest.json` | single source of truth for all test parameters |
-| `render_configs.py` | manifest → 6 kernel configs (b64↔hex cross-checked) |
+| `render_configs.py` | manifest → 7 kernel configs (b64↔hex cross-checked) |
 | `run_fixture.py` | build → render → validate → topology → matrix → evidence → teardown |
+| `crates/sb-adapters/examples/vless_reality_server_fixture.rs` | Rust reverse-lane server helper |
 | `helper/main.go` | stdlib-only concurrent TLS dest + HTTP target servers |
 | `helper/go.mod` | helper module |
 
 ## Known boundaries
 
-Functional client dataplane parity ≠ uTLS byte-level ClientHello fingerprint
-parity. This fixture deliberately uses a Go `crypto/tls` dest that does **no**
+Functional dataplane parity ≠ real-network camouflage. This fixture deliberately
+uses a Go `crypto/tls` dest that does **no**
 ClientHello inspection and accepts any relayed hello — the Go client's uTLS-Chrome
 hello and the Rust client's plain `rustls` hello alike (the Rust client emits no
 uTLS fingerprint). It therefore does not measure how a real censoring middlebox

@@ -25,11 +25,12 @@ boundaries-report:
 	@bash agents-only/06-scripts/check-boundaries.sh --report
 
 # REALITY local deterministic gate (A1 fixture) — optional merge-precheck.
-# Builds the kernels, runs the 20x positive matrix (Go + Rust + phase probe) plus
-# the 4 negative controls, and exits non-zero on ANY positive / negative / config-
-# validation / readiness / teardown failure. Output goes to the gitignored runtime
-# artifacts dir (run_fixture.py default --out); it never overwrites the committed
-# evidence snapshot under labs/interop-lab/reality_local_fixture/evidence/.
+# Builds the kernels, runs the 20x positive matrix (Go->Go, Rust->Go, Go->Rust,
+# phase probe) plus the 4 negative controls, and exits non-zero on ANY positive /
+# negative / config-validation / readiness / teardown failure. Output goes to the
+# gitignored runtime artifacts dir (run_fixture.py default --out); it never
+# overwrites the committed evidence snapshot under
+# labs/interop-lab/reality_local_fixture/evidence/.
 verify-reality-local:
 	python3 labs/interop-lab/reality_local_fixture/run_fixture.py --runs 20
 
