@@ -5,7 +5,7 @@ Outputs (to --out-dir):
   go_server.json             Go VLESS+REALITY inbound, handshake.dest -> local tls-dest
   go_server_dead_dest.json   ditto, but handshake.dest -> dead port (negative: dead_dest)
   go_client.json             Go VLESS+REALITY outbound (base64url pubkey, uTLS chrome)
-  go_reverse_client.json     Go client -> Rust VLESS+REALITY server (standard VLESS flow)
+  go_reverse_client.json     Go Vision client -> Rust VLESS+REALITY+Vision server
   rust_client.json           Rust app VLESS+REALITY outbound (64-hex pubkey, v2 schema)
   rust_client_bad_pubkey.json wrong (valid-format) public key   (negative: bad_public_key)
   rust_client_bad_uuid.json   wrong uuid, correct keys          (negative: bad_uuid)
@@ -108,7 +108,7 @@ def render(m: dict) -> dict[str, dict]:
         "go_server_dead_dest.json": go_server(neg["dead_dest_port"]),
         "go_client.json": go_client(p["reality_server"], p["go_client_socks"], flow),
         "go_reverse_client.json": go_client(
-            p["rust_reality_server"], p["go_reverse_client_socks"], m["reverse_flow"]
+            p["rust_reality_server"], p["go_reverse_client_socks"], flow
         ),
         "rust_client.json": rust_client(pub_hex, uuid),
         "rust_client_bad_pubkey.json": rust_client(neg["bad_public_key_hex"], uuid),

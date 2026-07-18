@@ -8,13 +8,10 @@ deterministic gate** (merge-blocking tier) for REALITY functional parity.
 
 ## Scope (read before citing this)
 
-- **What it proves:** functional REALITY handshake + VLESS dataplane parity for
-  the Rust client against the Go server, and empirical Go uTLS client ↔ Rust
-  server interoperability. Every path fetches the same fixed HTTP token end-to-end.
+- **What it proves:** functional REALITY handshake + Vision VLESS dataplane parity
+  for the Rust client against the Go server, and empirical Go uTLS Vision client ↔
+  Rust server interoperability. Every path fetches the same fixed HTTP token end-to-end.
 - **What it does NOT prove:**
-  - The reverse Go→Rust lane uses standard VLESS flow (`flow=""`) to isolate
-    REALITY server interoperability; Rust inbound Vision framing remains outside
-    this fixture.
   - It does **not** validate ClientHello byte-level uTLS fingerprint parity or
     real-network anti-censorship camouflage — those remain open and belong to
     the *external healthy-cohort* pre-release observation tier.
@@ -22,7 +19,7 @@ deterministic gate** (merge-blocking tier) for REALITY functional parity.
     BHV-ID in that denominator.
 
 See `labs/interop-lab/docs/dual_kernel_golden_spec.md` → `DEV-REALITY-01` for the
-two-tier acceptance model this fixture anchors.
+three-tier acceptance model this fixture anchors.
 
 ## Topology (all 127.0.0.1, no public node, no `openssl s_server`, no `socat`)
 
@@ -36,10 +33,10 @@ Rust client  (app, rust_client.json, socks 11181)          ─┤
               ▼
    18445  in-repo Go HTTP target (helper -mode http-target) → returns token "reality-fixture-ok"
 
-Go client (go_reverse_client.json, socks 11182)
+Go Vision client (go_reverse_client.json, socks 11182)
               │
               ▼
-   18446  Rust VLESS+REALITY server (vless_reality_server_fixture)
+   18446  Rust VLESS+REALITY+Vision server (vless_reality_server_fixture)
               │ VLESS forward ─────────────────────────────► 18445 HTTP target
 ```
 
@@ -98,7 +95,9 @@ evidence → tears everything down.
 **Positive** (topology up):
 - Go client: `--runs` consecutive end-to-end requests, every response token must equal `reality-fixture-ok`.
 - Rust client (`app` SOCKS→VLESS+REALITY): `--runs` consecutive end-to-end token requests.
-- Go client → Rust VLESS+REALITY server: `--runs` consecutive end-to-end token requests.
+- Go Vision client → Rust VLESS+REALITY+Vision server: `--runs` consecutive
+  end-to-end token requests; flow addon validation and bidirectional Vision
+  framing are mandatory.
 - Rust phase probe ×`--runs`, recording each of `direct_reality`,
   `transport_reality`, `vless_dial`, `vless_probe_io` (ok / class / error).
 

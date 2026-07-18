@@ -220,7 +220,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Decision ID | Tag | Scope | Disposition | Evidence |
 |-------------|-----|-------|-------------|----------|
-| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): bidirectional functional dataplane, Chrome-current local ClientHello shape, BoringSSL extension-order semantics, coordinated GREASE, FoxIO-verified JA4, canonical server session_id auth, active-probing relay resistance, and reverse Go-client empirical interop = closed locally; real-network camouflage = open | A1 v2 validates both clients against the controlled Go REALITY server plus Go uTLS client against the Rust REALITY+VLESS server; Rust phase probe and negative controls remain blocking, with per-run counts only in `round-summary.json`. Reverse lane uses standard VLESS flow to isolate REALITY server interop; Rust inbound Vision framing remains open. Rust patched-rustls profile targets sanitized **full Chrome 150.0.7871.115** canary: `trust_anchors`, ML-DSA signature schemes, and REALITY removal of X25519MLKEM768 group/key-share. Extension ordering uses independent `OsRng` u32 words with BoringSSL reverse Fisher-Yates over middle extensions; two GREASE extensions stay at ends. Shared u16 order/ECH seed and empirical Go-order ranking tables are retired. `reality_clienthello_parity` has two lanes: Chrome-current Rust shape/JA4 is blocking; pinned Go `metacubex/utls v1.8.4` (`HelloChrome_133`) is functional compatibility only and profile differences are advisory. FoxIO algorithm conformance remains closed through vendored BSD-3 vectors. Still open: real-network camouflage, success-path ServerHello byte borrowing, Rust inbound Vision framing, and tier-2 healthy-cohort observation. REALITY has no S3 BHV-ID; no `52/56` BHV increment. | A1 fixture `labs/interop-lab/reality_local_fixture/`; active-probing differential `agents-only/archive/reality_active_probing/`; Chrome canary `labs/interop-lab/reality_chrome_canary/`; parity harness `labs/interop-lab/reality_clienthello_parity/`; FoxIO vectors under its `fixtures/foxio_reference_vectors/` |
+| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): bidirectional Vision dataplane, Chrome-current local ClientHello shape, BoringSSL extension-order semantics, coordinated GREASE, FoxIO-verified JA4, canonical server session_id auth, configurable client-time window, mandatory active-probing relay resistance, and reverse Go-client empirical interop = closed locally; real-network camouflage = open | A1 v3 validates both Vision clients against the controlled Go REALITY server plus Go uTLS Vision client against the Rust REALITY+VLESS+Vision server; Rust phase probe and negative controls remain blocking, with per-run counts only in `round-summary.json`. Rust patched-rustls profile targets sanitized **full Chrome 150.0.7871.115** canary: `trust_anchors`, ML-DSA signature schemes, and REALITY removal of X25519MLKEM768 group/key-share. Extension ordering uses independent `OsRng` u32 words with BoringSSL reverse Fisher-Yates over middle extensions; two GREASE extensions stay at ends. Shared u16 order/ECH seed and empirical Go-order ranking tables are retired. `reality_clienthello_parity` has two lanes: Chrome-current Rust shape/JA4 is blocking; pinned Go `metacubex/utls v1.8.4` (`HelloChrome_133`) is functional compatibility only and profile differences are advisory. FoxIO algorithm conformance remains closed through vendored BSD-3 vectors. Still open: real-network camouflage, success-path ServerHello byte borrowing, and tier-2 healthy-cohort observation. REALITY has no S3 BHV-ID; no `52/56` BHV increment. | A1 fixture `labs/interop-lab/reality_local_fixture/`; active-probing differential `agents-only/archive/reality_active_probing/`; Chrome canary `labs/interop-lab/reality_chrome_canary/`; parity harness `labs/interop-lab/reality_clienthello_parity/`; FoxIO vectors under its `fixtures/foxio_reference_vectors/` |
 
 #### REALITY Acceptance: Three-Tier Model
 
@@ -233,9 +233,8 @@ not let one substitute for another, and do not claim closure of one from another
      `labs/interop-lab/reality_local_fixture/`).
    - Validates: both client directions (Go/Rust → Go server, Go → Rust server),
      REALITY client/server functional path + VLESS dataplane + four negative controls
-     + teardown — offline, deterministic, zero public node. Reverse lane uses standard
-     VLESS flow to isolate REALITY server interop; Rust inbound Vision framing remains
-     a separate open item.
+     + teardown — offline, deterministic, zero public node. Reverse lane uses canonical
+     `xtls-rprx-vision`; Rust inbound flow validation and framing are blocking.
    - Status: **normative merge-precheck**. Currently **opt-in** (a Make target); it is
      NOT yet an automatically enforced merge gate (no CI / L18 capstone wiring).
    - Does NOT prove: real-network camouflage quality or success-path ServerHello byte
@@ -298,7 +297,8 @@ not let one substitute for another, and do not claim closure of one from another
 
    **Still OPEN (must not be faked closed):**
    1. real-network camouflage sufficiency.
-   2. active-probing resistance.
+   2. success-path ServerHello byte borrowing (rustls architecture limit; unreachable
+      to unauthenticated probers).
    3. tier-2 external healthy-cohort observation (pre-release, non-gating).
    4. A2.3 full L18-capstone runtime status-JSON rehearsal (deferred).
 

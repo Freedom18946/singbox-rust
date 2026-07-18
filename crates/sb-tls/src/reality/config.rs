@@ -4,6 +4,7 @@
 use crate::UtlsFingerprint;
 use base64::Engine as _;
 use serde::{Deserialize, Serialize};
+use std::time::Duration;
 
 /// REALITY client configuration
 /// REALITY 客户端配置
@@ -125,6 +126,15 @@ pub struct RealityServerConfig {
     #[serde(default = "default_handshake_timeout")]
     pub handshake_timeout: u64,
 
+    /// Maximum accepted client/server clock difference. Zero/None disables the check.
+    /// 接受的客户端/服务端最大时钟差。零值/None 禁用检查。
+    #[serde(
+        default,
+        skip_serializing_if = "Option::is_none",
+        with = "optional_humantime_duration"
+    )]
+    pub max_time_difference: Option<Duration>,
+
     /// Fallback to target on auth failure
     /// 认证失败时回退到目标
     #[serde(default = "default_true")]
@@ -163,6 +173,13 @@ impl RealityServerConfig {
             if short_id.len() > 16 || short_id.len() % 2 != 0 {
                 return Err(format!("short_id must be 0-16 hex chars: {short_id}"));
             }
+        }
+
+        if !self.enable_fallback {
+            return Err(
+                "enable_fallback=false is incompatible with REALITY active-probing resistance"
+                    .to_string(),
+            );
         }
 
         Ok(())
@@ -230,6 +247,34 @@ impl RealityServerConfig {
             padded[..len].copy_from_slice(&accepted[..len]);
             &padded == short_id
         })
+    }
+}
+
+mod optional_humantime_duration {
+    use serde::{Deserialize, Deserializer, Serializer};
+    use std::time::Duration;
+
+    #[allow(clippy::ref_option)] // serde `with` requires `&FieldType`.
+    pub fn serialize<S>(value: &Option<Duration>, serializer: S) -> Result<S::Ok, S::Error>
+    where
+        S: Serializer,
+    {
+        match value {
+            Some(value) => {
+                serializer.serialize_some(&humantime::format_duration(*value).to_string())
+            }
+            None => serializer.serialize_none(),
+        }
+    }
+
+    pub fn deserialize<'de, D>(deserializer: D) -> Result<Option<Duration>, D::Error>
+    where
+        D: Deserializer<'de>,
+    {
+        let raw = Option::<String>::deserialize(deserializer)?;
+        raw.filter(|value| !value.is_empty())
+            .map(|value| humantime::parse_duration(&value).map_err(serde::de::Error::custom))
+            .transpose()
     }
 }
 
@@ -545,10 +590,52 @@ mod tests {
                 .to_string(),
             short_ids: vec!["01ab".to_string()],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn server_config_rejects_disabled_fallback() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            short_ids: vec![],
+            handshake_timeout: 5,
+            max_time_difference: None,
+            enable_fallback: false,
+        };
+
+        let error = config.validate().unwrap_err();
+        assert!(error.contains("active-probing resistance"));
+    }
+
+    #[test]
+    fn server_config_max_time_difference_uses_go_duration_syntax() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+                .to_string(),
+            short_ids: vec![],
+            handshake_timeout: 5,
+            max_time_difference: Some(Duration::from_secs(60)),
+            enable_fallback: true,
+        };
+
+        let encoded = serde_json::to_value(&config).unwrap();
+        assert_eq!(encoded["max_time_difference"], "1m");
+        let decoded: RealityServerConfig = serde_json::from_value(encoded).unwrap();
+        assert_eq!(decoded.max_time_difference, Some(Duration::from_secs(60)));
+
+        let mut empty = serde_json::to_value(&config).unwrap();
+        empty["max_time_difference"] = serde_json::Value::String(String::new());
+        let decoded: RealityServerConfig = serde_json::from_value(empty).unwrap();
+        assert_eq!(decoded.max_time_difference, None);
     }
 
     #[test]
@@ -560,6 +647,7 @@ mod tests {
                 .to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
@@ -577,6 +665,7 @@ mod tests {
                 .to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
@@ -593,6 +682,7 @@ mod tests {
             private_key: "invalid".to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
@@ -610,6 +700,7 @@ mod tests {
                 .to_string(),
             short_ids: vec!["invalid".to_string()],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
@@ -626,6 +717,7 @@ mod tests {
                 .to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
@@ -644,6 +736,7 @@ mod tests {
                 .to_string(),
             short_ids: vec!["01ab".to_string(), "cdef".to_string()],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
@@ -664,6 +757,7 @@ mod tests {
                 .to_string(),
             short_ids: vec!["01ab".to_string(), "cdef".to_string()],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
@@ -688,6 +782,7 @@ mod tests {
                 .to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
@@ -706,6 +801,7 @@ mod tests {
                 .to_string(),
             short_ids: vec!["00".to_string(), "0102".to_string(), "010203".to_string()],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 

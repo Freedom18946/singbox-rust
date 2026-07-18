@@ -10,7 +10,7 @@
 
 ---
 
-## Resume (2026-07-18) - REALITY canonical server + reverse Go interop DONE
+## Resume (2026-07-18) - REALITY canonical server + inbound Vision interop DONE
 
 - **active-probing tail closed (local, decidable).** Rewrote the REALITY server
   (`crates/sb-tls/src/reality/server.rs`) to Go-canonical: any non-authenticated input
@@ -30,19 +30,22 @@
 - **Decidable evidence:** `crates/sb-tls/tests/reality_active_probing.rs` (decoy + 4 probe classes,
   cert-DER equality vs direct-to-decoy; authenticated proxy receives distinct payload) + seal/open
   round-trip unit test. Rust-server↔Rust-client canonical interop now works (impossible under 0xFFCE).
-- **Reverse cross-kernel empirical fixture closed.** `make verify-reality-local` now includes Go uTLS
-  REALITY client → Rust `RealityAcceptor` + VLESS inbound → local HTTP target, using the standard
-  VLESS flow to isolate REALITY server interoperability. Committed A1 v2 evidence and per-run rows
-  live under `labs/interop-lab/reality_local_fixture/evidence/`; reverse lane and both forward lanes
-  all pass the fixture's full repeated matrix.
-- **Gates all green:** sb-tls 121+4+1 PASS; sb-adapters PASS; boundaries 0; consistency exit0;
+- **Reverse Vision interop closed.** Rust VLESS inbound now validates canonical flow addons,
+  unpads client Vision frames, and frames server payloads. A1 v3 promotes reverse Go uTLS
+  `xtls-rprx-vision` client → Rust REALITY+VLESS+Vision server; reverse and both forward lanes pass
+  the full repeated matrix. No compatibility passthrough is used as proof.
+- **Server config hardening.** `max_time_difference` accepts Go duration syntax and enforces the
+  absolute client clock window (`None`/zero disables); `enable_fallback=false` is rejected and the
+  server relay path is unconditional, preserving active-probing resistance.
+- **Gates all green:** sb-tls 124+4+1 PASS; sb-adapters PASS; boundaries 0; consistency exit0;
   diff-check clean; clippy exit0 (only non-blocking nursery/pedantic); fmt clean;
-  **`make verify-reality-local` PASS** (bidirectional Go/Rust server-client matrix + negative controls).
+  **`make verify-reality-local` PASS** (20/20 each Go→Go, Rust→Go, Go Vision→Rust;
+  20/20 four-phase probe; negative controls PASS).
 - **No 52/56 movement** (REALITY has no S3 BHV-ID). Differential archived at
   `archive/reality_active_probing/`.
 - **OPEN (NON-gating):** success-path ServerHello cipher/keyshare/record-framing borrow = rustls
-  ARCH-LIMIT (prober can't reach); precise cross-net timing; configurable MaxTimeDiff;
-  `enable_fallback=false` footgun (default true); Rust inbound Vision framing.
+  ARCH-LIMIT (prober can't reach); precise cross-net timing; real-network camouflage and tier-2
+  healthy-cohort observation.
 
 ## Resume (2026-07-17) - LNX-RT-01 Linux runtime closure DONE
 
@@ -57,8 +60,8 @@
 - Closed portability/isolation defects in custom-target binary discovery, Python helper,
   rate-limit env/accounting, Trojan router ownership/pooling, and test binary lookup.
 - Track archived at `archive/lnx_rt_01/`; raw logs remain in `/private/tmp`.
-- **Recommended next:** REALITY external research tail: tier-2 camouflage, active probing,
-  healthy-cohort observation. GUI desktop stays paused unless explicitly reopened.
+- **Recommended next:** REALITY external research tail: tier-2 camouflage and healthy-cohort
+  observation. GUI desktop stays paused unless explicitly reopened.
 
 ## Resume (2026-07-17) - canonical VMess (Go sing-vmess wire-compatible) DONE
 
@@ -157,15 +160,16 @@ Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-re
 (non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, not in the
 S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local Chrome-current profile, wide-entropy
 BoringSSL order semantics, official-JA4 algorithm cross-check, **and active-probing relay
-resistance + canonical session_id server auth + reverse Go-client empirical interop CLOSED**
+resistance + canonical session_id server auth + inbound Vision framing + reverse Go-client
+empirical interop CLOSED**
 (2026-07-18; see Resume); residual
 success-path ServerHello framing-borrow stays rustls ARCH-LIMIT (unreachable by probers).
 Real-network camouflage and tier-2 cohort remain OPEN.
 
 ## Current Build And Gate
 
-- 2026-07-18 REALITY A1 v2: bidirectional Go/Rust functional fixture, config checks, phase probe,
-  and negative controls PASS; exact per-run evidence lives in the fixture summary.
+- 2026-07-18 REALITY A1 v3: bidirectional Vision Go/Rust functional fixture, config checks,
+  phase probe, and negative controls PASS; exact per-run evidence lives in the fixture summary.
 - 2026-07-17 LNX-RT-01 final: pinned Linux amd64 workspace all-feature test/check,
   repository-policy clippy, fmt, focused VMess, and strict both-kernel replay PASS.
 - Native arm64 focused VMess PASS. Repository closure gates: boundaries 430, consistency,
@@ -190,7 +194,8 @@ Real-network camouflage and tier-2 cohort remain OPEN.
    is a closure identity; outage ≠ regression).
 3. ClientHello fingerprint parity — tier-3: Chrome-current local shape/order/JA4 CLOSED;
    pinned Go lane compatibility-only; active-probing relay resistance + canonical server auth +
-   reverse Go-client empirical interop CLOSED (2026-07-18); real-network camouflage OPEN.
+   inbound Vision framing + reverse Go-client empirical interop CLOSED (2026-07-18);
+   real-network camouflage OPEN.
 
 ## Closed Tracks (compressed; detail in archive)
 

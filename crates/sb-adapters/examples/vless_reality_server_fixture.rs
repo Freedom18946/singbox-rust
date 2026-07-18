@@ -35,6 +35,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         private_key: required("SB_REALITY_SERVER_PRIVATE_KEY_HEX")?,
         short_ids: csv("SB_REALITY_SERVER_SHORT_IDS")?,
         handshake_timeout: 5,
+        max_time_difference: None,
         enable_fallback: true,
     };
     reality.validate()?;
@@ -51,7 +52,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         transport_layer: None,
         fallback: None,
         fallback_for_alpn: HashMap::new(),
-        flow: None,
+        flow: env::var("SB_VLESS_FLOW")
+            .ok()
+            .filter(|flow| !flow.is_empty()),
     };
 
     let (_stop_tx, stop_rx) = mpsc::channel(1);

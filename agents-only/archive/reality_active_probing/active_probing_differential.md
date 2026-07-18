@@ -4,6 +4,10 @@
 > 交付物 #1（DoD）。本卡是 `DEV-REALITY-01`（golden_spec S4，ARCH-LIMIT）下"不得伪造关闭"
 > 四项 OPEN 尾巴之一：**active-probing 抵抗**。
 > **纪律**：REALITY 无 S3 BHV-ID，不进 52/56 分母——本文件**不声称任何 parity 数字移动**。
+>
+> **2026-07-18 supersession:** 本文件下方 `enable_fallback=false` 与 Rust inbound Vision
+> 记录保留为当时差分。A1 v3 已拒绝关闭 fallback，并用 Go Vision→Rust Vision 反向 lane
+> 关闭 framing；当前状态以 `agents-only/active_context.md` 与 golden spec 为准。
 
 ## 0. Scope / 权威源
 

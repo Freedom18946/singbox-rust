@@ -40,6 +40,7 @@ thiserror = "2.0"
 # Time
 chrono = { version = "0.4", features = ["serde"] }
 time = "0.3"
+humantime = "2.1"
 
 # ACME (optional)
 instant-acme = { version = "0.7", optional = true }

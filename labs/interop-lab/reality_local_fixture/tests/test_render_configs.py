@@ -15,7 +15,7 @@ class RenderConfigsTests(unittest.TestCase):
         self.manifest = json.loads((FIXTURE / "manifest.json").read_text())
         self.rendered = render(self.manifest)
 
-    def test_reverse_client_targets_rust_server_without_vision(self):
+    def test_reverse_client_targets_rust_server_with_vision(self):
         config = self.rendered["go_reverse_client.json"]
         inbound = config["inbounds"][0]
         outbound = config["outbounds"][0]
@@ -26,7 +26,7 @@ class RenderConfigsTests(unittest.TestCase):
         self.assertEqual(
             outbound["server_port"], self.manifest["ports"]["rust_reality_server"]
         )
-        self.assertNotIn("flow", outbound)
+        self.assertEqual(outbound["flow"], self.manifest["flow"])
         self.assertEqual(
             outbound["tls"]["reality"]["public_key"],
             self.manifest["x25519"]["public_key_b64"],

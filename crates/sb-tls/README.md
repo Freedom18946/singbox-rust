@@ -55,6 +55,7 @@ let config = RealityServerConfig {
     private_key: "0123...abcdef".to_string(),  // Server's private key (64 hex chars)
     short_ids: vec!["01ab".to_string()],       // Accepted client IDs
     handshake_timeout: 5,
+    max_time_difference: None,                 // Optional anti-replay clock window
     enable_fallback: true,                      // Fallback to target on auth failure
 };
 

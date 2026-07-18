@@ -239,9 +239,18 @@ impl RealityAcceptor {
         if !self.config.accepts_reality_short_id(&auth.short_id) {
             return None;
         }
-        // The client-declared time is decoded but not gated: this mirrors Go's
-        // default (`MaxTimeDiff == 0` => no time-window check). Configurable
-        // enforcement is a registered residual.
+        if !client_time_acceptable(
+            auth.unix_seconds,
+            self.config.max_time_difference,
+            current_unix_seconds(),
+        ) {
+            debug!(
+                client_unix_seconds = auth.unix_seconds,
+                max_time_difference = ?self.config.max_time_difference,
+                "REALITY client time rejected"
+            );
+            return None;
+        }
         debug!(
             client_unix_seconds = auth.unix_seconds,
             "REALITY session_id decrypted"
@@ -348,12 +357,6 @@ impl RealityAcceptor {
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
-        if !self.config.enable_fallback {
-            return Err(RealityError::AuthFailed(
-                "authentication failed and fallback disabled".to_string(),
-            ));
-        }
-
         debug!("Falling back to target: {}", self.config.target);
 
         // Connect to real target
@@ -368,6 +371,28 @@ impl RealityAcceptor {
             target: target_stream,
         })
     }
+}
+
+fn current_unix_seconds() -> u64 {
+    std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .unwrap_or_default()
+        .as_secs()
+}
+
+fn client_time_acceptable(
+    client_unix_seconds: u32,
+    max_time_difference: Option<Duration>,
+    now_unix_seconds: u64,
+) -> bool {
+    let Some(max_time_difference) = max_time_difference else {
+        return true;
+    };
+    if max_time_difference.is_zero() {
+        return true;
+    }
+    Duration::from_secs(now_unix_seconds.abs_diff(u64::from(client_unix_seconds)))
+        <= max_time_difference
 }
 
 #[derive(Clone, Debug)]
@@ -835,6 +860,7 @@ mod tests {
                 .to_string(),
             short_ids: vec!["01ab".to_string()],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
@@ -851,11 +877,38 @@ mod tests {
                 .to_string(),
             short_ids: vec![],
             handshake_timeout: 5,
+            max_time_difference: None,
             enable_fallback: true,
         };
 
         let acceptor = RealityAcceptor::new(config);
         assert!(acceptor.is_err());
+    }
+
+    #[test]
+    fn client_time_window_matches_go_zero_and_absolute_semantics() {
+        assert!(client_time_acceptable(100, None, 10_000));
+        assert!(client_time_acceptable(100, Some(Duration::ZERO), 10_000));
+        assert!(client_time_acceptable(
+            940,
+            Some(Duration::from_secs(60)),
+            1_000
+        ));
+        assert!(client_time_acceptable(
+            1_060,
+            Some(Duration::from_secs(60)),
+            1_000
+        ));
+        assert!(!client_time_acceptable(
+            939,
+            Some(Duration::from_secs(60)),
+            1_000
+        ));
+        assert!(!client_time_acceptable(
+            1_061,
+            Some(Duration::from_secs(60)),
+            1_000
+        ));
     }
 
     #[test]

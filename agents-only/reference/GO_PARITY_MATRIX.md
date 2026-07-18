@@ -75,8 +75,8 @@ left no new dual-kernel parity movement claim.
   `labs/interop-lab/docs/dual_kernel_golden_spec.md` for that ledger.
 - This matrix does not resume Wails click automation, package20, or GUI joint testing.
 - This matrix does not claim root TUN privileged dataplane proof.
-- This matrix does not close official FoxIO JA4, extension-order distribution,
-  `HelloChrome_Auto` drift, or tier-2 REALITY camouflage.
+- This matrix does not close real-network or tier-2 REALITY camouflage; those
+  remain governed by `active_context.md` and the REALITY acceptance model.
 - This matrix does not restore or add `.github/workflows/*`.
 - This matrix does not make public-network live cohort health a merge gate.
 
@@ -106,7 +106,7 @@ summary at the top of this file.
 |---|---|
 | `209/209 closed` | Historical acceptance closure accounting. It included accepted limitations, de-scoped items, Rust-only items, and won't-fix decisions. It never meant every item had full behavior-level parity proof. |
 | `183/209 aligned` baseline | Historical January calibration that explained why later closure and behavior parity needed separate ledgers. |
-| Accepted TLS/REALITY limitations | Superseded for live status by MT-REAL-02 and `active_context.md`; local REALITY profile parity is boxed, while official-JA4/camouflage tails remain open. |
+| Accepted TLS/REALITY limitations | Superseded for live status by MT-REAL-02 and `active_context.md`; local REALITY profile parity and FoxIO JA4 cross-check are boxed, while real-network camouflage remains open. |
 | PX rows from 2025-12/2026-01 | Replaced by the Current PX Ledger above. Their value is provenance for post-FABLE and P1313 work discovery. |
 | Old `validator/v2.rs` anchors | The validator was split into `validator/v2/` modules. Use current source search, package records, and tests rather than stale line anchors. |
 

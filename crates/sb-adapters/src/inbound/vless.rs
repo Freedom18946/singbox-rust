@@ -27,7 +27,7 @@ use anyhow::{anyhow, Result};
 use std::collections::HashMap;
 use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
-use tokio::io::{AsyncReadExt, AsyncWriteExt};
+use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
 use tokio::select;
 use tokio::sync::mpsc;
 use tokio::time::{interval, Duration};
@@ -48,6 +48,7 @@ use crate::inbound::connect::{
     ConnectOpts,
 };
 use crate::outbound::pool_selector::PoolSelector;
+use crate::outbound::vless::VisionStream;
 use sb_core::net::metered;
 use sb_core::outbound::registry;
 use sb_core::router::rules::Decision as RDecision;
@@ -91,6 +92,12 @@ const ATYP_DOMAIN: u8 = 0x02;
 const ATYP_IPV6: u8 = 0x03;
 
 pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
+    if let Some(flow) = cfg.flow.as_deref() {
+        if !flow.is_empty() && flow != "xtls-rprx-vision" {
+            return Err(anyhow!("vless: unsupported flow: {flow}"));
+        }
+    }
+
     // Create listener based on transport configuration (defaults to TCP if not specified)
     // 根据传输配置创建监听器 (如果未指定则默认为 TCP)
     let transport = cfg.transport_layer.clone().unwrap_or_default();
@@ -230,8 +237,8 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                                              let cfg_inner = cfg_clone.clone();
                                              tokio::spawn(async move {
                                                  use tokio_util::compat::FuturesAsyncReadCompatExt;
-                                                 let mut tokio_stream = stream.compat();
-                                                 if let Err(e) = handle_conn_stream(&cfg_inner, &mut tokio_stream, peer).await {
+                                                let tokio_stream = stream.compat();
+                                                if let Err(e) = handle_conn_stream(&cfg_inner, tokio_stream, peer).await {
                                                      debug!(%peer, error=%e, "vless: mux stream error");
                                                  }
                                              });
@@ -245,8 +252,7 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                                  debug!(%peer, "vless: mux session ended");
                              } else {
                                  // No Mux
-                                 let mut stream = stream;
-                                 if let Err(e) = handle_conn_stream(&cfg_clone, &mut stream, peer).await {
+                                if let Err(e) = handle_conn_stream(&cfg_clone, stream, peer).await {
                                      sb_core::metrics::http::record_error_display(&e);
                                      sb_core::metrics::record_inbound_error_display("vless", &e);
                                      warn!(%peer, error=%e, "vless: session error");
@@ -345,21 +351,65 @@ async fn handle_fallback(
     Ok(())
 }
 
+fn parse_vless_flow(addons: &[u8]) -> Result<Option<String>> {
+    let mut offset = 0;
+    let mut flow = None;
+    while offset < addons.len() {
+        let field = addons[offset];
+        offset += 1;
+        let mut length = 0u64;
+        let mut shift = 0;
+        loop {
+            let byte = *addons
+                .get(offset)
+                .ok_or_else(|| anyhow!("vless: truncated addons length"))?;
+            offset += 1;
+            length |= u64::from(byte & 0x7f) << shift;
+            if byte & 0x80 == 0 {
+                break;
+            }
+            shift += 7;
+            if shift >= 64 {
+                return Err(anyhow!("vless: addons length varint overflow"));
+            }
+        }
+        let length = usize::try_from(length)
+            .map_err(|_| anyhow!("vless: addons length exceeds platform limits"))?;
+        let end = offset
+            .checked_add(length)
+            .ok_or_else(|| anyhow!("vless: addons length overflow"))?;
+        let value = addons
+            .get(offset..end)
+            .ok_or_else(|| anyhow!("vless: truncated addons value"))?;
+        match field {
+            0x0a => {
+                flow = Some(
+                    String::from_utf8(value.to_vec())
+                        .map_err(|_| anyhow!("vless: flow addon is not UTF-8"))?,
+                );
+            }
+            0x12 => {}
+            _ => return Err(anyhow!("vless: unknown addons field 0x{field:02x}")),
+        }
+        offset = end;
+    }
+    Ok(flow)
+}
+
 // Helper function to handle connections from generic streams (for V2Ray transport support)
 // 处理来自通用流 (用于 V2Ray 传输支持) 连接的辅助函数
 async fn handle_conn_stream(
     cfg: &VlessInboundConfig,
-    stream: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
+    stream: impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
     peer: SocketAddr,
 ) -> Result<()> {
     handle_conn_impl(cfg, stream, peer).await
 }
 
-async fn handle_conn_impl(
-    cfg: &VlessInboundConfig,
-    cli: &mut (impl tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + ?Sized),
-    peer: SocketAddr,
-) -> Result<()> {
+async fn handle_conn_impl<S>(cfg: &VlessInboundConfig, mut cli: S, peer: SocketAddr) -> Result<()>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
     // Step 1: Read version (1 byte)
     // 步骤 1: 读取版本 (1 字节)
     let version = match cli.read_u8().await {
@@ -375,7 +425,7 @@ async fn handle_conn_impl(
         if let Some(fallback_addr) = cfg.fallback {
             debug!(%peer, version=%version, "vless: invalid version, falling back to {}", fallback_addr);
             // We read 1 byte. We need to send it to fallback.
-            return handle_fallback(cli, fallback_addr, &[version]).await;
+            return handle_fallback(&mut cli, fallback_addr, &[version]).await;
         }
         return Err(anyhow!("vless: invalid version: {}", version));
     }
@@ -395,7 +445,7 @@ async fn handle_conn_impl(
             let mut prefix = Vec::with_capacity(17);
             prefix.push(version);
             prefix.extend_from_slice(&uuid_bytes);
-            return handle_fallback(cli, fallback_addr, &prefix).await;
+            return handle_fallback(&mut cli, fallback_addr, &prefix).await;
         }
         return Err(anyhow!("vless: authentication failed"));
     }
@@ -405,9 +455,29 @@ async fn handle_conn_impl(
     // Step 3: Read additional length (1 byte) and skip additional data
     // 步骤 3: 读取附加长度 (1 字节) 并跳过附加数据
     let additional_len = cli.read_u8().await?;
+    let mut additional = vec![0u8; additional_len as usize];
     if additional_len > 0 {
-        let mut additional = vec![0u8; additional_len as usize];
         cli.read_exact(&mut additional).await?;
+    }
+    let client_flow = parse_vless_flow(&additional)?;
+    let expected_flow = cfg
+        .flow
+        .as_deref()
+        .filter(|flow| *flow == "xtls-rprx-vision");
+    if client_flow.as_deref() != expected_flow {
+        if let Some(fallback_addr) = cfg.fallback {
+            let mut prefix = Vec::with_capacity(19 + additional.len());
+            prefix.push(version);
+            prefix.extend_from_slice(&uuid_bytes);
+            prefix.push(additional_len);
+            prefix.extend_from_slice(&additional);
+            return handle_fallback(&mut cli, fallback_addr, &prefix).await;
+        }
+        return Err(anyhow!(
+            "vless: flow mismatch: expected '{}', got '{}'; implicit fallback is disabled",
+            expected_flow.unwrap_or(""),
+            client_flow.as_deref().unwrap_or("")
+        ));
     }
 
     // Step 4: Read command (1 byte)
@@ -419,18 +489,11 @@ async fn handle_conn_impl(
 
     // Step 5: Parse target address
     // 步骤 5: 解析目标地址
-    let (target_host, target_port) = parse_vless_address(cli).await?;
+    let (target_host, target_port) = parse_vless_address(&mut cli).await?;
 
     debug!(%peer, host=%target_host, port=%target_port, "vless: parsed target");
 
-    // Step 6: Send response header
-    // Version (1 byte) + Additional length (0 byte for minimal)
-    // 步骤 6: 发送响应头
-    // 版本 (1 字节) + 附加长度 (0 字节表示最小化)
-    cli.write_u8(VLESS_VERSION).await?;
-    cli.write_u8(0x00).await?; // No additional data
-
-    // Step 7: Router decision
+    // Step 6: Router decision
     // 步骤 7: 路由决策
     let target_ip = target_host.parse::<IpAddr>().ok();
     let route_ctx = RouteCtx {
@@ -446,7 +509,7 @@ async fn handle_conn_impl(
     let decision = route_meta.decision;
     let rule = route_meta.rule;
 
-    // Step 8: Connect to upstream
+    // Step 7: Connect to upstream
     // 步骤 8: 连接上游
     let opts = ConnectOpts;
     let (mut upstream, outbound_tag) = match decision {
@@ -513,8 +576,8 @@ async fn handle_conn_impl(
         _ => return Err(anyhow!("vless: unsupported routing action")),
     };
 
-    // Step 9: Bidirectional relay (plain)
-    // 步骤 9: 双向转发 (普通)
+    // Step 8: Bidirectional relay. Vision owns response framing and payload
+    // padding; standard VLESS writes its two-byte response header directly.
     let traffic = cfg.stats.as_ref().and_then(|stats| {
         stats.traffic_recorder(cfg.tag.as_deref(), outbound_tag.as_deref(), None)
     });
@@ -539,17 +602,34 @@ async fn handle_conn_impl(
         traffic,
     );
     let _guard = wiring.guard;
-    let copy_res = metered::copy_bidirectional_streaming_ctl(
-        cli,
-        &mut upstream,
-        "vless",
-        Duration::from_secs(1),
-        None,
-        None,
-        Some(wiring.cancel),
-        Some(wiring.traffic),
-    )
-    .await;
+    let copy_res = if expected_flow.is_some() {
+        let mut vision = VisionStream::new_server(cli, *cfg.uuid.as_bytes());
+        metered::copy_bidirectional_streaming_ctl(
+            &mut vision,
+            &mut upstream,
+            "vless",
+            Duration::from_secs(1),
+            None,
+            None,
+            Some(wiring.cancel),
+            Some(wiring.traffic),
+        )
+        .await
+    } else {
+        cli.write_u8(VLESS_VERSION).await?;
+        cli.write_u8(0x00).await?;
+        metered::copy_bidirectional_streaming_ctl(
+            &mut cli,
+            &mut upstream,
+            "vless",
+            Duration::from_secs(1),
+            None,
+            None,
+            Some(wiring.cancel),
+            Some(wiring.traffic),
+        )
+        .await
+    };
     if let Err(e) = copy_res {
         if e.kind() != std::io::ErrorKind::Interrupted {
             return Err(e.into());
@@ -600,6 +680,11 @@ async fn parse_vless_address(
 #[cfg(test)]
 mod tests {
     use super::*;
+    use tokio::io::AsyncWriteExt;
+
+    const TEST_VISION_UUID_LEN: usize = 16;
+    const TEST_VISION_FRAME_HEADER_LEN: usize = 5;
+    const TEST_COMMAND_PADDING_CONTINUE: u8 = 0;
 
     #[tokio::test]
     async fn parses_standard_port_before_ipv4_address() {
@@ -608,6 +693,64 @@ mod tests {
         let (host, port) = parse_vless_address(&mut input).await.unwrap();
         assert_eq!(host, "127.0.0.1");
         assert_eq!(port, 18_101);
+    }
+
+    #[test]
+    fn parses_canonical_flow_addon() {
+        let flow = b"xtls-rprx-vision";
+        let mut addons = vec![0x0a, flow.len() as u8];
+        addons.extend_from_slice(flow);
+        assert_eq!(
+            parse_vless_flow(&addons).unwrap().as_deref(),
+            Some("xtls-rprx-vision")
+        );
+        assert_eq!(parse_vless_flow(&[]).unwrap(), None);
+    }
+
+    #[test]
+    fn rejects_unknown_or_truncated_flow_addon() {
+        assert!(parse_vless_flow(&[0x1a, 0x00]).is_err());
+        assert!(parse_vless_flow(&[0x0a, 0x02, b'x']).is_err());
+    }
+
+    #[tokio::test]
+    async fn vision_server_stream_unpads_and_frames_payloads() {
+        let uuid = *Uuid::parse_str("550e8400-e29b-41d4-a716-446655440000")
+            .unwrap()
+            .as_bytes();
+        let (mut client, server) = tokio::io::duplex(64 * 1024);
+        let mut vision = VisionStream::new_server(server, uuid);
+
+        let mut request = Vec::from(uuid);
+        request.extend_from_slice(&[TEST_COMMAND_PADDING_CONTINUE, 0, 4, 0, 3]);
+        request.extend_from_slice(b"ping");
+        request.extend_from_slice(&[0, 0, 0]);
+        client.write_all(&request[..19]).await.unwrap();
+        client.write_all(&request[19..]).await.unwrap();
+
+        let mut decoded = [0u8; 4];
+        vision.read_exact(&mut decoded).await.unwrap();
+        assert_eq!(&decoded, b"ping");
+
+        vision.write_all(b"pong").await.unwrap();
+        vision.flush().await.unwrap();
+        let mut response = [0u8; 2];
+        client.read_exact(&mut response).await.unwrap();
+        assert_eq!(response, [VLESS_VERSION, 0]);
+        let mut frame_prefix = [0u8; TEST_VISION_UUID_LEN + TEST_VISION_FRAME_HEADER_LEN];
+        client.read_exact(&mut frame_prefix).await.unwrap();
+        assert_eq!(&frame_prefix[..TEST_VISION_UUID_LEN], &uuid);
+        assert_eq!(
+            frame_prefix[TEST_VISION_UUID_LEN],
+            TEST_COMMAND_PADDING_CONTINUE
+        );
+        assert_eq!(
+            u16::from_be_bytes([
+                frame_prefix[TEST_VISION_UUID_LEN + 1],
+                frame_prefix[TEST_VISION_UUID_LEN + 2]
+            ]),
+            4
+        );
     }
 }
 

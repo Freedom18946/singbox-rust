@@ -192,6 +192,7 @@ fn server_config(target: SocketAddr, priv_hex: &str) -> RealityServerConfig {
         private_key: priv_hex.to_string(),
         short_ids: vec!["01ab".to_string()],
         handshake_timeout: 5,
+        max_time_difference: None,
         enable_fallback: true,
     }
 }

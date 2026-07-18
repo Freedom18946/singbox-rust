@@ -575,7 +575,7 @@ impl VlessConnector {
         }
 
         if self.vision_enabled() {
-            stream = Box::new(VisionClientStream::new(
+            stream = Box::new(VisionStream::new(
                 stream,
                 *self.config.uuid.as_bytes(),
                 true,
@@ -1397,24 +1397,52 @@ async fn consume_vless_response_tls(
     Ok(())
 }
 
-struct VisionClientStream {
+pub(crate) struct VisionStream {
     reader: DuplexStream,
     writer: DuplexStream,
     read_task: tokio::task::JoinHandle<()>,
     write_task: tokio::task::JoinHandle<()>,
 }
 
-impl VisionClientStream {
-    fn new(stream: BoxedStream, user_uuid: [u8; VISION_UUID_LEN], response_pending: bool) -> Self {
+impl VisionStream {
+    fn new<S>(stream: S, user_uuid: [u8; VISION_UUID_LEN], response_pending: bool) -> Self
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
         Self::new_with_direct(stream, user_uuid, response_pending, true)
     }
 
-    fn new_with_direct(
-        stream: BoxedStream,
+    fn new_with_direct<S>(
+        stream: S,
         user_uuid: [u8; VISION_UUID_LEN],
         response_pending: bool,
         allow_direct: bool,
-    ) -> Self {
+    ) -> Self
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
+        Self::new_with_options(stream, user_uuid, response_pending, allow_direct, None)
+    }
+
+    pub(crate) fn new_server<S>(stream: S, user_uuid: [u8; VISION_UUID_LEN]) -> Self
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
+        // Server writes VLESS response before first framed payload. Keeping direct
+        // mode disabled emits canonical END instead of requiring raw rustls access.
+        Self::new_with_options(stream, user_uuid, false, false, Some(vec![0x00, 0x00]))
+    }
+
+    fn new_with_options<S>(
+        stream: S,
+        user_uuid: [u8; VISION_UUID_LEN],
+        response_pending: bool,
+        allow_direct: bool,
+        mut write_prefix: Option<Vec<u8>>,
+    ) -> Self
+    where
+        S: tokio::io::AsyncRead + tokio::io::AsyncWrite + Unpin + Send + 'static,
+    {
         let (reader, mut reader_bridge) = tokio::io::duplex(64 * 1024);
         let (mut writer_bridge, writer) = tokio::io::duplex(64 * 1024);
         let (mut inner_reader, mut inner_writer) = tokio::io::split(stream);
@@ -1461,6 +1489,11 @@ impl VisionClientStream {
                 let plan = encoder.encode(&buffer[..read]);
                 if plan.chunks.is_empty() {
                     continue;
+                }
+                if let Some(prefix) = write_prefix.take() {
+                    if inner_writer.write_all(&prefix).await.is_err() {
+                        return;
+                    }
                 }
                 for (index, chunk) in plan.chunks.iter().enumerate() {
                     if inner_writer.write_all(chunk).await.is_err() {
@@ -1832,14 +1865,14 @@ impl tokio::io::AsyncWrite for VisionRealityClientStream {
     }
 }
 
-impl Drop for VisionClientStream {
+impl Drop for VisionStream {
     fn drop(&mut self) {
         self.read_task.abort();
         self.write_task.abort();
     }
 }
 
-impl tokio::io::AsyncRead for VisionClientStream {
+impl tokio::io::AsyncRead for VisionStream {
     fn poll_read(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -1849,7 +1882,7 @@ impl tokio::io::AsyncRead for VisionClientStream {
     }
 }
 
-impl tokio::io::AsyncWrite for VisionClientStream {
+impl tokio::io::AsyncWrite for VisionStream {
     fn poll_write(
         mut self: std::pin::Pin<&mut Self>,
         cx: &mut std::task::Context<'_>,
@@ -2348,7 +2381,7 @@ mod tests {
     async fn test_vision_stream_consumes_deferred_vless_response_before_payloads() {
         let uuid = [1u8; VISION_UUID_LEN];
         let (client_side, mut server_side) = tokio::io::duplex(64 * 1024);
-        let mut stream = VisionClientStream::new(Box::new(client_side), uuid, true);
+        let mut stream = VisionStream::new(Box::new(client_side), uuid, true);
 
         let server_task = tokio::spawn(async move {
             let tls_state = vision_tls_state();
@@ -2382,7 +2415,7 @@ mod tests {
     async fn test_vision_stream_roundtrips_bidirectional_payloads() {
         let uuid = [5u8; VISION_UUID_LEN];
         let (client_side, mut server_side) = tokio::io::duplex(64 * 1024);
-        let mut stream = VisionClientStream::new(Box::new(client_side), uuid, false);
+        let mut stream = VisionStream::new(Box::new(client_side), uuid, false);
 
         let server_task = tokio::spawn(async move {
             let tls_state = vision_tls_state();

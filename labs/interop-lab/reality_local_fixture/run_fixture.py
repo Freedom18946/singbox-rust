@@ -307,6 +307,7 @@ def main() -> None:
             "SB_REALITY_SERVER_PRIVATE_KEY_HEX": b64url_to_hex(m["x25519"]["private_key_b64"]),
             "SB_REALITY_SERVER_SHORT_IDS": m["short_id"],
             "SB_VLESS_UUID": m["uuid"],
+            "SB_VLESS_FLOW": m["flow"],
         }
         pm.start("rust_reality_server", [str(bins["rust_server"])], env=rust_server_env)
         pm.start("go_client", [str(bins["go_sb"]), "run", "-c", str(rendered / "go_client.json")])
@@ -387,7 +388,7 @@ def main() -> None:
             "runs": N,
             "token_match_count": go_reverse_ok,
             "all_ok": go_reverse_ok == N,
-            "flow": m["reverse_flow"],
+            "flow": m["flow"],
             "per_run": go_reverse_runs,
         }
         summary["positive"]["rust_client"] = {"runs": N, "token_match_count": rust_ok, "all_ok": rust_ok == N, "per_run": rust_runs}
