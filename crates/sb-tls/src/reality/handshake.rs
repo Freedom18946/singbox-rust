@@ -1120,6 +1120,99 @@ fn seal_reality_session_id(
         .map_err(|_| "REALITY session_id must be 32 bytes".to_string())
 }
 
+/// Open a REALITY session_id sealed by a client (server side).
+///
+/// Mirror of [`seal_reality_session_id`]: AES-256-GCM with `auth_key`,
+/// nonce = `client_random[20..32]`, AAD = the raw ClientHello handshake message
+/// with its 32-byte session_id slot zeroed. Returns the 16-byte plaintext
+/// (`version[0..3]`, unix seconds `[4..8]`, `short_id[8..16]`).
+pub(crate) fn open_reality_session_id(
+    auth_key: &[u8; 32],
+    client_random: &[u8; 32],
+    session_id_ciphertext: &[u8; REALITY_SESSION_ID_LEN],
+    aad: &[u8],
+) -> Result<[u8; REALITY_SESSION_PLAINTEXT_LEN], String> {
+    let key = UnboundKey::new(&aead::AES_256_GCM, auth_key)
+        .map_err(|_| "invalid REALITY AES-256-GCM key".to_string())?;
+    let key = LessSafeKey::new(key);
+    let nonce = Nonce::assume_unique_for_key(
+        client_random[20..32]
+            .try_into()
+            .map_err(|_| "invalid REALITY nonce length".to_string())?,
+    );
+    let mut in_out = session_id_ciphertext.to_vec();
+    let plaintext = key
+        .open_in_place(nonce, Aad::from(aad), &mut in_out)
+        .map_err(|_| "REALITY session_id open failed".to_string())?;
+    plaintext
+        .get(..REALITY_SESSION_PLAINTEXT_LEN)
+        .and_then(|s| s.try_into().ok())
+        .ok_or_else(|| "REALITY plaintext too short".to_string())
+}
+
+/// Server-side REALITY authentication result extracted from a client ClientHello.
+pub(crate) struct RealityServerAuth {
+    /// HKDF-derived auth key (shared with the authenticated client).
+    pub auth_key: [u8; 32],
+    /// 8-byte (zero-padded) short_id carried in the session_id plaintext.
+    pub short_id: [u8; 8],
+    /// Client-declared unix seconds (from the session_id plaintext).
+    pub unix_seconds: u32,
+}
+
+/// Byte offset of the 32-byte session_id inside a ClientHello handshake message:
+/// type(1) + length(3) + version(2) + random(32) + session_id_len(1).
+const REALITY_SESSION_ID_OFFSET: usize = 39;
+
+/// Authenticate a client ClientHello against the server's REALITY private key.
+///
+/// `Ok` is returned only when the embedded session_id decrypts under the shared
+/// key — i.e. the client possesses matching REALITY key material. SNI acceptance,
+/// short_id policy, and any time-window check remain the caller's responsibility.
+pub(crate) fn open_reality_client_auth(
+    server_private_key: &[u8; 32],
+    client_hello: &ClientHello,
+    raw_handshake_message: &[u8],
+) -> Result<RealityServerAuth, String> {
+    if client_hello.session_id.len() != REALITY_SESSION_ID_LEN {
+        return Err("REALITY session_id is not 32 bytes".to_string());
+    }
+    let client_public_key = parse_client_key_share(client_hello).map_err(|e| e.to_string())?;
+
+    let shared_secret = StaticSecret::from(*server_private_key)
+        .diffie_hellman(&PublicKey::from(client_public_key))
+        .to_bytes();
+    let auth_key = derive_auth_key(shared_secret, &client_hello.random)?;
+
+    // AAD = raw ClientHello handshake message with the 32-byte session_id zeroed.
+    if raw_handshake_message.len() < REALITY_SESSION_ID_OFFSET + REALITY_SESSION_ID_LEN
+        || raw_handshake_message.get(REALITY_SESSION_ID_OFFSET - 1)
+            != Some(&(REALITY_SESSION_ID_LEN as u8))
+    {
+        return Err("REALITY ClientHello session_id layout mismatch".to_string());
+    }
+    let mut aad = raw_handshake_message.to_vec();
+    aad[REALITY_SESSION_ID_OFFSET..REALITY_SESSION_ID_OFFSET + REALITY_SESSION_ID_LEN].fill(0);
+
+    let ciphertext: [u8; REALITY_SESSION_ID_LEN] = client_hello
+        .session_id
+        .as_slice()
+        .try_into()
+        .map_err(|_| "REALITY session_id is not 32 bytes".to_string())?;
+
+    let plaintext = open_reality_session_id(&auth_key, &client_hello.random, &ciphertext, &aad)?;
+
+    let mut short_id = [0u8; 8];
+    short_id.copy_from_slice(&plaintext[8..16]);
+    let unix_seconds = u32::from_be_bytes([plaintext[4], plaintext[5], plaintext[6], plaintext[7]]);
+
+    Ok(RealityServerAuth {
+        auth_key,
+        short_id,
+        unix_seconds,
+    })
+}
+
 fn short_id_bytes(short_id: Option<Vec<u8>>) -> [u8; 8] {
     let mut padded = [0u8; 8];
     if let Some(short_id) = short_id {
@@ -1375,6 +1468,70 @@ mod tests {
             seal_reality_session_id(&[0x22; 32], &[0x33; 32], &[0x44; 16], &[0x55; 64]).unwrap();
         assert_eq!(sealed.len(), REALITY_SESSION_ID_LEN);
         assert_ne!(&sealed[..16], &[0x44; 16]);
+    }
+
+    /// End-to-end crypto round trip: a client seals a session_id exactly as the
+    /// REALITY client does, and the server-side `open_reality_client_auth` recovers
+    /// the short_id and the identical auth key. This locks the AEAD parameters
+    /// (AES-256-GCM, nonce = random[20..32], AAD = ClientHello with a zeroed
+    /// session_id) shared with the Go server.
+    #[test]
+    fn test_reality_session_id_seal_open_round_trip() {
+        let server_secret = StaticSecret::from([7u8; 32]);
+        let server_public = PublicKey::from(&server_secret);
+        let server_private_bytes = server_secret.to_bytes();
+
+        let client_secret = StaticSecret::from([9u8; 32]);
+        let client_public = PublicKey::from(&client_secret);
+        let client_public_bytes = *client_public.as_bytes();
+
+        let shared = client_secret.diffie_hellman(&server_public).to_bytes();
+        let random = [0x5a_u8; 32];
+        let auth_key = derive_auth_key(shared, &random).unwrap();
+
+        let short_id = [0x01, 0x02, 0x03, 0x04, 0, 0, 0, 0];
+        let plaintext = build_reality_plaintext_session_id(current_unix_seconds(), short_id);
+
+        // key_share extension carrying the client's X25519 public key.
+        let mut key_share = Vec::new();
+        key_share.extend_from_slice(&36u16.to_be_bytes());
+        key_share.extend_from_slice(&u16::from(NamedGroup::X25519).to_be_bytes());
+        key_share.extend_from_slice(&32u16.to_be_bytes());
+        key_share.extend_from_slice(&client_public_bytes);
+
+        // SNI extension.
+        let host = b"example.com";
+        let mut sni = Vec::new();
+        sni.extend_from_slice(&((host.len() + 3) as u16).to_be_bytes());
+        sni.push(0);
+        sni.extend_from_slice(&(host.len() as u16).to_be_bytes());
+        sni.extend_from_slice(host);
+
+        let mut hello = ClientHello {
+            version: 0x0303,
+            random,
+            session_id: vec![0u8; REALITY_SESSION_ID_LEN],
+            cipher_suites: vec![0x1301],
+            compression_methods: vec![0x00],
+            extensions: vec![],
+        };
+        hello.set_extension(ExtensionType::ServerName as u16, sni);
+        hello.set_extension(ExtensionType::KeyShare as u16, key_share);
+
+        // AAD = ClientHello handshake message with a zeroed session_id.
+        let aad = hello.serialize().unwrap();
+        let sealed = seal_reality_session_id(&auth_key, &random, &plaintext, &aad).unwrap();
+
+        hello.session_id = sealed.to_vec();
+        let wire = hello.serialize().unwrap();
+        let parsed = ClientHello::parse(&wire).unwrap();
+
+        let auth = open_reality_client_auth(&server_private_bytes, &parsed, &wire).unwrap();
+        assert_eq!(auth.short_id, short_id);
+        assert_eq!(auth.auth_key, auth_key);
+
+        // A different server private key must not decrypt the session_id.
+        assert!(open_reality_client_auth(&[1u8; 32], &parsed, &wire).is_err());
     }
 
     #[test]

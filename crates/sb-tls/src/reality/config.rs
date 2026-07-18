@@ -209,6 +209,28 @@ impl RealityServerConfig {
 
         false
     }
+
+    /// Check whether an 8-byte (zero-padded) REALITY session_id short_id is accepted.
+    /// 检查一个 8 字节（零填充）的 REALITY session_id short_id 是否被接受。
+    ///
+    /// Matches Go `reality_server.go`: with no configured short IDs, only the
+    /// all-zero short ID is accepted (not "accept all"); otherwise each configured
+    /// short ID is zero-padded to 8 bytes and compared.
+    /// 对齐 Go `reality_server.go`：未配置 short ID 时只接受全零 short ID（而非"接受所有"）；
+    /// 否则将每个配置的 short ID 零填充到 8 字节后比较。
+    #[must_use]
+    pub fn accepts_reality_short_id(&self, short_id: &[u8; 8]) -> bool {
+        if self.short_ids.is_empty() {
+            return short_id.iter().all(|&b| b == 0);
+        }
+
+        self.short_ids_bytes().iter().any(|accepted| {
+            let mut padded = [0u8; 8];
+            let len = accepted.len().min(padded.len());
+            padded[..len].copy_from_slice(&accepted[..len]);
+            &padded == short_id
+        })
+    }
 }
 
 // Helper functions

@@ -10,6 +10,36 @@
 
 ---
 
+## Resume (2026-07-18) - REALITY active-probing + canonical server rewrite DONE
+
+- **active-probing tail closed (local, decidable).** Rewrote the REALITY server
+  (`crates/sb-tls/src/reality/server.rs`) to Go-canonical: any non-authenticated input
+  (plain TLS / wrong SNI / no keyshare / decrypt-fail / bad short_id / unparsable) is now
+  transparently relayed to the real target instead of hard-erroring + dropping the socket —
+  the old `0xFFCE` parse path dropped every real/prober connection. `RealityAcceptor::accept`
+  no longer returns `Err` for a readable non-auth connection.
+- **Canonical session_id auth.** New `handshake::open_reality_client_auth` (mirror of the client
+  `seal`: AES-256-GCM, nonce=random[20:32], AAD=zeroed-sessionId ClientHello) replaces the
+  non-canonical `0xFFCE` custom extension + SHA256 hash. `config::accepts_reality_short_id`
+  matches Go (empty short_ids => only the zero short_id).
+- **Vendored rustls patch** (`vendor/rustls`): opt-in `ServerConfig::reality_force_signature_scheme`
+  (default None) forces the ed25519 CertVerify so the server interoperates with Chrome-fingerprint
+  clients that don't advertise ed25519 — the exact rustls ARCH-LIMIT (Go forges handshake bytes);
+  symmetric to the fork's existing client-side ed25519 tolerance. Backward-compatible (builder-only
+  construction; default preserves RFC 8446 negotiation).
+- **Decidable evidence:** `crates/sb-tls/tests/reality_active_probing.rs` (decoy + 4 probe classes,
+  cert-DER equality vs direct-to-decoy; authenticated proxy receives distinct payload) + seal/open
+  round-trip unit test. Rust-server↔Rust-client canonical interop now works (impossible under 0xFFCE).
+- **Gates all green:** sb-tls 121+4+1 PASS; sb-adapters PASS; boundaries 0; consistency exit0;
+  diff-check clean; clippy exit0 (only non-blocking nursery/pedantic); fmt clean;
+  **`make verify-reality-local` PASS** (forward Go-server↔Rust-client 20/20 — rustls patch did not
+  regress client interop).
+- **No 52/56 movement** (REALITY has no S3 BHV-ID). Differential: `reality_active_probing/`.
+- **OPEN (NON-gating):** reverse Go-client↔Rust-server empirical fixture (server Go-compat is
+  established by construction + forward fixture, not yet empirically run); success-path ServerHello
+  cipher/keyshare/record-framing borrow = rustls ARCH-LIMIT (prober can't reach); precise cross-net
+  timing; configurable MaxTimeDiff; `enable_fallback=false` footgun (default true).
+
 ## Resume (2026-07-17) - LNX-RT-01 Linux runtime closure DONE
 
 - Pinned Debian Rust 1.92.0 / Go 1.24.7 amd64 lane: VMess multiplex 6/6, workspace
@@ -117,121 +147,15 @@
   `archive/mig03/mig03_wp14_final_acceptance_and_archive.md`.
 - **Scope note:** architecture migration closure only. No parity/BHV/REALITY movement claimed.
 
-## Resume (2026-07-11) - MIG-03 WP09/WP10/WP12 red-team acceptance DONE
-
-- **WP09 accepted:** DERP moved to `sb-service-derp`; SSM/V2Ray API moved to `sb-api`;
-  app owns concrete service registration. sb-core service tree has no axum/tonic and retains
-  only non-Web kernel services.
-- **WP10 accepted:** `sb_api::debug` is sole HTTP/auth/middleware owner. app keeps endpoint state
-  plus route extension; all endpoints retained. Real HTTP tests lock 200/401/429, request-id,
-  envelope, audit, and extension behavior.
-- **WP12 accepted:** core selector/p3/udp-balancer and transport/tls/subscribe/config/socks5
-  shadows retired or relocated per D15. WireGuard/Tailscale layer split is explicit; no D18 item.
-- Red-team fixes closed default-profile metrics linkage, relocated test dependencies/feature gates,
-  DERP header panic paths, and stale boundary assertions. Workspace all-features, focused crate/app
-  tests, three app profiles, clippy, fmt, 427 boundaries, and diff-check pass.
-- **Transition closed:** WP13 accepted; WP14 is next MIG-03 frontier.
-
-## Resume (2026-07-11) - MIG-03 WP11 env/config convergence DONE
-
-- 141 个 core-owned `SB_*` 全部由 app 组合根一次解析，注入 `CoreRuntimeOptions` 六域；
-  core `SB_*` 字面量/直接读取/白名单均为 0，构造后冻结。
-- DNS/router/net/service/debug/admin 消费链与测试已迁移；变量无废弃。登记权威：
-  `agents-only/archive/mig03/mig03_wp11_env_registry.md`。
-- 验收：workspace all-features check、clippy、sb-core/app full test、fmt、boundaries 429、
-  diff-check 全绿。
-- **Authorized transition:** WP14 已解锁；按 `workpackage_latest.md` 继续下一项 MIG-03 frontier。
-
-## Resume (2026-07-11) - MIG-03 WP08 router stack merge DONE
-
-- **WP08 accepted:** `router/` is sole implementation home. Its former 25-line `routing/`
-  compatibility facade was removed by WP14; ConfigIR engine/explain/trace moved under router, duplicate toy matcher,
-  IR, and reload router were deleted. Router-domain `pub struct Engine` count is one.
-- ConfigIR and rule-set paths share label-aware suffix matching; DNS continues through canonical
-  `RuleMatcher` with no local domain matcher. Explain JSON has an exact field-order/value lock;
-  rule-hot-reload now atomically replaces canonical `Arc<RouterIndex>` built through config pipeline.
-- Acceptance: workspace all-feature check/clippy, fmt, boundaries, diff-check, sb-core/app full and
-  focused router/DNS/hot-reload tests, and 232 Python tool tests pass. Five route/DNS dual-kernel
-  cases have `gate_score=0` and zero mismatches; no new S4 divergence.
-- **Authorized transition:** WP11 is unblocked on serialized WP06 → WP08 → WP11 lane. Next step:
-  inventory all sb-core `SB_*` reads, inject explicit runtime option structs from app composition root.
-- **Scope note:** structural ownership/dedup plus acceptance-drift repairs only. No parity/BHV,
-  packaging, or REALITY denominator movement is claimed.
-
-## Resume (2026-07-11) - MIG-03 WP07 QUIC family relocation DONE
-
-- **WP07 accepted:** Hysteria v1/v2 inbound/outbound, Naive H2, and shared QUIC protocol code now
-  live in sb-adapters. sb-core has no hysteria*/quic/naive_h2 outbound module or protocol reference;
-  Hysteria2 IR construction moved from switchboard into adapter registration.
-- Hysteria2 canonical outbound retains TCP plus relocated UDP PacketConn behavior and full transport
-  fields (Brutal, CA path/PEM, ALPN/SNI, 0-RTT, obfs/salamander). Opt-in app UDP loopback passes with
-  a real authenticated QUIC association; Hysteria v1 E2E, integration tests, and Criterion bench pass.
-- Acceptance: core+adapters tests, workspace all-feature check, strict workspace clippy, fmt,
-  boundaries, diff-check, and focused feature-isolation checks pass. sb-core source drops 4,708 Rust
-  lines. Remaining quinn/hyper users are DNS/DERP/dev or compatibility-feature paths assigned to
-  WP09/WP13, not WP07 protocol ownership.
-- **Authorized transition:** WP08 is next on the serialized WP06 → WP08 → WP11 lane; WP13 remains
-  responsible for legacy feature/dependency edge retirement after its prerequisites.
-- **Scope note:** structural ownership relocation plus preservation/verification of existing
-  protocol behavior only. No parity/BHV, packaging, or REALITY denominator movement is claimed.
-
-## Resume (2026-07-11) - MIG-03 WP06 scaffold retirement DONE
-
-- **WP06 accepted:** bridge/runtime/switchboard now consume only canonical sb-adapters registry
-  connectors. Registry rejection is a fatal startup error with tag/kind context; no scaffold,
-  degraded, core direct/block, or implicit-direct protocol fallback remains.
-- Scaffold feature/Cargo references and 16 core legacy files are gone. `OutboundImpl` has one
-  Connector variant; inbound TCP helper ownership moved to adapters with DNS/keepalive/telemetry
-  semantics preserved. Net diff is -5818 lines; final gui_runtime binary is 241,952 bytes smaller
-  than the recorded pre-WP06 build.
-- Acceptance: three-crate tests, registry fatal/no-READY test, workspace all-target/all-feature
-  check, strict clippy, fmt, boundaries, diff-check, SS/Trojan net-e2e, release GUI mixed→direct
-  traffic smoke all pass. Final strict interop is 87/95; every WP06-affected case is clean and
-  remaining failures are pre-existing harness/config/S4 baselines documented in WP06.
-- **Authorized transition:** WP07 is unblocked. Next step: relocate the full
-  hysteria/hysteria2/naive/quic family from sb-core to sb-adapters, then run its protocol/bench/
-  global acceptance set.
-- **Scope note:** structural ownership/fallback retirement only. No parity/BHV, packaging, or
-  REALITY denominator movement is claimed.
-
-## Resume (2026-07-11) - MIG-03 WP05 adapter gap closure DONE
-
-- **WP05 accepted:** `de25101d` moves active SOCKS UDP map/session/transport ownership into
-  sb-adapters, closes product feature reachability, and preserves D14 env/default/wire-size
-  behavior. SOCKS/mixed now share the legacy per-IP limiter; SOCKS reports active TCP and
-  compatible UDP associate/packet/active metrics.
-- WP04 matrix GAP count is now zero. Core SOCKS UDP scaffold tests moved to active adapter/product
-  tests; exact adapter references to the four core UDP scaffold symbols are zero. Selector/urltest
-  and generic balancer/group ownership remain WP12.
-- Acceptance: adapter default/all-feature and core regression suites, three app product profiles,
-  feature isolation, Python tool suites, global five gates, and SOCKS TCP/UDP + mixed dual-kernel
-  runs all pass. No D18 item or behavior-expansion decision appeared.
-- **Authorized transition:** WP06 is unblocked. Next step: remove bridge fallback/orphan scaffold
-  implementations and stale `ADAPTER_FORCE` surface exactly per WP04 §11/WP06.
-- **Scope note:** WP05 structural/compatibility closure only. No parity/BHV denominator,
-  packaging, REALITY, WP06 deletion, or WP12 ownership movement is claimed.
-
-## Resume (2026-07-11) - MIG-03 WP04 semantic audit DONE
-
-- **WP04 accepted:** `archive/mig03/mig03_wp04_coverage_matrix.md` corrects stale scaffold
-  assumptions, inventories all live construction paths, and records per-protocol eight-dimension
-  coverage, D9/D10/D14 decisions, cross-dependencies, test disposition, and parity handoffs.
-- Two WP05 GAP groups remain: SOCKS inbound Rust-only limiter/active-TCP/compatible metrics plus
-  core UDP dependencies; SOCKS outbound product-profile UDP reachability plus core UDP helper
-  migration. HTTP/mixed/direct/TUN/redirect/tproxy/block and registry-only protocols require no
-  WP05 scaffold-semantic fill. Selector/urltest implementation ownership remains WP12.
-- No D18 item remains. Next dependency step: execute WP05 exactly from matrix §11; WP06 stays
-  blocked until WP05 acceptance.
-- **Scope note:** documentation audit only. No production code, feature, test, packaging,
-  parity/BHV, or REALITY denominator movement is claimed.
-
 ## Strategic State
 
 Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
 (non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, not in the
 S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local Chrome-current profile, wide-entropy
-BoringSSL order semantics, and official-JA4 algorithm cross-check CLOSED; real-network camouflage,
-active probing, and tier-2 cohort remain OPEN.
+BoringSSL order semantics, official-JA4 algorithm cross-check, **and active-probing relay
+resistance + canonical session_id server auth CLOSED** (2026-07-18; see Resume); residual
+success-path ServerHello framing-borrow stays rustls ARCH-LIMIT (unreachable by probers).
+Real-network camouflage, reverse Go-client↔Rust-server empirical run, and tier-2 cohort remain OPEN.
 
 ## Current Build And Gate
 
@@ -247,7 +171,8 @@ active probing, and tier-2 cohort remain OPEN.
   reverse-Fisher-Yates order semantics with wide independent entropy; coordinated GREASE;
   from-spec JA4 `t13d1517h2_8daaf6152771_cb7bf5808d99`; FoxIO algorithm vectors.
 - Pinned Go/uTLS Chrome133 now compatibility-only, not current-browser authority.
-- OPEN: tier-2 camouflage, active probing, external healthy-cohort observation.
+- OPEN: tier-2 camouflage, external healthy-cohort observation. (active-probing relay
+  resistance + canonical server auth closed 2026-07-18 — see Resume.)
   NON-GOAL: L4 byte identity; second-tool fingerprint of live captures.
 - A2.3 runtime status-JSON rehearsal DEFERRED. Detail: t32 governance; T3-1B `052d4392`.
 
@@ -257,7 +182,8 @@ active probing, and tier-2 cohort remain OPEN.
 2. External healthy-cohort observation — pre-release, NON-gating (tri-state; no single node
    is a closure identity; outage ≠ regression).
 3. ClientHello fingerprint parity — tier-3: Chrome-current local shape/order/JA4 CLOSED;
-   pinned Go lane compatibility-only; real-network camouflage + active probing OPEN.
+   pinned Go lane compatibility-only; active-probing relay resistance + canonical server auth
+   CLOSED (2026-07-18); real-network camouflage OPEN.
 
 ## Closed Tracks (compressed; detail in archive)
 

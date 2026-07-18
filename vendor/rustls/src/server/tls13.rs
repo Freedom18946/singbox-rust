@@ -148,6 +148,16 @@ mod client_hello {
 
             sigschemes_ext.retain(SignatureScheme::supported_in_tls13);
 
+            // REALITY: allow the server to present its ed25519 certificate even
+            // when the client (e.g. Chrome-fingerprinted) did not advertise the
+            // ed25519 signature scheme, mirroring the Go REALITY server. Opt-in
+            // via `ServerConfig::reality_force_signature_scheme`; default off.
+            if let Some(forced) = self.config.reality_force_signature_scheme {
+                if !sigschemes_ext.contains(&forced) {
+                    sigschemes_ext.push(forced);
+                }
+            }
+
             let shares_ext = client_hello.key_shares.as_ref().ok_or_else(|| {
                 cx.common.send_fatal_alert(
                     AlertDescription::HandshakeFailure,

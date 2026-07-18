@@ -1,6 +1,6 @@
 //! REALITY server implementation
 
-use super::auth::{RealityAuth, compute_temp_cert_signature, derive_auth_key};
+use super::auth::{RealityAuth, compute_temp_cert_signature};
 use super::config::RealityServerConfig;
 use super::{RealityError, RealityResult};
 use rcgen::{CertificateParams, DistinguishedName, DnType, KeyPair, PKCS_ED25519};
@@ -49,6 +49,24 @@ pub struct RealityAcceptor {
     config: Arc<RealityServerConfig>,
     auth: RealityAuth,
     target_chain: Arc<RwLock<Option<TargetChain>>>,
+}
+
+/// The first buffered TLS record read from a client connection.
+struct FirstRecord {
+    /// Parsed record content type (`None` if the type byte is unrecognised).
+    content_type: Option<super::tls_record::ContentType>,
+    /// The record payload (the ClientHello handshake message).
+    handshake_data: Vec<u8>,
+    /// Full record bytes (5-byte header + payload) retained for replay/relay.
+    buffered: Vec<u8>,
+}
+
+/// A successful REALITY authentication outcome.
+struct AuthOk {
+    /// HKDF-derived auth key used to sign the temporary certificate.
+    auth_key: [u8; 32],
+    /// The accepted SNI (also the temporary-certificate server name).
+    sni: String,
 }
 
 impl RealityAcceptor {
@@ -115,164 +133,129 @@ impl RealityAcceptor {
     }
 
     /// Handle REALITY handshake
-    #[allow(clippy::cognitive_complexity)] // Handshake flow has necessary branching; refactor would risk protocol regressions. Revisit post-acceptance.
+    ///
+    /// Canonical REALITY server flow (parity with Go `utls.RealityServer`):
+    /// 1. Read and buffer the first TLS record (the ClientHello).
+    /// 2. Authenticate entirely in-memory via the session_id AEAD.
+    /// 3. On success: terminate TLS locally with a REALITY temporary certificate.
+    /// 4. On any non-authenticated input (plain TLS, wrong SNI, bad short_id,
+    ///    failed decrypt, unparsable): transparently relay the connection to the
+    ///    real target so an active prober cannot distinguish this port from the
+    ///    decoy site.
     async fn handle_handshake<S>(&self, mut stream: S) -> RealityResult<RealityConnection>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
     {
         debug!("Handling REALITY handshake");
 
-        // Step 1: Read and parse ClientHello to extract REALITY extensions
-        // We need to buffer the data so we can replay it for the TLS handshake
-        let (client_public_key, short_id, auth_hash, session_data, sni, client_hello_data) =
-            self.parse_and_buffer_client_hello(&mut stream).await?;
+        // Step 1: buffer the first TLS record. If we cannot read a record at all,
+        // there is nothing to relay — surface the IO error.
+        let record = self.read_first_record(&mut stream).await?;
 
-        debug!(
-            "Parsed ClientHello: SNI={}, short_id={}",
-            sni,
-            hex::encode(&short_id)
-        );
-
-        // Step 2: Verify SNI is in accepted list
-        if !self.config.server_names.contains(&sni) {
-            warn!("SNI not in accepted list: {}", sni);
-            // Replay the ClientHello data and fallback
-            let replay_stream = ReplayStream::new(stream, client_hello_data);
-            return self.fallback_to_target(replay_stream).await;
+        // Step 2: authenticate in-memory, then either terminate locally (proxy) or
+        // relay to the real target (disguise).
+        match self.authenticate(&record) {
+            Some(auth) => {
+                info!("REALITY authentication successful (SNI={})", auth.sni);
+                let target_chain = self.ensure_target_chain(&auth.sni).await;
+                let replay_stream = ReplayStream::new(stream, record.buffered);
+                let tls_stream = self
+                    .complete_tls_handshake(
+                        replay_stream,
+                        &auth.sni,
+                        &auth.auth_key,
+                        target_chain.as_ref(),
+                    )
+                    .await?;
+                Ok(RealityConnection::Proxy(tls_stream))
+            }
+            None => {
+                debug!("REALITY connection not authenticated; relaying to target");
+                let replay_stream = ReplayStream::new(stream, record.buffered);
+                self.fallback_to_target(replay_stream).await
+            }
         }
-
-        // Step 3: Verify short ID
-        if !self.config.accepts_short_id(&short_id) {
-            warn!("Short ID not accepted: {}", hex::encode(&short_id));
-            let replay_stream = ReplayStream::new(stream, client_hello_data);
-            return self.fallback_to_target(replay_stream).await;
-        }
-
-        // Step 4: Verify authentication hash using ClientHello random as session data
-        if !self
-            .auth
-            .verify_auth_hash(&client_public_key, &short_id, &session_data, &auth_hash)
-        {
-            warn!("Authentication failed: invalid auth hash");
-            let replay_stream = ReplayStream::new(stream, client_hello_data);
-            return self.fallback_to_target(replay_stream).await;
-        }
-
-        info!("REALITY authentication successful");
-
-        let shared_secret = self.auth.derive_shared_secret(&client_public_key);
-        let auth_key =
-            derive_auth_key(shared_secret, &session_data).map_err(RealityError::HandshakeFailed)?;
-
-        let target_chain = self.ensure_target_chain(&sni).await;
-
-        // Step 5: Complete TLS handshake with temporary certificate
-        // Replay the ClientHello data for rustls
-        let replay_stream = ReplayStream::new(stream, client_hello_data);
-        let tls_stream = self
-            .complete_tls_handshake(replay_stream, &sni, &auth_key, target_chain.as_ref())
-            .await?;
-
-        Ok(RealityConnection::Proxy(tls_stream))
     }
 
-    /// Parse `ClientHello` and buffer the data for replay
-    /// 解析 `ClientHello` 并缓冲数据以供重放
+    /// Read and buffer the first TLS record (the ClientHello) from the client.
     ///
-    /// Returns: (`client_public_key`, `short_id`, `auth_hash`, `session_data`, sni, `buffered_data`)
-    /// 返回：(`client_public_key`, `short_id`, `auth_hash`, `session_data`, sni, `buffered_data`)
-    #[allow(clippy::cognitive_complexity)] // Parsing and validation sequence is linear but branching by spec; splitting reduces readability. Revisit later.
-    async fn parse_and_buffer_client_hello<S>(
-        &self,
-        stream: &mut S,
-    ) -> RealityResult<([u8; 32], Vec<u8>, [u8; 32], [u8; 32], String, Vec<u8>)>
+    /// The raw bytes are retained so they can be replayed either into the local
+    /// rustls acceptor (authenticated path) or into the real target (relay path).
+    async fn read_first_record<S>(&self, stream: &mut S) -> RealityResult<FirstRecord>
     where
         S: AsyncRead + AsyncWrite + Unpin,
     {
-        use super::tls_record::{ClientHello, ContentType, ExtensionType};
+        use super::tls_record::ContentType;
         use tokio::io::AsyncReadExt;
 
-        // Read TLS record header (5 bytes)
         let mut header_buf = [0u8; 5];
         stream.read_exact(&mut header_buf).await.map_err(|e| {
             RealityError::HandshakeFailed(format!("Failed to read TLS record header: {e}"))
         })?;
 
-        let content_type = ContentType::try_from(header_buf[0])
-            .map_err(|e| RealityError::HandshakeFailed(format!("Invalid content type: {e}")))?;
-        let version = u16::from_be_bytes([header_buf[1], header_buf[2]]);
-        let length = u16::from_be_bytes([header_buf[3], header_buf[4]]);
+        let content_type = ContentType::try_from(header_buf[0]).ok();
+        let length = usize::from(u16::from_be_bytes([header_buf[3], header_buf[4]]));
 
-        debug!(
-            "TLS record: type={:?}, version=0x{:04x}, length={}",
-            content_type, version, length
-        );
-
-        // Verify this is a handshake record
-        if content_type != ContentType::Handshake {
-            return Err(RealityError::HandshakeFailed(format!(
-                "Expected Handshake record, got {content_type:?}"
-            )));
-        }
-
-        // Read handshake data
-        let mut handshake_data = vec![0u8; length as usize];
-        stream
-            .read_exact(&mut handshake_data)
-            .await
-            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to read handshake: {e}")))?;
-
-        // Parse ClientHello
-        let client_hello = ClientHello::parse(&handshake_data).map_err(|e| {
-            RealityError::HandshakeFailed(format!("Failed to parse ClientHello: {e}"))
+        let mut handshake_data = vec![0u8; length];
+        stream.read_exact(&mut handshake_data).await.map_err(|e| {
+            RealityError::HandshakeFailed(format!("Failed to read record body: {e}"))
         })?;
 
-        debug!(
-            "Parsed ClientHello: version=0x{:04x}, {} extensions",
-            client_hello.version,
-            client_hello.extensions.len()
-        );
+        let mut buffered = Vec::with_capacity(5 + handshake_data.len());
+        buffered.extend_from_slice(&header_buf);
+        buffered.extend_from_slice(&handshake_data);
 
-        let session_data = client_hello.random;
-
-        // Extract SNI
-        let sni = client_hello
-            .get_sni()
-            .ok_or_else(|| RealityError::HandshakeFailed("No SNI in ClientHello".to_string()))?;
-
-        debug!("SNI: {}", sni);
-
-        // Extract REALITY authentication extension
-        let reality_ext = client_hello
-            .find_extension(ExtensionType::RealityAuth as u16)
-            .ok_or_else(|| RealityError::AuthFailed("No REALITY auth extension".to_string()))?;
-
-        let (client_public_key, short_id, auth_hash) =
-            reality_ext.parse_reality_auth().map_err(|e| {
-                RealityError::HandshakeFailed(format!("Failed to parse REALITY extension: {e}"))
-            })?;
-
-        debug!(
-            "REALITY auth: public_key={}, short_id={}, auth_hash={}",
-            hex::encode(&client_public_key[..8]),
-            hex::encode(&short_id),
-            hex::encode(&auth_hash[..8])
-        );
-
-        // Combine header and handshake data for replay
-        let mut buffered_data = Vec::with_capacity(5 + handshake_data.len());
-        buffered_data.extend_from_slice(&header_buf);
-        buffered_data.extend_from_slice(&handshake_data);
-
-        Ok((
-            client_public_key,
-            short_id,
-            auth_hash,
-            session_data,
-            sni,
-            buffered_data,
-        ))
+        Ok(FirstRecord {
+            content_type,
+            handshake_data,
+            buffered,
+        })
     }
+
+    /// Attempt REALITY authentication against the buffered first record.
+    ///
+    /// Returns `Some` only when the record is a ClientHello whose SNI is accepted,
+    /// whose embedded session_id decrypts under the server's REALITY key, and whose
+    /// short_id is accepted. Every other input yields `None` (transparent relay).
+    fn authenticate(&self, record: &FirstRecord) -> Option<AuthOk> {
+        use super::tls_record::{ClientHello, ContentType};
+
+        if record.content_type != Some(ContentType::Handshake) {
+            return None;
+        }
+        let client_hello = ClientHello::parse(&record.handshake_data).ok()?;
+        let sni = client_hello.get_sni()?;
+        if !self.config.server_names.contains(&sni) {
+            return None;
+        }
+
+        let private_key = self.auth.private_key_bytes();
+        let auth = super::handshake::open_reality_client_auth(
+            &private_key,
+            &client_hello,
+            &record.handshake_data,
+        )
+        .ok()?;
+        if !self.config.accepts_reality_short_id(&auth.short_id) {
+            return None;
+        }
+        // The client-declared time is decoded but not gated: this mirrors Go's
+        // default (`MaxTimeDiff == 0` => no time-window check). Configurable
+        // enforcement is a registered residual.
+        debug!(
+            client_unix_seconds = auth.unix_seconds,
+            "REALITY session_id decrypted"
+        );
+
+        Some(AuthOk {
+            auth_key: auth.auth_key,
+            sni,
+        })
+    }
+
+    // ClientHello reading/authentication is handled by `read_first_record` +
+    // `authenticate` above; the legacy `0xFFCE` custom-extension parser was
+    // retired in favour of the canonical session_id AEAD (`open_reality_client_auth`).
 
     /// Complete TLS handshake with temporary certificate
     /// 使用临时证书完成 TLS 握手
@@ -301,12 +284,16 @@ impl RealityAcceptor {
         }
 
         crate::ensure_crypto_provider();
-        let config = rustls::ServerConfig::builder()
+        let mut config = rustls::ServerConfig::builder()
             .with_no_client_auth()
             .with_single_cert(chain, key_der)
             .map_err(|e| {
                 RealityError::HandshakeFailed(format!("Failed to create TLS config: {e}"))
             })?;
+        // REALITY presents an ed25519 temporary certificate; force the ed25519
+        // CertificateVerify scheme so the handshake completes even against clients
+        // (e.g. Chrome-fingerprinted) that do not advertise ed25519.
+        config.reality_force_signature_scheme = Some(rustls::SignatureScheme::ED25519);
 
         let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
 

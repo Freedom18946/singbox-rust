@@ -18,6 +18,7 @@ agents-only/
 ├── README.md                    # 本索引
 ├── log.md                       # C: 终极流水帐（勿主动读；旧段在 archive/logs/）
 ├── post1313/                    # 活动轨迹：Go 1.13.13 / GUI 1.25.1 差异任务包
+├── reality_active_probing/      # 活动轨迹：REALITY active-probing 差分 + 规范 server 重写（关闭后归档）
 ├── fable5审计报告/               # B: 2026-06 审计快照 + post_fable_packages（有处置决定，勿移动）
 ├── mt_real_01_evidence/         # 封箱证据（scripts/tools 测试硬编码路径，勿移动）
 ├── mt_real_02_evidence/         # 封箱证据（scripts/tools 测试硬编码路径，勿移动）

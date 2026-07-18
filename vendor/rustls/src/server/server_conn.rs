@@ -443,6 +443,18 @@ pub struct ServerConfig {
     ///
     /// [RFC8779]: https://datatracker.ietf.org/doc/rfc8879/
     pub cert_decompressors: Vec<&'static dyn compress::CertDecompressor>,
+
+    /// REALITY: force the TLS 1.3 `CertificateVerify` signature scheme.
+    ///
+    /// When set, the server signs its `CertificateVerify` with this scheme even
+    /// if the client did not advertise it in `signature_algorithms`. This exists
+    /// solely for the REALITY protocol, whose server presents an ed25519
+    /// certificate to clients (e.g. Chrome-fingerprinted) that do not advertise
+    /// ed25519, mirroring the byte-level handshake forgery performed by the Go
+    /// REALITY server. The complementary client-side tolerance already exists.
+    ///
+    /// Default `None` preserves standard RFC 8446 signature-scheme negotiation.
+    pub reality_force_signature_scheme: Option<SignatureScheme>,
 }
 
 impl ServerConfig {
