@@ -5,7 +5,7 @@
     "run_index": 1,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 2.9,
+    "elapsed_ms": 3.1,
     "curl_rc": 0,
     "err": ""
   },
@@ -15,7 +15,7 @@
     "run_index": 2,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 2.0,
+    "elapsed_ms": 1.7,
     "curl_rc": 0,
     "err": ""
   },
@@ -35,7 +35,7 @@
     "run_index": 4,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 1.8,
+    "elapsed_ms": 2.0,
     "curl_rc": 0,
     "err": ""
   },
@@ -45,7 +45,7 @@
     "run_index": 5,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 1.9,
+    "elapsed_ms": 1.7,
     "curl_rc": 0,
     "err": ""
   },
@@ -55,7 +55,7 @@
     "run_index": 6,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 2.1,
+    "elapsed_ms": 1.8,
     "curl_rc": 0,
     "err": ""
   },
@@ -65,7 +65,7 @@
     "run_index": 7,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 2.1,
+    "elapsed_ms": 1.7,
     "curl_rc": 0,
     "err": ""
   },
@@ -85,7 +85,7 @@
     "run_index": 9,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 1.8,
+    "elapsed_ms": 1.9,
     "curl_rc": 0,
     "err": ""
   },
@@ -95,7 +95,7 @@
     "run_index": 10,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 2.1,
+    "elapsed_ms": 2.2,
     "curl_rc": 0,
     "err": ""
   },
@@ -105,7 +105,7 @@
     "run_index": 11,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 2.0,
+    "elapsed_ms": 2.3,
     "curl_rc": 0,
     "err": ""
   },
@@ -115,7 +115,7 @@
     "run_index": 12,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 1.9,
+    "elapsed_ms": 2.0,
     "curl_rc": 0,
     "err": ""
   },
@@ -125,7 +125,7 @@
     "run_index": 13,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 1.9,
+    "elapsed_ms": 1.8,
     "curl_rc": 0,
     "err": ""
   },
@@ -135,7 +135,7 @@
     "run_index": 14,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 2.2,
+    "elapsed_ms": 2.0,
     "curl_rc": 0,
     "err": ""
   },
@@ -165,7 +165,7 @@
     "run_index": 17,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 1.7,
+    "elapsed_ms": 1.9,
     "curl_rc": 0,
     "err": ""
   },
@@ -175,7 +175,7 @@
     "run_index": 18,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 1.7,
+    "elapsed_ms": 1.8,
     "curl_rc": 0,
     "err": ""
   },
@@ -185,7 +185,7 @@
     "run_index": 19,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 1.8,
+    "elapsed_ms": 2.1,
     "curl_rc": 0,
     "err": ""
   },
@@ -195,7 +195,7 @@
     "run_index": 20,
     "http_code": "200",
     "token_match": true,
-    "elapsed_ms": 2.1,
+    "elapsed_ms": 2.5,
     "curl_rc": 0,
     "err": ""
   }

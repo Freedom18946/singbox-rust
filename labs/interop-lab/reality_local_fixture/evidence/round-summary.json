@@ -1,10 +1,10 @@
 {
   "fixture_version": "a1-reality-local-v3",
-  "git_revision": "ee654e93a5bbe6383b377dd4460b925a82bc3122",
+  "git_revision": "ef69e72b7d20c84a9218949f8a01e9313d251dbc",
   "go_build_tags": "with_utls",
   "manifest_checksum": "sha256:07637b53b0e43ad5edf8fb5effae298f2e8059131c56edfe6a0b16375cd868d1",
-  "run_id": "20260718T182101",
-  "generated_at": "2026-07-18T18:21:12",
+  "run_id": "20260718T191258",
+  "generated_at": "2026-07-18T19:13:31",
   "scope": "Bidirectional Go/Rust REALITY interoperability plus local VLESS dataplane; NOT real-network camouflage; NOT a 52/56 BHV increment.",
   "acceptance_model": {
     "tier": "local_deterministic_gate",
@@ -54,7 +54,7 @@
           "run_index": 1,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 5.4,
+          "elapsed_ms": 6.5,
           "curl_rc": 0,
           "err": ""
         },
@@ -64,7 +64,7 @@
           "run_index": 2,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 3.5,
+          "elapsed_ms": 3.4,
           "curl_rc": 0,
           "err": ""
         },
@@ -84,7 +84,7 @@
           "run_index": 4,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.3,
+          "elapsed_ms": 2.1,
           "curl_rc": 0,
           "err": ""
         },
@@ -94,7 +94,7 @@
           "run_index": 5,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.2,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -114,7 +114,7 @@
           "run_index": 7,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -124,7 +124,7 @@
           "run_index": 8,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.8,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -134,7 +134,7 @@
           "run_index": 9,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.1,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -144,7 +144,7 @@
           "run_index": 10,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -154,7 +154,7 @@
           "run_index": 11,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.3,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -174,7 +174,7 @@
           "run_index": 13,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -184,7 +184,7 @@
           "run_index": 14,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.1,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -194,7 +194,7 @@
           "run_index": 15,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -204,7 +204,7 @@
           "run_index": 16,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -214,7 +214,7 @@
           "run_index": 17,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.1,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -224,7 +224,7 @@
           "run_index": 18,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -234,7 +234,7 @@
           "run_index": 19,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.2,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -244,7 +244,7 @@
           "run_index": 20,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         }
@@ -272,7 +272,7 @@
           "run_index": 2,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -282,7 +282,7 @@
           "run_index": 3,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.5,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -292,7 +292,7 @@
           "run_index": 4,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.1,
+          "elapsed_ms": 2.0,
           "curl_rc": 0,
           "err": ""
         },
@@ -302,7 +302,7 @@
           "run_index": 5,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -312,7 +312,7 @@
           "run_index": 6,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -322,7 +322,7 @@
           "run_index": 7,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -332,7 +332,7 @@
           "run_index": 8,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -342,7 +342,7 @@
           "run_index": 9,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -352,7 +352,7 @@
           "run_index": 10,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -362,7 +362,7 @@
           "run_index": 11,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -392,7 +392,7 @@
           "run_index": 14,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -402,7 +402,7 @@
           "run_index": 15,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 2.0,
           "curl_rc": 0,
           "err": ""
         },
@@ -412,7 +412,7 @@
           "run_index": 16,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -422,7 +422,7 @@
           "run_index": 17,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.1,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -442,7 +442,7 @@
           "run_index": 19,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -452,7 +452,7 @@
           "run_index": 20,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 2.0,
           "curl_rc": 0,
           "err": ""
         }
@@ -469,7 +469,7 @@
           "run_index": 1,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.9,
+          "elapsed_ms": 3.1,
           "curl_rc": 0,
           "err": ""
         },
@@ -479,7 +479,7 @@
           "run_index": 2,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 1.7,
           "curl_rc": 0,
           "err": ""
         },
@@ -499,7 +499,7 @@
           "run_index": 4,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.8,
+          "elapsed_ms": 2.0,
           "curl_rc": 0,
           "err": ""
         },
@@ -509,7 +509,7 @@
           "run_index": 5,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 1.7,
           "curl_rc": 0,
           "err": ""
         },
@@ -519,7 +519,7 @@
           "run_index": 6,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.1,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -529,7 +529,7 @@
           "run_index": 7,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.1,
+          "elapsed_ms": 1.7,
           "curl_rc": 0,
           "err": ""
         },
@@ -549,7 +549,7 @@
           "run_index": 9,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.8,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -559,7 +559,7 @@
           "run_index": 10,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.1,
+          "elapsed_ms": 2.2,
           "curl_rc": 0,
           "err": ""
         },
@@ -569,7 +569,7 @@
           "run_index": 11,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.0,
+          "elapsed_ms": 2.3,
           "curl_rc": 0,
           "err": ""
         },
@@ -579,7 +579,7 @@
           "run_index": 12,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 2.0,
           "curl_rc": 0,
           "err": ""
         },
@@ -589,7 +589,7 @@
           "run_index": 13,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.9,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -599,7 +599,7 @@
           "run_index": 14,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.2,
+          "elapsed_ms": 2.0,
           "curl_rc": 0,
           "err": ""
         },
@@ -629,7 +629,7 @@
           "run_index": 17,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.7,
+          "elapsed_ms": 1.9,
           "curl_rc": 0,
           "err": ""
         },
@@ -639,7 +639,7 @@
           "run_index": 18,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.7,
+          "elapsed_ms": 1.8,
           "curl_rc": 0,
           "err": ""
         },
@@ -649,7 +649,7 @@
           "run_index": 19,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 1.8,
+          "elapsed_ms": 2.1,
           "curl_rc": 0,
           "err": ""
         },
@@ -659,7 +659,7 @@
           "run_index": 20,
           "http_code": "200",
           "token_match": true,
-          "elapsed_ms": 2.1,
+          "elapsed_ms": 2.5,
           "curl_rc": 0,
           "err": ""
         }
@@ -674,7 +674,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 1,
-          "elapsed_ms": 292.0,
+          "elapsed_ms": 603.4,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -703,7 +703,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 2,
-          "elapsed_ms": 20.9,
+          "elapsed_ms": 16.5,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -732,7 +732,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 3,
-          "elapsed_ms": 14.6,
+          "elapsed_ms": 12.9,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -761,7 +761,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 4,
-          "elapsed_ms": 13.1,
+          "elapsed_ms": 13.3,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -790,7 +790,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 5,
-          "elapsed_ms": 12.7,
+          "elapsed_ms": 11.3,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -819,7 +819,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 6,
-          "elapsed_ms": 10.4,
+          "elapsed_ms": 10.1,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -848,7 +848,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 7,
-          "elapsed_ms": 10.7,
+          "elapsed_ms": 9.2,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -877,93 +877,6 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 8,
-          "elapsed_ms": 10.3,
-          "timed_out": false,
-          "phase_results": {
-            "direct_reality": {
-              "ok": true,
-              "class": null,
-              "error": null
-            },
-            "transport_reality": {
-              "ok": true,
-              "class": null,
-              "error": null
-            },
-            "vless_dial": {
-              "ok": true,
-              "class": null,
-              "error": null
-            },
-            "vless_probe_io": {
-              "ok": true,
-              "class": null,
-              "error": null
-            }
-          }
-        },
-        {
-          "case": "positive",
-          "kernel": "rust_phase_probe",
-          "run_index": 9,
-          "elapsed_ms": 9.8,
-          "timed_out": false,
-          "phase_results": {
-            "direct_reality": {
-              "ok": true,
-              "class": null,
-              "error": null
-            },
-            "transport_reality": {
-              "ok": true,
-              "class": null,
-              "error": null
-            },
-            "vless_dial": {
-              "ok": true,
-              "class": null,
-              "error": null
-            },
-            "vless_probe_io": {
-              "ok": true,
-              "class": null,
-              "error": null
-            }
-          }
-        },
-        {
-          "case": "positive",
-          "kernel": "rust_phase_probe",
-          "run_index": 10,
-          "elapsed_ms": 9.9,
-          "timed_out": false,
-          "phase_results": {
-            "direct_reality": {
-              "ok": true,
-              "class": null,
-              "error": null
-            },
-            "transport_reality": {
-              "ok": true,
-              "class": null,
-              "error": null
-            },
-            "vless_dial": {
-              "ok": true,
-              "class": null,
-              "error": null
-            },
-            "vless_probe_io": {
-              "ok": true,
-              "class": null,
-              "error": null
-            }
-          }
-        },
-        {
-          "case": "positive",
-          "kernel": "rust_phase_probe",
-          "run_index": 11,
           "elapsed_ms": 9.3,
           "timed_out": false,
           "phase_results": {
@@ -992,8 +905,95 @@
         {
           "case": "positive",
           "kernel": "rust_phase_probe",
+          "run_index": 9,
+          "elapsed_ms": 9.2,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 10,
+          "elapsed_ms": 9.2,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
+          "run_index": 11,
+          "elapsed_ms": 8.9,
+          "timed_out": false,
+          "phase_results": {
+            "direct_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "transport_reality": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_dial": {
+              "ok": true,
+              "class": null,
+              "error": null
+            },
+            "vless_probe_io": {
+              "ok": true,
+              "class": null,
+              "error": null
+            }
+          }
+        },
+        {
+          "case": "positive",
+          "kernel": "rust_phase_probe",
           "run_index": 12,
-          "elapsed_ms": 9.6,
+          "elapsed_ms": 9.5,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -1022,7 +1022,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 13,
-          "elapsed_ms": 9.5,
+          "elapsed_ms": 9.3,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -1051,7 +1051,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 14,
-          "elapsed_ms": 10.3,
+          "elapsed_ms": 8.9,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -1080,7 +1080,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 15,
-          "elapsed_ms": 9.5,
+          "elapsed_ms": 9.2,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -1109,7 +1109,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 16,
-          "elapsed_ms": 10.0,
+          "elapsed_ms": 9.2,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -1138,7 +1138,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 17,
-          "elapsed_ms": 10.2,
+          "elapsed_ms": 9.2,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -1167,7 +1167,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 18,
-          "elapsed_ms": 10.9,
+          "elapsed_ms": 8.8,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -1196,7 +1196,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 19,
-          "elapsed_ms": 10.2,
+          "elapsed_ms": 9.5,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -1225,7 +1225,7 @@
           "case": "positive",
           "kernel": "rust_phase_probe",
           "run_index": 20,
-          "elapsed_ms": 10.0,
+          "elapsed_ms": 9.2,
           "timed_out": false,
           "phase_results": {
             "direct_reality": {
@@ -1258,7 +1258,7 @@
       "expectation": "direct_reality fails; no phase falsely reports success",
       "pass": true,
       "observed": {
-        "elapsed_ms": 9.9,
+        "elapsed_ms": 9.1,
         "timed_out": false,
         "phase_results": {
           "direct_reality": {
@@ -1288,7 +1288,7 @@
       "expectation": "REALITY phase ok; vless_probe_io fails",
       "pass": true,
       "observed": {
-        "elapsed_ms": 10.7,
+        "elapsed_ms": 10.0,
         "timed_out": false,
         "phase_results": {
           "direct_reality": {
@@ -1318,7 +1318,7 @@
       "expectation": "fails fast (direct_reality not ok), exits within timeout, no wedge",
       "pass": true,
       "observed": {
-        "elapsed_ms": 7.5,
+        "elapsed_ms": 7.0,
         "timed_out": false,
         "phase_results": {
           "direct_reality": {
