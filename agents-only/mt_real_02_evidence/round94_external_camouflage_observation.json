@@ -1,0 +1,79 @@
+{
+  "schema_version": 1,
+  "observation_id": "obs-20260719-external-camouflage-r94",
+  "generated_at": "2026-07-18T17:27:48.642867+00:00",
+  "source_fingerprint": "sha256:0f40004fc36a6ab17cb664f30f7a205b5330b7396d66002d1866c7e07e94b6b9",
+  "upstream_provenance": {
+    "repository": "XTLS/REALITY",
+    "commit": "9234c772ba8f181f31c3e81dc2b4177322e5a9a9",
+    "readme_sha256": "5658a983b4335f8af1e0e24edba51fc1f50f57b0e6826660f14b65b5c5800c13",
+    "observable_target_properties": [
+      "tls_1_3",
+      "h2",
+      "no_disallowed_domain_redirect"
+    ]
+  },
+  "nodes": [
+    {
+      "node_id": "cam-001",
+      "cohort_node_id": "r93u_006",
+      "source_name_hash": "38bd35196bd7",
+      "run_count": 3,
+      "proxy_verified_tls_runs": 3,
+      "oracle_verified_tls_runs": 3,
+      "proxy_tls13_h2_runs": 3,
+      "oracle_tls13_h2_runs": 3,
+      "proxy_no_disallowed_domain_redirect_runs": 3,
+      "oracle_no_disallowed_domain_redirect_runs": 3,
+      "exact_leaf_match_runs": 3,
+      "exact_tls_profile_match_runs": 3,
+      "upstream_observable_minimum_observed_runs": 3,
+      "proxy_handshake_median_ms": 316.978,
+      "oracle_handshake_median_ms": 60.415
+    },
+    {
+      "node_id": "cam-002",
+      "cohort_node_id": "r93u_009",
+      "source_name_hash": "7fb35e0bb964",
+      "run_count": 3,
+      "proxy_verified_tls_runs": 3,
+      "oracle_verified_tls_runs": 3,
+      "proxy_tls13_h2_runs": 3,
+      "oracle_tls13_h2_runs": 3,
+      "proxy_no_disallowed_domain_redirect_runs": 3,
+      "oracle_no_disallowed_domain_redirect_runs": 3,
+      "exact_leaf_match_runs": 3,
+      "exact_tls_profile_match_runs": 3,
+      "upstream_observable_minimum_observed_runs": 3,
+      "proxy_handshake_median_ms": 571.928,
+      "oracle_handshake_median_ms": 1698.067
+    },
+    {
+      "node_id": "cam-003",
+      "cohort_node_id": "r93u_014",
+      "source_name_hash": "563162512424",
+      "run_count": 3,
+      "proxy_verified_tls_runs": 3,
+      "oracle_verified_tls_runs": 3,
+      "proxy_tls13_h2_runs": 3,
+      "oracle_tls13_h2_runs": 3,
+      "proxy_no_disallowed_domain_redirect_runs": 3,
+      "oracle_no_disallowed_domain_redirect_runs": 3,
+      "exact_leaf_match_runs": 3,
+      "exact_tls_profile_match_runs": 3,
+      "upstream_observable_minimum_observed_runs": 3,
+      "proxy_handshake_median_ms": 388.177,
+      "oracle_handshake_median_ms": 626.761
+    }
+  ],
+  "summary": {
+    "node_count": 3,
+    "total_pair_runs": 9,
+    "complete_tls_pair_runs": 9,
+    "upstream_observable_minimum_observed_runs": 9,
+    "observation": "UPSTREAM_OBSERVABLE_MINIMUM_OBSERVED",
+    "camouflage_sufficiency_verdict": "NOT_ASSESSED"
+  },
+  "raw_run_records_committed": false,
+  "scope_note": "Observes ordinary-TLS fallback and the network-visible subset of upstream target guidance from one vantage point. Does not classify GFW location, prove censorship-resistance, traffic-distribution equivalence, or real-network camouflage sufficiency."
+}

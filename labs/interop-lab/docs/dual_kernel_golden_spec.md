@@ -308,6 +308,14 @@ not let one substitute for another, and do not claim closure of one from another
       to unauthenticated probers).
    3. A2.3 full L18-capstone runtime status-JSON rehearsal (deferred).
 
+   **External progress, not closure (R94, 2026-07-19):** a redacting ordinary-TLS fallback
+   comparator observed XTLS/REALITY's network-visible TLS/H2/redirect subset on all 9
+   proxy/public-DNS-SNI pairs of the banked R93 cohort. Client config does not reveal server's
+   actual target; sufficiency remains `NOT_ASSESSED`. R94 cannot classify GFW/deployment location,
+   and public endpoints are not a controlled Rust deployment or multi-vantage censor experiment.
+   Evidence:
+   `agents-only/mt_real_02_evidence/round94_external_camouflage_observation.{json,md}`.
+
    **Explicit non-goals:**
    - L4 raw-byte identity / byte-for-byte ClientHello equality (two real Chrome
      instances also differ byte-for-byte).

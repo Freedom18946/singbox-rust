@@ -10,6 +10,16 @@
 
 ---
 
+## Resume (2026-07-19) - R94 external camouflage subset OBSERVED
+
+- Added credential-redacting ordinary-TLS fallback comparator; sufficiency is never inferred.
+- R93 cohort: 9/9 proxy/SNI-oracle pairs had verified WebPKI, TLS 1.3, H2, and no disallowed domain
+  redirect. Repeats kept that subset stable while one CDN leaf/profile changed between rounds.
+- Result: `UPSTREAM_OBSERVABLE_MINIMUM_OBSERVED`; sufficiency `NOT_ASSESSED`. Evidence:
+  `mt_real_02_evidence/round94_external_camouflage_observation.{json,md}`.
+- Remaining external blocker: controlled public Rust deployment and/or multi-vantage censor
+  measurement. ServerHello borrowing stays ARCH-LIMIT; A2.3 overlaps uncommitted user work.
+
 ## Resume (2026-07-19) - R93 external healthy cohort PASS, BANKED
 
 - User-supplied fresh subscription admitted 19 VLESS+REALITY plain-TCP Vision
@@ -21,8 +31,7 @@
   `all_ok`, 243/243 phase classes `ok`, zero divergence/same-failure/matrix error/timeout.
 - Tier-2 external healthy-cohort observation is **PASS, banked at depth 3**, pre-release and
   non-gating. Evidence: `mt_real_02_evidence/round93_external_healthy_cohort.{json,md}`.
-- No BHV movement or camouflage/ServerHello claim. **Recommended next:** real-network camouflage
-  sufficiency research. A2.3 capstone still overlaps uncommitted user work and remains deferred.
+- No BHV movement or camouflage/ServerHello claim. R94 above records next-step external progress.
 
 ## Resume (2026-07-18) - S5/T4 dual-kernel SOCKS5 throughput DONE
 
@@ -218,7 +227,8 @@ resistance + canonical first-flight ordering/mirroring + canonical session_id se
 inbound Vision framing + reverse Go-client empirical interop CLOSED**
 (2026-07-18; see Resume); residual
 success-path ServerHello framing-borrow stays rustls ARCH-LIMIT (unreachable by probers).
-Tier-2 healthy cohort is PASS/banked by R93. Real-network camouflage remains OPEN.
+Tier-2 healthy cohort is PASS/banked by R93. R94 observed upstream's network-visible subset;
+real-network camouflage sufficiency remains OPEN/external.
 
 ## Current Build And Gate
 
