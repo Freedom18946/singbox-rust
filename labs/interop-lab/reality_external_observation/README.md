@@ -16,8 +16,8 @@ checked by tooling instead of by hand.
 
 1. **Local deterministic gate** — `make verify-reality-local`
    (`labs/interop-lab/reality_local_fixture/`). Offline, deterministic
-   merge-precheck. **Currently opt-in; not yet automatically enforced** (no CI /
-   L18 wiring).
+   merge-precheck. Wired as the opt-in `REALITY_LOCAL` L18 capstone gate; not
+   server-side automatically enforced, and CI remains disabled.
 2. **External healthy-cohort observation** — **this directory's schema**.
    Pre-release real-network observation. **NOT a merge gate.** No single public
    node (e.g. the historical `fresh09`) is a mandatory closure identity; dead

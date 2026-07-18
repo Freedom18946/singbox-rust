@@ -10,6 +10,20 @@
 
 ---
 
+## Resume (2026-07-19) - R93 external healthy cohort PASS, BANKED
+
+- User-supplied fresh subscription admitted 19 VLESS+REALITY plain-TCP Vision
+  entries: 19 fresh-ready, production config parse PASS, R81 19/19 with zero violation.
+- Discovery found 18/19 `all_ok`. An earlier public-source chain and the first user-source chain
+  were discarded intact after timeouts/reset; no failed chain was patched. Alternate qualification
+  then fixed three distinct healthy servers (`r93u_006/009/014`) before a new sequence started.
+- Accepted fixed cohort: three consecutive rounds x three nodes x three runs; 27/27 matrices
+  `all_ok`, 243/243 phase classes `ok`, zero divergence/same-failure/matrix error/timeout.
+- Tier-2 external healthy-cohort observation is **PASS, banked at depth 3**, pre-release and
+  non-gating. Evidence: `mt_real_02_evidence/round93_external_healthy_cohort.{json,md}`.
+- No BHV movement or camouflage/ServerHello claim. **Recommended next:** real-network camouflage
+  sufficiency research. A2.3 capstone still overlaps uncommitted user work and remains deferred.
+
 ## Resume (2026-07-18) - S5/T4 dual-kernel SOCKS5 throughput DONE
 
 - Closed the last S5/T4 pending case. `p2_bench_socks5_throughput` previously ran a Rust-only
@@ -19,8 +33,7 @@
   minimum. Both kernels passed with large local headroom; case is `kernel_mode: both`, `strict`.
 - Coverage-neutral: BHV-PF-001 remains owned by the existing HTTP p95 both-case; parity denominator
   unchanged. Evidence: `archive/s5_t4_socks5_throughput/acceptance.md`.
-- **Recommended next:** REALITY external research tail (healthy cohort / real-network camouflage).
-  A2.3 capstone remains deferred and overlaps uncommitted user work; GUI remains paused.
+- R93 subsequently banked the healthy-cohort tier. Current recommendation is in the top resume.
 
 ## Resume (2026-07-18) - R92 external probe flow parity FIXED; observation INCONCLUSIVE
 
@@ -86,9 +99,9 @@
   20/20 four-phase probe; negative controls PASS).
 - **No 52/56 movement** (REALITY has no S3 BHV-ID). Differential archived at
   `archive/reality_active_probing/`.
-- **OPEN (NON-gating):** success-path ServerHello cipher/keyshare/record-framing borrow = rustls
-  ARCH-LIMIT (prober can't reach); real-network camouflage measurement and tier-2 healthy-cohort
-  observation.
+- Residual after R93: success-path ServerHello cipher/keyshare/record-framing borrow = rustls
+  ARCH-LIMIT (prober can't reach), plus real-network camouflage measurement. Tier-2 healthy
+  cohort is banked by R93.
 
 ## Resume (2026-07-17) - LNX-RT-01 Linux runtime closure DONE
 
@@ -103,8 +116,7 @@
 - Closed portability/isolation defects in custom-target binary discovery, Python helper,
   rate-limit env/accounting, Trojan router ownership/pooling, and test binary lookup.
 - Track archived at `archive/lnx_rt_01/`; raw logs remain in `/private/tmp`.
-- **Recommended next:** REALITY external research tail: tier-2 camouflage and healthy-cohort
-  observation. GUI desktop stays paused unless explicitly reopened.
+- R93 subsequently banked the healthy-cohort tier; real-network camouflage remains external.
 
 ## Resume (2026-07-17) - canonical VMess (Go sing-vmess wire-compatible) DONE
 
@@ -164,8 +176,8 @@
 - New sanitized full-browser canary: `labs/interop-lab/reality_chrome_canary/`. Harness split:
   Chrome-current Rust shape/JA4 = blocking; pinned Go/uTLS v1.8.4 = functional compatibility
   lane, profile differences advisory. Local 10-run Chrome lane PASS; tier-1 20/20 PASS.
-- Remaining REALITY research tail: real-network camouflage, active probing, tier-2 cohort.
-  No `52/56` BHV movement; REALITY has no S3 BHV-ID.
+- Later rounds closed active probing locally and banked tier-2 cohort externally; real-network
+  camouflage remains. No `52/56` BHV movement; REALITY has no S3 BHV-ID.
 
 ## Resume (2026-07-12) - MT-INTEROP-03 dual-kernel baseline cleanup DONE
 
@@ -178,9 +190,8 @@
   VMess canonical strict closure is recorded in the 2026-07-17 resume above.
 - FakeIP cursor behavior is locked as S4 `DIV-M-012`; static S4 labels never suppress failures.
   Evidence: `archive/mt_interop_03/acceptance.md`.
-- **Recommended next:** REALITY external research tail: tier-2 camouflage, active probing, and
-  healthy-cohort observation. GUI desktop remains paused until
-  explicitly reopened.
+- Later rounds closed active probing locally and banked the healthy-cohort tier; real-network
+  camouflage remains external. GUI desktop remains paused until explicitly reopened.
 
 ## Resume (2026-07-12) - MIG-03 WP14 final acceptance DONE
 
@@ -207,7 +218,7 @@ resistance + canonical first-flight ordering/mirroring + canonical session_id se
 inbound Vision framing + reverse Go-client empirical interop CLOSED**
 (2026-07-18; see Resume); residual
 success-path ServerHello framing-borrow stays rustls ARCH-LIMIT (unreachable by probers).
-Real-network camouflage and tier-2 cohort remain OPEN.
+Tier-2 healthy cohort is PASS/banked by R93. Real-network camouflage remains OPEN.
 
 ## Current Build And Gate
 
@@ -228,8 +239,8 @@ Real-network camouflage and tier-2 cohort remain OPEN.
   reverse-Fisher-Yates order semantics with wide independent entropy; coordinated GREASE;
   from-spec JA4 `t13d1517h2_8daaf6152771_cb7bf5808d99`; FoxIO algorithm vectors.
 - Pinned Go/uTLS Chrome133 now compatibility-only, not current-browser authority.
-- OPEN: tier-2 camouflage, external healthy-cohort observation. (active-probing relay
-  resistance + canonical server auth closed 2026-07-18 — see Resume.)
+- OPEN: real-network camouflage. External healthy-cohort observation PASS/banked in R93;
+  active-probing relay resistance + canonical server auth closed 2026-07-18.
   NON-GOAL: L4 byte identity; second-tool fingerprint of live captures.
 - A2.3 runtime status-JSON rehearsal DEFERRED. Detail: t32 governance; T3-1B `052d4392`.
 
@@ -237,7 +248,7 @@ Real-network camouflage and tier-2 cohort remain OPEN.
 
 1. Local deterministic gate — `make verify-reality-local` (A1/A2 committed; A2.3 deferred).
 2. External healthy-cohort observation — pre-release, NON-gating (tri-state; no single node
-   is a closure identity; outage ≠ regression).
+   is a closure identity; outage ≠ regression); R93 PASS, banked at depth 3.
 3. ClientHello fingerprint parity — tier-3: Chrome-current local shape/order/JA4 CLOSED;
    pinned Go lane compatibility-only; active-probing relay resistance + canonical first-flight
    ordering/mirroring + canonical server auth + inbound Vision framing + reverse Go-client

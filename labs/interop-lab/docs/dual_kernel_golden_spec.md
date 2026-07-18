@@ -220,7 +220,7 @@ Stable ID format: `DIV-{severity}-{seq}`. Each entry links to BHV-IDs affected.
 
 | Decision ID | Tag | Scope | Disposition | Evidence |
 |-------------|-----|-------|-------------|----------|
-| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): bidirectional Vision dataplane, Chrome-current local ClientHello shape, BoringSSL extension-order semantics, coordinated GREASE, FoxIO-verified JA4, canonical server session_id auth, configurable client-time window, mandatory active-probing relay resistance, canonical target-preconnect/partial-mirror first flight, and reverse Go-client empirical interop = closed locally; real-network camouflage = open | A1 v3 validates both Vision clients against the controlled Go REALITY server plus Go uTLS Vision client against the Rust REALITY+VLESS+Vision server; Rust phase probe and negative controls remain blocking, with per-run counts only in `round-summary.json`. The active-probing harness independently proves target dial before client bytes, incremental partial-input mirror, and target response relay before ClientHello completion. Rust patched-rustls profile targets sanitized **full Chrome 150.0.7871.115** canary: `trust_anchors`, ML-DSA signature schemes, and REALITY removal of X25519MLKEM768 group/key-share. Extension ordering uses independent `OsRng` u32 words with BoringSSL reverse Fisher-Yates over middle extensions; two GREASE extensions stay at ends. Shared u16 order/ECH seed and empirical Go-order ranking tables are retired. `reality_clienthello_parity` has two lanes: Chrome-current Rust shape/JA4 is blocking; pinned Go `metacubex/utls v1.8.4` (`HelloChrome_133`) is functional compatibility only and profile differences are advisory. FoxIO algorithm conformance remains closed through vendored BSD-3 vectors. Still open: real-network camouflage, success-path ServerHello byte borrowing, and tier-2 healthy-cohort observation. REALITY has no S3 BHV-ID; no `52/56` BHV increment. | A1 fixture `labs/interop-lab/reality_local_fixture/`; active-probing differential `agents-only/archive/reality_active_probing/`; Chrome canary `labs/interop-lab/reality_chrome_canary/`; parity harness `labs/interop-lab/reality_clienthello_parity/`; FoxIO vectors under its `fixtures/foxio_reference_vectors/` |
+| DEV-REALITY-01 | ARCH-LIMIT (residual) | REALITY (`vless+reality`): bidirectional Vision dataplane, Chrome-current local ClientHello shape, BoringSSL extension-order semantics, coordinated GREASE, FoxIO-verified JA4, canonical server session_id auth, configurable client-time window, mandatory active-probing relay resistance, canonical target-preconnect/partial-mirror first flight, and reverse Go-client empirical interop = closed locally; tier-2 external healthy cohort = PASS/banked; real-network camouflage = open | A1 v3 validates both Vision clients against the controlled Go REALITY server plus Go uTLS Vision client against the Rust REALITY+VLESS+Vision server; Rust phase probe and negative controls remain blocking, with per-run counts only in `round-summary.json`. The active-probing harness independently proves target dial before client bytes, incremental partial-input mirror, and target response relay before ClientHello completion. Rust patched-rustls profile targets sanitized **full Chrome 150.0.7871.115** canary: `trust_anchors`, ML-DSA signature schemes, and REALITY removal of X25519MLKEM768 group/key-share. Extension ordering uses independent `OsRng` u32 words with BoringSSL reverse Fisher-Yates over middle extensions; two GREASE extensions stay at ends. Shared u16 order/ECH seed and empirical Go-order ranking tables are retired. `reality_clienthello_parity` has two lanes: Chrome-current Rust shape/JA4 is blocking; pinned Go `metacubex/utls v1.8.4` (`HelloChrome_133`) is functional compatibility only and profile differences are advisory. FoxIO algorithm conformance remains closed through vendored BSD-3 vectors. R93 banked tier-2 at three consecutive fixed-cohort all-ok rounds; evidence: `agents-only/mt_real_02_evidence/round93_external_healthy_cohort.{json,md}`. Still open: real-network camouflage and success-path ServerHello byte borrowing. REALITY has no S3 BHV-ID; no `52/56` BHV increment. | A1 fixture `labs/interop-lab/reality_local_fixture/`; active-probing differential `agents-only/archive/reality_active_probing/`; Chrome canary `labs/interop-lab/reality_chrome_canary/`; parity harness `labs/interop-lab/reality_clienthello_parity/`; FoxIO vectors under its `fixtures/foxio_reference_vectors/` |
 
 #### REALITY Acceptance: Three-Tier Model
 
@@ -235,8 +235,8 @@ not let one substitute for another, and do not claim closure of one from another
      REALITY client/server functional path + VLESS dataplane + four negative controls
      + teardown — offline, deterministic, zero public node. Reverse lane uses canonical
      `xtls-rprx-vision`; Rust inbound flow validation and framing are blocking.
-   - Status: **normative merge-precheck**. Currently **opt-in** (a Make target); it is
-     NOT yet an automatically enforced merge gate (no CI / L18 capstone wiring).
+   - Status: **normative merge-precheck**, wired as the opt-in `REALITY_LOCAL` L18
+     capstone gate. It is not server-side automatic merge enforcement; CI remains disabled.
    - Does NOT prove: real-network camouflage quality or success-path ServerHello byte
      borrowing. Chrome-current ClientHello shape/order/JA4 is covered by the separate
      local canary.
@@ -249,6 +249,8 @@ not let one substitute for another, and do not claim closure of one from another
    - Node-infrastructure failure (outage / timeout / reset) must NOT be recorded as a
      Rust functional regression.
    - Governed by the External Healthy-Cohort Observation Protocol below.
+   - Latest accepted observation: R93 **PASS**, banked at three consecutive fixed-cohort
+     all-ok rounds. This remains observational and may be rerun before release.
 3. **ClientHello fingerprint parity — tier-3 (T3 track, 2026-06-07).**
    Re-scoped from a single "residual open item" into layered, individually-tracked
    facts. The blanket "`0/21` / needs a uTLS-equivalent / rustls lacks Chrome shaping"
@@ -304,8 +306,7 @@ not let one substitute for another, and do not claim closure of one from another
    1. real-network camouflage sufficiency.
    2. success-path ServerHello byte borrowing (rustls architecture limit; unreachable
       to unauthenticated probers).
-   3. tier-2 external healthy-cohort observation (pre-release, non-gating).
-   4. A2.3 full L18-capstone runtime status-JSON rehearsal (deferred).
+   3. A2.3 full L18-capstone runtime status-JSON rehearsal (deferred).
 
    **Explicit non-goals:**
    - L4 raw-byte identity / byte-for-byte ClientHello equality (two real Chrome
@@ -314,9 +315,9 @@ not let one substitute for another, and do not claim closure of one from another
    - treating pinned Go/uTLS Chrome133 as current-browser authority.
    - reinstating the retired `fresh09` fixed-node obligation.
 
-   Independent and not fully closed by a passing local gate, nor by occasional
-   external-cohort success. (Standing constraint: do not return to a static ClientHello
-   template, and do not hard-code precedence or position-to-mode behavior.) **No `52/56`
+   Tiers remain independent: R93's banked external cohort does not close real-network
+   camouflage or ServerHello borrowing. (Standing constraint: do not return to a static
+   ClientHello template, and do not hard-code precedence or position-to-mode behavior.) **No `52/56`
    BHV increment**: REALITY has no BHV-ID in the S3 registry and is not in the S1/S6
    denominator, so this tier-3 closure does not move the coverage dashboard (see S6).
 

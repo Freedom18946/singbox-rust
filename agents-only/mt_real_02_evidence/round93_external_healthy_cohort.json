@@ -1,0 +1,91 @@
+{
+  "schema_version": 1,
+  "observation_id": "obs-20260719-user-fresh-healthy-r93",
+  "cohort_id": "user-fresh-vision-recovery",
+  "round_id": "R93-final-round-3",
+  "timestamp": "2026-07-18T16:44:30Z",
+  "config_fingerprint": "sha256:0e4650ab2078e9f902a8f1205a02e2eb02f2798a650588dd70f9481556634d3d",
+  "run_plan": {
+    "subset_schema_gate_passed": true,
+    "violations": [],
+    "planned_node_ids": [
+      "r93u_006",
+      "r93u_009",
+      "r93u_014"
+    ],
+    "no_silent_expansion": true
+  },
+  "intake_counts": {
+    "fresh_ready": 19,
+    "covered_existing": 0,
+    "duplicate": 0,
+    "not_ready": 0
+  },
+  "nodes": [
+    {
+      "node_id": "r93u_006",
+      "replacement_for": null,
+      "replacement_reason": null,
+      "credential_present": true,
+      "config_parse_ok": true,
+      "tcp_reachable": true,
+      "reality_dest_usable": true,
+      "direct_reality": true,
+      "transport_reality": true,
+      "vless_dial": true,
+      "vless_probe_io": true,
+      "infra_health": "healthy",
+      "phase_class": null,
+      "exclusion_reason": null,
+      "included_in_client_verdict": true
+    },
+    {
+      "node_id": "r93u_009",
+      "replacement_for": null,
+      "replacement_reason": null,
+      "credential_present": true,
+      "config_parse_ok": true,
+      "tcp_reachable": true,
+      "reality_dest_usable": true,
+      "direct_reality": true,
+      "transport_reality": true,
+      "vless_dial": true,
+      "vless_probe_io": true,
+      "infra_health": "healthy",
+      "phase_class": null,
+      "exclusion_reason": null,
+      "included_in_client_verdict": true
+    },
+    {
+      "node_id": "r93u_014",
+      "replacement_for": null,
+      "replacement_reason": null,
+      "credential_present": true,
+      "config_parse_ok": true,
+      "tcp_reachable": true,
+      "reality_dest_usable": true,
+      "direct_reality": true,
+      "transport_reality": true,
+      "vless_dial": true,
+      "vless_probe_io": true,
+      "infra_health": "healthy",
+      "phase_class": null,
+      "exclusion_reason": null,
+      "included_in_client_verdict": true
+    }
+  ],
+  "summary": {
+    "healthy_node_count": 3,
+    "excluded_infra_dead_count": 0,
+    "run_all_ok": true,
+    "run_same_failure": 0,
+    "run_divergence": 0,
+    "matrix_status": 0,
+    "matrix_timeout": false,
+    "banked": true,
+    "consecutive_all_ok_rounds": 3,
+    "source_threshold_note": "Recovery closure = 3 consecutive all_ok rounds; fixed cohort C size = 3 nodes x 3 runs per round. R93 final chain completed 27/27 matrices with 243/243 phase classifications ok."
+  },
+  "verdict": "PASS",
+  "notes": "User-supplied fresh local subscription snapshot; source SHA-256 0f40004fc36a6ab17cb664f30f7a205b5330b7396d66002d1866c7e07e94b6b9. Discovery and two broken pre-closure chains were excluded rather than patched. This banked external observation is non-gating, carries no 52/56 BHV increment, and does not establish real-network camouflage or success-path ServerHello byte borrowing. Raw credentials and endpoints were never committed."
+}
