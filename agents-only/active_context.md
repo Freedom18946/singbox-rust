@@ -10,6 +10,17 @@
 
 ---
 
+## Resume (2026-07-18) - TLS global certificate-test isolation DONE
+
+- Fixed a real concurrent-test race in `crates/sb-tls/src/global.rs`: store-mode tests mutated
+  process-global mode, extra CA paths/PEMs, and certificate directories independently, allowing
+  `test_none_mode_empty` to observe another test's roots. A process test lock plus RAII snapshot
+  now serializes mutations and restores all global certificate state even on early failure.
+- Evidence: four 16-thread stress rounds of the eight global tests PASS; sb-tls 199+5+1 PASS;
+  focused all-feature/all-target clippy exit0 (only existing `redundant_pub_crate` warnings); fmt
+  and diff-check clean.
+- Scope: test determinism/quality only. No runtime behavior, parity-BHV, or REALITY movement.
+
 ## Resume (2026-07-18) - REALITY canonical server + inbound Vision interop DONE
 
 - **active-probing tail closed (local, decidable).** Rewrote the REALITY server

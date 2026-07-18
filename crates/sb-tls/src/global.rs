@@ -311,6 +311,42 @@ impl Drop for CertificateWatcher {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use parking_lot::{Mutex, MutexGuard};
+
+    static GLOBAL_CONFIG_TEST_LOCK: Mutex<()> = Mutex::new(());
+
+    struct GlobalConfigTestGuard {
+        _lock: MutexGuard<'static, ()>,
+        tls_override: Option<Arc<ClientConfig>>,
+        extra_ca_paths: Vec<String>,
+        extra_ca_pems: Vec<String>,
+        cert_dirs: Vec<String>,
+        store_mode: CertificateStoreMode,
+    }
+
+    impl GlobalConfigTestGuard {
+        fn acquire() -> Self {
+            let lock = GLOBAL_CONFIG_TEST_LOCK.lock();
+            Self {
+                _lock: lock,
+                tls_override: TLS_OVERRIDE.read().clone(),
+                extra_ca_paths: EXTRA_CA_PATHS.read().clone(),
+                extra_ca_pems: EXTRA_CA_PEMS.read().clone(),
+                cert_dirs: CERT_DIRS.read().clone(),
+                store_mode: *STORE_MODE.read(),
+            }
+        }
+    }
+
+    impl Drop for GlobalConfigTestGuard {
+        fn drop(&mut self) {
+            *TLS_OVERRIDE.write() = self.tls_override.take();
+            *EXTRA_CA_PATHS.write() = std::mem::take(&mut self.extra_ca_paths);
+            *EXTRA_CA_PEMS.write() = std::mem::take(&mut self.extra_ca_pems);
+            *CERT_DIRS.write() = std::mem::take(&mut self.cert_dirs);
+            *STORE_MODE.write() = self.store_mode;
+        }
+    }
 
     #[test]
     fn test_store_mode_parsing() {
@@ -342,15 +378,15 @@ mod tests {
 
     #[test]
     fn test_mozilla_mode_non_empty() {
+        let _guard = GlobalConfigTestGuard::acquire();
         set_store_mode(CertificateStoreMode::Mozilla);
         let roots = base_root_store();
         assert!(!roots.is_empty(), "Mozilla root store should not be empty");
-        // Reset
-        set_store_mode(CertificateStoreMode::System);
     }
 
     #[test]
     fn test_none_mode_empty() {
+        let _guard = GlobalConfigTestGuard::acquire();
         set_store_mode(CertificateStoreMode::None);
         // Clear any extras
         *EXTRA_CA_PATHS.write() = Vec::new();
@@ -361,12 +397,11 @@ mod tests {
             roots.is_empty(),
             "None mode should produce empty root store"
         );
-        // Reset
-        set_store_mode(CertificateStoreMode::System);
     }
 
     #[test]
     fn test_system_mode_non_empty() {
+        let _guard = GlobalConfigTestGuard::acquire();
         set_store_mode(CertificateStoreMode::System);
         let roots = base_root_store();
         // On macOS/Linux, system mode should find certs (or fall back to mozilla)
@@ -403,6 +438,7 @@ mod tests {
 
     #[test]
     fn test_chrome_mode_non_empty() {
+        let _guard = GlobalConfigTestGuard::acquire();
         set_store_mode(CertificateStoreMode::Chrome);
         // Clear any extras so we only measure what Chrome mode provides
         *EXTRA_CA_PATHS.write() = Vec::new();
@@ -413,8 +449,6 @@ mod tests {
             !roots.is_empty(),
             "Chrome mode should produce non-empty root store"
         );
-        // Reset
-        set_store_mode(CertificateStoreMode::System);
     }
 }
 
