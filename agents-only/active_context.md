@@ -1,12 +1,9 @@
 <!-- tier: S -->
 # Active Context
 
-> Purpose: high-frequency project navigation. S-tier: read every
-> session.
-> Discipline: keep only current-stage facts. This file must stay
-> under 300 lines.
-> **This file is the single source of truth for volatile state**
-> (phase, parity-BHV, build/gate). Other docs point here, not copy.
+> Purpose: high-frequency project navigation; S-tier, read every session. Keep under 300 lines.
+> **This file is the single source of truth for volatile state** (phase, parity-BHV, build/gate).
+> Other docs point here, not copy.
 
 ---
 
@@ -18,7 +15,7 @@
 - Result: `UPSTREAM_OBSERVABLE_MINIMUM_OBSERVED`; sufficiency `NOT_ASSESSED`. Evidence:
   `mt_real_02_evidence/round94_external_camouflage_observation.{json,md}`.
 - Remaining external blocker: controlled public Rust deployment and/or multi-vantage censor
-  measurement. ServerHello borrowing stays ARCH-LIMIT; A2.3 overlaps uncommitted user work.
+  measurement. ServerHello borrowing stays ARCH-LIMIT; A2.3 rehearsal result is recorded below.
 
 ## Resume (2026-07-19) - R93 external healthy cohort PASS, BANKED
 
@@ -232,6 +229,9 @@ real-network camouflage sufficiency remains OPEN/external.
 
 ## Current Build And Gate
 
+- 2026-07-19 A2.3 rehearsal emitted terminal L18 status JSON. All local implementation gates
+  proved except strict perf: reproducible startup gap remains; no threshold widened. Frozen-release
+  daily dual rerun passed. Evidence: `archive/a2_3_runtime_status/acceptance.md`.
 - 2026-07-18 S5/T4: interop-lab suite PASS; strict both-kernel SOCKS5 throughput replay
   PASS; fmt and focused implementation checks PASS. Durable metrics in the S5/T4 archive.
 - 2026-07-18 REALITY A1 v3: bidirectional Vision Go/Rust functional fixture, config checks,
@@ -252,11 +252,11 @@ real-network camouflage sufficiency remains OPEN/external.
 - OPEN: real-network camouflage. External healthy-cohort observation PASS/banked in R93;
   active-probing relay resistance + canonical server auth closed 2026-07-18.
   NON-GOAL: L4 byte identity; second-tool fingerprint of live captures.
-- A2.3 runtime status-JSON rehearsal DEFERRED. Detail: t32 governance; T3-1B `052d4392`.
+- A2.3 runtime status-JSON rehearsal COMPLETE; strict L18 startup performance remains open.
 
 ## REALITY Acceptance (3-tier; golden_spec S4)
 
-1. Local deterministic gate — `make verify-reality-local` (A1/A2 committed; A2.3 deferred).
+1. Local deterministic gate — `make verify-reality-local` (A1/A2 committed; A2.3 rehearsed).
 2. External healthy-cohort observation — pre-release, NON-gating (tri-state; no single node
    is a closure identity; outage ≠ regression); R93 PASS, banked at depth 3.
 3. ClientHello fingerprint parity — tier-3: Chrome-current local shape/order/JA4 CLOSED;
@@ -270,7 +270,7 @@ real-network camouflage sufficiency remains OPEN/external.
 - **A4 projection** CLOSED through A4.4 (`a5b7a41f`+`b042a683`, 2026-06-06): route C canonical
   STRICT, projection TERMINAL; 34/34 projected, 0 promotable; deferred G1/G2/G3.
 - **A2 REALITY-gate wiring** DONE (`71e51669`+`e44c67d3`, 2026-06-06): L18 REALITY_LOCAL gate
-  after ORACLE; A2.3 runtime status-JSON DEFERRED.
+  after ORACLE; A2.3 runtime status-JSON rehearsal completed 2026-07-19.
 - **MT-REAL-02 stage-2** closed (R45-R60): per-outbound rollup + planner --latest-* filters.
   History (fresh13 per-rep R73/R90/R91; fresh09 broken R85/R88):
   `archive/mt_real_02/mt_real_02_baseline.md`.

@@ -121,10 +121,19 @@ set_unmeasured() {
 
 measure_core() {
     local prefix="$1"
-    local start_cmd="$2"
-    local proxy_addr="$3"
+    local binary="$2"
+    local config="$3"
+    local mode="$4"
+    local proxy_addr="$5"
 
-    eval "$start_cmd" >"${WORK_DIR}/${prefix}_bench.log" 2>&1 &
+    local cmd=()
+    if [[ "$mode" == "go" ]]; then
+        cmd=("$binary" run -c "$config")
+    else
+        cmd=("$binary" --config "$config")
+    fi
+
+    "${cmd[@]}" >"${WORK_DIR}/${prefix}_bench.log" 2>&1 &
     local pid=$!
     sleep 3
 
@@ -195,7 +204,7 @@ fi
 if [ ! -f "$RUST_BINARY" ]; then
     set_unmeasured "RUST" "env_limited" "rust_binary_missing"
 else
-    measure_core "RUST" "\"$RUST_BINARY\" --config \"$RUST_CONFIG\"" "$RUST_PROXY_ADDR"
+    measure_core "RUST" "$RUST_BINARY" "$RUST_CONFIG" "rust" "$RUST_PROXY_ADDR"
 fi
 
 if [ ! -f "$GO_BINARY" ] && [ -d "$GO_SRC_DIR" ] && command -v go >/dev/null 2>&1; then
@@ -206,7 +215,7 @@ fi
 if [ ! -f "$GO_BINARY" ]; then
     set_unmeasured "GO" "env_limited" "go_binary_missing"
 else
-    measure_core "GO" "\"$GO_BINARY\" run -c \"$GO_CONFIG\"" "$GO_PROXY_ADDR"
+    measure_core "GO" "$GO_BINARY" "$GO_CONFIG" "go" "$GO_PROXY_ADDR"
 fi
 
 export REPORT_FILE RUST_BINARY RUST_CONFIG GO_BINARY GO_CONFIG

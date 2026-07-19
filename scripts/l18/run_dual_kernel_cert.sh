@@ -91,8 +91,9 @@ fi
 REPORT_DIR="${REPORT_ROOT}/${RUN_ID}"
 SUMMARY_JSON="${REPORT_DIR}/summary.json"
 DIFF_GATE_JSON="${REPORT_DIR}/diff_gate.json"
+CASE_LOG_DIR="${REPORT_DIR}/case_logs"
 
-mkdir -p "$REPORT_DIR" "$ARTIFACTS_DIR"
+mkdir -p "$REPORT_DIR" "$CASE_LOG_DIR" "$ARTIFACTS_DIR"
 
 SELECTED_FILE="$(mktemp)"
 RESULTS_FILE="$(mktemp)"
@@ -171,13 +172,14 @@ while IFS=$'\t' read -r case_id priority env_class; do
   ignored_counter="0"
   gate_score="0"
 
-  if run_output="$("${run_cmd[@]}" 2>&1)"; then
-    run_dir="$(extract_kv run_dir "$run_output")"
-    if [[ -z "$run_dir" ]]; then
-      run_status="FAIL"
-      run_fail_count=$((run_fail_count + 1))
-    fi
-  else
+  run_rc=0
+  run_output="$("${run_cmd[@]}" 2>&1)" || run_rc=$?
+  printf '%s\n' "$run_output" > "${CASE_LOG_DIR}/${case_id}.log"
+  run_dir="$(extract_kv run_dir "$run_output")"
+  if [[ "$run_rc" -ne 0 ]]; then
+    run_status="FAIL"
+    run_fail_count=$((run_fail_count + 1))
+  elif [[ -z "$run_dir" || ! -d "$run_dir" ]]; then
     run_status="FAIL"
     run_fail_count=$((run_fail_count + 1))
   fi

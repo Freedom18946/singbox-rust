@@ -106,6 +106,9 @@ impl TlsSecurityConfig {
     pub fn build_client_config(
         &self,
     ) -> Result<Arc<ClientConfig>, Box<dyn std::error::Error + Send + Sync>> {
+        if rustls::crypto::CryptoProvider::get_default().is_none() {
+            let _ = rustls::crypto::ring::default_provider().install_default();
+        }
         let mut root_store = RootCertStore::empty();
         root_store.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
 
@@ -293,14 +296,14 @@ mod tests {
     }
 
     #[test]
-    fn test_build_client_config_tls13_only() {
-        let _ = rustls::crypto::ring::default_provider().install_default();
+    fn test_build_client_config_installs_provider_and_enables_tls13() {
         let config = TlsSecurityConfig {
             min_version: TlsVersion::V1_3,
             ..Default::default()
         };
 
         let client_config = config.build_client_config().unwrap();
+        assert!(rustls::crypto::CryptoProvider::get_default().is_some());
         // Verify configuration was created successfully
         assert!(!client_config
             .as_ref()

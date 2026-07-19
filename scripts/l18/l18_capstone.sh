@@ -844,7 +844,7 @@ run_gate_with_fail_fast "BOUNDARIES" bash "${ROOT_DIR}/agents-only/06-scripts/ch
 run_gate_with_fail_fast "PARITY" cargo check -p app --features parity
 run_gate_with_fail_fast "WORKSPACE_TEST" env RUST_TEST_THREADS="${WORKSPACE_TEST_THREADS}" cargo test --workspace
 run_gate_with_fail_fast "FMT" cargo fmt --all -- --check
-run_gate_with_fail_fast "CLIPPY" cargo clippy --workspace --all-features --all-targets -- -D warnings
+run_gate_with_fail_fast "CLIPPY" make -C "${ROOT_DIR}" clippy
 run_gate_with_fail_fast "HOT_RELOAD" env SINGBOX_BINARY="${DUAL_RUST_BIN}" SINGBOX_HOT_RELOAD_ITERATIONS="${HOT_ITER}" SINGBOX_STABILITY_REPORT_DIR="${STABILITY_REPORT_DIR}" SINGBOX_CONFIG="${STABILITY_TEST_CONFIG}" cargo test -p app --test hot_reload_stability --features long_tests -- --nocapture
 run_gate_with_fail_fast "SIGNAL" env SINGBOX_BINARY="${DUAL_RUST_BIN}" SINGBOX_SIGNAL_ITERATIONS="${SIGNAL_ITER}" SINGBOX_STABILITY_REPORT_DIR="${STABILITY_REPORT_DIR}" SINGBOX_CONFIG="${STABILITY_TEST_CONFIG}" cargo test -p app --test signal_reliability --features long_tests -- --nocapture
 if ! run_docker_gate; then
