@@ -455,6 +455,15 @@ pub struct ServerConfig {
     ///
     /// Default `None` preserves standard RFC 8446 signature-scheme negotiation.
     pub reality_force_signature_scheme: Option<SignatureScheme>,
+
+    /// REALITY: target TLS record lengths for the server handshake flight.
+    ///
+    /// Indices follow the canonical REALITY sequence: ServerHello, CCS,
+    /// EncryptedExtensions, Certificate, CertificateVerify, Finished, and
+    /// NewSessionTicket. When present, encrypted TLS 1.3 handshake messages are
+    /// split and zero-padded to the corresponding target record length. Default
+    /// `None` preserves normal rustls record framing.
+    pub reality_handshake_record_lengths: Option<[usize; 7]>,
 }
 
 impl ServerConfig {
@@ -1213,6 +1222,7 @@ impl ConnectionCore<ServerConnectionData> {
         common.set_max_fragment_size(config.max_fragment_size)?;
         common.enable_secret_extraction = config.enable_secret_extraction;
         common.fips = config.fips();
+        common.reality_handshake_record_lengths = config.reality_handshake_record_lengths;
         Ok(Self::new(
             Box::new(hs::ExpectClientHello::new(config, extra_exts)),
             ServerConnectionData::default(),

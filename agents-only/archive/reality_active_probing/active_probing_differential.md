@@ -9,6 +9,10 @@
 > Vision→Rust Vision 反向 lane 关闭 framing。后续 first-flight 卡又关闭本地可判定 target
 > preconnect、partial-input mirror 与 early-response relay；当前状态以
 > `agents-only/active_context.md` 与 golden spec 为准。
+>
+> **2026-07-20 supersession:** §2/§7 的 D-serverhello 残余已由 target-profile borrowing
+> patch 关闭；证据见 `agents-only/archive/reality_serverhello_borrowing/acceptance.md`。
+> real-network camouflage sufficiency 仍为外部研究边界；无 BHV movement。
 
 ## 0. Scope / 权威源
 
@@ -45,7 +49,7 @@
 | **D-probe** | Traffic/Conn；近 DP-011/LC-008 | 非认证一律透明中继真实 target（真证书） | 普通TLS/无扩展/无SNI/解析失败 → `parse_and_buffer_client_hello` 硬 `Err`（旧 server.rs:246-248）→ 调用方 `warn!`+drop socket（vless.rs:295 / trojan.rs:358） | **是（严重）** | **已修**：非认证一律中继 |
 | **D-auth** | —（无 TLS 维度） | auth 在 session_id（AES-256-GCM） | 自定义扩展 `0xFFCE` + `SHA256(shared‖short_id‖random)`（非规范，无真实 client 会发） | 间接（真 client 全落中继/无法认证） | **已修**：改 session_id AEAD |
 | D-SNI | Connections | 无 SNI / SNI 不匹配 → 中继 | 无 SNI → 硬 `Err`；SNI 不匹配 → fallback | 是（无 SNI 情形） | **已修**：并入中继 |
-| **D-serverhello** | Traffic（成功路径） | 借 target ServerHello cipher/keyshare/record-framing 字节长度伪造 | rustls 默认 ServerHello；仅偷 cert 模板 | 否（需有效 auth 才可达，探测者到不了） | **残余 ARCH-LIMIT**（rustls 不暴露字节级握手伪造） |
+| **D-serverhello** | Traffic（成功路径） | 借 target ServerHello cipher/keyshare/record-framing 字节长度伪造 | 已于 2026-07-20 借 target profile 并由 rustls split/padding 复现 record shape | 否（需有效 auth 才可达，探测者到不了） | **CLOSED**；见 `archive/reality_serverhello_borrowing/acceptance.md` |
 | D-timing | Traffic 时序 | accept 时 dial target；增量镜像 CH；target 可在 CH 完整前回包 | 读 CH 后才 dial+relay | 是（半包/早响应可稳定区分） | **已修**：preconnect + partial mirror + early-response relay |
 | D-fallback-toggle | 配置面 | 无开关，恒中继 | `enable_fallback=false` → 认证失败仍 drop | 是（该配置下） | **已修**：拒绝 false，relay 无条件 |
 
@@ -107,11 +111,11 @@
 - 结果：Go client 接受 Rust ed25519 temp cert/HMAC，完成 REALITY session_id auth、VLESS 请求及
   HTTP token 往返。此前“by construction only”现已被真实 Go client empirical evidence 取代。
 
-## 7. 残余 OPEN（NON-gating，登记）
+## 7. 2026-07-18 残余（2026-07-20 superseded）
 
-- **D-serverhello**：成功路径 ServerHello 的 cipher/keyshare/record-framing 借用 = rustls ARCH-LIMIT
-  （rustls 不暴露字节级握手伪造）。探测者无有效 auth 到不了此路径 → **非 active-probing 向量**；对已
-  认证 client 做 target 二次指纹时可见。同 `DEV-REALITY-01` 同类限制。
+- **D-serverhello 已关闭**：成功路径现借 target cipher/keyshare/record-framing profile；组合与拆分
+  record wire 回归均通过。探测者无有效 auth 到不了此路径，仍非 active-probing 向量。证据：
+  `agents-only/archive/reality_serverhello_borrowing/acceptance.md`。
 - real-network timing/camouflage measurement + healthy-cohort = tier-2/3 external（本卡范围外）。
 
 ## 8. 边界

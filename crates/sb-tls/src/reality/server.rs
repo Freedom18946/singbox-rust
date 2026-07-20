@@ -69,6 +69,20 @@ struct AuthOk {
     sni: String,
 }
 
+/// Network-visible TLS 1.3 choices borrowed from the decoy's first server flight.
+#[derive(Debug)]
+struct TargetHandshakeProfile {
+    cipher_suite: u16,
+    key_share_group: u16,
+    record_lengths: [usize; 7],
+    captured: Vec<u8>,
+}
+
+enum TargetHandshakeCapture {
+    Profile(TargetHandshakeProfile),
+    RelayPrefix(Vec<u8>),
+}
+
 enum FirstFlight {
     ClientRecord(Option<FirstRecord>),
     TargetResponse(Vec<u8>),
@@ -201,25 +215,175 @@ impl RealityAcceptor {
         // Step 3: authenticate in-memory, then either terminate locally (proxy) or
         // relay to the real target (disguise).
         if let Some(auth) = self.authenticate(&record) {
-            info!("REALITY authentication successful (SNI={})", auth.sni);
-            drop(target);
-            let target_chain = self.ensure_target_chain(&auth.sni).await;
-            let replay_stream = ReplayStream::new(stream, record.buffered);
-            let tls_stream = self
-                .complete_tls_handshake(
-                    replay_stream,
-                    &auth.sni,
-                    &auth.auth_key,
-                    target_chain.as_ref(),
-                )
-                .await?;
-            Ok(RealityConnection::Proxy(tls_stream))
+            self.handle_authenticated(stream, target, record, auth)
+                .await
         } else {
             debug!("REALITY connection not authenticated; relaying to target");
             Ok(RealityConnection::Fallback {
                 client: Box::new(stream),
                 target,
             })
+        }
+    }
+
+    async fn handle_authenticated<S>(
+        &self,
+        mut stream: S,
+        mut target: TcpStream,
+        record: FirstRecord,
+        auth: AuthOk,
+    ) -> RealityResult<RealityConnection>
+    where
+        S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+    {
+        let profile = match self.capture_target_handshake(&mut target).await {
+            TargetHandshakeCapture::Profile(profile) => profile,
+            TargetHandshakeCapture::RelayPrefix(prefix) => {
+                if !prefix.is_empty() {
+                    stream.write_all(&prefix).await.map_err(RealityError::Io)?;
+                    stream.flush().await.map_err(RealityError::Io)?;
+                }
+                debug!(
+                    response_len = prefix.len(),
+                    "REALITY target did not provide a borrowable TLS 1.3 profile; relaying"
+                );
+                return Ok(RealityConnection::Fallback {
+                    client: Box::new(stream),
+                    target,
+                });
+            }
+        };
+        let Some(provider) = reality_crypto_provider(&profile) else {
+            stream
+                .write_all(&profile.captured)
+                .await
+                .map_err(RealityError::Io)?;
+            stream.flush().await.map_err(RealityError::Io)?;
+            debug!(
+                cipher_suite = format_args!("0x{:04x}", profile.cipher_suite),
+                key_share_group = format_args!("0x{:04x}", profile.key_share_group),
+                "REALITY target selected an unsupported profile; relaying"
+            );
+            return Ok(RealityConnection::Fallback {
+                client: Box::new(stream),
+                target,
+            });
+        };
+        info!(
+            sni = auth.sni,
+            cipher_suite = format_args!("0x{:04x}", profile.cipher_suite),
+            key_share_group = format_args!("0x{:04x}", profile.key_share_group),
+            record_lengths = ?profile.record_lengths,
+            "REALITY authentication successful"
+        );
+        drop(target);
+        let target_chain = self.ensure_target_chain(&auth.sni).await;
+        let replay_stream = ReplayStream::new(stream, record.buffered);
+        let tls_stream = self
+            .complete_tls_handshake(
+                replay_stream,
+                &auth.sni,
+                &auth.auth_key,
+                target_chain.as_ref(),
+                &profile,
+                provider,
+            )
+            .await?;
+        Ok(RealityConnection::Proxy(tls_stream))
+    }
+
+    /// Capture the same decoy fields consumed by Go uTLS REALITY before it
+    /// locally terminates an authenticated connection: TLS 1.3 cipher suite,
+    /// key-share group, and first-flight TLS record lengths.
+    async fn capture_target_handshake(&self, target: &mut TcpStream) -> TargetHandshakeCapture {
+        const CAPTURE_LIMIT: usize = 8192;
+
+        let mut captured = Vec::with_capacity(CAPTURE_LIMIT);
+        let mut offset = 0usize;
+        let mut record_index = 0usize;
+        let mut record_lengths = [0usize; 7];
+        let mut server_choices = None;
+
+        loop {
+            while record_index < 6 && captured.len().saturating_sub(offset) >= 5 {
+                let payload_len = usize::from(u16::from_be_bytes([
+                    captured[offset + 3],
+                    captured[offset + 4],
+                ]));
+                let Some(record_len) = 5usize.checked_add(payload_len) else {
+                    return TargetHandshakeCapture::RelayPrefix(captured);
+                };
+                if record_len > CAPTURE_LIMIT {
+                    return TargetHandshakeCapture::RelayPrefix(captured);
+                }
+                let Some(record_end) = offset.checked_add(record_len) else {
+                    return TargetHandshakeCapture::RelayPrefix(captured);
+                };
+                if record_end > captured.len() {
+                    break;
+                }
+
+                let content_type = captured[offset];
+                let legacy_version = &captured[offset + 1..offset + 3];
+                let valid_type = match record_index {
+                    0 => content_type == 22,
+                    1 => content_type == 20 && record_len == 6 && captured[offset + 5] == 1,
+                    _ => content_type == 23,
+                };
+                if legacy_version != [0x03, 0x03] || !valid_type {
+                    return TargetHandshakeCapture::RelayPrefix(captured);
+                }
+
+                if record_index == 0 {
+                    let payload = &captured[offset + 5..record_end];
+                    let Some(choices) = parse_target_server_hello(payload) else {
+                        return TargetHandshakeCapture::RelayPrefix(captured);
+                    };
+                    server_choices = Some(choices);
+                }
+
+                record_lengths[record_index] = record_len;
+                offset = record_end;
+                record_index += 1;
+
+                // Go treats an encrypted-extensions record over 512 bytes as a
+                // combined EE+Certificate+CertificateVerify+Finished flight.
+                if record_index == 3 && record_len > 512 {
+                    let Some((cipher_suite, key_share_group)) = server_choices else {
+                        return TargetHandshakeCapture::RelayPrefix(captured);
+                    };
+                    return TargetHandshakeCapture::Profile(TargetHandshakeProfile {
+                        cipher_suite,
+                        key_share_group,
+                        record_lengths,
+                        captured,
+                    });
+                }
+
+                // Separate-record targets are complete after Finished. A
+                // NewSessionTicket cannot normally arrive until client Finished.
+                if record_index == 6 {
+                    let Some((cipher_suite, key_share_group)) = server_choices else {
+                        return TargetHandshakeCapture::RelayPrefix(captured);
+                    };
+                    return TargetHandshakeCapture::Profile(TargetHandshakeProfile {
+                        cipher_suite,
+                        key_share_group,
+                        record_lengths,
+                        captured,
+                    });
+                }
+            }
+
+            if captured.len() == CAPTURE_LIMIT {
+                return TargetHandshakeCapture::RelayPrefix(captured);
+            }
+            let mut chunk = [0u8; 2048];
+            let read_limit = chunk.len().min(CAPTURE_LIMIT - captured.len());
+            match target.read(&mut chunk[..read_limit]).await {
+                Ok(0) | Err(_) => return TargetHandshakeCapture::RelayPrefix(captured),
+                Ok(read) => captured.extend_from_slice(&chunk[..read]),
+            }
         }
     }
 
@@ -352,6 +516,8 @@ impl RealityAcceptor {
         server_name: &str,
         auth_key: &[u8; 32],
         target_chain: Option<&TargetChain>,
+        target_profile: &TargetHandshakeProfile,
+        provider: Arc<rustls::crypto::CryptoProvider>,
     ) -> RealityResult<crate::TlsIoStream>
     where
         S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
@@ -371,7 +537,9 @@ impl RealityAcceptor {
         }
 
         crate::ensure_crypto_provider();
-        let mut config = rustls::ServerConfig::builder()
+        let mut config = rustls::ServerConfig::builder_with_provider(provider)
+            .with_protocol_versions(&[&rustls::version::TLS13])
+            .map_err(|e| RealityError::HandshakeFailed(format!("Failed to select TLS 1.3: {e}")))?
             .with_no_client_auth()
             .with_single_cert(chain, key_der)
             .map_err(|e| {
@@ -381,6 +549,10 @@ impl RealityAcceptor {
         // CertificateVerify scheme so the handshake completes even against clients
         // (e.g. Chrome-fingerprinted) that do not advertise ed25519.
         config.reality_force_signature_scheme = Some(rustls::SignatureScheme::ED25519);
+        config.reality_handshake_record_lengths = Some(target_profile.record_lengths);
+        // Canonical REALITY emits no unborrowed post-handshake tickets when the
+        // target's pre-client-Finished flight did not contain one.
+        config.send_tls13_tickets = 0;
 
         let acceptor = tokio_rustls::TlsAcceptor::from(Arc::new(config));
 
@@ -424,6 +596,86 @@ impl RealityAcceptor {
 
         Ok((cert_der, key_der))
     }
+}
+
+fn parse_target_server_hello(payload: &[u8]) -> Option<(u16, u16)> {
+    if payload.len() < 44 || payload[0] != 2 {
+        return None;
+    }
+    let handshake_len =
+        (usize::from(payload[1]) << 16) | (usize::from(payload[2]) << 8) | usize::from(payload[3]);
+    if handshake_len.checked_add(4)? != payload.len() || payload[4..6] != [0x03, 0x03] {
+        return None;
+    }
+
+    let mut cursor = 38usize;
+    let session_id_len = usize::from(*payload.get(cursor)?);
+    cursor = cursor.checked_add(1 + session_id_len)?;
+    let cipher_suite = read_profile_u16(payload, &mut cursor)?;
+    if !matches!(cipher_suite, 0x1301..=0x1303) || *payload.get(cursor)? != 0 {
+        return None;
+    }
+    cursor += 1;
+    let extensions_block_len = usize::from(read_profile_u16(payload, &mut cursor)?);
+    let extensions_block_end = cursor.checked_add(extensions_block_len)?;
+    if extensions_block_end != payload.len() {
+        return None;
+    }
+
+    let mut tls13 = false;
+    let mut key_share_group = None;
+    while cursor < extensions_block_end {
+        let extension_type = read_profile_u16(payload, &mut cursor)?;
+        let entry_len = usize::from(read_profile_u16(payload, &mut cursor)?);
+        let entry_end = cursor.checked_add(entry_len)?;
+        if entry_end > extensions_block_end {
+            return None;
+        }
+        match extension_type {
+            43 if entry_len == 2 => {
+                tls13 = payload[cursor..entry_end] == [0x03, 0x04];
+            }
+            51 if entry_len >= 4 => {
+                let mut key_share_cursor = cursor;
+                let group = read_profile_u16(payload, &mut key_share_cursor)?;
+                let key_len = usize::from(read_profile_u16(payload, &mut key_share_cursor)?);
+                if key_share_cursor.checked_add(key_len)? != entry_end {
+                    return None;
+                }
+                key_share_group = Some(group);
+            }
+            _ => {}
+        }
+        cursor = entry_end;
+    }
+
+    tls13.then_some((cipher_suite, key_share_group?))
+}
+
+fn read_profile_u16(input: &[u8], cursor: &mut usize) -> Option<u16> {
+    let end = cursor.checked_add(2)?;
+    let bytes: [u8; 2] = input.get(*cursor..end)?.try_into().ok()?;
+    *cursor = end;
+    Some(u16::from_be_bytes(bytes))
+}
+
+fn reality_crypto_provider(
+    profile: &TargetHandshakeProfile,
+) -> Option<Arc<rustls::crypto::CryptoProvider>> {
+    crate::ensure_crypto_provider();
+    let mut provider = rustls::crypto::CryptoProvider::get_default()?
+        .as_ref()
+        .clone();
+    provider
+        .cipher_suites
+        .retain(|suite| u16::from(suite.suite()) == profile.cipher_suite);
+    provider
+        .kx_groups
+        .retain(|group| u16::from(group.name()) == profile.key_share_group);
+    if provider.cipher_suites.len() != 1 || provider.kx_groups.len() != 1 {
+        return None;
+    }
+    Some(Arc::new(provider))
 }
 
 fn current_unix_seconds() -> u64 {

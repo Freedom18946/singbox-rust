@@ -222,6 +222,10 @@ impl PrefixedPayload {
         self.0.extend_from_slice(slice)
     }
 
+    pub(crate) fn extend_zeros(&mut self, len: usize) {
+        self.0.resize(self.0.len() + len, 0);
+    }
+
     pub fn extend_from_chunks(&mut self, chunks: &OutboundChunks<'_>) {
         chunks.copy_to_vec(&mut self.0)
     }

@@ -125,6 +125,7 @@ impl ConfigBuilder<ServerConfig, WantsServerCert> {
             cert_compression_cache: Arc::new(compress::CompressionCache::default()),
             cert_decompressors: compress::default_cert_decompressors().to_vec(),
             reality_force_signature_scheme: None,
+            reality_handshake_record_lengths: None,
         }
     }
 }

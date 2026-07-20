@@ -61,6 +61,7 @@ pub struct CommonState {
     pub(crate) refresh_traffic_keys_pending: bool,
     pub(crate) fips: bool,
     pub(crate) tls13_tickets_received: u32,
+    pub(crate) reality_handshake_record_lengths: Option<[usize; 7]>,
 }
 
 impl CommonState {
@@ -94,6 +95,7 @@ impl CommonState {
             refresh_traffic_keys_pending: false,
             fips: false,
             tls13_tickets_received: 0,
+            reality_handshake_record_lengths: None,
         }
     }
 
@@ -366,8 +368,53 @@ impl CommonState {
             }
         };
 
-        let em = self.record_layer.encrypt_outgoing(m);
+        let target_record_len = self.take_reality_handshake_record_length(&m);
+        let em = if let Some(target_record_len) = target_record_len {
+            let current_record_len = 5 + self.record_layer.encrypted_len(m.payload.len());
+            if target_record_len >= current_record_len {
+                let padding_len = target_record_len - current_record_len;
+                let Ok(encrypted) = self
+                    .record_layer
+                    .encrypt_outgoing_with_tls13_padding(m, padding_len)
+                else {
+                    warn!("REALITY TLS 1.3 record padding failed");
+                    return;
+                };
+                encrypted
+            } else {
+                warn!(
+                    "REALITY target TLS record is shorter than generated handshake record: target={}, generated={}",
+                    target_record_len,
+                    current_record_len
+                );
+                self.record_layer.encrypt_outgoing(m)
+            }
+        } else {
+            self.record_layer.encrypt_outgoing(m)
+        };
         self.queue_tls_message(em);
+    }
+
+    fn take_reality_handshake_record_length(
+        &mut self,
+        message: &OutboundPlainMessage<'_>,
+    ) -> Option<usize> {
+        if message.typ != ContentType::Handshake {
+            return None;
+        }
+        let handshake_type = *message.payload.to_vec().first()?;
+        let index = match handshake_type {
+            8 => 2,  // EncryptedExtensions
+            11 => 3, // Certificate
+            15 => 4, // CertificateVerify
+            20 => 5, // Finished
+            4 => 6,  // NewSessionTicket
+            _ => return None,
+        };
+        let lengths = self.reality_handshake_record_lengths.as_mut()?;
+        let length = lengths[index];
+        lengths[index] = 0;
+        (length != 0).then_some(length)
     }
 
     fn send_plain_non_buffering(&mut self, payload: OutboundChunks<'_>, limit: Limit) -> usize {
@@ -996,6 +1043,22 @@ impl<'a, const TLS13: bool> HandshakeFlight<'a, TLS13> {
     }
 
     pub(crate) fn finish(self, common: &mut CommonState) {
+        if TLS13 && common.should_split_reality_handshake_flight() {
+            if let Some(messages) = split_handshake_flight(&self.body) {
+                for message in messages {
+                    common.send_msg(
+                        Message {
+                            version: ProtocolVersion::TLSv1_3,
+                            payload: MessagePayload::HandshakeFlight(Payload::new(
+                                message.to_vec(),
+                            )),
+                        },
+                        true,
+                    );
+                }
+                return;
+            }
+        }
         common.send_msg(
             Message {
                 version: match TLS13 {
@@ -1007,6 +1070,33 @@ impl<'a, const TLS13: bool> HandshakeFlight<'a, TLS13> {
             TLS13,
         );
     }
+}
+
+impl CommonState {
+    fn should_split_reality_handshake_flight(&self) -> bool {
+        self.reality_handshake_record_lengths
+            .as_ref()
+            .is_some_and(|lengths| lengths[2..=5].iter().all(|length| *length != 0))
+    }
+}
+
+fn split_handshake_flight(mut body: &[u8]) -> Option<Vec<&[u8]>> {
+    let mut messages = Vec::new();
+    while !body.is_empty() {
+        if body.len() < 4 {
+            return None;
+        }
+        let payload_len =
+            (usize::from(body[1]) << 16) | (usize::from(body[2]) << 8) | usize::from(body[3]);
+        let message_len = 4usize.checked_add(payload_len)?;
+        if message_len > body.len() {
+            return None;
+        }
+        let (message, remaining) = body.split_at(message_len);
+        messages.push(message);
+        body = remaining;
+    }
+    Some(messages)
 }
 
 #[cfg(feature = "tls12")]

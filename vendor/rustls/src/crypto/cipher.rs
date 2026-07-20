@@ -154,6 +154,23 @@ pub trait MessageEncrypter: Send + Sync {
         seq: u64,
     ) -> Result<OutboundOpaqueMessage, Error>;
 
+    /// Encrypt a TLS 1.3 message with zero padding after its inner content type.
+    /// Providers that implement TLS 1.3 REALITY record-shape borrowing override
+    /// this method. Standard callers always use zero padding.
+    fn encrypt_with_tls13_padding(
+        &mut self,
+        msg: OutboundPlainMessage<'_>,
+        seq: u64,
+        padding_len: usize,
+    ) -> Result<OutboundOpaqueMessage, Error> {
+        if padding_len == 0 {
+            return self.encrypt(msg, seq);
+        }
+        Err(Error::General(
+            "crypto provider does not support TLS 1.3 record padding".into(),
+        ))
+    }
+
     /// Return the length of the ciphertext that results from encrypting plaintext of
     /// length `payload_len`
     fn encrypted_payload_len(&self, payload_len: usize) -> usize;

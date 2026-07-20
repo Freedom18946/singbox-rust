@@ -112,6 +112,23 @@ impl RecordLayer {
         self.message_encrypter.encrypt(plain, seq).unwrap()
     }
 
+    pub(crate) fn encrypt_outgoing_with_tls13_padding(
+        &mut self,
+        plain: OutboundPlainMessage<'_>,
+        padding_len: usize,
+    ) -> Result<OutboundOpaqueMessage, Error> {
+        debug_assert!(self.encrypt_state == DirectionState::Active);
+        if self.next_pre_encrypt_action() == PreEncryptAction::Refuse {
+            return Err(Error::EncryptError);
+        }
+        let seq = self.write_seq;
+        let encrypted =
+            self.message_encrypter
+                .encrypt_with_tls13_padding(plain, seq, padding_len)?;
+        self.write_seq += 1;
+        Ok(encrypted)
+    }
+
     /// Prepare to use the given `MessageEncrypter` for future message encryption.
     /// It is not used until you call `start_encrypting`.
     pub(crate) fn prepare_message_encrypter(

@@ -6,6 +6,19 @@
 > Other docs point here, not copy.
 
 ---
+## Resume (2026-07-20) - REALITY ServerHello target-profile borrowing DONE
+
+- Authenticated Rust server now consumes the same decoy TLS 1.3 profile as Go uTLS REALITY:
+  selected cipher suite, key-share group, and combined or split first-flight record lengths.
+- Opt-in vendored-rustls support narrows provider choices, splits handshake messages when the
+  target does, and applies RFC 8446 inner-plaintext zero padding to reproduce record lengths;
+  normal rustls configs remain unchanged.
+- Combined-flight and four-record regressions verify exact wire lengths plus AES-256-GCM/X25519
+  selection. `sb-tls` all-feature/all-target suite PASS (202+7); local A1 20-run gate PASS.
+- `DEV-REALITY-01` local implementation status is CLOSED. Remaining real-network camouflage
+  sufficiency is external research/measurement, not a Rust architecture gap. Evidence:
+  `archive/reality_serverhello_borrowing/acceptance.md`. No `52/56` BHV movement.
+
 ## Resume (2026-07-20) - REALITY production server deployment path DONE
 
 - Red-team audit found reverse interop used an adapter example while production V2 rejected or
@@ -18,7 +31,7 @@
 - Local production deployability is closed; no public deployment occurred. R94 remains
   `UPSTREAM_OBSERVABLE_MINIMUM_OBSERVED` / sufficiency `NOT_ASSESSED`; external blocker is a
   controlled publicly reachable Rust server and/or multi-vantage censor measurement.
-- ServerHello borrowing stays ARCH-LIMIT. No `52/56` BHV movement.
+- ServerHello borrowing was subsequently closed locally above. No `52/56` BHV movement.
 
 ## Resume (2026-07-20) - A2.3 L18 startup + status closure DONE
 
@@ -95,7 +108,7 @@
   matches Go (empty short_ids => only the zero short_id).
 - **Vendored rustls patch** (`vendor/rustls`): opt-in `ServerConfig::reality_force_signature_scheme`
   (default None) forces the ed25519 CertVerify so the server interoperates with Chrome-fingerprint
-  clients that don't advertise ed25519 — the exact rustls ARCH-LIMIT (Go forges handshake bytes);
+  clients that don't advertise ed25519 — the then-residual rustls architecture gap;
   symmetric to the fork's existing client-side ed25519 tolerance. Backward-compatible (builder-only
   construction; default preserves RFC 8446 negotiation).
 - **Decidable evidence:** `crates/sb-tls/tests/reality_active_probing.rs` (decoy + 5 cases,
@@ -114,9 +127,9 @@
   20/20 four-phase probe; negative controls PASS).
 - **No 52/56 movement** (REALITY has no S3 BHV-ID). Differential archived at
   `archive/reality_active_probing/`.
-- Residual after R93: success-path ServerHello cipher/keyshare/record-framing borrow = rustls
-  ARCH-LIMIT (prober can't reach), plus real-network camouflage measurement. Tier-2 healthy
-  cohort is banked by R93.
+- Superseded 2026-07-20: success-path ServerHello cipher/keyshare/record-framing borrowing closed
+  locally; only real-network camouflage measurement remains external. Tier-2 healthy cohort is
+  banked by R93.
 
 ## Resume (2026-07-17) - LNX-RT-01 Linux runtime closure DONE
 
@@ -194,51 +207,21 @@
 - Later rounds closed active probing locally and banked tier-2 cohort externally; real-network
   camouflage remains. No `52/56` BHV movement; REALITY has no S3 BHV-ID.
 
-## Resume (2026-07-12) - MT-INTEROP-03 dual-kernel baseline cleanup DONE
-
-- **MT-INTEROP-03 accepted:** its historical 103-case run replaced WP14's noisy baseline;
-  LNX-RT-01 later superseded its VMess environment-limit classification.
-- Four former `INTEROP_*` cases are self-managed. DNS TTL reference direction and cache bounds,
-  WS memory warm-up, shutdown drain ordering, reload readiness debounce, Go group-delay route,
-  FakeIP fixture/oracle, WireGuard compatibility fields, and isolated Rust/Go bootstrap are closed.
-- VLESS local dual-kernel dataplane is strict PASS after fixing request version/address order.
-  VMess canonical strict closure is recorded in the 2026-07-17 resume above.
-- FakeIP cursor behavior is locked as S4 `DIV-M-012`; static S4 labels never suppress failures.
-  Evidence: `archive/mt_interop_03/acceptance.md`.
-- Later rounds closed active probing locally and banked the healthy-cohort tier; real-network
-  camouflage remains external. GUI desktop remains paused until explicitly reopened.
-
-## Resume (2026-07-12) - MIG-03 WP14 final acceptance DONE
-
-- **MIG-03 accepted and archived:** WP01-WP14 closed. Final D17 metrics meet every target;
-  canonical contracts, adapter protocol ownership, single router stack, externalized Web/DERP
-  services, frozen runtime options, duplicate cleanup, and feature slimming are closed.
-- WP14 removed final `routing/` compatibility facade and locked non-return in boundary V8. Stable
-  architecture docs, navigation, experience memory, phase map, and archived acceptance evidence
-  now match source facts.
-- Workspace all-feature fmt/check/clippy/test, five app profiles, Python tool suites, Trojan
-  integration, strict boundaries, consistency, and diff-check pass. Interop full run: 87/103;
-  all 16 failures classified as external-env, dual/Go oracle, non-promotable Rust diagnostic,
-  harness assertion, or historical S4 baseline; no new unclassified difference. Exact evidence:
-  `archive/mig03/mig03_wp14_final_acceptance_and_archive.md`.
-- **Scope note:** architecture migration closure only. No parity/BHV/REALITY movement claimed.
-
 ## Strategic State
 
 Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
 (non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, not in the
-S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local Chrome-current profile, wide-entropy
-BoringSSL order semantics, official-JA4 algorithm cross-check, **and active-probing relay
-resistance + canonical first-flight ordering/mirroring + canonical session_id server auth +
-inbound Vision framing + production-configured server + reverse Go-client empirical interop CLOSED**
-(2026-07-20; see Resume); residual
-success-path ServerHello framing-borrow stays rustls ARCH-LIMIT (unreachable by probers).
-Tier-2 healthy cohort is PASS/banked by R93. R94 observed upstream's network-visible subset;
-real-network camouflage sufficiency remains OPEN/external.
+S1/S6 denominator. `DEV-REALITY-01` local implementation line is CLOSED: Chrome-current profile,
+BoringSSL ordering, FoxIO JA4 cross-check, active-probing relay, canonical first-flight/session_id,
+inbound Vision, production server, reverse Go-client interop, and success-path target ServerHello
+cipher/keyshare/record-shape borrowing all have local evidence. Tier-2 healthy cohort is PASS/banked
+by R93. R94 observed upstream's network-visible subset; real-network camouflage sufficiency remains
+OPEN/external, but no longer represents a Rust architecture limit.
 
 ## Current Build And Gate
-- 2026-07-20 REALITY A1: production-configured Rust server, three bidirectional dataplanes,
-  phase probe, config checks, and negatives PASS; active-probing differential stays PASS.
+- 2026-07-20 REALITY: sb-tls all-feature/all-target clippy exit0 and suite 202+7 PASS;
+  A1 production-configured server, three dataplanes, phase probe, config checks, negatives PASS;
+  ServerHello target-profile regressions and active-probing differential PASS.
 - S5/T4 strict both-kernel throughput and LNX-RT-01 pinned Linux closure remain PASS; durable
   metrics/evidence live in their archives. Repository closure gates are rerun per task.
 
@@ -248,8 +231,9 @@ real-network camouflage sufficiency remains OPEN/external.
   reverse-Fisher-Yates order semantics with wide independent entropy; coordinated GREASE;
   from-spec JA4 `t13d1517h2_8daaf6152771_cb7bf5808d99`; FoxIO algorithm vectors.
 - Pinned Go/uTLS Chrome133 now compatibility-only, not current-browser authority.
-- OPEN: real-network camouflage. External healthy-cohort observation PASS/banked in R93;
-  active-probing relay resistance + canonical server auth closed 2026-07-18.
+- OPEN: real-network camouflage. External healthy-cohort observation PASS/banked in R93.
+- Active-probing relay + canonical server auth closed 2026-07-18; target ServerHello
+  cipher/keyshare/record-shape borrowing closed 2026-07-20.
   NON-GOAL: L4 byte identity; second-tool fingerprint of live captures.
 
 ## REALITY Acceptance (3-tier; golden_spec S4)
@@ -260,7 +244,7 @@ real-network camouflage sufficiency remains OPEN/external.
 3. ClientHello fingerprint parity — tier-3: Chrome-current local shape/order/JA4 CLOSED;
    pinned Go lane compatibility-only; active-probing relay resistance + canonical first-flight
    ordering/mirroring + canonical server auth + inbound Vision framing + reverse Go-client
-   empirical interop CLOSED (2026-07-18);
+   empirical interop + target ServerHello profile borrowing CLOSED (2026-07-20);
    real-network camouflage OPEN.
 
 ## Closed Tracks (compressed; detail in archive)
