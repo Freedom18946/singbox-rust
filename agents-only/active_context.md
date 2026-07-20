@@ -270,7 +270,7 @@ real-network camouflage sufficiency remains OPEN/external.
 - **A4 projection** CLOSED through A4.4 (`a5b7a41f`+`b042a683`, 2026-06-06): route C canonical
   STRICT, projection TERMINAL; 34/34 projected, 0 promotable; deferred G1/G2/G3.
 - **A2 REALITY-gate wiring** DONE (`71e51669`+`e44c67d3`, 2026-06-06): L18 REALITY_LOCAL gate
-  after ORACLE; A2.3 runtime status-JSON rehearsal completed 2026-07-19.
+  after ORACLE; A2.3 runtime status-JSON rehearsal completed 2026-07-20.
 - **MT-REAL-02 stage-2** closed (R45-R60): per-outbound rollup + planner --latest-* filters.
   History (fresh13 per-rep R73/R90/R91; fresh09 broken R85/R88):
   `archive/mt_real_02/mt_real_02_baseline.md`.

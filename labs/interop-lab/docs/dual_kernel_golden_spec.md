@@ -306,7 +306,11 @@ not let one substitute for another, and do not claim closure of one from another
    1. real-network camouflage sufficiency.
    2. success-path ServerHello byte borrowing (rustls architecture limit; unreachable
       to unauthenticated probers).
-   3. A2.3 full L18-capstone runtime status-JSON rehearsal (deferred).
+
+   **Local runtime closure (A2.3, 2026-07-20):** fixed-profile L18 produced a terminal
+   status with every selected local implementation gate proven. Docker remained advisory and
+   GUI remained untested under the selected core profile. Evidence:
+   `agents-only/archive/a2_3_runtime_status/acceptance.md`.
 
    **External progress, not closure (R94, 2026-07-19):** a redacting ordinary-TLS fallback
    comparator observed XTLS/REALITY's network-visible TLS/H2/redirect subset on all 9
