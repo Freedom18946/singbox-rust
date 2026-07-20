@@ -65,6 +65,14 @@ def go_fork_dir() -> pathlib.Path:
     return cands[-1]
 
 
+def cargo_target_dir() -> pathlib.Path:
+    configured = os.environ.get("CARGO_TARGET_DIR")
+    if not configured:
+        return REPO / "target"
+    target = pathlib.Path(configured)
+    return target if target.is_absolute() else REPO / target
+
+
 def sh(argv, **kw):
     return subprocess.run(argv, capture_output=True, text=True, **kw)
 
@@ -124,9 +132,10 @@ def build_all(bindir: pathlib.Path, skip: bool) -> dict:
     bindir.mkdir(parents=True, exist_ok=True)
     go_sb = bindir / "sing-box-utls"
     helper = bindir / "fixture-helper"
-    app = REPO / "target/debug/app"
-    probe = REPO / "target/debug/examples/vless_reality_phase_probe"
-    rust_server = REPO / "target/debug/examples/vless_reality_server_fixture"
+    debug_dir = cargo_target_dir() / "debug"
+    app = debug_dir / "app"
+    probe = debug_dir / "examples/vless_reality_phase_probe"
+    rust_server = debug_dir / "examples/vless_reality_server_fixture"
     info = {"go_build_tags": GO_BUILD_TAGS}
     if skip:
         info["skipped"] = True

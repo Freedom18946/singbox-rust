@@ -13,7 +13,7 @@
 use std::io::{self, ErrorKind};
 use std::net::IpAddr;
 use std::sync::atomic::{AtomicBool, AtomicU64, Ordering};
-use std::sync::{Arc, Mutex};
+use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant};
 
 use crate::net::metered::TrafficRecorder;
@@ -116,6 +116,26 @@ fn load_public_suffix_list(path: Option<&std::path::Path>) -> List {
         return list;
     }
     List::default()
+}
+
+#[derive(Debug, Default)]
+struct LazyPublicSuffixList {
+    path: Option<std::path::PathBuf>,
+    list: OnceLock<List>,
+}
+
+impl LazyPublicSuffixList {
+    fn new(path: Option<&std::path::Path>) -> Self {
+        Self {
+            path: path.map(std::path::Path::to_path_buf),
+            list: OnceLock::new(),
+        }
+    }
+
+    fn get(&self) -> &List {
+        self.list
+            .get_or_init(|| load_public_suffix_list(self.path.as_deref()))
+    }
 }
 
 fn is_valid_dns_name(name: &str) -> bool {
@@ -369,7 +389,7 @@ pub struct ConnectionManager {
     stats: Option<Arc<StatsManager>>,
     /// Explicit conntrack dependency for active connection registration.
     conn_tracker: Arc<ConnTracker>,
-    public_suffix_list: Arc<List>,
+    public_suffix_list: Arc<LazyPublicSuffixList>,
 }
 
 impl std::fmt::Debug for ConnectionManager {
@@ -420,7 +440,7 @@ impl ConnectionManager {
             next_id: AtomicU64::new(1),
             stats: None,
             conn_tracker: Arc::new(ConnTracker::new()),
-            public_suffix_list: Arc::new(load_public_suffix_list(None)),
+            public_suffix_list: Arc::new(LazyPublicSuffixList::default()),
         }
     }
 
@@ -435,7 +455,7 @@ impl ConnectionManager {
     }
 
     pub fn with_public_suffix_list(mut self, path: Option<&std::path::Path>) -> Self {
-        self.public_suffix_list = Arc::new(load_public_suffix_list(path));
+        self.public_suffix_list = Arc::new(LazyPublicSuffixList::new(path));
         self
     }
 
@@ -612,7 +632,7 @@ impl ConnectionManager {
                         copy_with_tls_fragment(
                             &mut local_reader,
                             &mut remote_writer,
-                            &public_suffix_list,
+                            public_suffix_list.get(),
                             TlsFragmentCopyOpts {
                                 split_packet: tls_fragment,
                                 split_record: tls_record_fragment,
@@ -1399,6 +1419,26 @@ mod tests {
     fn test_connection_manager_creation() {
         let cm = ConnectionManager::new();
         assert_eq!(cm.active_count(), 0);
+        assert!(cm.public_suffix_list.list.get().is_none());
+    }
+
+    #[test]
+    fn test_connection_manager_loads_public_suffixes_on_first_use() {
+        let cm = ConnectionManager::new();
+        assert!(has_public_suffix(cm.public_suffix_list.get(), "github.com"));
+        assert!(cm.public_suffix_list.list.get().is_some());
+    }
+
+    #[test]
+    fn test_connection_manager_defers_custom_public_suffix_file() {
+        let temp = tempfile::tempdir().unwrap();
+        let path = temp.path().join("custom-psl.txt");
+        std::fs::write(&path, "com\n").unwrap();
+
+        let cm = ConnectionManager::new().with_public_suffix_list(Some(&path));
+        assert!(cm.public_suffix_list.list.get().is_none());
+        assert!(has_public_suffix(cm.public_suffix_list.get(), "github.com"));
+        assert!(cm.public_suffix_list.list.get().is_some());
     }
 
     #[test]

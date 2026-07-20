@@ -2056,6 +2056,15 @@ impl Default for SystemUpstream {
 #[async_trait]
 impl DnsUpstream for SystemUpstream {
     async fn query(&self, domain: &str, _record_type: RecordType) -> Result<DnsAnswer> {
+        if let Ok(ip) = domain.parse::<IpAddr>() {
+            return Ok(DnsAnswer::new(
+                vec![ip],
+                self.default_ttl,
+                super::cache::Source::Upstream,
+                super::cache::Rcode::NoError,
+            ));
+        }
+
         // 使用系统解析器
         let addrs: Vec<std::net::IpAddr> = tokio::net::lookup_host((domain, 0))
             .await
@@ -2730,6 +2739,18 @@ mod tests {
 
         // 系统解析器应该总是健康的
         assert!(upstream.health_check().await);
+    }
+
+    #[tokio::test]
+    async fn system_upstream_returns_literal_ip_directly() {
+        let upstream = SystemUpstream::new();
+        let expected = IpAddr::V4(Ipv4Addr::LOCALHOST);
+        let answer = upstream
+            .query("127.0.0.1", RecordType::A)
+            .await
+            .expect("literal IP should resolve without host lookup");
+
+        assert_eq!(answer.ips, vec![expected]);
     }
 
     #[tokio::test]

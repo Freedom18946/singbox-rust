@@ -1453,12 +1453,11 @@ mod tests {
         };
 
         // Store data
-        {
-            let svc = CacheFileService::new(&config);
-            let ips: Vec<IpAddr> = vec!["1.1.1.1".parse().unwrap(), "1.0.0.1".parse().unwrap()];
-            svc.put_rdrc("cloudflare.com", ips, Duration::from_secs(3600));
-            svc.flush();
-        }
+        let writer = CacheFileService::new(&config);
+        let ips: Vec<IpAddr> = vec!["1.1.1.1".parse().unwrap(), "1.0.0.1".parse().unwrap()];
+        writer.put_rdrc("cloudflare.com", ips, Duration::from_secs(3600));
+        writer.flush();
+        drop(writer);
 
         // Reload and verify
         {

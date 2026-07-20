@@ -6,7 +6,6 @@
 > Other docs point here, not copy.
 
 ---
-
 ## Resume (2026-07-19) - R94 external camouflage subset OBSERVED
 
 - Added credential-redacting ordinary-TLS fallback comparator; sufficiency is never inferred.
@@ -15,7 +14,13 @@
 - Result: `UPSTREAM_OBSERVABLE_MINIMUM_OBSERVED`; sufficiency `NOT_ASSESSED`. Evidence:
   `mt_real_02_evidence/round94_external_camouflage_observation.{json,md}`.
 - Remaining external blocker: controlled public Rust deployment and/or multi-vantage censor
-  measurement. ServerHello borrowing stays ARCH-LIMIT; A2.3 rehearsal result is recorded below.
+  measurement. ServerHello borrowing stays ARCH-LIMIT; A2.3 local closure is recorded below.
+
+## Resume (2026-07-20) - A2.3 L18 startup + status closure DONE
+
+- Strict perf PASS (startup 17/17 ms); Cargo isolation and target-aware REALITY fixture closed.
+- Terminal `PARTIAL`: all local gates PROVEN; Docker ADVISORY, GUI UNTESTED. Evidence:
+  `archive/a2_3_runtime_status/acceptance.md`; no parity/BHV/external claim.
 
 ## Resume (2026-07-19) - R93 external healthy cohort PASS, BANKED
 
@@ -228,10 +233,6 @@ Tier-2 healthy cohort is PASS/banked by R93. R94 observed upstream's network-vis
 real-network camouflage sufficiency remains OPEN/external.
 
 ## Current Build And Gate
-
-- 2026-07-19 A2.3 rehearsal emitted terminal L18 status JSON. All local implementation gates
-  proved except strict perf: reproducible startup gap remains; no threshold widened. Frozen-release
-  daily dual rerun passed. Evidence: `archive/a2_3_runtime_status/acceptance.md`.
 - 2026-07-18 S5/T4: interop-lab suite PASS; strict both-kernel SOCKS5 throughput replay
   PASS; fmt and focused implementation checks PASS. Durable metrics in the S5/T4 archive.
 - 2026-07-18 REALITY A1 v3: bidirectional Vision Go/Rust functional fixture, config checks,
@@ -252,7 +253,6 @@ real-network camouflage sufficiency remains OPEN/external.
 - OPEN: real-network camouflage. External healthy-cohort observation PASS/banked in R93;
   active-probing relay resistance + canonical server auth closed 2026-07-18.
   NON-GOAL: L4 byte identity; second-tool fingerprint of live captures.
-- A2.3 runtime status-JSON rehearsal COMPLETE; strict L18 startup performance remains open.
 
 ## REALITY Acceptance (3-tier; golden_spec S4)
 

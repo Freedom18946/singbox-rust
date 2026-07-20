@@ -174,6 +174,7 @@ RUN_ROOT="${BATCH_ROOT}/${RUN_NAME}"
 RUN_DIR="${RUN_ROOT}/r1"
 CANARY_RUNTIME="${RUN_ROOT}/canary_runtime"
 RUNTIME_CONFIG_DIR="${RUN_ROOT}/runtime_configs"
+CAPSTONE_CARGO_TARGET_DIR="${RUN_ROOT}/cargo_target"
 
 mkdir -p "${RUN_DIR}" "${CANARY_RUNTIME}" "${RUNTIME_CONFIG_DIR}"
 printf '%s\n' "${BATCH_ROOT}" > "${BATCH_ROOT}/BATCH_ROOT.txt"
@@ -376,6 +377,7 @@ PY
   echo "frozen_rust_bin=${FROZEN_RUST_BIN}"
   echo "frozen_rust_app_bin=${FROZEN_RUST_APP_BIN}"
   echo "frozen_go_bin=${FROZEN_GO_BIN}"
+  echo "capstone_cargo_target_dir=${CAPSTONE_CARGO_TARGET_DIR}"
   echo "go_oracle_script=${ROOT_DIR}/scripts/l18/build_go_oracle.sh"
   echo "require_docker=${REQUIRE_DOCKER}"
   echo "workspace_test_threads=${WORKSPACE_TEST_THREADS}"
@@ -388,6 +390,7 @@ PY
   echo "fixed_env.L18_RUST_BUILD_ENABLED=0"
   echo "fixed_env.L18_GUI_GO_BUILD_ENABLED=0"
   echo "fixed_env.L18_GUI_RUST_BUILD_ENABLED=0"
+  echo "fixed_env.CARGO_TARGET_DIR=${CAPSTONE_CARGO_TARGET_DIR}"
   echo "fixed_env.L18_RUST_BIN=${FROZEN_RUST_BIN}"
   echo "fixed_env.L18_DUAL_RUST_BIN=${FROZEN_RUST_BIN}"
   echo "fixed_env.L18_DUAL_RUST_APP_BIN=${FROZEN_RUST_APP_BIN}"
@@ -462,6 +465,7 @@ fi
 
 export ROOT_DIR GUI_APP GUI_MODE RUN_ROOT RUN_DIR STATUS_FILE
 export PRECHECK_TXT CONFIG_FREEZE_JSON RUST_BIN REQUIRE_DOCKER WORKSPACE_TEST_THREADS
+export CAPSTONE_CARGO_TARGET_DIR
 export ALLOW_EXISTING_SYSTEM_PROXY ALLOW_REAL_PROXY_COEXIST CANARY_API_URL CANARY_PID_FILE
 export FROZEN_RUST_BIN FROZEN_RUST_APP_BIN
 export GO_API_EFFECTIVE GO_TOKEN_EFFECTIVE RUST_API_EFFECTIVE PORT_MAP_JSON
@@ -490,6 +494,7 @@ payload = {
         "rust": os.environ["RUST_RUNTIME_CFG"],
     },
     "fixed_env": {
+        "CARGO_TARGET_DIR": os.environ["CAPSTONE_CARGO_TARGET_DIR"],
         "L18_GUI_TIMEOUT_SEC": "120",
         "L18_RUST_BUILD_ENABLED": "0",
         "L18_GUI_GO_BUILD_ENABLED": "0",
@@ -593,6 +598,7 @@ env -u PROFILE \
   L18_GUI_TIMEOUT_SEC=120 \
   L18_GUI_GO_BUILD_ENABLED=0 \
   L18_GUI_RUST_BUILD_ENABLED=0 \
+  CARGO_TARGET_DIR="${CAPSTONE_CARGO_TARGET_DIR}" \
   "${CAPSTONE_CMD[@]}" > "${STDOUT_LOG}" 2> "${STDERR_LOG}"
 rc=$?
 set -e

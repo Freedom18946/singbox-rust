@@ -11,6 +11,8 @@ import unittest
 
 
 SCRIPT = Path(__file__).with_name("l18_capstone.sh")
+FIXED_PROFILE_SCRIPT = SCRIPT.with_name("run_capstone_fixed_profile.sh")
+REALITY_FIXTURE = SCRIPT.parents[2] / "labs/interop-lab/reality_local_fixture/run_fixture.py"
 BENCH_MEMORY = SCRIPT.parents[1] / "bench_memory.sh"
 DUAL_CERT = SCRIPT.with_name("run_dual_kernel_cert.sh")
 
@@ -38,6 +40,18 @@ class L18CapstoneContractTests(unittest.TestCase):
         command = match.group("command")
         self.assertEqual(command, 'make -C "${ROOT_DIR}" clippy')
         self.assertNotIn("-D warnings", command)
+
+    def test_fixed_profile_isolates_capstone_cargo_target(self):
+        source = FIXED_PROFILE_SCRIPT.read_text(encoding="utf-8")
+        self.assertIn('CAPSTONE_CARGO_TARGET_DIR="${RUN_ROOT}/cargo_target"', source)
+        self.assertIn('"fixed_env.CARGO_TARGET_DIR=${CAPSTONE_CARGO_TARGET_DIR}"', source)
+        self.assertIn('CARGO_TARGET_DIR="${CAPSTONE_CARGO_TARGET_DIR}" \\', source)
+
+    def test_reality_fixture_resolves_private_cargo_target(self):
+        source = REALITY_FIXTURE.read_text(encoding="utf-8")
+        self.assertIn("def cargo_target_dir()", source)
+        self.assertIn('configured = os.environ.get("CARGO_TARGET_DIR")', source)
+        self.assertIn('debug_dir = cargo_target_dir() / "debug"', source)
 
     def test_memory_bench_tracks_runtime_pid_directly(self):
         source = BENCH_MEMORY.read_text(encoding="utf-8")

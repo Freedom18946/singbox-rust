@@ -165,25 +165,29 @@ impl DhcpResolver {
     pub fn new() -> Self {
         #[cfg(feature = "dns_dhcp")]
         {
-            // Discover DHCP-provided nameservers (resolv.conf) and delegate to standard resolver.
-            let upstream = DhcpUpstream::from_spec("dhcp", None).unwrap_or_else(|e| {
-                tracing::warn!(
-                    target: "sb_core::dns",
-                    error = %e,
-                    "failed to initialize DHCP upstream; falling back to system resolver"
-                );
-                // DhcpUpstream construction is infallible today; this is a defensive fallback.
-                DhcpUpstream::from_spec("dhcp", None).expect("DhcpUpstream fallback")
-            });
-            let resolver = DnsResolver::new(vec![Arc::new(upstream)]).with_name("dhcp".to_string());
-            Self {
-                inner: Some(Arc::new(resolver)),
-            }
+            return Self::from_spec("dhcp").expect("default DHCP upstream should build");
         }
 
         #[cfg(not(feature = "dns_dhcp"))]
         {
             Self { inner: None }
+        }
+    }
+
+    pub fn from_spec(spec: &str) -> Result<Self> {
+        #[cfg(feature = "dns_dhcp")]
+        {
+            let upstream = DhcpUpstream::from_spec(spec, None)?;
+            let resolver = DnsResolver::new(vec![Arc::new(upstream)]).with_name("dhcp".to_string());
+            Ok(Self {
+                inner: Some(Arc::new(resolver)),
+            })
+        }
+
+        #[cfg(not(feature = "dns_dhcp"))]
+        {
+            let _ = spec;
+            anyhow::bail!("DHCP DNS resolver requires the `dns_dhcp` feature")
         }
     }
 }
