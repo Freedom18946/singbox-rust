@@ -6,15 +6,19 @@
 > Other docs point here, not copy.
 
 ---
-## Resume (2026-07-19) - R94 external camouflage subset OBSERVED
+## Resume (2026-07-20) - REALITY production server deployment path DONE
 
-- Added credential-redacting ordinary-TLS fallback comparator; sufficiency is never inferred.
-- R93 cohort: 9/9 proxy/SNI-oracle pairs had verified WebPKI, TLS 1.3, H2, and no disallowed domain
-  redirect. Repeats kept that subset stable while one CDN leaf/profile changed between rounds.
-- Result: `UPSTREAM_OBSERVABLE_MINIMUM_OBSERVED`; sufficiency `NOT_ASSESSED`. Evidence:
-  `mt_real_02_evidence/round94_external_camouflage_observation.{json,md}`.
-- Remaining external blocker: controlled public Rust deployment and/or multi-vantage censor
-  measurement. ServerHello borrowing stays ARCH-LIMIT; A2.3 local closure is recorded below.
+- Red-team audit found reverse interop used an adapter example while production V2 rejected or
+  discarded VLESS users and `tls.reality`; registry startup also panicked without a Tokio reactor.
+- Added strict canonical `handshake`/`short_id` lowering (documented aliases retained), one-user
+  VLESS validation, IR/bridge/starter wiring, base64+hex X25519 key support, runtime, and bind readiness.
+- A1 now starts the Rust reverse lane through production `app run -c rust_server.json`.
+  Full 20-run gate PASS: all three dataplanes and four-phase probe 20/20, four negatives PASS,
+  five config checks PASS. Evidence: `archive/reality_production_server/acceptance.md`.
+- Local production deployability is closed; no public deployment occurred. R94 remains
+  `UPSTREAM_OBSERVABLE_MINIMUM_OBSERVED` / sufficiency `NOT_ASSESSED`; external blocker is a
+  controlled publicly reachable Rust server and/or multi-vantage censor measurement.
+- ServerHello borrowing stays ARCH-LIMIT. No `52/56` BHV movement.
 
 ## Resume (2026-07-20) - A2.3 L18 startup + status closure DONE
 
@@ -226,23 +230,17 @@ Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-re
 S1/S6 denominator. DEV-REALITY-01 = ARCH-LIMIT: local Chrome-current profile, wide-entropy
 BoringSSL order semantics, official-JA4 algorithm cross-check, **and active-probing relay
 resistance + canonical first-flight ordering/mirroring + canonical session_id server auth +
-inbound Vision framing + reverse Go-client empirical interop CLOSED**
-(2026-07-18; see Resume); residual
+inbound Vision framing + production-configured server + reverse Go-client empirical interop CLOSED**
+(2026-07-20; see Resume); residual
 success-path ServerHello framing-borrow stays rustls ARCH-LIMIT (unreachable by probers).
 Tier-2 healthy cohort is PASS/banked by R93. R94 observed upstream's network-visible subset;
 real-network camouflage sufficiency remains OPEN/external.
 
 ## Current Build And Gate
-- 2026-07-18 S5/T4: interop-lab suite PASS; strict both-kernel SOCKS5 throughput replay
-  PASS; fmt and focused implementation checks PASS. Durable metrics in the S5/T4 archive.
-- 2026-07-18 REALITY A1 v3: bidirectional Vision Go/Rust functional fixture, config checks,
-  phase probe, and negative controls PASS; active-probing harness also locks target preconnect,
-  partial-input mirror, and early target response; exact repeated evidence lives in fixture summary.
-- 2026-07-17 LNX-RT-01 final: pinned Linux amd64 workspace all-feature test/check,
-  repository-policy clippy, fmt, focused VMess, and strict both-kernel replay PASS.
-- Native arm64 focused VMess PASS. Repository closure gates: boundaries 430, consistency,
-  diff-check, and post-archive pinned-Linux fmt/clippy PASS. Raw logs remain under
-  `/private/tmp/singbox-rust-lnx-rt-01/`.
+- 2026-07-20 REALITY A1: production-configured Rust server, three bidirectional dataplanes,
+  phase probe, config checks, and negatives PASS; active-probing differential stays PASS.
+- S5/T4 strict both-kernel throughput and LNX-RT-01 pinned Linux closure remain PASS; durable
+  metrics/evidence live in their archives. Repository closure gates are rerun per task.
 
 ## T3 ClientHello Fingerprint Parity — Chrome-current refresh DONE (2026-07-13)
 

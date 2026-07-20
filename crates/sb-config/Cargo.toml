@@ -16,6 +16,7 @@ sb-types = { workspace = true }
 uuid = { workspace = true }
 humantime = "2"
 sha2 = "0.10"
+base64 = "0.22"
 
 [features]
 default = []

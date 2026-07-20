@@ -20,11 +20,11 @@ outbounds:
     uuid: 00000000-0000-0000-0000-000000000000
     tls:
       enabled: true
+      server_name: www.microsoft.com
       reality:
         enabled: true
         public_key: "your-public-key"
         short_id: "0123456789abcdef"
-      sni: www.microsoft.com
 ```
 
 ## Server example
@@ -40,20 +40,22 @@ inbounds:
         name: user1
     tls:
       enabled: true
+      server_name: www.microsoft.com
       reality:
         enabled: true
         private_key: "your-private-key"
-        short_ids: ["0123456789abcdef"]
-        fallback_server: "www.microsoft.com"
-        fallback_port: 443
-      sni: www.microsoft.com
+        short_id: ["0123456789abcdef"]
+        handshake:
+          server: www.microsoft.com
+          server_port: 443
 ```
 
 ## Notes
 
 - Client uses `public_key`; server uses `private_key`.
-- Use stable, high-traffic domains for `sni` and fallback.
-- `short_id` must match one of the server `short_ids`.
+- Use same `server_name` on client and server.
+- Client `short_id` must match one server `short_id` entry.
+- Current Rust VLESS server accepts exactly one inbound `users` entry.
 
 ## Related
 

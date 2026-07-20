@@ -37,6 +37,16 @@ class RenderConfigsTests(unittest.TestCase):
             len(b64url_to_hex(self.manifest["x25519"]["private_key_b64"])), 64
         )
 
+    def test_rust_server_is_production_app_shape(self):
+        config = self.rendered["rust_server.json"]
+        inbound = config["inbounds"][0]
+        reality = inbound["tls"]["reality"]
+        self.assertEqual(inbound["type"], "vless")
+        self.assertEqual(inbound["port"], self.manifest["ports"]["rust_reality_server"])
+        self.assertEqual(inbound["users"][0]["uuid"], self.manifest["uuid"])
+        self.assertEqual(reality["private_key"], self.manifest["x25519"]["private_key_b64"])
+        self.assertEqual(reality["handshake"]["server_port"], self.manifest["ports"]["tls_dest"])
+
 
 if __name__ == "__main__":
     unittest.main()

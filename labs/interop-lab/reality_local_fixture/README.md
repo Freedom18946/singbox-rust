@@ -36,7 +36,7 @@ Rust client  (app, rust_client.json, socks 11181)          ─┤
 Go Vision client (go_reverse_client.json, socks 11182)
               │
               ▼
-   18446  Rust VLESS+REALITY+Vision server (vless_reality_server_fixture)
+   18446  Rust production app VLESS+REALITY+Vision server (rust_server.json)
               │ VLESS forward ─────────────────────────────► 18445 HTTP target
 ```
 
@@ -49,7 +49,7 @@ on stdout (readiness), and is torn down via process-group SIGTERM.
 `manifest.json` holds the **only** copy of the committed test parameters:
 X25519 keypair (base64url *and* 64-hex, cross-checked), `short_id`, `uuid`, SNI,
 flow, every port, the HTTP target path, the expected token, timeouts, and the
-negative-case parameters. `render_configs.py` generates all seven kernel configs
+negative-case parameters. `render_configs.py` generates all eight kernel configs
 from it; the Rust phase-probe env is derived from the rendered `rust_client.json`
 via `scripts/tools/reality_vless_env_from_config.py`. **Do not hand-edit rendered
 configs and do not duplicate any parameter** — change `manifest.json` and re-run.
@@ -136,19 +136,17 @@ the reference run with the one-command above plus
 | File | Role |
 |------|------|
 | `manifest.json` | single source of truth for all test parameters |
-| `render_configs.py` | manifest → 7 kernel configs (b64↔hex cross-checked) |
+| `render_configs.py` | manifest → 8 kernel configs (b64↔hex cross-checked) |
 | `run_fixture.py` | build → render → validate → topology → matrix → evidence → teardown |
-| `crates/sb-adapters/examples/vless_reality_server_fixture.rs` | Rust reverse-lane server helper |
+| `rust_server.json` (rendered) | Production app reverse-lane server config |
 | `helper/main.go` | stdlib-only concurrent TLS dest + HTTP target servers |
 | `helper/go.mod` | helper module |
 
 ## Known boundaries
 
 Functional dataplane parity ≠ real-network camouflage. This fixture deliberately
-uses a Go `crypto/tls` dest that does **no**
-ClientHello inspection and accepts any relayed hello — the Go client's uTLS-Chrome
-hello and the Rust client's plain `rustls` hello alike (the Rust client emits no
-uTLS fingerprint). It therefore does not measure how a real censoring middlebox
-would classify the Rust ClientHello. Fingerprint parity and real-network
-camouflage stay in the external healthy-cohort observation tier and are out of
+uses a Go `crypto/tls` dest that does **no** ClientHello inspection and accepts
+any valid relayed hello. It therefore does not measure how a real censoring
+middlebox would classify traffic. Chrome-current ClientHello shape is covered by
+the separate local canary; real-network camouflage remains external and out of
 scope here.

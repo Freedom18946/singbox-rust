@@ -6,12 +6,13 @@ Outputs (to --out-dir):
   go_server_dead_dest.json   ditto, but handshake.dest -> dead port (negative: dead_dest)
   go_client.json             Go VLESS+REALITY outbound (base64url pubkey, uTLS chrome)
   go_reverse_client.json     Go Vision client -> Rust VLESS+REALITY+Vision server
+  rust_server.json           Rust production app VLESS+REALITY+Vision inbound
   rust_client.json           Rust app VLESS+REALITY outbound (64-hex pubkey, v2 schema)
   rust_client_bad_pubkey.json wrong (valid-format) public key   (negative: bad_public_key)
   rust_client_bad_uuid.json   wrong uuid, correct keys          (negative: bad_uuid)
 
-NO parameter is duplicated by hand: Go uses base64url, Rust v2_schema requires 64-hex;
-both come from the same manifest key and are cross-checked here. The Rust phase-probe
+NO parameter is duplicated by hand: Go uses base64url while the fixture keeps Rust client
+hex coverage; both come from the same manifest key and are cross-checked here. The Rust phase-probe
 env is NOT rendered here -- run_fixture.py derives it from rust_client*.json via the
 existing scripts/tools/reality_vless_env_from_config.py (single source preserved).
 """
@@ -103,6 +104,30 @@ def render(m: dict) -> dict[str, dict]:
             "route": {"rules": [], "default": "vless-reality-out"},
         }
 
+    def rust_server() -> dict:
+        return {
+            "schema_version": 2,
+            "inbounds": [{
+                "type": "vless",
+                "name": "vless-reality-in",
+                "listen": "127.0.0.1",
+                "port": p["rust_reality_server"],
+                "users": [{"name": "fixture", "uuid": uuid, "flow": flow}],
+                "tls": {
+                    "enabled": True,
+                    "server_name": sni,
+                    "reality": {
+                        "enabled": True,
+                        "handshake": {"server": "127.0.0.1", "server_port": p["tls_dest"]},
+                        "private_key": priv_b64,
+                        "short_id": [sid],
+                    },
+                },
+            }],
+            "outbounds": [{"type": "direct", "name": "direct"}],
+            "route": {"default": "direct"},
+        }
+
     return {
         "go_server.json": go_server(p["tls_dest"]),
         "go_server_dead_dest.json": go_server(neg["dead_dest_port"]),
@@ -111,6 +136,7 @@ def render(m: dict) -> dict[str, dict]:
             p["rust_reality_server"], p["go_reverse_client_socks"], flow
         ),
         "rust_client.json": rust_client(pub_hex, uuid),
+        "rust_server.json": rust_server(),
         "rust_client_bad_pubkey.json": rust_client(neg["bad_public_key_hex"], uuid),
         "rust_client_bad_uuid.json": rust_client(pub_hex, neg["bad_uuid"]),
     }

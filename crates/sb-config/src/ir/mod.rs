@@ -28,21 +28,23 @@ pub use credentials::Credentials;
 pub use dns::{DnsHostIR, DnsIR, DnsRuleIR, DnsServerIR};
 pub use endpoint::{EndpointIR, EndpointType, WireGuardPeerIR};
 pub use inbound::{
-    AnyTlsUserIR, Hysteria2UserIR, HysteriaUserIR, InboundIR, InboundType, MasqueradeFileIR,
-    MasqueradeIR, MasqueradeProxyIR, MasqueradeStringIR, ShadowTlsHandshakeIR, ShadowTlsUserIR,
-    ShadowsocksUserIR, TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR,
+    AnyTlsUserIR, Hysteria2UserIR, HysteriaUserIR, InboundIR, InboundRealityIR, InboundType,
+    MasqueradeFileIR, MasqueradeIR, MasqueradeProxyIR, MasqueradeStringIR, ShadowTlsHandshakeIR,
+    ShadowTlsUserIR, ShadowsocksUserIR, TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR,
+    VmessUserIR,
 };
 pub use multiplex::{BrutalIR, MultiplexOptionsIR};
+pub(crate) use outbound::is_valid_x25519_key;
 pub use outbound::{HeaderEntry, OutboundIR, OutboundType};
 pub use raw::{
     RawAnyTlsUserIR, RawBrutalIR, RawCertificateIR, RawConfigRoot, RawCredentials,
     RawDerpDialOptionsIR, RawDerpDomainResolverIR, RawDerpMeshPeerIR, RawDerpOutboundTlsOptionsIR,
     RawDerpStunOptionsIR, RawDerpStunOptionsObj, RawDerpVerifyClientUrlIR, RawDnsHostIR, RawDnsIR,
     RawDnsRuleIR, RawDnsServerIR, RawDomainResolveOptionsIR, RawEndpointIR, RawHeaderEntry,
-    RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawInboundTlsOptionsIR, RawLogIR,
-    RawMasqueradeFileIR, RawMasqueradeIR, RawMasqueradeProxyIR, RawMasqueradeStringIR,
-    RawMultiplexOptionsIR, RawNtpIR, RawOutboundIR, RawRouteIR, RawRuleIR, RawRuleSetIR,
-    RawServiceIR, RawShadowTlsHandshakeIR, RawShadowTlsUserIR, RawShadowsocksUserIR,
+    RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawInboundRealityIR,
+    RawInboundTlsOptionsIR, RawLogIR, RawMasqueradeFileIR, RawMasqueradeIR, RawMasqueradeProxyIR,
+    RawMasqueradeStringIR, RawMultiplexOptionsIR, RawNtpIR, RawOutboundIR, RawRouteIR, RawRuleIR,
+    RawRuleSetIR, RawServiceIR, RawShadowTlsHandshakeIR, RawShadowTlsUserIR, RawShadowsocksUserIR,
     RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR, RawVlessUserIR, RawVmessUserIR,
     RawWireGuardPeerIR,
 };

@@ -3,7 +3,7 @@
   "description": "Controlled local REALITY functional-parity fixture. Topology: Go=VLESS+REALITY server with {Go,Rust}=clients, plus Go Vision client to Rust VLESS+REALITY+Vision server; local concurrent Go TLS dest (handshake target); local HTTP target returning a fixed token. SINGLE SOURCE OF TRUTH: all kernel configs and Rust helper settings are rendered or derived from this file. Do not hand-edit rendered configs. SCOPE: validates bidirectional Go/Rust REALITY interoperability, Vision framing, and local VLESS dataplane behavior. Does not validate real-network camouflage and does not move the 52/56 BHV parity number.",
   "_security": "COMMITTED TEST FIXTURE ONLY. The x25519 keypair (incl. the private key), short_id, uuid, and ports below are throwaway values generated for this local deterministic gate and are intentionally checked into the repo. They are NOT secrets and MUST NEVER be reused in any production or real-network REALITY config. The fixture binds 127.0.0.1 only and depends on no public node or real credential.",
   "x25519": {
-    "_note": "public_key_b64 and public_key_hex are the SAME key in two encodings (Go uses base64url, Rust v2_schema requires 64-hex). render_configs.py asserts they match.",
+    "_note": "public_key_b64 and public_key_hex are the SAME key in two encodings (Go uses base64url; fixture keeps Rust hex coverage). render_configs.py asserts they match.",
     "private_key_b64": "wFUij4j61zedpCjqgkLTZw4qc_NZtg4-UtFa4n7pTlI",
     "public_key_b64": "VI_HWZKOQWb-UKJhgKZc6yT7sEoZMJZVzcNJ0URDDEU",
     "public_key_hex": "548fc759928e4166fe50a26180a65ceb24fbb04a19309655cdc349d144430c45"

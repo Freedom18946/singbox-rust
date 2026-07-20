@@ -92,16 +92,32 @@ const ATYP_DOMAIN: u8 = 0x02;
 const ATYP_IPV6: u8 = 0x03;
 
 pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
+    serve_inner(cfg, &mut stop_rx, None).await
+}
+
+async fn serve_inner(
+    cfg: VlessInboundConfig,
+    stop_rx: &mut mpsc::Receiver<()>,
+    mut ready: Option<sb_core::adapter::InboundReadySender>,
+) -> Result<()> {
     if let Some(flow) = cfg.flow.as_deref() {
         if !flow.is_empty() && flow != "xtls-rprx-vision" {
-            return Err(anyhow!("vless: unsupported flow: {flow}"));
+            let error = anyhow!("vless: unsupported flow: {flow}");
+            report_ready_error(&mut ready, &error);
+            return Err(error);
         }
     }
 
     // Create listener based on transport configuration (defaults to TCP if not specified)
     // 根据传输配置创建监听器 (如果未指定则默认为 TCP)
     let transport = cfg.transport_layer.clone().unwrap_or_default();
-    let listener = transport.create_inbound_listener(cfg.listen).await?;
+    let listener = match transport.create_inbound_listener(cfg.listen).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            report_ready_error(&mut ready, &error);
+            return Err(error.into());
+        }
+    };
     let actual = listener.local_addr().unwrap_or(cfg.listen);
 
     info!(
@@ -118,12 +134,18 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         match RealityAcceptor::new(reality_cfg.clone()) {
             Ok(acc) => Some(Arc::new(acc)),
             Err(e) => {
-                return Err(anyhow!("vless: failed to create REALITY acceptor: {}", e));
+                let error = anyhow!("vless: failed to create REALITY acceptor: {}", e);
+                report_ready_error(&mut ready, &error);
+                return Err(error);
             }
         }
     } else {
         None
     };
+
+    if let Some(sender) = ready.take() {
+        let _ = sender.send(Ok(()));
+    }
 
     // Warn about missing Vision support if configured
     if let Some(flow) = &cfg.flow {
@@ -269,6 +291,15 @@ pub async fn serve(cfg: VlessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         }
     }
     Ok(())
+}
+
+fn report_ready_error<E: std::fmt::Display>(
+    ready: &mut Option<sb_core::adapter::InboundReadySender>,
+    error: &E,
+) {
+    if let Some(sender) = ready.take() {
+        let _ = sender.send(Err(std::io::Error::other(error.to_string())));
+    }
 }
 
 async fn prepare_tls_layer(
@@ -755,7 +786,7 @@ mod tests {
 }
 
 use parking_lot::Mutex;
-use sb_core::adapter::InboundTaskDriver;
+use sb_core::adapter::{InboundReadySender, InboundTaskDriver};
 
 #[derive(Debug)]
 pub struct VlessInboundAdapter {
@@ -774,17 +805,101 @@ impl VlessInboundAdapter {
 
 impl InboundTaskDriver for VlessInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
-        let (tx, rx) = mpsc::channel(1);
+        self.serve_with_ready(None)
+    }
+
+    fn supports_startup_readiness(&self) -> bool {
+        true
+    }
+
+    fn serve_with_ready(&self, ready: Option<InboundReadySender>) -> std::io::Result<()> {
+        let (tx, mut rx) = mpsc::channel(1);
         *self.stop_tx.lock() = Some(tx);
 
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async { serve(self.config.clone(), rx).await })
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(std::io::Error::other)?;
+        rt.block_on(async { serve_inner(self.config.clone(), &mut rx, ready).await })
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
     fn request_shutdown(&self) {
         if let Some(tx) = self.stop_tx.lock().take() {
             let _ = tx.try_send(());
+        }
+    }
+}
+
+#[cfg(test)]
+mod driver_tests {
+    use super::*;
+    use std::sync::Arc;
+    use std::time::{Duration, Instant};
+
+    #[test]
+    fn blocking_driver_creates_runtime_and_serves() {
+        let probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let listen = probe.local_addr().unwrap();
+        drop(probe);
+
+        let adapter = Arc::new(VlessInboundAdapter::new(test_config(listen)));
+        let worker = {
+            let adapter = adapter.clone();
+            std::thread::spawn(move || InboundTaskDriver::serve(adapter.as_ref()))
+        };
+
+        let deadline = Instant::now() + Duration::from_secs(3);
+        loop {
+            if std::net::TcpStream::connect(listen).is_ok() {
+                break;
+            }
+            assert!(Instant::now() < deadline, "VLESS driver did not bind");
+            std::thread::sleep(Duration::from_millis(10));
+        }
+
+        InboundTaskDriver::request_shutdown(adapter.as_ref());
+        assert!(worker.join().unwrap().is_ok());
+    }
+
+    #[test]
+    fn blocking_driver_reports_bind_failure_before_startup() {
+        let holder = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let listen = holder.local_addr().unwrap();
+        let adapter = Arc::new(VlessInboundAdapter::new(test_config(listen)));
+        let (ready_tx, ready_rx) = tokio::sync::oneshot::channel();
+        let worker = {
+            let adapter = adapter.clone();
+            std::thread::spawn(move || {
+                InboundTaskDriver::serve_with_ready(adapter.as_ref(), Some(ready_tx))
+            })
+        };
+
+        let ready = futures::executor::block_on(ready_rx).expect("readiness result");
+        let error = ready.expect_err("occupied port must fail readiness");
+        let message = error.to_string().to_ascii_lowercase();
+        assert!(
+            message.contains("in use") || message.contains("bind"),
+            "unexpected bind error: {message}"
+        );
+        assert!(worker.join().unwrap().is_err());
+    }
+
+    fn test_config(listen: SocketAddr) -> VlessInboundConfig {
+        VlessInboundConfig {
+            listen,
+            uuid: Uuid::parse_str("fc7a057a-7d96-4cc8-854f-3b8045a4477e").unwrap(),
+            router: Arc::new(router::RouterHandle::from_env()),
+            tag: Some("runtime-regression".to_string()),
+            stats: None,
+            conn_tracker: Arc::new(sb_common::conntrack::ConnTracker::new()),
+            #[cfg(feature = "tls_reality")]
+            reality: None,
+            multiplex: None,
+            transport_layer: None,
+            fallback: None,
+            fallback_for_alpn: HashMap::new(),
+            flow: None,
         }
     }
 }

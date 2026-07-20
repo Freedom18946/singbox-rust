@@ -449,6 +449,7 @@ fn to_inbound_param(
         tls_key_pem: ib.tls_key_pem.clone(),
         tls_server_name: ib.tls_server_name.clone(),
         tls_alpn: ib.tls_alpn.clone(),
+        reality: ib.reality.clone(),
         users_hysteria2,
         congestion_control: ib.congestion_control.clone(),
         salamander: ib.salamander.clone(),

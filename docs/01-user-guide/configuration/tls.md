@@ -85,9 +85,9 @@ outbounds:
 
 ### How REALITY Works
 
-1. **Camouflage**: Traffic appears as connections to legitimate sites (e.g., microsoft.com)
+1. **Camouflage**: Traffic is shaped to resemble connections to a configured target site
 2. **Authentication**: Client proves identity using X25519 key exchange
-3. **Fallback**: Failed auth connects to real target site (undetectable probing)
+3. **Fallback**: Failed auth is relayed to the configured target site
 
 ### REALITY Client Configuration
 
@@ -110,9 +110,9 @@ outbounds:
 
 **Required fields**:
 
-- `public_key`: Server's X25519 public key (64 hex characters)
+- `public_key`: Server's X25519 public key (hex or base64)
 - `short_id`: Authentication identifier (0-16 hex characters)
-- `sni`: Target domain that server will imitate
+- `server_name`: Target domain that server will imitate
 
 ### Generate REALITY Keypair
 
@@ -122,11 +122,9 @@ singbox-rust generate reality-keypair
 
 **Output**:
 
-```json
-{
-  "private_key": "xxxxxxxx...",
-  "public_key": "yyyyyyyy..."
-}
+```text
+PrivateKey: xxxxxxxx...
+PublicKey: yyyyyyyy...
 ```
 
 - Use `private_key` on server
@@ -146,20 +144,22 @@ inbounds:
 
     tls:
       enabled: true
+      server_name: www.microsoft.com
       reality:
         enabled: true
-        private_key: "your-private-key-hex"
-        short_ids: ["0123456789abcdef", "fedcba9876543210"]
-        fallback_server: "www.microsoft.com"
-        fallback_port: 443
-      sni: www.microsoft.com
+        private_key: "your-private-key"
+        short_id: ["0123456789abcdef", "fedcba9876543210"]
+        handshake:
+          server: www.microsoft.com
+          server_port: 443
 ```
 
 **Security considerations**:
 
 - **Never share `private_key`** - Only share `public_key` with clients
 - **Use real target domains** - Choose stable, popular sites
-- **Multiple `short_ids`** - Allow different auth identifiers
+- **Multiple `short_id` entries** - Allow different auth identifiers
+- **One inbound user** - Current Rust VLESS server accepts exactly one `users` entry
 
 See [REALITY Protocol Guide](../protocols/reality.md) for details.
 

@@ -192,11 +192,14 @@ inbounds:
   - type: vless
     tag: vless-in
     listen: "0.0.0.0:443"
-    users_vless:
+    users:
       - name: user1
         uuid: "aaaaaaaa-bbbb-cccc-dddd-eeeeeeeeeeee"
         flow: xtls-rprx-vision
 ```
+
+Current Rust VLESS inbound accepts one user. Legacy `users_vless` remains a compatibility alias;
+do not configure both forms.
 
 ### trojan (inbound)
 

@@ -1345,8 +1345,35 @@ fn build_vless_inbound(
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
         conn_tracker: ctx.context.conn_tracker.clone(),
         #[cfg(feature = "tls_reality")]
-        // NOTE: REALITY configuration is feature-gated (tls_reality)
-        reality: None,
+        reality: match param.reality.as_ref() {
+            Some(reality) => {
+                let max_time_difference = match reality.max_time_difference.as_deref() {
+                    Some(raw) => match humantime::parse_duration(raw) {
+                        Ok(value) => Some(value),
+                        Err(error) => {
+                            warn!(error=%error, "invalid VLESS REALITY max_time_difference");
+                            return None;
+                        }
+                    },
+                    None => None,
+                };
+                let config = sb_tls::RealityServerConfig {
+                    target: reality.target.clone(),
+                    server_names: reality.server_names.clone(),
+                    private_key: reality.private_key.clone(),
+                    short_ids: reality.short_ids.clone(),
+                    handshake_timeout: reality.handshake_timeout,
+                    max_time_difference,
+                    enable_fallback: true,
+                };
+                if let Err(error) = config.validate() {
+                    warn!(error=%error, "invalid VLESS REALITY configuration");
+                    return None;
+                }
+                Some(config)
+            }
+            None => None,
+        },
         multiplex: convert_multiplex_config(&param.multiplex),
         transport_layer: None,
         fallback: None,

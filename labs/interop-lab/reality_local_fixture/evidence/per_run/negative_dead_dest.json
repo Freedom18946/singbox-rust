@@ -1,11 +1,11 @@
 {
-  "elapsed_ms": 7.0,
+  "elapsed_ms": 14.3,
   "timed_out": false,
   "phase_results": {
     "direct_reality": {
       "ok": false,
-      "class": "reality_dial_eof",
-      "error": "Handshake failed: TLS handshake failed: tls handshake eof"
+      "class": "connection_reset",
+      "error": "Handshake failed: TLS handshake failed: Connection reset by peer (os error 54)"
     },
     "transport_reality": {
       "ok": false,

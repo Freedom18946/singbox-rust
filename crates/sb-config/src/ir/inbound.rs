@@ -27,10 +27,10 @@ use serde::{Deserialize, Serialize};
 
 use super::multiplex::MultiplexOptionsIR;
 use super::raw::{
-    RawAnyTlsUserIR, RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawMasqueradeFileIR,
-    RawMasqueradeIR, RawMasqueradeProxyIR, RawMasqueradeStringIR, RawShadowTlsHandshakeIR,
-    RawShadowTlsUserIR, RawShadowsocksUserIR, RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR,
-    RawVlessUserIR, RawVmessUserIR,
+    RawAnyTlsUserIR, RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawInboundRealityIR,
+    RawMasqueradeFileIR, RawMasqueradeIR, RawMasqueradeProxyIR, RawMasqueradeStringIR,
+    RawShadowTlsHandshakeIR, RawShadowTlsUserIR, RawShadowsocksUserIR, RawTrojanUserIR,
+    RawTuicUserIR, RawTunOptionsIR, RawVlessUserIR, RawVmessUserIR,
 };
 use super::Credentials;
 
@@ -194,6 +194,41 @@ pub struct VlessUserIR {
     /// VLESS encryption parameter (e.g., "none")
     #[serde(default)]
     pub encryption: Option<String>,
+}
+
+/// VLESS inbound REALITY server options lowered from nested TLS config.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq)]
+pub struct InboundRealityIR {
+    pub target: String,
+    pub server_names: Vec<String>,
+    pub private_key: String,
+    #[serde(default)]
+    pub short_ids: Vec<String>,
+    pub handshake_timeout: u64,
+    #[serde(default)]
+    pub max_time_difference: Option<String>,
+}
+
+impl Default for InboundRealityIR {
+    fn default() -> Self {
+        Self {
+            target: String::new(),
+            server_names: Vec::new(),
+            private_key: String::new(),
+            short_ids: Vec::new(),
+            handshake_timeout: 5,
+            max_time_difference: None,
+        }
+    }
+}
+
+impl<'de> Deserialize<'de> for InboundRealityIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawInboundRealityIR::deserialize(deserializer).map(Into::into)
+    }
 }
 
 impl<'de> Deserialize<'de> for VlessUserIR {
@@ -714,6 +749,10 @@ pub struct InboundIR {
     /// TLS ALPN protocols.
     /// TLS ALPN 协议。
     pub tls_alpn: Option<Vec<String>>,
+
+    /// VLESS inbound REALITY server configuration.
+    #[serde(default)]
+    pub reality: Option<InboundRealityIR>,
 
     // Multiplex options
     /// Multiplex configuration for stream multiplexing.

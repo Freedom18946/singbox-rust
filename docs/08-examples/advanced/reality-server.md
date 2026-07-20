@@ -11,7 +11,7 @@ schema_version: 2
 
 inbounds:
   - type: vless
-    tag: vless-reality
+    name: vless-reality
     listen: 0.0.0.0
     port: 443
     users:
@@ -19,17 +19,18 @@ inbounds:
         name: user1
     tls:
       enabled: true
+      server_name: www.microsoft.com
       reality:
         enabled: true
         private_key: "your-private-key"
-        short_ids: ["0123456789abcdef"]
-        fallback_server: "www.microsoft.com"
-        fallback_port: 443
-      sni: www.microsoft.com
+        short_id: ["0123456789abcdef"]
+        handshake:
+          server: www.microsoft.com
+          server_port: 443
 
 outbounds:
   - type: direct
-    tag: direct
+    name: direct
 
 route:
   default: direct

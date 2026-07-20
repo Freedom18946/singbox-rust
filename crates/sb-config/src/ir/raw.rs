@@ -138,10 +138,10 @@ use super::{
     AnyTlsUserIR, Credentials, DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR,
     DerpOutboundTlsOptionsIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, DomainResolveOptionsIR,
     EndpointIR, EndpointType, ExperimentalIR, HeaderEntry, Hysteria2UserIR, HysteriaUserIR,
-    InboundIR, InboundTlsOptionsIR, InboundType, Listable, OutboundIR, OutboundType, RouteIR,
-    RuleAction, RuleIR, RuleSetIR, ServiceIR, ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR,
-    ShadowsocksUserIR, StringOrObj, TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR,
-    VmessUserIR, WireGuardPeerIR,
+    InboundIR, InboundRealityIR, InboundTlsOptionsIR, InboundType, Listable, OutboundIR,
+    OutboundType, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR, ServiceType,
+    ShadowTlsHandshakeIR, ShadowTlsUserIR, ShadowsocksUserIR, StringOrObj, TrojanUserIR,
+    TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR, WireGuardPeerIR,
 };
 
 // ─────────────────── Root-owned leaf Raw types ───────────────────
@@ -1684,6 +1684,38 @@ pub struct RawVlessUserIR {
     pub encryption: Option<String>,
 }
 
+/// Raw VLESS inbound REALITY options.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawInboundRealityIR {
+    pub target: String,
+    pub server_names: Vec<String>,
+    pub private_key: String,
+    #[serde(default)]
+    pub short_ids: Vec<String>,
+    #[serde(default = "default_reality_handshake_timeout")]
+    pub handshake_timeout: u64,
+    #[serde(default)]
+    pub max_time_difference: Option<String>,
+}
+
+impl From<RawInboundRealityIR> for InboundRealityIR {
+    fn from(raw: RawInboundRealityIR) -> Self {
+        Self {
+            target: raw.target,
+            server_names: raw.server_names,
+            private_key: raw.private_key,
+            short_ids: raw.short_ids,
+            handshake_timeout: raw.handshake_timeout,
+            max_time_difference: raw.max_time_difference,
+        }
+    }
+}
+
+const fn default_reality_handshake_timeout() -> u64 {
+    5
+}
+
 impl From<RawVlessUserIR> for VlessUserIR {
     fn from(raw: RawVlessUserIR) -> Self {
         Self {
@@ -2052,6 +2084,8 @@ pub struct RawInboundIR {
     #[serde(default)]
     pub tls_server_name: Option<String>,
     pub tls_alpn: Option<Vec<String>>,
+    #[serde(default)]
+    pub reality: Option<RawInboundRealityIR>,
     // Multiplex
     #[serde(default)]
     pub multiplex: Option<MultiplexOptionsIR>,
@@ -2151,6 +2185,7 @@ impl From<RawInboundIR> for InboundIR {
             tls_key_pem: raw.tls_key_pem,
             tls_server_name: raw.tls_server_name,
             tls_alpn: raw.tls_alpn,
+            reality: raw.reality.map(Into::into),
             multiplex: raw.multiplex,
             tun: raw.tun.map(Into::into),
             ssh_host_key_path: raw.ssh_host_key_path,

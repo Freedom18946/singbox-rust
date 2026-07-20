@@ -13,6 +13,7 @@
 //! `Credentials` plus the multiplex helpers in `super::multiplex` are also
 //! bridged through Raw because they are direct outbound helpers.
 
+use base64::Engine as _;
 use serde::{Deserialize, Serialize};
 
 use super::multiplex::MultiplexOptionsIR;
@@ -634,11 +635,11 @@ impl OutboundIR {
         if let Some(true) = self.reality_enabled {
             let outbound_name = self.name.as_deref().unwrap_or("unnamed");
 
-            // Validate public_key (must be 64 hex chars for X25519)
+            // Accept canonical sing-box base64url, keygen standard base64, or hex.
             if let Some(ref public_key) = self.reality_public_key {
-                if !is_valid_hex(public_key) || public_key.len() != 64 {
+                if !is_valid_x25519_key(public_key) {
                     return Err(format!(
-                        "outbound '{outbound_name}': reality.public_key must be 64 hex characters (X25519 public key)"
+                        "outbound '{outbound_name}': reality.public_key must be a 32-byte X25519 key encoded as hex or base64"
                     ));
                 }
             } else {
@@ -682,6 +683,20 @@ impl OutboundIR {
 /// Helper function to validate hex strings.
 fn is_valid_hex(s: &str) -> bool {
     s.chars().all(|c| c.is_ascii_hexdigit())
+}
+
+pub(crate) fn is_valid_x25519_key(value: &str) -> bool {
+    if value.len() == 64 && is_valid_hex(value) {
+        return true;
+    }
+    [
+        &base64::engine::general_purpose::URL_SAFE_NO_PAD,
+        &base64::engine::general_purpose::URL_SAFE,
+        &base64::engine::general_purpose::STANDARD_NO_PAD,
+        &base64::engine::general_purpose::STANDARD,
+    ]
+    .iter()
+    .any(|engine| engine.decode(value).is_ok_and(|bytes| bytes.len() == 32))
 }
 
 #[cfg(test)]
@@ -857,6 +872,20 @@ mod tests {
     }
 
     #[test]
+    fn reality_validation_accepts_keygen_standard_base64() {
+        let outbound = OutboundIR {
+            ty: OutboundType::Vless,
+            name: Some("test-vless".to_string()),
+            reality_enabled: Some(true),
+            reality_public_key: Some("VI/HWZKOQWb+UKJhgKZc6yT7sEoZMJZVzcNJ0URDDEU=".to_string()),
+            reality_short_id: Some("01ab".to_string()),
+            reality_server_name: Some("www.apple.com".to_string()),
+            ..Default::default()
+        };
+        assert!(outbound.validate_reality().is_ok());
+    }
+
+    #[test]
     fn reality_validation_missing_public_key() {
         let outbound = OutboundIR {
             ty: OutboundType::Vless,
@@ -883,7 +912,7 @@ mod tests {
             ..Default::default()
         };
         let err = outbound.validate_reality().unwrap_err();
-        assert!(err.contains("64 hex characters"));
+        assert!(err.contains("hex or base64"));
     }
 
     #[test]

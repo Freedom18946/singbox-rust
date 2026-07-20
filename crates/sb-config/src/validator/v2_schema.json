@@ -26,7 +26,7 @@
     }},
     "inbound":{"type":"object","additionalProperties": false,"properties":{
       "name":{"type":"string"},
-      "type":{"enum":["socks","http","tun","mixed","direct","hysteria","hysteria2","tuic"]},
+      "type":{"enum":["socks","http","tun","mixed","direct","shadowsocks","vless","hysteria","hysteria2","tuic"]},
       "listen":{"type":"string","minLength":1},
       "port":{"type":"integer","minimum":1,"maximum":65535},
       "udp":{"type":"boolean"},
@@ -44,8 +44,42 @@
         "password":{"type":"string"}
       }},
       "users":{"type":"array","items":{"type":"object","properties":{
-        "password":{"type":"string"}
+        "name":{"type":"string"},
+        "password":{"type":"string"},
+        "uuid":{"type":"string"},
+        "flow":{"type":"string"}
       }}},
+      "users_vless":{"type":"array","items":{"type":"object","properties":{
+        "name":{"type":"string"},
+        "uuid":{"type":"string"},
+        "flow":{"type":"string"},
+        "security":{"type":"string"},
+        "alter_id":{"type":"integer","minimum":0,"maximum":255},
+        "encryption":{"type":"string"}
+      }}},
+      "uuid":{"type":"string"},
+      "flow":{"type":"string"},
+      "tls":{"type":"object","additionalProperties":false,"properties":{
+        "enabled":{"type":"boolean"},
+        "server_name":{"type":"string"},
+        "sni":{"type":"string"},
+        "alpn":{"type":"array","items":{"type":"string"}},
+        "reality":{"type":"object","additionalProperties":false,"properties":{
+          "enabled":{"type":"boolean"},
+          "handshake":{"type":"object","additionalProperties":false,"properties":{
+            "server":{"type":"string"},
+            "server_port":{"type":"integer","minimum":1,"maximum":65535}
+          }},
+          "private_key":{"type":"string"},
+          "short_id":{"type":["string","array"]},
+          "short_ids":{"type":["string","array"]},
+          "max_time_difference":{"type":"string"},
+          "handshake_timeout":{"type":"integer","minimum":1},
+          "server_name":{"type":"string"},
+          "fallback_server":{"type":"string"},
+          "fallback_port":{"type":"integer","minimum":1,"maximum":65535}
+        }}
+      }},
       "cert":{"type":"string"},
       "key":{"type":"string"},
       "congestion_control":{"type":"string","enum":["bbr","cubic","new_reno"]},
@@ -100,7 +134,7 @@
         "alpn":{"type":"string"},
         "reality":{"type":"object","additionalProperties":false,"properties":{
           "enabled":{"type":"boolean"},
-          "public_key":{"type":"string","pattern":"^[0-9a-fA-F]{64}$"},
+          "public_key":{"type":"string"},
           "short_id":{"type":"string","pattern":"^[0-9a-fA-F]{0,16}$"},
           "server_name":{"type":"string"}
         }},

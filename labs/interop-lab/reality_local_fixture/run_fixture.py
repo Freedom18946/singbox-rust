@@ -8,7 +8,7 @@ round-summary.json + per_run/*.json + rendered configs + process logs.
 
 Topology (all 127.0.0.1, NO public node / NO openssl s_server / NO socat):
   reality_server       Go VLESS+REALITY inbound (-tags with_utls)
-  rust_reality_server  Rust VLESS+REALITY inbound helper
+  rust_reality_server  Rust production app VLESS+REALITY inbound
   tls_dest        in-repo concurrent Go tls.Listener (handshake target)
   http_target     in-repo Go HTTP server returning a fixed token
   {go,rust}_client_socks + go_reverse_client_socks client entrypoints
@@ -28,8 +28,6 @@ import socket
 import subprocess
 import sys
 import time
-
-from render_configs import b64url_to_hex
 
 _ANSI = re.compile(r"\x1b\[[0-9;]*m")
 
@@ -135,7 +133,6 @@ def build_all(bindir: pathlib.Path, skip: bool) -> dict:
     debug_dir = cargo_target_dir() / "debug"
     app = debug_dir / "app"
     probe = debug_dir / "examples/vless_reality_phase_probe"
-    rust_server = debug_dir / "examples/vless_reality_server_fixture"
     info = {"go_build_tags": GO_BUILD_TAGS}
     if skip:
         info["skipped"] = True
@@ -144,7 +141,6 @@ def build_all(bindir: pathlib.Path, skip: bool) -> dict:
             "helper": helper,
             "app": app,
             "probe": probe,
-            "rust_server": rust_server,
             "info": info,
         }
 
@@ -158,8 +154,8 @@ def build_all(bindir: pathlib.Path, skip: bool) -> dict:
     if r.returncode:
         raise SystemExit("helper build failed:\n" + r.stderr[-2000:])
 
-    print("[build] Rust app (acceptance,transport_reality) ...", flush=True)
-    r = sh(["cargo", "build", "-p", "app", "--features", "acceptance,transport_reality", "--bin", "app"], cwd=REPO)
+    print("[build] Rust app (acceptance,adapters,transport_reality) ...", flush=True)
+    r = sh(["cargo", "build", "-p", "app", "--features", "acceptance,adapters,transport_reality", "--bin", "app"], cwd=REPO)
     if r.returncode:
         raise SystemExit("rust app build failed:\n" + r.stderr[-3000:])
 
@@ -169,18 +165,11 @@ def build_all(bindir: pathlib.Path, skip: bool) -> dict:
     if r.returncode:
         raise SystemExit("rust probe build failed:\n" + r.stderr[-3000:])
 
-    print("[build] Rust VLESS+REALITY server fixture ...", flush=True)
-    r = sh(["cargo", "build", "-p", "sb-adapters", "--example", "vless_reality_server_fixture",
-            "--features", "adapter-vless,tls_reality"], cwd=REPO)
-    if r.returncode:
-        raise SystemExit("rust server fixture build failed:\n" + r.stderr[-3000:])
-
     return {
         "go_sb": go_sb,
         "helper": helper,
         "app": app,
         "probe": probe,
-        "rust_server": rust_server,
         "info": info,
     }
 
@@ -279,6 +268,7 @@ def main() -> None:
     val["go_client"] = sh([str(bins["go_sb"]), "check", "-c", str(rendered / "go_client.json")]).returncode
     val["go_reverse_client"] = sh([str(bins["go_sb"]), "check", "-c", str(rendered / "go_reverse_client.json")]).returncode
     val["rust_client"] = sh([str(bins["app"]), "check", "-c", str(rendered / "rust_client.json")]).returncode
+    val["rust_server"] = sh([str(bins["app"]), "check", "-c", str(rendered / "rust_server.json")]).returncode
     print("[validate]", val, flush=True)
 
     summary = {
@@ -309,16 +299,7 @@ def main() -> None:
         pm.start("http_target", [str(bins["helper"]), "-mode", "http-target",
                                  "-listen", f"127.0.0.1:{p['http_target']}", "-token", token])
         pm.start("reality_server", [str(bins["go_sb"]), "run", "-c", str(rendered / "go_server.json")])
-        rust_server_env = {
-            "SB_REALITY_SERVER_LISTEN": f"127.0.0.1:{p['rust_reality_server']}",
-            "SB_REALITY_SERVER_TARGET": f"127.0.0.1:{p['tls_dest']}",
-            "SB_REALITY_SERVER_NAMES": m["sni"],
-            "SB_REALITY_SERVER_PRIVATE_KEY_HEX": b64url_to_hex(m["x25519"]["private_key_b64"]),
-            "SB_REALITY_SERVER_SHORT_IDS": m["short_id"],
-            "SB_VLESS_UUID": m["uuid"],
-            "SB_VLESS_FLOW": m["flow"],
-        }
-        pm.start("rust_reality_server", [str(bins["rust_server"])], env=rust_server_env)
+        pm.start("rust_reality_server", [str(bins["app"]), "run", "-c", str(rendered / "rust_server.json")])
         pm.start("go_client", [str(bins["go_sb"]), "run", "-c", str(rendered / "go_client.json")])
         pm.start("go_reverse_client", [str(bins["go_sb"]), "run", "-c", str(rendered / "go_reverse_client.json")])
         pm.start("rust_client", [str(bins["app"]), "run", "-c", str(rendered / "rust_client.json")])

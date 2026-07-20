@@ -11,6 +11,9 @@ fn allowed_inbound_keys() -> HashSet<String> {
     if set.remove("ty") {
         set.insert("type".to_string());
     }
+    // REALITY is user-facing only under `tls.reality`; top-level `reality`
+    // is an internal serialized-IR field.
+    set.remove("reality");
     // Raw-only / alias fields not present on InboundIR
     insert_keys(
         &mut set,
@@ -61,6 +64,390 @@ fn allowed_tun_inbound_keys(base: &HashSet<String>) -> HashSet<String> {
     let mut set = base.clone();
     insert_keys(&mut set, TUN_ONLY_INBOUND_KEYS);
     set
+}
+
+fn validate_reality_short_ids(value: Option<&Value>, ptr: &str, issues: &mut Vec<Value>) {
+    let Some(value) = value else {
+        return;
+    };
+    let is_array = value.is_array();
+    let values: Vec<&Value> = match value {
+        Value::String(_) => vec![value],
+        Value::Array(values) => values.iter().collect(),
+        _ => {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                ptr,
+                "short_id must be a string or string array",
+                "use hex string values",
+            ));
+            return;
+        }
+    };
+    for (index, value) in values.into_iter().enumerate() {
+        let item_ptr = if is_array {
+            format!("{ptr}/{index}")
+        } else {
+            ptr.to_string()
+        };
+        let Some(short_id) = value.as_str() else {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                &item_ptr,
+                "short_id must be a string",
+                "use a 0-16 character even-length hex string",
+            ));
+            continue;
+        };
+        if short_id.len() > 16
+            || short_id.len() % 2 != 0
+            || !short_id.chars().all(|c| c.is_ascii_hexdigit())
+        {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::RangeExceeded,
+                &item_ptr,
+                "short_id must be a 0-16 character even-length hex string",
+                "fix short_id",
+            ));
+        }
+    }
+}
+
+fn validate_vless_inbound(ib: &Value, index: usize, issues: &mut Vec<Value>) {
+    let base = format!("/inbounds/{index}");
+    let top_uuid = ib.get("uuid").and_then(Value::as_str);
+    if ib.get("users").is_some() && ib.get("users_vless").is_some() {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::Conflict,
+            &format!("{base}/users"),
+            "users and users_vless cannot both be configured",
+            "keep canonical users",
+        ));
+    }
+    let (users_key, users) = if let Some(users) = ib.get("users") {
+        ("users", Some(users))
+    } else {
+        ("users_vless", ib.get("users_vless"))
+    };
+    let mut user_uuid = None;
+    let mut user_flow = None;
+
+    if let Some(users) = users {
+        let Some(users) = users.as_array() else {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                &format!("{base}/{users_key}"),
+                "VLESS users must be an array",
+                "use a one-element users array",
+            ));
+            return;
+        };
+        if users.len() != 1 {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::RangeExceeded,
+                &format!("{base}/{users_key}"),
+                "Rust VLESS inbound currently requires exactly one user",
+                "configure one user",
+            ));
+        }
+        if let Some(user) = users.first() {
+            let Some(user) = user.as_object() else {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::TypeMismatch,
+                    &format!("{base}/{users_key}/0"),
+                    "VLESS user must be an object",
+                    "use {name, uuid, flow}",
+                ));
+                return;
+            };
+            let allowed = ["name", "uuid", "flow", "security", "alter_id", "encryption"];
+            for key in user.keys() {
+                if !allowed.contains(&key.as_str()) {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::UnknownField,
+                        &format!("{base}/{users_key}/0/{key}"),
+                        "unknown VLESS user field",
+                        "remove it",
+                    ));
+                }
+            }
+            user_uuid = user.get("uuid").and_then(Value::as_str);
+            user_flow = user.get("flow").and_then(Value::as_str);
+            if user_uuid.is_none() {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::MissingRequired,
+                    &format!("{base}/{users_key}/0/uuid"),
+                    "VLESS user uuid is required",
+                    "add uuid",
+                ));
+            }
+        }
+    }
+
+    if top_uuid.is_none() && users.is_none() {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::MissingRequired,
+            &format!("{base}/uuid"),
+            "VLESS inbound requires uuid or one users entry",
+            "add uuid or users",
+        ));
+    }
+    if top_uuid.is_some() && user_uuid.is_some() {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::Conflict,
+            &format!("{base}/uuid"),
+            "VLESS uuid and users cannot both be configured",
+            "keep one credential form",
+        ));
+    }
+    if ib.get("flow").is_some() && user_flow.is_some() {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::Conflict,
+            &format!("{base}/flow"),
+            "VLESS flow and users[0].flow cannot both be configured",
+            "keep one flow value",
+        ));
+    }
+    if let Some(uuid) = top_uuid.or(user_uuid) {
+        if uuid::Uuid::parse_str(uuid).is_err() {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::InvalidType,
+                &format!("{base}/uuid"),
+                "invalid VLESS UUID",
+                "use canonical UUID format",
+            ));
+        }
+    }
+}
+
+fn validate_inbound_tls(ib: &Value, index: usize, issues: &mut Vec<Value>) {
+    let Some(tls_value) = ib.get("tls") else {
+        return;
+    };
+    let base = format!("/inbounds/{index}/tls");
+    let Some(tls) = tls_value.as_object() else {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            &base,
+            "tls must be an object",
+            "use a TLS options object",
+        ));
+        return;
+    };
+    let Some(reality_value) = tls.get("reality") else {
+        return;
+    };
+    let reality_base = format!("{base}/reality");
+    let Some(reality) = reality_value.as_object() else {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            &reality_base,
+            "reality must be an object",
+            "use a REALITY options object",
+        ));
+        return;
+    };
+    let allowed = [
+        "enabled",
+        "handshake",
+        "private_key",
+        "short_id",
+        "short_ids",
+        "max_time_difference",
+        "handshake_timeout",
+        "server_name",
+        "fallback_server",
+        "fallback_port",
+    ];
+    for key in reality.keys() {
+        if !allowed.contains(&key.as_str()) {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::UnknownField,
+                &format!("{reality_base}/{key}"),
+                "unknown inbound REALITY field",
+                "remove it",
+            ));
+        }
+    }
+    if reality.contains_key("enabled") && !reality["enabled"].is_boolean() {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            &format!("{reality_base}/enabled"),
+            "REALITY enabled must be boolean",
+            "use true or false",
+        ));
+        return;
+    }
+    if reality.get("enabled").and_then(Value::as_bool) != Some(true) {
+        return;
+    }
+    match tls.get("enabled") {
+        Some(Value::Bool(true)) => {}
+        Some(Value::Bool(false)) | None => issues.push(emit_issue(
+            "error",
+            IssueCode::Conflict,
+            &format!("{base}/enabled"),
+            "REALITY requires tls.enabled=true",
+            "enable TLS",
+        )),
+        Some(_) => issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            &format!("{base}/enabled"),
+            "TLS enabled must be boolean",
+            "use true or false",
+        )),
+    }
+    if tls
+        .get("server_name")
+        .or_else(|| tls.get("sni"))
+        .or_else(|| reality.get("server_name"))
+        .and_then(Value::as_str)
+        .is_none_or(str::is_empty)
+    {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::MissingRequired,
+            &format!("{base}/server_name"),
+            "REALITY server_name is required",
+            "add tls.server_name",
+        ));
+    }
+    match reality.get("private_key").and_then(Value::as_str) {
+        None => issues.push(emit_issue(
+            "error",
+            IssueCode::MissingRequired,
+            &format!("{reality_base}/private_key"),
+            "REALITY private_key is required",
+            "add X25519 private key",
+        )),
+        Some(key) if !crate::ir::is_valid_x25519_key(key) => issues.push(emit_issue(
+            "error",
+            IssueCode::InvalidType,
+            &format!("{reality_base}/private_key"),
+            "REALITY private_key must decode to 32 bytes",
+            "use hex or base64 X25519 private key",
+        )),
+        _ => {}
+    }
+    if reality.contains_key("handshake") && !reality["handshake"].is_object() {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            &format!("{reality_base}/handshake"),
+            "REALITY handshake must be an object",
+            "use {server, server_port}",
+        ));
+    }
+    let handshake = reality.get("handshake").and_then(Value::as_object);
+    if let Some(handshake) = handshake {
+        for key in handshake.keys() {
+            if !["server", "server_port"].contains(&key.as_str()) {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::UnknownField,
+                    &format!("{reality_base}/handshake/{key}"),
+                    "unknown REALITY handshake field",
+                    "remove it",
+                ));
+            }
+        }
+    }
+    let server = handshake
+        .and_then(|v| v.get("server"))
+        .or_else(|| reality.get("fallback_server"))
+        .and_then(Value::as_str);
+    let port = handshake
+        .and_then(|v| v.get("server_port"))
+        .or_else(|| reality.get("fallback_port"))
+        .and_then(Value::as_u64);
+    if handshake.is_some()
+        && (reality.contains_key("fallback_server") || reality.contains_key("fallback_port"))
+    {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::Conflict,
+            &format!("{reality_base}/handshake"),
+            "canonical handshake and fallback aliases cannot be mixed",
+            "keep handshake only",
+        ));
+    }
+    if server.is_none_or(str::is_empty) {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::MissingRequired,
+            &format!("{reality_base}/handshake/server"),
+            "REALITY handshake server is required",
+            "add handshake.server",
+        ));
+    }
+    if !matches!(port, Some(1..=65535)) {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::RangeExceeded,
+            &format!("{reality_base}/handshake/server_port"),
+            "REALITY handshake server_port must be 1-65535",
+            "set a valid port",
+        ));
+    }
+    if reality.contains_key("short_id") && reality.contains_key("short_ids") {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::Conflict,
+            &format!("{reality_base}/short_id"),
+            "short_id and short_ids cannot both be configured",
+            "keep canonical short_id",
+        ));
+    }
+    validate_reality_short_ids(
+        reality.get("short_id").or_else(|| reality.get("short_ids")),
+        &format!("{reality_base}/short_id"),
+        issues,
+    );
+    if reality
+        .get("handshake_timeout")
+        .is_some_and(|value| value.as_u64().is_none_or(|timeout| timeout == 0))
+    {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::RangeExceeded,
+            &format!("{reality_base}/handshake_timeout"),
+            "handshake_timeout must be a positive integer",
+            "set seconds greater than zero",
+        ));
+    }
+    if let Some(value) = reality.get("max_time_difference") {
+        if value
+            .as_str()
+            .and_then(|raw| humantime::parse_duration(raw).ok())
+            .is_none()
+        {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::InvalidType,
+                &format!("{reality_base}/max_time_difference"),
+                "max_time_difference must be a duration string",
+                "use a value such as 1m",
+            ));
+        }
+    }
 }
 
 /// Validate `/inbounds` array structure, types, required fields, and unknown fields.
@@ -186,6 +573,11 @@ pub(crate) fn validate_inbounds(doc: &Value, allow_unknown: bool, issues: &mut V
             }
         }
 
+        if ib.get("type").and_then(Value::as_str) == Some("vless") {
+            validate_vless_inbound(ib, i, issues);
+            validate_inbound_tls(ib, i, issues);
+        }
+
         // additionalProperties=false (V2 allowed fields; TUN-only flat
         // fields are gated on `type: "tun"`)
         let allowed = if is_tun { &allowed_tun } else { &allowed_base };
@@ -226,6 +618,115 @@ fn string_list(v: Option<&Value>) -> Option<Vec<String>> {
         arr.iter()
             .filter_map(|x| x.as_str().map(|s| s.to_string()))
             .collect()
+    })
+}
+
+fn reality_string_list(value: Option<&Value>) -> Option<Vec<String>> {
+    let value = value?;
+    if let Some(value) = value.as_str() {
+        return Some(vec![value.to_string()]);
+    }
+    value.as_array().map(|items| {
+        items
+            .iter()
+            .filter_map(|item| item.as_str().map(str::to_string))
+            .collect()
+    })
+}
+
+fn join_reality_target(server: &str, port: u16) -> String {
+    if server.contains(':') && !server.starts_with('[') {
+        format!("[{server}]:{port}")
+    } else {
+        format!("{server}:{port}")
+    }
+}
+
+fn lower_vless_users(i: &Value) -> Option<Vec<crate::ir::VlessUserIR>> {
+    let users = i
+        .get("users")
+        .or_else(|| i.get("users_vless"))?
+        .as_array()?;
+    Some(
+        users
+            .iter()
+            .filter_map(|user| {
+                let uuid = user.get("uuid").and_then(Value::as_str)?.to_string();
+                Some(crate::ir::VlessUserIR {
+                    name: user
+                        .get("name")
+                        .and_then(Value::as_str)
+                        .unwrap_or("user")
+                        .to_string(),
+                    uuid,
+                    flow: user.get("flow").and_then(Value::as_str).map(str::to_string),
+                    security: user
+                        .get("security")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                    alter_id: user
+                        .get("alter_id")
+                        .and_then(Value::as_u64)
+                        .and_then(|v| u8::try_from(v).ok()),
+                    encryption: user
+                        .get("encryption")
+                        .and_then(Value::as_str)
+                        .map(str::to_string),
+                })
+            })
+            .collect(),
+    )
+}
+
+fn lower_inbound_reality(
+    i: &Value,
+    tls_server_name: Option<&str>,
+) -> Option<crate::ir::InboundRealityIR> {
+    let tls = i.get("tls").and_then(Value::as_object)?;
+    let reality = tls.get("reality").and_then(Value::as_object)?;
+    if !reality
+        .get("enabled")
+        .and_then(Value::as_bool)
+        .unwrap_or(false)
+    {
+        return None;
+    }
+
+    let handshake = reality.get("handshake").and_then(Value::as_object);
+    let server = handshake
+        .and_then(|v| v.get("server"))
+        .or_else(|| reality.get("fallback_server"))
+        .and_then(Value::as_str)?;
+    let port = handshake
+        .and_then(|v| v.get("server_port"))
+        .or_else(|| reality.get("fallback_port"))
+        .and_then(Value::as_u64)
+        .and_then(|v| u16::try_from(v).ok())?;
+    let server_name = reality
+        .get("server_name")
+        .and_then(Value::as_str)
+        .or(tls_server_name)?;
+    let private_key = reality
+        .get("private_key")
+        .and_then(Value::as_str)?
+        .to_string();
+    let short_ids =
+        reality_string_list(reality.get("short_id").or_else(|| reality.get("short_ids")))
+            .unwrap_or_default();
+
+    Some(crate::ir::InboundRealityIR {
+        target: join_reality_target(server, port),
+        server_names: vec![server_name.to_string()],
+        private_key,
+        short_ids,
+        handshake_timeout: reality
+            .get("handshake_timeout")
+            .and_then(Value::as_u64)
+            .unwrap_or(5),
+        max_time_difference: reality
+            .get("max_time_difference")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 
@@ -316,6 +817,7 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
             "dns" => InboundType::Dns,
             "ssh" => InboundType::Ssh,
             "shadowsocks" => InboundType::Shadowsocks,
+            "vless" => InboundType::Vless,
             "hysteria" => InboundType::Hysteria,
             "hysteria2" => InboundType::Hysteria2,
             "tuic" => InboundType::Tuic,
@@ -393,6 +895,37 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
         } else {
             None
         };
+
+        let tls = i.get("tls").and_then(Value::as_object);
+        let tls_server_name = tls
+            .and_then(|v| v.get("server_name").or_else(|| v.get("sni")))
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let tls_enabled = tls.and_then(|v| v.get("enabled")).and_then(Value::as_bool);
+        let users_vless = if matches!(ty, InboundType::Vless) {
+            lower_vless_users(i)
+        } else {
+            None
+        };
+        let uuid = i
+            .get("uuid")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| {
+                users_vless
+                    .as_ref()
+                    .and_then(|users| users.first().map(|u| u.uuid.clone()))
+            });
+        let flow = i
+            .get("flow")
+            .and_then(Value::as_str)
+            .map(str::to_string)
+            .or_else(|| {
+                users_vless
+                    .as_ref()
+                    .and_then(|users| users.first().and_then(|u| u.flow.clone()))
+            });
+        let reality = lower_inbound_reality(i, tls_server_name.as_deref());
 
         ir.inbounds.push(crate::ir::InboundIR {
             // Read both "tag" (raw V2 input, used by direct callers like
@@ -482,14 +1015,11 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
                 .map(|s| s.to_string()),
             users_shadowsocks: None,
             network: None,
-            uuid: None,
+            uuid,
             alter_id: None,
             users_vmess: None,
-            flow: i
-                .get("flow")
-                .and_then(|v| v.as_str())
-                .map(|s| s.to_string()),
-            users_vless: None,
+            flow,
+            users_vless,
             users_trojan: None,
             version: None,
             users_shadowtls: None,
@@ -516,13 +1046,23 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
             h2_path: None,
             h2_host: None,
             grpc_service: None,
-            tls_enabled: None,
+            tls_enabled,
             tls_cert_path: None,
             tls_key_path: None,
             tls_cert_pem: None,
             tls_key_pem: None,
-            tls_server_name: None,
-            tls_alpn: None,
+            tls_server_name,
+            tls_alpn: tls
+                .and_then(|v| v.get("alpn"))
+                .and_then(|v| v.as_array())
+                .map(|items| {
+                    items
+                        .iter()
+                        .filter_map(Value::as_str)
+                        .map(str::to_string)
+                        .collect()
+                }),
+            reality,
             users_hysteria2: None,
             congestion_control: None,
             salamander: None,
@@ -784,6 +1324,7 @@ mod tests {
             ("dns", InboundType::Dns),
             ("ssh", InboundType::Ssh),
             ("shadowsocks", InboundType::Shadowsocks),
+            ("vless", InboundType::Vless),
             ("hysteria", InboundType::Hysteria),
             ("hysteria2", InboundType::Hysteria2),
             ("tuic", InboundType::Tuic),
@@ -816,6 +1357,7 @@ mod tests {
             ("hysteria2", InboundType::Hysteria2),
             ("tuic", InboundType::Tuic),
             ("shadowsocks", InboundType::Shadowsocks),
+            ("vless", InboundType::Vless),
         ];
         for (ty_str, expected) in schema_aligned {
             let doc = json!({"inbounds": [{"type": ty_str, "listen": "127.0.0.1:0"}]});
@@ -828,6 +1370,262 @@ mod tests {
                 expected
             );
         }
+    }
+
+    #[test]
+    fn vless_reality_server_config_validates_and_lowers() {
+        let doc = json!({"inbounds": [{
+            "type": "vless",
+            "name": "vless-reality-in",
+            "listen": "127.0.0.1:18446",
+            "users": [{
+                "name": "fixture",
+                "uuid": "fc7a057a-7d96-4cc8-854f-3b8045a4477e",
+                "flow": "xtls-rprx-vision"
+            }],
+            "tls": {
+                "enabled": true,
+                "server_name": "www.fixture.local",
+                "reality": {
+                    "enabled": true,
+                    "handshake": {"server": "127.0.0.1", "server_port": 18444},
+                    "private_key": "wFUij4j61zedpCjqgkLTZw4qc_NZtg4-UtFa4n7pTlI",
+                    "short_id": ["b9687a2be7deb9db"],
+                    "max_time_difference": "1m"
+                }
+            }
+        }]});
+
+        let errors: Vec<_> = run_validate(&doc, false)
+            .into_iter()
+            .filter(|issue| issue["kind"] == "error")
+            .collect();
+        assert!(
+            errors.is_empty(),
+            "valid VLESS REALITY config rejected: {errors:?}"
+        );
+
+        let ir = lower(&doc);
+        let inbound = &ir.inbounds[0];
+        assert_eq!(inbound.ty, InboundType::Vless);
+        assert_eq!(
+            inbound.uuid.as_deref(),
+            Some("fc7a057a-7d96-4cc8-854f-3b8045a4477e")
+        );
+        assert_eq!(inbound.flow.as_deref(), Some("xtls-rprx-vision"));
+        let reality = inbound.reality.as_ref().expect("REALITY IR");
+        assert_eq!(reality.target, "127.0.0.1:18444");
+        assert_eq!(reality.server_names, ["www.fixture.local"]);
+        assert_eq!(reality.short_ids, ["b9687a2be7deb9db"]);
+        assert_eq!(reality.handshake_timeout, 5);
+        assert_eq!(reality.max_time_difference.as_deref(), Some("1m"));
+    }
+
+    #[test]
+    fn production_config_pipeline_preserves_vless_reality_server() {
+        let doc = json!({
+            "schema_version": 2,
+            "inbounds": [{
+                "type": "vless",
+                "name": "vless-reality-in",
+                "listen": "127.0.0.1",
+                "port": 18446,
+                "users": [{
+                    "name": "fixture",
+                    "uuid": "fc7a057a-7d96-4cc8-854f-3b8045a4477e",
+                    "flow": "xtls-rprx-vision"
+                }],
+                "tls": {
+                    "enabled": true,
+                    "server_name": "www.fixture.local",
+                    "reality": {
+                        "enabled": true,
+                        "handshake": {"server": "127.0.0.1", "server_port": 18444},
+                        "private_key": "wFUij4j61zedpCjqgkLTZw4qc_NZtg4-UtFa4n7pTlI",
+                        "short_id": ["b9687a2be7deb9db"]
+                    }
+                }
+            }],
+            "outbounds": [{"type": "direct", "name": "direct"}],
+            "route": {"default": "direct"}
+        });
+
+        let (_, ir) = crate::config_from_raw_value(doc).expect("production config loads");
+        assert_eq!(ir.inbounds[0].ty, InboundType::Vless);
+        assert_eq!(ir.inbounds[0].tag.as_deref(), Some("vless-reality-in"));
+        assert_eq!(
+            ir.inbounds[0]
+                .reality
+                .as_ref()
+                .map(|value| value.target.as_str()),
+            Some("127.0.0.1:18444")
+        );
+    }
+
+    #[test]
+    fn vless_reality_missing_private_key_is_rejected() {
+        let doc = json!({"inbounds": [{
+            "type": "vless",
+            "listen": "127.0.0.1:18446",
+            "uuid": "fc7a057a-7d96-4cc8-854f-3b8045a4477e",
+            "tls": {
+                "enabled": true,
+                "server_name": "www.fixture.local",
+                "reality": {
+                    "enabled": true,
+                    "handshake": {"server": "127.0.0.1", "server_port": 18444}
+                }
+            }
+        }]});
+        let issues = run_validate(&doc, false);
+        assert!(issues.iter().any(|issue| {
+            issue["ptr"] == "/inbounds/0/tls/reality/private_key"
+                && issue["code"] == "MissingRequired"
+                && issue["kind"] == "error"
+        }));
+    }
+
+    #[test]
+    fn published_reality_server_aliases_remain_accepted() {
+        let doc = json!({"inbounds": [{
+            "type": "vless",
+            "listen": "127.0.0.1:18446",
+            "uuid": "fc7a057a-7d96-4cc8-854f-3b8045a4477e",
+            "tls": {
+                "enabled": true,
+                "sni": "www.fixture.local",
+                "reality": {
+                    "enabled": true,
+                    "private_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                    "short_ids": ["b9687a2be7deb9db"],
+                    "fallback_server": "127.0.0.1",
+                    "fallback_port": 18444
+                }
+            }
+        }]});
+        let errors: Vec<_> = run_validate(&doc, false)
+            .into_iter()
+            .filter(|issue| issue["kind"] == "error")
+            .collect();
+        assert!(errors.is_empty(), "published aliases rejected: {errors:?}");
+        assert_eq!(
+            lower(&doc).inbounds[0]
+                .reality
+                .as_ref()
+                .map(|reality| reality.target.as_str()),
+            Some("127.0.0.1:18444")
+        );
+    }
+
+    #[test]
+    fn documented_users_vless_alias_lowers_single_user() {
+        let doc = json!({"inbounds": [{
+            "type": "vless",
+            "listen": "127.0.0.1:18446",
+            "users_vless": [{
+                "name": "fixture",
+                "uuid": "fc7a057a-7d96-4cc8-854f-3b8045a4477e",
+                "flow": "xtls-rprx-vision"
+            }]
+        }]});
+        let errors: Vec<_> = run_validate(&doc, false)
+            .into_iter()
+            .filter(|issue| issue["kind"] == "error")
+            .collect();
+        assert!(errors.is_empty(), "users_vless alias rejected: {errors:?}");
+        let inbound = &lower(&doc).inbounds[0];
+        assert_eq!(
+            inbound.uuid.as_deref(),
+            Some("fc7a057a-7d96-4cc8-854f-3b8045a4477e")
+        );
+        assert_eq!(inbound.flow.as_deref(), Some("xtls-rprx-vision"));
+    }
+
+    #[test]
+    fn canonical_and_documented_vless_user_forms_cannot_mix() {
+        let user = json!({
+            "name": "fixture",
+            "uuid": "fc7a057a-7d96-4cc8-854f-3b8045a4477e"
+        });
+        let doc = json!({"inbounds": [{
+            "type": "vless",
+            "listen": "127.0.0.1:18446",
+            "users": [user.clone()],
+            "users_vless": [user]
+        }]});
+        let issues = run_validate(&doc, false);
+        assert!(issues.iter().any(|issue| {
+            issue["ptr"] == "/inbounds/0/users"
+                && issue["code"] == "Conflict"
+                && issue["kind"] == "error"
+        }));
+    }
+
+    #[test]
+    fn reality_handshake_and_fallback_aliases_cannot_mix() {
+        let doc = json!({"inbounds": [{
+            "type": "vless",
+            "listen": "127.0.0.1:18446",
+            "uuid": "fc7a057a-7d96-4cc8-854f-3b8045a4477e",
+            "tls": {
+                "enabled": true,
+                "server_name": "www.fixture.local",
+                "reality": {
+                    "enabled": true,
+                    "private_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef",
+                    "handshake": {"server": "127.0.0.1", "server_port": 18444},
+                    "fallback_port": 443
+                }
+            }
+        }]});
+        let issues = run_validate(&doc, false);
+        assert!(issues.iter().any(|issue| {
+            issue["ptr"] == "/inbounds/0/tls/reality/handshake"
+                && issue["code"] == "Conflict"
+                && issue["kind"] == "error"
+        }));
+    }
+
+    #[test]
+    fn vless_standard_tls_fields_remain_accepted_without_reality() {
+        let doc = json!({"inbounds": [{
+            "type": "vless",
+            "listen": "127.0.0.1:443",
+            "uuid": "fc7a057a-7d96-4cc8-854f-3b8045a4477e",
+            "tls": {
+                "enabled": true,
+                "certificate_path": "server.crt",
+                "key_path": "server.key"
+            }
+        }]});
+        let errors: Vec<_> = run_validate(&doc, false)
+            .into_iter()
+            .filter(|issue| issue["kind"] == "error")
+            .collect();
+        assert!(
+            errors.is_empty(),
+            "standard TLS fields regressed: {errors:?}"
+        );
+    }
+
+    #[test]
+    fn top_level_reality_is_rejected_in_user_config() {
+        let doc = json!({"inbounds": [{
+            "type": "vless",
+            "listen": "127.0.0.1:443",
+            "uuid": "fc7a057a-7d96-4cc8-854f-3b8045a4477e",
+            "reality": {
+                "target": "127.0.0.1:443",
+                "server_names": ["example.com"],
+                "private_key": "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+            }
+        }]});
+        let issues = run_validate(&doc, false);
+        assert!(issues.iter().any(|issue| {
+            issue["ptr"] == "/inbounds/0/reality"
+                && issue["code"] == "UnknownField"
+                && issue["kind"] == "error"
+        }));
     }
 
     /// Regression: shadowsocks inbound builder requires `method` (and recommends

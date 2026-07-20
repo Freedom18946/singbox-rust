@@ -18,7 +18,7 @@ use crate::endpoint::Endpoint;
 
 use crate::router::RouterHandle;
 use crate::service::Service;
-use sb_config::ir::{Credentials, MultiplexOptionsIR};
+use sb_config::ir::{Credentials, InboundRealityIR, MultiplexOptionsIR};
 use std::collections::HashMap;
 use std::io;
 use std::sync::Arc;
@@ -81,6 +81,8 @@ pub struct InboundParam {
     pub tls_server_name: Option<String>,
     /// TLS ALPN protocols
     pub tls_alpn: Option<Vec<String>>,
+    /// VLESS inbound REALITY server configuration.
+    pub reality: Option<InboundRealityIR>,
 
     // Hysteria2-specific fields
     /// Hysteria2 multi-user authentication (JSON-encoded for now)
@@ -187,6 +189,7 @@ impl Default for InboundParam {
             tls_key_pem: None,
             tls_server_name: None,
             tls_alpn: None,
+            reality: None,
             users_hysteria2: None,
             congestion_control: None,
             salamander: None,

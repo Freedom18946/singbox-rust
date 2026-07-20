@@ -41,6 +41,8 @@ use sb_adapters::inbound::tun::{TunInbound, TunInboundConfig};
 use sb_adapters::inbound::vless::{serve as serve_vless, VlessInboundConfig};
 #[cfg(feature = "adapters")]
 use sb_adapters::inbound::vmess::{serve as serve_vmess, VmessInboundConfig};
+#[cfg(all(feature = "adapters", feature = "tls_reality"))]
+use sb_tls::RealityServerConfig;
 
 pub enum InboundStop {
     Channel(mpsc::Sender<()>),
@@ -147,6 +149,35 @@ fn parse_optional_inbound_duration(
             })
         })
         .transpose()
+}
+
+#[cfg(all(feature = "adapters", feature = "tls_reality"))]
+fn build_reality_server_config(
+    ib: &InboundIR,
+    listen_str: &str,
+) -> Result<Option<RealityServerConfig>> {
+    let Some(reality) = ib.reality.as_ref() else {
+        return Ok(None);
+    };
+    let max_time_difference = parse_optional_inbound_duration(
+        "vless",
+        listen_str,
+        "reality.max_time_difference",
+        reality.max_time_difference.as_deref(),
+    )?;
+    let config = RealityServerConfig {
+        target: reality.target.clone(),
+        server_names: reality.server_names.clone(),
+        private_key: reality.private_key.clone(),
+        short_ids: reality.short_ids.clone(),
+        handshake_timeout: reality.handshake_timeout,
+        max_time_difference,
+        enable_fallback: true,
+    };
+    config
+        .validate()
+        .map_err(|error| anyhow::anyhow!("vless REALITY config invalid: {error}"))?;
+    Ok(Some(config))
 }
 
 #[cfg(feature = "adapters")]
@@ -819,6 +850,15 @@ fn start_vless_inbound(
             }
         };
 
+        #[cfg(feature = "tls_reality")]
+        let reality = match build_reality_server_config(ib, &listen_str) {
+            Ok(reality) => reality,
+            Err(error) => {
+                warn!(addr=%listen_str, error=%error, "vless inbound: invalid REALITY config; refusing to start");
+                return None;
+            }
+        };
+
         let cfg = VlessInboundConfig {
             listen: addr,
             uuid,
@@ -830,7 +870,7 @@ fn start_vless_inbound(
             stats: None,
             conn_tracker,
             #[cfg(feature = "tls_reality")]
-            reality: None,
+            reality,
             multiplex: None,
             transport_layer: None,
             fallback,
@@ -952,11 +992,45 @@ fn start_vmess_inbound(
 
 #[cfg(all(test, feature = "adapters"))]
 mod tests {
+    #[cfg(feature = "tls_reality")]
+    use super::build_reality_server_config;
     use super::{
         parse_inbound_fallback_for_alpn, parse_optional_inbound_duration,
         parse_optional_inbound_fallback_addr, parse_optional_inbound_uuid,
     };
+    #[cfg(feature = "tls_reality")]
+    use sb_config::ir::{InboundIR, InboundRealityIR, InboundType};
     use std::collections::HashMap;
+
+    #[cfg(feature = "tls_reality")]
+    #[test]
+    fn production_starter_builds_reality_server_config() {
+        let inbound = InboundIR {
+            ty: InboundType::Vless,
+            listen: "127.0.0.1".to_string(),
+            port: 18446,
+            reality: Some(InboundRealityIR {
+                target: "127.0.0.1:18444".to_string(),
+                server_names: vec!["www.fixture.local".to_string()],
+                private_key: "wFUij4j61zedpCjqgkLTZw4qc/NZtg4+UtFa4n7pTlI=".to_string(),
+                short_ids: vec!["b9687a2be7deb9db".to_string()],
+                handshake_timeout: 5,
+                max_time_difference: Some("1m".to_string()),
+            }),
+            ..Default::default()
+        };
+
+        let config = build_reality_server_config(&inbound, "127.0.0.1:18446")
+            .expect("valid config")
+            .expect("REALITY enabled");
+        assert_eq!(config.target, "127.0.0.1:18444");
+        assert_eq!(config.private_key_bytes().unwrap().len(), 32);
+        assert_eq!(
+            config.max_time_difference,
+            Some(std::time::Duration::from_secs(60))
+        );
+        assert!(config.enable_fallback);
+    }
 
     #[test]
     fn invalid_optional_fallback_is_rejected_explicitly() {

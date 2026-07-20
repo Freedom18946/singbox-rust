@@ -91,8 +91,8 @@ impl RealityClientConfig {
     /// 获取公钥的字节表示
     /// # Errors
     /// # 错误
-    /// Returns an error when the public key is not valid hex/base64url or wrong length.
-    /// 当公钥不是有效的十六进制/base64url 或长度错误时返回错误。
+    /// Returns an error when the public key is not valid hex/base64 or wrong length.
+    /// 当公钥不是有效的十六进制/base64 或长度错误时返回错误。
     pub fn public_key_bytes(&self) -> Result<[u8; 32], String> {
         decode_public_key(&self.public_key)
     }
@@ -110,14 +110,14 @@ pub struct RealityServerConfig {
     /// 接受的服务器名称（SNI 值）
     pub server_names: Vec<String>,
 
-    /// Private key for authentication (hex-encoded X25519 private key)
-    /// 用于认证的私钥（十六进制编码的 X25519 私钥）
+    /// Private key for authentication (hex or base64-encoded X25519 key)
+    /// 用于认证的私钥（十六进制或 base64 编码的 X25519 私钥）
     pub private_key: String,
 
     /// Accepted short IDs
     /// 接受的 Short ID
-    /// Empty vec means accept all
-    /// 空向量表示接受所有
+    /// Empty vec accepts only the canonical all-zero short ID.
+    /// 空向量仅接受规范的全零 Short ID。
     #[serde(default)]
     pub short_ids: Vec<String>,
 
@@ -155,14 +155,15 @@ impl RealityServerConfig {
             return Err("target cannot be empty".to_string());
         }
 
-        // Validate private key (should be 64 hex chars for X25519)
-        if !is_valid_hex(&self.private_key) || self.private_key.len() != 64 {
-            return Err("private_key must be 64 hex characters (X25519 private key)".to_string());
-        }
+        decode_private_key(&self.private_key)?;
 
         // Validate server names
-        if self.server_names.is_empty() {
-            return Err("server_names cannot be empty".to_string());
+        if self.server_names.is_empty() || self.server_names.iter().any(String::is_empty) {
+            return Err("server_names cannot be empty or contain empty values".to_string());
+        }
+
+        if self.handshake_timeout == 0 {
+            return Err("handshake_timeout must be greater than zero".to_string());
         }
 
         // Validate short IDs
@@ -189,15 +190,10 @@ impl RealityServerConfig {
     /// 获取私钥的字节表示
     /// # Errors
     /// # 错误
-    /// Returns an error when the private key is not valid hex or wrong length.
-    /// 当私钥不是有效的十六进制或长度错误时返回错误。
+    /// Returns an error when the private key is not valid hex/base64 or wrong length.
+    /// 当私钥不是有效的十六进制/base64 或长度错误时返回错误。
     pub fn private_key_bytes(&self) -> Result<[u8; 32], String> {
-        let bytes =
-            hex::decode(&self.private_key).map_err(|e| format!("invalid private key hex: {e}"))?;
-
-        bytes
-            .try_into()
-            .map_err(|_| "private key must be 32 bytes".to_string())
+        decode_private_key(&self.private_key)
     }
 
     /// Get short IDs as bytes
@@ -295,14 +291,39 @@ fn decode_public_key(key: &str) -> Result<[u8; 32], String> {
     let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
         .decode(key)
         .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(key))
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(key))
+        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(key))
         .map_err(|_| {
-            "public_key must be 64 hex chars or base64url-encoded 32-byte X25519 public key"
+            "public_key must be 64 hex chars or base64-encoded 32-byte X25519 public key"
                 .to_string()
         })?;
 
     bytes
         .try_into()
         .map_err(|_| "public_key must decode to exactly 32 bytes (X25519 public key)".to_string())
+}
+
+fn decode_private_key(key: &str) -> Result<[u8; 32], String> {
+    if key.len() == 64 && is_valid_hex(key) {
+        let bytes = hex::decode(key).map_err(|e| format!("invalid private key hex: {e}"))?;
+        return bytes
+            .try_into()
+            .map_err(|_| "private key must be 32 bytes".to_string());
+    }
+
+    let bytes = base64::engine::general_purpose::URL_SAFE_NO_PAD
+        .decode(key)
+        .or_else(|_| base64::engine::general_purpose::URL_SAFE.decode(key))
+        .or_else(|_| base64::engine::general_purpose::STANDARD_NO_PAD.decode(key))
+        .or_else(|_| base64::engine::general_purpose::STANDARD.decode(key))
+        .map_err(|_| {
+            "private_key must be 64 hex chars or base64-encoded 32-byte X25519 private key"
+                .to_string()
+        })?;
+
+    bytes
+        .try_into()
+        .map_err(|_| "private_key must decode to exactly 32 bytes (X25519 private key)".to_string())
 }
 
 fn default_fingerprint() -> String {
@@ -541,6 +562,21 @@ mod tests {
     }
 
     #[test]
+    fn test_client_config_keygen_standard_base64_public_key_validation() {
+        let config = RealityClientConfig {
+            target: "www.apple.com".to_string(),
+            server_name: "www.apple.com".to_string(),
+            public_key: "VI/HWZKOQWb+UKJhgKZc6yT7sEoZMJZVzcNJ0URDDEU=".to_string(),
+            short_id: Some("01ab".to_string()),
+            fingerprint: "chrome".to_string(),
+            alpn: vec![],
+        };
+
+        assert!(config.validate().is_ok());
+        assert_eq!(config.public_key_bytes().unwrap().len(), 32);
+    }
+
+    #[test]
     fn test_client_config_invalid_base64url_public_key() {
         let config = RealityClientConfig {
             target: "www.apple.com".to_string(),
@@ -553,7 +589,7 @@ mod tests {
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("base64url"));
+        assert!(result.unwrap_err().contains("base64"));
     }
 
     #[test]
@@ -595,6 +631,38 @@ mod tests {
         };
 
         assert!(config.validate().is_ok());
+    }
+
+    #[test]
+    fn server_config_accepts_keygen_standard_base64_private_key() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "wFUij4j61zedpCjqgkLTZw4qc/NZtg4+UtFa4n7pTlI=".to_string(),
+            short_ids: vec!["01ab".to_string()],
+            handshake_timeout: 5,
+            max_time_difference: None,
+            enable_fallback: true,
+        };
+
+        assert!(config.validate().is_ok());
+        assert_eq!(config.private_key_bytes().unwrap().len(), 32);
+    }
+
+    #[test]
+    fn server_config_accepts_go_base64url_private_key() {
+        let config = RealityServerConfig {
+            target: "www.apple.com:443".to_string(),
+            server_names: vec!["example.com".to_string()],
+            private_key: "wFUij4j61zedpCjqgkLTZw4qc_NZtg4-UtFa4n7pTlI".to_string(),
+            short_ids: vec!["01ab".to_string()],
+            handshake_timeout: 5,
+            max_time_difference: None,
+            enable_fallback: true,
+        };
+
+        assert!(config.validate().is_ok());
+        assert_eq!(config.private_key_bytes().unwrap().len(), 32);
     }
 
     #[test]
@@ -688,7 +756,7 @@ mod tests {
 
         let result = config.validate();
         assert!(result.is_err());
-        assert!(result.unwrap_err().contains("64 hex characters"));
+        assert!(result.unwrap_err().contains("64 hex chars or base64"));
     }
 
     #[test]
