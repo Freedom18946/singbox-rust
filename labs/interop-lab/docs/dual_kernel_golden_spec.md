@@ -11,11 +11,11 @@
 | Code | Domain | Sub-domains | Behaviors | Both-Covered | Coverage |
 |------|--------|-------------|-----------|--------------|----------|
 | CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 21 | 100.0% |
-| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 18 | 18 | 100.0% |
+| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 22 | 22 | 100.0% |
 | LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 8 | 88.9% |
 | SV | Services | 1 (Provider) | 3 | 0 | 0% |
 | PF | Performance | 3 (Latency / Memory / Startup) | 5 | 5 | 100.0% |
-| **Total** | | **15** | **56** | **52** | **92.9%** |
+| **Total** | | **15** | **60** | **56** | **93.3%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
 > Coverage gaps still cluster in SV (structural) and LC (1 infeasible).
@@ -126,6 +126,10 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-DP-012 | Domain rules match FQDN | Request to domain pattern | Correct outbound selected | Traffic | `p1_domain_rule_via_socks` | — | — |
 | BHV-DP-013 | IP-CIDR rules match addresses | Request to IP in CIDR | Correct outbound selected | Traffic | `p1_ip_cidr_rule_via_socks` | — | — |
 | BHV-DP-014 | Sniff detects protocol from payload | TLS/HTTP payload inspection | Protocol detected, domain extracted | Traffic | `p1_sniff_rule_action_tls` | — | — |
+| BHV-DP-019 | domain_suffix matches FQDN suffix | Request to suffix-matching domain | Matched outbound; non-match → final | Traffic | `p1_domain_suffix_rule_via_socks` | — | — |
+| BHV-DP-020 | domain_keyword matches substring | Request to keyword-containing domain | Matched outbound; non-match → final | Traffic | `p1_domain_keyword_rule_via_socks` | — | — |
+| BHV-DP-021 | port rule matches destination port | Request to matching dest port | Matched outbound; other port → final | Traffic | `p1_port_rule_via_socks` | — | — |
+| BHV-DP-022 | network rule matches tcp/udp | TCP vs UDP request | Per-network outbound (tcp→match, udp→final) | Traffic | `p1_network_rule_via_socks` | — | — |
 
 ### DP.4: DNS
 
@@ -536,6 +540,10 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 27 | `p2_vless_dual_dataplane_local` | both | E3 | BHV-DP-001 (VLESS variant) | New on 2026-03-16: VlessInbound upstream kind + Rust/Go configs (port 12083); TCP round-trip with UUID auth (ok/bad). No UDP (inbound TCP-only). |
 | 28 | `p2_vmess_dual_dataplane_local` | both | E3 | — (coverage-neutral VMess variant) | Canonical Go-compatible VMess TCP AEAD replaced the former local dialect. Linux committed-case replay is strict PASS on both kernels (`20260717T142243Z-34b05275-47aa-41ff-bcfa-39220788da3d`); no S4 label or denominator change. |
 | 29 | `p2_bench_socks5_throughput` | both | E3 | — (coverage-neutral perf stress) | Promoted on 2026-07-18 from a Rust-only Criterion wrapper that bypassed both kernels to a strict live 1 MiB SOCKS5 connect+echo floor on Rust and Go. |
+| 30 | `p1_domain_suffix_rule_via_socks` | both | E2 | BHV-DP-019 | New on 2026-07-21: `domain_suffix` routing rule; `localhost` (suffix)→direct, `nope.invalid`→final block. Both kernels emit identical routing decision (match=true / miss=false). |
+| 31 | `p1_domain_keyword_rule_via_socks` | both | E2 | BHV-DP-020 | New on 2026-07-21: `domain_keyword` substring rule (`ocalhos`)→direct, `nope.invalid`→final block. Both kernels identical. |
+| 32 | `p1_port_rule_via_socks` | both | E2 | BHV-DP-021 | New on 2026-07-21: destination `port` rule with dual echo; matched port→direct, other port→final block. Config representation differs (Rust `port` as string per `deserialize_string_or_list`, Go as uint16); routing decision identical on both kernels. |
+| 33 | `p1_network_rule_via_socks` | both | E3 | BHV-DP-022 | New on 2026-07-21: `network` rule `tcp`→direct / udp→final block; SOCKS5 UDP ASSOCIATE default-on (DIV-C-002). Both kernels identical (tcp success / udp blocked). |
 
 ### T4: Long-term — CLOSED (2026-07-18)
 
@@ -582,9 +590,9 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 37.3% (38/102) |
-| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 92.9% (52/56) |
-| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 75.0% (42/56) |
+| Both-mode case ratio | both cases / total cases | 39.6% (42/106) |
+| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 93.3% (56/60) |
+| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 76.7% (46/60) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
 | GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |
 | MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 55.6% (5/9) |
@@ -598,8 +606,11 @@ These cases should **never** be promoted to `kernel_mode: both`:
 > denominator (the old 56 + 4 SV.1 basis); its "Current 45/60 (75.0%)" row is superseded and
 > contradicts the authoritative Current Metrics above. All S5 tiers are delivered/closed (see
 > S5), so a per-tier projection is obsolete and no mechanical per-tier recompute is meaningful
-> for closed tiers. **Authoritative current coverage = `92.9% (52/56)`** (Current Metrics
+> for closed tiers. **Authoritative current coverage = `93.3% (56/60)`** (Current Metrics
 > above; S1). No REALITY tier-3 BHV is added to the denominator.
+> **Note on the `/60`:** the current denominator is `56 BHV + 4 routing-rule BHVs`
+> (DP-019…022, added 2026-07-21, each both-covered) — a different basis from the retired
+> pre-2026-03-16 `56 + 4 SV.1` `/60`. The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC) are unchanged.
 
 ---
 

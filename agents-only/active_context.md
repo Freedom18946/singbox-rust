@@ -6,6 +6,24 @@
 > Other docs point here, not copy.
 
 ---
+## Resume (2026-07-21) - dual-kernel routing-rule coverage +4 BHV DONE
+
+- Expanded the S3 behavior registry with 4 previously-unregistered route-rule conditions, each
+  now carried by a `kernel_mode: both` interop case: `domain_suffix` (BHV-DP-019),
+  `domain_keyword` (BHV-DP-020), destination `port` (BHV-DP-021), `network` tcp/udp (BHV-DP-022).
+  All follow the `p1_domain_rule_via_socks` template (match→direct, miss→final block).
+- Real dual-kernel parity: Go and Rust snapshots emit **identical** routing decisions on all 4
+  (match=true / miss=false). Config note: Rust `port` is `Vec<String>` via
+  `deserialize_string_or_list` (no int coercion) so rust config uses `"port":["18897"]` while Go
+  uses uint16 `[18897]`; separate config files per kernel, same decision.
+- Coverage moved **52/56 → 56/60 (92.9% → 93.3%)** — honest denominator+numerator growth, NOT a
+  REALITY/camouflage claim and NOT a REALITY BHV (REALITY still has no S3 BHV-ID). The 4 open gaps
+  (3 SV.2 STRUCTURAL + 1 LC-003) are **unchanged**.
+- Evidence: `labs/interop-lab/cases/p1_{domain_suffix,domain_keyword,port,network}_rule_via_socks.yaml`
+  + per-kernel configs; all 4 `case run --kernel both` PASS. golden_spec S1/S3/S5/S6 + case_backlog +
+  compat_matrix updated. Build: `cargo build -p app --features acceptance,clash_api,adapters`.
+
+---
 ## Resume (2026-07-20) - REALITY ServerHello target-profile borrowing DONE
 
 - Authenticated Rust server now consumes the same decoy TLS 1.3 profile as Go uTLS REALITY:
@@ -172,40 +190,15 @@
   socket-option tests, app bench-I/O contract, formatting, boundaries, and consistency pass.
 - Scope: Linux portability/quality only; no dual-kernel parity or REALITY movement.
 
-## Resume (2026-07-13) - local Docker skill startup hook DONE
+## Resume (2026-07-13, compressed) - three closed lines
 
-- Root `AGENTS.md` and S-tier `init.md` now require startup loading of local
-  `singbox-docker-lab`; all Docker work routes through it.
-- Consistency gate locks both startup pointers. Skill readability/validation, Docker restart,
-  arm64 Rust 1.92 smoke, and locked Cargo metadata pass; no product/parity movement claimed.
-
-## Resume (2026-07-13) - VLESS multiplex E2E routing lifecycle FIXED
-
-- Classified **B (portable logic bug)**, not macOS sandbox: mux and non-mux handshakes completed,
-  then server ignored `cfg.router`, queried unset global routing, and closed before payload relay.
-- VLESS inbound now routes through injected `RouterHandle::decide_with_meta` using canonical
-  `RouteCtx`; boundary gate requires injected ownership and forbids `rules_global::global` reuse.
-- Regression test explicitly keeps process-global routing unset. Exact five-case VLESS multiplex
-  E2E passes with real assertions and zero skips; `sb-transport` tests, related clippy, fmt,
-  strict boundaries, and consistency pass.
-- Linux replay was blocked before tests by unrelated existing compile gaps (`socket2` TFO, libc
-  pointer type, redirect/tproxy guards). Platform-neutral path evidence plus mux/non-mux identical
-  closure and injected-router regression establish classification.
-
-## Resume (2026-07-13) - REALITY Chrome-current drift + extension-order tail CLOSED locally
-
-- Production profile now targets **full Chrome 150.0.7871.115**, not pinned uTLS
-  `HelloChrome_Auto=Chrome133`: adds `trust_anchors` (`0xca34`, empty vector) and ML-DSA
-  signature schemes `0x0904/05/06`; REALITY still removes X25519MLKEM768 group/key-share.
-- Extension order now follows current BoringSSL semantics: independent `OsRng` u32 words,
-  reverse Fisher-Yates over middle extensions; GREASE remains fixed at both ends. Shared u16
-  order/ECH seed and empirical Go-order ranking tables removed. ECH bucket, order, GREASE,
-  ECH payload/key bytes consume independent entropy.
-- New sanitized full-browser canary: `labs/interop-lab/reality_chrome_canary/`. Harness split:
-  Chrome-current Rust shape/JA4 = blocking; pinned Go/uTLS v1.8.4 = functional compatibility
-  lane, profile differences advisory. Local 10-run Chrome lane PASS; tier-1 20/20 PASS.
-- Later rounds closed active probing locally and banked tier-2 cohort externally; real-network
-  camouflage remains. No `52/56` BHV movement; REALITY has no S3 BHV-ID.
+- **local Docker skill startup hook DONE**: root `AGENTS.md` + `init.md` require startup load of
+  `singbox-docker-lab`; consistency gate locks both pointers. Detail: `log.md`.
+- **VLESS multiplex E2E routing lifecycle FIXED** (class B portable bug): VLESS inbound routes via
+  injected `RouterHandle::decide_with_meta`; five-case mux E2E PASS. Detail: `log.md`.
+- **REALITY Chrome-current drift + extension-order tail CLOSED locally**: full Chrome 150 profile,
+  BoringSSL reverse-Fisher-Yates order, canary `reality_chrome_canary/`. No `52/56` movement.
+  Superseded by later active-probing/ServerHello closure above. Detail: `archive/reality_summary.md`.
 
 ## Strategic State
 

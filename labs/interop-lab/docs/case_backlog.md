@@ -52,6 +52,10 @@
 | `p1_fakeip_cache_flush_contract` | FakeIP cache flush 后分配序列重置 | `strict` | implemented (`kernel_mode: both`) |
 | `p1_ip_cidr_rule_via_socks` | IP-CIDR 路由命中优先于 final block | `strict` | implemented (`kernel_mode: both`) |
 | `p1_domain_rule_via_socks` | 域名规则精确匹配 FQDN 优先于 final block | `strict` | implemented (`kernel_mode: both`) |
+| `p1_domain_suffix_rule_via_socks` | domain_suffix 后缀匹配优先于 final block (BHV-DP-019) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_domain_keyword_rule_via_socks` | domain_keyword 子串匹配优先于 final block (BHV-DP-020) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_port_rule_via_socks` | 目的 port 规则命中优先于 final block (BHV-DP-021) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_network_rule_via_socks` | network 规则 tcp→direct/udp→block (BHV-DP-022) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_block_outbound_via_socks` | Block outbound 拒绝 SOCKS TCP CONNECT | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
 | `p1_fault_delay_http_via_socks` | upstream delay 超时可观测 | `strict` | implemented |

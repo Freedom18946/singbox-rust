@@ -67,6 +67,10 @@
 | FakeIP cache flush | reset fakeip allocation via API | — | — | — | `p1_fakeip_cache_flush_contract` (both) |
 | IP-CIDR routing via SOCKS | direct on match | final block on miss | — | — | `p1_ip_cidr_rule_via_socks` (both) |
 | Domain routing via SOCKS | direct on match | final block on miss | — | — | `p1_domain_rule_via_socks` (both) |
+| domain_suffix routing via SOCKS | direct on suffix match | final block on miss | — | — | `p1_domain_suffix_rule_via_socks` (both, BHV-DP-019) |
+| domain_keyword routing via SOCKS | direct on keyword match | final block on miss | — | — | `p1_domain_keyword_rule_via_socks` (both, BHV-DP-020) |
+| Port routing via SOCKS | direct on dest port match | final block on other port | — | — | `p1_port_rule_via_socks` (both, BHV-DP-021) |
+| Network routing via SOCKS | tcp → direct | udp → final block | — | — | `p1_network_rule_via_socks` (both, BHV-DP-022) |
 | Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |
