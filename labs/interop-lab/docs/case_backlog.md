@@ -56,6 +56,9 @@
 | `p1_domain_keyword_rule_via_socks` | domain_keyword 子串匹配优先于 final block (BHV-DP-020) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_port_rule_via_socks` | 目的 port 规则命中优先于 final block (BHV-DP-021) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_network_rule_via_socks` | network 规则 tcp→direct/udp→block (BHV-DP-022) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_port_range_rule_via_socks` | 目的 port_range 命中优先于 final block (BHV-DP-023) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_domain_regex_rule_via_socks` | domain_regex 命中优先于 final block (BHV-DP-024) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_source_ip_cidr_rule_via_socks` | source_ip_cidr 按 IPv4/IPv6 loopback 客户端地址分流 (BHV-DP-025) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_block_outbound_via_socks` | Block outbound 拒绝 SOCKS TCP CONNECT | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
 | `p1_fault_delay_http_via_socks` | upstream delay 超时可观测 | `strict` | implemented |

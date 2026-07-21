@@ -6,6 +6,28 @@
 > Other docs point here, not copy.
 
 ---
+## Resume (2026-07-21) - dual-kernel routing-rule coverage batch 2 +3 BHV DONE
+
+- Added strict both-kernel coverage for `port_range` (BHV-DP-023), `domain_regex`
+  (BHV-DP-024), and `source_ip_cidr` (BHV-DP-025). Every case proves match→direct and
+  miss→final block with identical Rust/Go traffic decisions.
+- Red-team runs found and closed three Rust production-path gaps: Go-canonical colon/open-bound
+  port ranges were silently dropped; bare IPv6 inbound hosts normalized without brackets; SOCKS
+  TCP route contexts omitted peer source IP/port. Focused regressions cover range parsing and IPv6
+  listen normalization; source routing is covered end-to-end through IPv4/IPv6 loopback inbounds.
+- Coverage moved **56/60 → 59/63 (93.3% → 93.7%)**. Actual case inventory is 49 both / 110 total;
+  the prior S6 ratio and repository-case test count were stale and are corrected. The 4 open gaps
+  (3 SV.2 STRUCTURAL + 1 LC-003) are unchanged.
+- `protocol` did not receive a duplicate BHV: existing strict both case
+  `p1_sniff_rule_action_tls` already proves sniffed `protocol` rule dispatch under BHV-DP-014.
+- Evidence: `p1_{port_range,domain_regex,source_ip_cidr}_rule_via_socks`; PASS run IDs
+  `20260721T053752Z-0cb89a95-8fd1-4299-959d-3a8fbe57292b`,
+  `20260721T053753Z-cdd09261-3153-446b-ace0-f4e71cab45c4`, and
+  `20260721T053753Z-8037b3aa-c50c-48dc-a7b0-65650b2e99f6`.
+- Gates: focused regressions, case inventory, Go config checks, app/interop builds, consistency,
+  boundaries, fmt, and diff-check PASS.
+
+---
 ## Resume (2026-07-21) - dual-kernel routing-rule coverage +4 BHV DONE
 
 - Expanded the S3 behavior registry with 4 previously-unregistered route-rule conditions, each

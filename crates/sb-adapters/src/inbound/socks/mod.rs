@@ -823,6 +823,8 @@ where
         inbound_tag: cfg.tag.as_deref(),
         inbound_sniff: cfg.sniff,
         inbound_sniff_override: cfg.sniff_override_destination,
+        source_ip: Some(peer.ip()),
+        source_port: Some(peer.port()),
         ..Default::default()
     };
     let meta = cfg.router.decide_with_meta(&route_ctx);
@@ -877,6 +879,8 @@ where
                     network: "tcp",
                     protocol: outcome.protocol,
                     inbound_tag: cfg.tag.as_deref(),
+                    source_ip: Some(peer.ip()),
+                    source_port: Some(peer.port()),
                     ..Default::default()
                 };
                 let meta2 = cfg.router.decide_with_meta(&route_ctx2);

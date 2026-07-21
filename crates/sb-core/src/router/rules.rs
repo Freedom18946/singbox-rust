@@ -279,9 +279,22 @@ fn parse_port_ranges(values: &[String]) -> Vec<(u16, u16)> {
     values
         .iter()
         .filter_map(|s| {
-            let (start, end) = s.split_once('-')?;
-            let start = start.trim().parse().ok()?;
-            let end = end.trim().parse().ok()?;
+            let (start, end, canonical) = if let Some((start, end)) = s.split_once(':') {
+                (start, end, true)
+            } else {
+                let (start, end) = s.split_once('-')?;
+                (start, end, false)
+            };
+            let start = if canonical && start.trim().is_empty() {
+                0
+            } else {
+                start.trim().parse().ok()?
+            };
+            let end = if canonical && end.trim().is_empty() {
+                u16::MAX
+            } else {
+                end.trim().parse().ok()?
+            };
             Some((start, end))
         })
         .collect()
@@ -2577,6 +2590,34 @@ mod tests {
                 None,
             ),
             Decision::Proxy(Some("proxy-a".to_string()))
+        );
+    }
+
+    #[test]
+    fn composite_rule_accepts_go_port_range_syntax() {
+        let rule = RuleIR {
+            port_range: vec!["18896:18897".into()],
+            outbound: Some("direct".into()),
+            ..Default::default()
+        };
+
+        let compiled = CompositeRule::try_from(&rule).expect("compile");
+        assert!(compiled.matches(&RouteCtx {
+            port: Some(18897),
+            ..Default::default()
+        }));
+        assert!(!compiled.matches(&RouteCtx {
+            port: Some(18898),
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn go_port_range_open_bounds_match_go_semantics() {
+        assert_eq!(parse_port_ranges(&[":1024".into()]), vec![(0, 1024)]);
+        assert_eq!(
+            parse_port_ranges(&["49152:".into()]),
+            vec![(49152, u16::MAX)]
         );
     }
 }

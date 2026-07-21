@@ -1,0 +1,46 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:9090",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "tag": "socks-v4",
+      "listen": "127.0.0.1",
+      "listen_port": 11801
+    },
+    {
+      "type": "socks",
+      "tag": "socks-v6",
+      "listen": "::1",
+      "listen_port": 11802
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    },
+    {
+      "type": "block",
+      "tag": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "source_ip_cidr": [
+          "127.0.0.1/32"
+        ],
+        "outbound": "direct"
+      }
+    ],
+    "final": "block"
+  }
+}

@@ -3562,6 +3562,13 @@ mod migration_tests {
     }
 
     #[test]
+    fn parse_listen_addr_explicitly_normalizes_ipv6_host() {
+        let addr = super::parse_listen_addr("::1", 8080)
+            .expect("bare IPv6 listen host should normalize with explicit path");
+        assert_eq!(addr, "[::1]:8080".parse::<SocketAddr>().unwrap());
+    }
+
+    #[test]
     fn parse_listen_addr_rejects_invalid_host() {
         assert!(super::parse_listen_addr("bad host", 8080).is_none());
     }
@@ -3589,8 +3596,18 @@ fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
     match listen.parse() {
         Ok(addr) => Some(addr),
         Err(raw_err) => {
-            let normalized = format!("{listen}:{port}");
-            match normalized.parse() {
+            let (normalized, parsed) = match listen.parse::<IpAddr>() {
+                Ok(ip) => {
+                    let addr = SocketAddr::new(ip, port);
+                    (addr.to_string(), Ok(addr))
+                }
+                Err(_) => {
+                    let text = format!("{listen}:{port}");
+                    let parsed = text.parse::<SocketAddr>().map_err(|err| err.to_string());
+                    (text, parsed)
+                }
+            };
+            match parsed {
                 Ok(addr) => {
                     warn!(
                         "listen addr '{listen}' is not a full socket address; explicit normalization to '{normalized}' is applied; silent listen parse fallback is disabled: {raw_err}"
@@ -3599,7 +3616,7 @@ fn parse_listen_addr(listen: &str, port: u16) -> Option<SocketAddr> {
                 }
                 Err(normalized_err) => {
                     warn!(
-                        "listen addr '{listen}' is invalid for port {port}; silent listen parse fallback is disabled; raw parse error: {raw_err}; normalized parse error: {normalized_err}"
+                        "listen addr '{listen}' is invalid for port {port}; silent listen parse fallback is disabled; raw parse error: {raw_err}; normalized '{normalized}' parse error: {normalized_err}"
                     );
                     None
                 }

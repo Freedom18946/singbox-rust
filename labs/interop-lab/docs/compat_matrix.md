@@ -71,6 +71,9 @@
 | domain_keyword routing via SOCKS | direct on keyword match | final block on miss | — | — | `p1_domain_keyword_rule_via_socks` (both, BHV-DP-020) |
 | Port routing via SOCKS | direct on dest port match | final block on other port | — | — | `p1_port_rule_via_socks` (both, BHV-DP-021) |
 | Network routing via SOCKS | tcp → direct | udp → final block | — | — | `p1_network_rule_via_socks` (both, BHV-DP-022) |
+| Port-range routing via SOCKS | direct inside `start:end` | final block outside range | — | — | `p1_port_range_rule_via_socks` (both, BHV-DP-023) |
+| Domain-regex routing via SOCKS | direct on regex match | final block on miss | — | — | `p1_domain_regex_rule_via_socks` (both, BHV-DP-024) |
+| Source-IP-CIDR routing via SOCKS | IPv4 loopback source → direct | IPv6 loopback source → final block | — | — | `p1_source_ip_cidr_rule_via_socks` (both, BHV-DP-025) |
 | Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |
