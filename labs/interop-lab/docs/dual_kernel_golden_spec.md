@@ -11,11 +11,11 @@
 | Code | Domain | Sub-domains | Behaviors | Both-Covered | Coverage |
 |------|--------|-------------|-----------|--------------|----------|
 | CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 21 | 100.0% |
-| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 25 | 25 | 100.0% |
+| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 29 | 29 | 100.0% |
 | LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 8 | 88.9% |
 | SV | Services | 1 (Provider) | 3 | 0 | 0% |
 | PF | Performance | 3 (Latency / Memory / Startup) | 5 | 5 | 100.0% |
-| **Total** | | **15** | **63** | **59** | **93.7%** |
+| **Total** | | **15** | **67** | **63** | **94.0%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
 > Coverage gaps still cluster in SV (structural) and LC (1 infeasible).
@@ -43,7 +43,7 @@ Maps `diff_report.rs` comparison dimensions to behavior IDs in S3. When a diff f
 > **Subscription dimension deprecated (2026-03-16)**: BHV-SV-001…004 reclassified as harness-only.
 > The subscription diff dimension remains functional in the harness but does not contribute to
 > dual-kernel parity scoring. See S1 reclassification note.
-| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 016, BHV-DP-018 … 025, BHV-PF-001, BHV-PF-002 | `tolerate_counter_jitter`, `counter_jitter_abs` |
+| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 016, BHV-DP-018 … 029, BHV-PF-001, BHV-PF-002 | `tolerate_counter_jitter`, `counter_jitter_abs` |
 | Connections | `connection_mismatches` | connections.count + downloadTotal/uploadTotal | BHV-CP-006, BHV-DP-005 … 009 | `tolerate_counter_jitter` |
 | Memory | `memory_mismatches` | peak RSS ratio (>2x = mismatch) | BHV-PF-003, BHV-PF-004 | — |
 
@@ -62,7 +62,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-CP-001 | GET /configs returns runtime config | GET /configs | 200 + JSON with `mode`, `mixed-port` | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-006 |
-| BHV-CP-002 | PATCH /configs updates mode | PATCH /configs `{"mode":"rule"}` | 204 No Content | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | — | — |
+| BHV-CP-002 | PATCH /configs updates mode | PATCH /configs `{"mode":"rule"}` | 204 No Content | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_clash_mode_rule_switch_via_socks` | — | — |
 | BHV-CP-003 | GET /proxies lists groups+members | GET /proxies | 200 + JSON with `proxies` map | HTTP | `p0_clash_api_contract`, `p1_gui_proxy_switch_replay`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-007 |
 | BHV-CP-004 | PUT /proxies/{group} switches active | PUT /proxies/{group} `{"name":"..."}` | 204 + selector.now updated | HTTP | `p1_gui_proxy_switch_replay` | — | DIV-M-007 |
 | BHV-CP-005 | GET /proxies/{name}/delay tests latency | GET /proxies/{name}/delay?timeout=N | 200 + `{"delay": ms}` or timeout | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_proxy_delay_replay`, `p1_gui_group_delay_replay` | — | DIV-M-009 |
@@ -133,6 +133,10 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-DP-023 | port_range matches destination interval | Request inside `start:end` range | Matched outbound; outside range → final | Traffic | `p1_port_range_rule_via_socks` | — | — |
 | BHV-DP-024 | domain_regex matches FQDN | Request matching configured regex | Matched outbound; non-match → final | Traffic | `p1_domain_regex_rule_via_socks` | — | — |
 | BHV-DP-025 | source_ip_cidr matches client address | SOCKS client source inside CIDR | Matched outbound; source outside CIDR → final | Traffic | `p1_source_ip_cidr_rule_via_socks` | — | — |
+| BHV-DP-026 | local source rule_set matches domain | Domain present in a local source JSON rule set | Matched outbound; non-member → final | Traffic | `p1_local_rule_set_domain_via_socks` | — | — |
+| BHV-DP-027 | logical AND honors nested invert | AND sub-rules with an inverted domain sub-rule | Composite match → outbound; AND/invert miss → final | Traffic | `p1_logical_and_invert_rule_via_socks` | — | — |
+| BHV-DP-028 | inbound tag selects route | Same destination through two tagged inbounds | Matching inbound → outbound; other inbound → final | Traffic | `p1_inbound_rule_via_socks` | — | — |
+| BHV-DP-029 | clash_mode tracks runtime mode | Traffic before/after PATCH /configs mode changes | Global match → outbound; Rule mode → final | Traffic | `p1_clash_mode_rule_switch_via_socks` | — | DIV-M-006 |
 
 ### DP.4: DNS
 
@@ -155,7 +159,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-LC-004 | PATCH /configs mode switch | PATCH /configs `{"mode":"..."}` | Mode updated, 204 | HTTP | `p0_clash_api_contract_strict` | — | DIV-M-006 |
+| BHV-LC-004 | PATCH /configs mode switch | PATCH /configs `{"mode":"..."}` | Mode updated, 204 | HTTP | `p0_clash_api_contract_strict`, `p1_clash_mode_rule_switch_via_socks` | — | DIV-M-006 |
 | BHV-LC-005 | Inbound hot-reload on config change | Config file update + signal | Inbound rebind without restart | — | `p1_inbound_hot_reload_sighup` | — | — |
 | BHV-LC-006 | State preservation across reload | Reload signal | Connections/proxy state preserved | — | `p1_selector_switch_traffic_replay` | — | — |
 
@@ -458,7 +462,7 @@ gate).
 | DIV-M-003 | COSMETIC | Shutdown grace period: Rust configurable, Go fixed 30s. | BHV-LC-007 | No oracle action (not observed in API) |
 | DIV-M-004 | COSMETIC | /connections WS: Rust hardcodes 1s push interval, Go uses `?interval=` param. | BHV-CP-010 | `tolerate_counter_jitter: true` for connection counts |
 | DIV-M-005 | COSMETIC | /dns/query response: Rust returns simplified JSON vs Go's full dig-style output. | BHV-CP-021 | `ignore_http_paths: ["/dns/query*"]` |
-| DIV-M-006 | COSMETIC | `/configs` payload normalization still differs in mode casing, mode-list, and exposed port fields under strict self-managed configs. | BHV-CP-001, BHV-LC-004 | `ignore_http_paths: ["/configs"]` |
+| DIV-M-006 | COSMETIC | `/configs` payload normalization still differs in mode casing, mode-list, and exposed port fields under strict self-managed configs. | BHV-CP-001, BHV-LC-004, BHV-DP-029 | `ignore_http_paths: ["/configs"]` |
 | DIV-M-007 | COSMETIC | `/proxies` inventory differs because Rust injects synthetic entries and richer group metadata than Go. | BHV-CP-003, BHV-CP-004 | `ignore_http_paths: ["/proxies"]` |
 | DIV-M-008 | COSMETIC | `/connections` HTTP snapshot includes runtime/platform-specific `memory` values; Rust returns 0 on non-Linux. | BHV-CP-006 | `ignore_http_paths: ["/connections"]` |
 | DIV-M-009 | COSMETIC | `/proxies/{name}/delay` exact millisecond values are timing-sensitive across kernels even when status is consistent. | BHV-CP-005 | Path-specific `ignore_http_paths` until numeric tolerance exists |
@@ -483,7 +487,7 @@ gate).
 
 | Tier | Target | Cases | Cumulative Both | Projected Coverage |
 |------|--------|-------|-----------------|-------------------|
-| Current | Expanded routing-rule breadth | 49 | 49 / 110 | 93.7% (59/63 BHV) |
+| Current | Expanded routing-rule breadth | 53 | 53 / 114 | 94.0% (63/67 BHV) |
 | T1 Immediate (Completed) | GUI critical path strict | +0 | 31 / 95 | 92.9% (52/56 BHV) |
 | T2 Near-term (Promoted) | Coverage-neutral strict promotions | +3 | 30 / 92 | 92.9% (52/56 BHV) |
 | T3 | CLOSED — SV.1 reclassified as harness-only | — | — | — |
@@ -550,6 +554,10 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 34 | `p1_port_range_rule_via_socks` | both | E2 | BHV-DP-023 | New on 2026-07-21: canonical `start:end` destination range; Rust parser fixed to accept Go colon/open-bound syntax. Both kernels identical (inside=true / outside=false). |
 | 35 | `p1_domain_regex_rule_via_socks` | both | E2 | BHV-DP-024 | New on 2026-07-21: `^localhost$`→direct, `nope.invalid`→final block. Both kernels identical. |
 | 36 | `p1_source_ip_cidr_rule_via_socks` | both | E3 | BHV-DP-025 | New on 2026-07-21: IPv4 loopback client source matches `127.0.0.1/32`; IPv6 loopback source misses. Rust SOCKS TCP now carries peer source metadata, and IPv6 listen normalization is bracket-correct. Both kernels identical. |
+| 37 | `p1_local_rule_set_domain_via_socks` | both | E4 | BHV-DP-026 | New on 2026-07-22: local source JSON `rule_set` routes `localhost` to direct and a non-member to final block. Rust now rejects unreadable local rule-set files instead of silently omitting them. |
+| 38 | `p1_logical_and_invert_rule_via_socks` | both | E4 | BHV-DP-027 | New on 2026-07-22: logical AND hit/miss plus nested default-rule invert true/false. Rust now applies invert to default rules and rejects malformed logical type/mode/empty rules. |
+| 39 | `p1_inbound_rule_via_socks` | both | E2 | BHV-DP-028 | New on 2026-07-22: two SOCKS inbounds target the same echo; only the matching inbound tag routes direct. |
+| 40 | `p1_clash_mode_rule_switch_via_socks` | both | E4 | BHV-DP-029 | New on 2026-07-22: default Rule blocks, PATCH Global routes direct, PATCH Rule blocks again. Rust schema-v2 lowering now preserves `clash_mode` instead of compiling an empty match-all rule. |
 
 ### T4: Long-term — CLOSED (2026-07-18)
 
@@ -596,9 +604,9 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 44.5% (49/110) |
-| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 93.7% (59/63) |
-| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 77.8% (49/63) |
+| Both-mode case ratio | both cases / total cases | 46.5% (53/114) |
+| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 94.0% (63/67) |
+| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 79.1% (53/67) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
 | GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |
 | MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 55.6% (5/9) |
@@ -612,10 +620,10 @@ These cases should **never** be promoted to `kernel_mode: both`:
 > denominator (the old 56 + 4 SV.1 basis); its "Current 45/60 (75.0%)" row is superseded and
 > contradicts the authoritative Current Metrics above. All S5 tiers are delivered/closed (see
 > S5), so a per-tier projection is obsolete and no mechanical per-tier recompute is meaningful
-> for closed tiers. **Authoritative current coverage = `93.7% (59/63)`** (Current Metrics
+> for closed tiers. **Authoritative current coverage = `94.0% (63/67)`** (Current Metrics
 > above; S1). No REALITY tier-3 BHV is added to the denominator.
-> **Note on the `/63`:** the current denominator is `56 BHV + 7 routing-rule BHVs`
-> (DP-019…025, added 2026-07-21, each both-covered) — a different basis from the retired
+> **Note on the `/67`:** the current denominator is `56 BHV + 11 routing-rule BHVs`
+> (DP-019…029, added 2026-07-21/22, each both-covered) — a different basis from the retired
 > pre-2026-03-16 `56 + 4 SV.1` `/60`. The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC) are unchanged.
 
 ---

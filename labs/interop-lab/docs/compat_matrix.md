@@ -5,7 +5,7 @@
 | Surface | 语义目标 | Case ID | Env Class | 状态 |
 | --- | --- | --- | --- | --- |
 | `GET /configs` | 启动配置读取 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_full_boot_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_full_boot_replay` = both) |
-| `PATCH /configs` | 运行模式切换 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both) |
+| `PATCH /configs` | 运行模式切换 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_clash_mode_rule_switch_via_socks` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_clash_mode_rule_switch_via_socks` = both) |
 | `GET /proxies` | 代理列表展示 | `p0_clash_api_contract` / `p0_clash_api_contract_strict` / `p1_gui_proxy_switch_replay` / `p1_gui_full_boot_replay` / `p1_gui_full_session_replay` | `env_limited`/`strict` | implemented (`p0_clash_api_contract_strict` = both, `p1_gui_proxy_switch_replay` = both, `p1_gui_full_boot_replay` = both, `p1_gui_full_session_replay` = both) |
 | `GET /proxies` (repeated p95) | 重复 API 调用响应延迟 p95 合约 | `p0_clash_api_contract_strict` | `strict` | implemented (`kernel_mode: both`) |
 | `PUT /proxies/{group}` | selector 切换 + reload 后保持选中态 | `p1_gui_proxy_switch_replay` / `p1_selector_switch_traffic_replay` | `strict` | implemented (`p1_gui_proxy_switch_replay` = both, `p1_selector_switch_traffic_replay` = both) |
@@ -74,6 +74,10 @@
 | Port-range routing via SOCKS | direct inside `start:end` | final block outside range | — | — | `p1_port_range_rule_via_socks` (both, BHV-DP-023) |
 | Domain-regex routing via SOCKS | direct on regex match | final block on miss | — | — | `p1_domain_regex_rule_via_socks` (both, BHV-DP-024) |
 | Source-IP-CIDR routing via SOCKS | IPv4 loopback source → direct | IPv6 loopback source → final block | — | — | `p1_source_ip_cidr_rule_via_socks` (both, BHV-DP-025) |
+| Local source rule-set routing via SOCKS | domain in local source set → direct | non-member → final block | — | — | `p1_local_rule_set_domain_via_socks` (both, BHV-DP-026) |
+| Logical AND + invert routing via SOCKS | AND/nested-invert match → direct | logical miss/invert false → final block | — | — | `p1_logical_and_invert_rule_via_socks` (both, BHV-DP-027) |
+| Inbound-tag routing via SOCKS | matching inbound tag → direct | second inbound tag → final block | — | — | `p1_inbound_rule_via_socks` (both, BHV-DP-028) |
+| Clash-mode routing via SOCKS | Global mode → direct; Rule mode → final block | PATCH mode transitions | — | — | `p1_clash_mode_rule_switch_via_socks` (both, BHV-DP-029) |
 | Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |

@@ -164,6 +164,7 @@ fn parse_rule_entry(val: &Value) -> RuleIR {
         r.default_interface_address =
             extract_string_list(condition_obj.get("default_interface_address")).unwrap_or_default();
         r.preferred_by = extract_string_list(condition_obj.get("preferred_by")).unwrap_or_default();
+        r.clash_mode = extract_string_list(condition_obj.get("clash_mode")).unwrap_or_default();
         r.query_type = extract_string_list(condition_obj.get("query_type")).unwrap_or_default();
 
         r.not_domain = extract_string_list(obj.get("not_domain")).unwrap_or_default();
@@ -837,6 +838,26 @@ mod tests {
         assert_eq!(rule.rules[0].domain, vec!["a.com".to_string()]);
         assert_eq!(rule.rules[1].process_name, vec!["curl".to_string()]);
         assert_eq!(rule.rules[1].outbound.as_deref(), Some("proxy"));
+    }
+
+    #[test]
+    fn route_clash_mode_rule_lowering_preserves_match_condition() {
+        let doc = json!({
+            "schema_version": 2,
+            "route": {
+                "rules": [{
+                    "clash_mode": "Global",
+                    "outbound": "direct"
+                }],
+                "final": "block"
+            }
+        });
+
+        let ir = to_ir_v1(&doc);
+        assert_eq!(ir.route.rules.len(), 1);
+        assert_eq!(ir.route.rules[0].clash_mode, vec!["Global"]);
+        assert_eq!(ir.route.rules[0].outbound.as_deref(), Some("direct"));
+        assert_eq!(ir.route.final_outbound.as_deref(), Some("block"));
     }
 
     #[test]

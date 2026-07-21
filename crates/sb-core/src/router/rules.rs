@@ -326,17 +326,28 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
 
     fn try_from(ir: &sb_config::ir::RuleIR) -> Result<Self, Self::Error> {
         let rule_type = match ir.rule_type.as_deref().unwrap_or("unresolved") {
+            "" | "default" | "unresolved" => RuleType::Default,
             "logical" => RuleType::Logical,
-            _ => RuleType::Default,
+            other => return Err(format!("unknown route rule type: {other}")),
         };
 
-        let mode = match ir.mode.as_deref().unwrap_or("unresolved") {
-            "or" => LogicalMode::Or,
+        let mode = match ir.mode.as_deref() {
+            Some("and") => LogicalMode::And,
+            Some("or") => LogicalMode::Or,
+            Some(other) if rule_type == RuleType::Logical => {
+                return Err(format!("unknown logical route rule mode: {other}"));
+            }
+            None if rule_type == RuleType::Logical => {
+                return Err("logical route rule requires mode (and/or)".to_string());
+            }
             _ => LogicalMode::And,
         };
 
         let mut sub_rules = Vec::new();
         if rule_type == RuleType::Logical {
+            if ir.rules.is_empty() {
+                return Err("logical route rule requires at least one sub-rule".to_string());
+            }
             for sub_ir in &ir.rules {
                 sub_rules.push(CompositeRule::try_from(sub_ir.as_ref())?);
             }
@@ -415,17 +426,6 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             network_type: ir.network_type.clone(),
             network_is_expensive: ir.network_is_expensive,
             network_is_constrained: ir.network_is_constrained,
-            // Action-related fields not mapped here (descision logic handles them or we assume decision is enough)
-            // But wait, what about invert? RuleIR has invert. CompositeRule doesn't seem to support top-level invert?
-            // Existing matchers have negation lists. CompositeRule logic is: if negation matches -> false; all positive matches -> true.
-            // If invert is true, result = !result.
-            // CompositeRule matches() returns bool.
-
-            // Wait, does CompositeRule have an `invert` field? It does NOT.
-            // RuleIR's `invert` field inverts the FINAL result.
-            // We should add `invert` to CompositeRule or handle it in `matches`.
-            // Let's add `invert` to CompositeRule.
-            // ...
             outbound_tag: ir.outbound_tag.clone(),
             user: ir.user.clone(),
             user_id: ir.user_id.clone(),
@@ -884,13 +884,21 @@ pub struct RouteCtx<'a> {
 
 impl CompositeRule {
     pub fn matches(&self, ctx: &RouteCtx) -> bool {
+        let result = self.matches_inner(ctx);
+        if self.invert {
+            !result
+        } else {
+            result
+        }
+    }
+
+    fn matches_inner(&self, ctx: &RouteCtx) -> bool {
         // Handle logical rules
         if self.rule_type == RuleType::Logical {
-            let result = match self.mode {
+            return match self.mode {
                 LogicalMode::And => self.sub_rules.iter().all(|r| r.matches(ctx)),
                 LogicalMode::Or => self.sub_rules.iter().any(|r| r.matches(ctx)),
             };
-            return if self.invert { !result } else { result };
         }
 
         // 1. Negation checks (if any match, rule fails)
@@ -2619,5 +2627,89 @@ mod tests {
             parse_port_ranges(&["49152:".into()]),
             vec![(49152, u16::MAX)]
         );
+    }
+
+    #[test]
+    fn composite_default_invert_negates_match_result() {
+        let rule = RuleIR {
+            domain: vec!["blocked.invalid".into()],
+            invert: true,
+            outbound: Some("direct".into()),
+            ..Default::default()
+        };
+        let compiled = CompositeRule::try_from(&rule).expect("compile inverted rule");
+
+        assert!(!compiled.matches(&RouteCtx {
+            domain: Some("blocked.invalid"),
+            ..Default::default()
+        }));
+        assert!(compiled.matches(&RouteCtx {
+            domain: Some("other.invalid"),
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn composite_logical_and_honors_nested_invert() {
+        let rule = RuleIR {
+            rule_type: Some("logical".into()),
+            mode: Some("and".into()),
+            rules: vec![
+                Box::new(RuleIR {
+                    port: vec!["18898".into()],
+                    ..Default::default()
+                }),
+                Box::new(RuleIR {
+                    domain: vec!["blocked.invalid".into()],
+                    invert: true,
+                    ..Default::default()
+                }),
+            ],
+            outbound: Some("direct".into()),
+            ..Default::default()
+        };
+        let compiled = CompositeRule::try_from(&rule).expect("compile logical rule");
+
+        assert!(compiled.matches(&RouteCtx {
+            domain: Some("localhost"),
+            port: Some(18898),
+            ..Default::default()
+        }));
+        assert!(!compiled.matches(&RouteCtx {
+            domain: Some("blocked.invalid"),
+            port: Some(18898),
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn composite_rejects_malformed_logical_rules() {
+        for rule in [
+            RuleIR {
+                rule_type: Some("logical".into()),
+                mode: None,
+                ..Default::default()
+            },
+            RuleIR {
+                rule_type: Some("logical".into()),
+                mode: Some("xor".into()),
+                rules: vec![Box::new(RuleIR::default())],
+                ..Default::default()
+            },
+            RuleIR {
+                rule_type: Some("logical".into()),
+                mode: Some("and".into()),
+                ..Default::default()
+            },
+            RuleIR {
+                rule_type: Some("future".into()),
+                ..Default::default()
+            },
+        ] {
+            assert!(
+                CompositeRule::try_from(&rule).is_err(),
+                "rule accepted: {rule:?}"
+            );
+        }
     }
 }

@@ -6,6 +6,26 @@
 > Other docs point here, not copy.
 
 ---
+## Resume (2026-07-22) - dual-kernel routing-rule coverage batch 3 +4 BHV DONE
+
+- Added strict both-kernel coverage for local source `rule_set` (BHV-DP-026), logical AND with
+  nested `invert` (BHV-DP-027), two-inbound tag routing (BHV-DP-028), and runtime `clash_mode`
+  switching through `PATCH /configs` (BHV-DP-029). Each case proves direct match and final-block miss.
+- Red-team comparison with Go closed four Rust production gaps: default-rule invert was ignored;
+  malformed logical type/mode/empty groups were accepted; unreadable local rule-set files silently
+  disappeared during startup; schema-v2 lowering discarded `clash_mode` into an empty match-all rule.
+  Bridge construction now shares one router handle and reports router-build failures as startup errors.
+- Evidence: `p1_{local_rule_set_domain,logical_and_invert_rule,inbound_rule,clash_mode_rule_switch}_via_socks`;
+  final PASS run IDs `20260721T190415Z-09961c58-d668-4859-8736-183fbd73b2c6`,
+  `20260721T190428Z-5aae1c39-a9f3-4c6e-b875-9a92205bb89a`,
+  `20260721T190508Z-cc9ac821-dd58-4873-85df-b71b5e322aa6`, and
+  `20260721T190519Z-ce4378d9-028d-4b8f-835a-653498aabc67`; all S4-normalized diffs clean.
+- Coverage moved **59/63 → 63/67 (93.7% → 94.0%)**; inventory is **53 both / 114 total**.
+  The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC-003) remain unchanged.
+- Gates: focused regressions, inventory, Go/Rust config checks, app/interop builds, consistency,
+  boundaries, fmt, and diff-check PASS.
+
+---
 ## Resume (2026-07-21) - dual-kernel routing-rule coverage batch 2 +3 BHV DONE
 
 - Added strict both-kernel coverage for `port_range` (BHV-DP-023), `domain_regex`
@@ -203,29 +223,10 @@
 - Scope: VMess TCP AEAD dataplane only. Non-goals: legacy aes-128-cfb (alterId>0), canonical
   v1.mux.cool CommandMux (repo keeps yamux-outer), UDP/packet.
 
-## Resume (2026-07-14) - Linux Rust 1.92 workspace build RESTORED
-
-- Linux all-feature compile gaps closed across socket2, libc ABI, tun 0.8, zbus 3,
-  routing feature gates, and app hardening.
-- Added local Rust 1.92 Debian compile gate for x86_64 GNU + aarch64 GNU; no workflow
-  automation. Both architecture checks, Linux adapter/unit regressions, TCP Fast Open
-  socket-option tests, app bench-I/O contract, formatting, boundaries, and consistency pass.
-- Scope: Linux portability/quality only; no dual-kernel parity or REALITY movement.
-
-## Resume (2026-07-13, compressed) - three closed lines
-
-- **local Docker skill startup hook DONE**: root `AGENTS.md` + `init.md` require startup load of
-  `singbox-docker-lab`; consistency gate locks both pointers. Detail: `log.md`.
-- **VLESS multiplex E2E routing lifecycle FIXED** (class B portable bug): VLESS inbound routes via
-  injected `RouterHandle::decide_with_meta`; five-case mux E2E PASS. Detail: `log.md`.
-- **REALITY Chrome-current drift + extension-order tail CLOSED locally**: full Chrome 150 profile,
-  BoringSSL reverse-Fisher-Yates order, canary `reality_chrome_canary/`. No `52/56` movement.
-  Superseded by later active-probing/ServerHello closure above. Detail: `archive/reality_summary.md`.
-
 ## Strategic State
 
 Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
-(non-gating). Parity **52/56 BHV (92.9%) unchanged** — REALITY has no S3 BHV-ID, not in the
+(non-gating). Parity **63/67 BHV (94.0%) current** — REALITY has no S3 BHV-ID, not in the
 S1/S6 denominator. `DEV-REALITY-01` local implementation line is CLOSED: Chrome-current profile,
 BoringSSL ordering, FoxIO JA4 cross-check, active-probing relay, canonical first-flight/session_id,
 inbound Vision, production server, reverse Go-client interop, and success-path target ServerHello

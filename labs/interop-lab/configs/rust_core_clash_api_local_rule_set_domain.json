@@ -1,0 +1,47 @@
+{
+  "log": {
+    "level": "info"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19290",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1:11801"
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "name": "direct"
+    },
+    {
+      "type": "block",
+      "name": "block"
+    }
+  ],
+  "route": {
+    "rules": [
+      {
+        "rule_set": [
+          "local-domains"
+        ],
+        "outbound": "direct"
+      }
+    ],
+    "rule_set": [
+      {
+        "tag": "local-domains",
+        "type": "local",
+        "format": "source",
+        "path": "labs/interop-lab/fixtures/routing/local_domains.json"
+      }
+    ],
+    "final": "block"
+  }
+}

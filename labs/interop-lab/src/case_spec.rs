@@ -798,7 +798,7 @@ gui_sequence:
     fn repository_cases_validate_against_s4_registry() {
         let cases_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("cases");
         let cases = load_cases(&cases_dir).expect("repository cases must validate");
-        assert_eq!(cases.len(), 110);
+        assert_eq!(cases.len(), 114);
     }
 
     #[test]

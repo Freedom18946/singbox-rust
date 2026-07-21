@@ -99,63 +99,44 @@ pub fn publish_runtime_registries(br: &Bridge) {
 fn router_handle_from_ir(
     cfg: &ConfigIR,
     runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
-) -> Arc<RouterHandle> {
+) -> Result<Arc<RouterHandle>, String> {
     // Use direct IR builder to support complex/logical rules (P1 parity)
-    match crate::router::builder::build_index_from_ir(cfg).map_err(crate::router::BuildError::Rule)
-    {
-        Ok(idx) => {
-            let mut handle =
-                RouterHandle::from_index_with_options(idx.clone(), runtime_options.clone());
+    let idx = crate::router::builder::build_index_from_ir(cfg)
+        .map_err(|error| format!("router index build failed: {error}"))?;
+    let mut handle = RouterHandle::from_index_with_options(idx.clone(), runtime_options.clone());
 
-            // Populate RuleSetDb
-            if !cfg.route.rule_set.is_empty() {
-                let db = crate::router::rule_set::RuleSetDb::new();
-                for rs in &cfg.route.rule_set {
-                    if let Some(path) = &rs.path {
-                        let _ = db.add_rule_set(rs.tag.clone(), path, &rs.format);
-                    }
-                }
-                handle = handle.with_rule_set_db(Arc::new(db));
+    // Populate local rule sets before accepting runtime startup. Go treats an
+    // unreadable local source as fatal; silently omitting it changes routing.
+    if !cfg.route.rule_set.is_empty() {
+        let db = crate::router::rule_set::RuleSetDb::new();
+        for rule_set in &cfg.route.rule_set {
+            if let Some(path) = &rule_set.path {
+                db.add_rule_set(rule_set.tag.clone(), path, &rule_set.format)
+                    .map_err(|error| {
+                        format!(
+                            "failed to load local rule set '{}' from '{}': {error}",
+                            rule_set.tag, path
+                        )
+                    })?;
             }
-
-            // Attach GeoIP/Geosite databases when paths are provided in RouteIR
-            // Chain the operations properly since both methods consume self
-            let mut handle = handle;
-            if let Some(path) = &cfg.route.geoip_path {
-                handle = handle.with_geoip_file(path).unwrap_or_else(|e| {
-                    tracing::warn!(
-                        target: "sb_core::adapter",
-                        error = %e,
-                        path = %path,
-                        "failed to load GeoIP database from route.geoip_path"
-                    );
-                    RouterHandle::from_index_with_options(idx.clone(), runtime_options.clone())
-                });
-            }
-
-            if let Some(path) = &cfg.route.geosite_path {
-                handle = handle.with_geosite_file(path).unwrap_or_else(|e| {
-                    tracing::warn!(
-                        target: "sb_core::adapter",
-                        error = %e,
-                        path = %path,
-                        "failed to load Geosite database from route.geosite_path"
-                    );
-                    RouterHandle::from_index_with_options(idx.clone(), runtime_options.clone())
-                });
-            }
-
-            Arc::new(handle)
         }
-        Err(e) => {
-            tracing::warn!(
-                target: "sb_core::adapter",
-                error = %e,
-                "router index build from ConfigIR failed; using injected runtime rules"
-            );
-            Arc::new(RouterHandle::from_options(runtime_options))
-        }
+        handle = handle.with_rule_set_db(Arc::new(db));
     }
+
+    // Attach GeoIP/Geosite databases when paths are provided in RouteIR.
+    if let Some(path) = &cfg.route.geoip_path {
+        handle = handle.with_geoip_file(path).map_err(|error| {
+            format!("failed to load GeoIP database from route.geoip_path '{path}': {error}")
+        })?;
+    }
+
+    if let Some(path) = &cfg.route.geosite_path {
+        handle = handle.with_geosite_file(path).map_err(|error| {
+            format!("failed to load Geosite database from route.geosite_path '{path}': {error}")
+        })?;
+    }
+
+    Ok(Arc::new(handle))
 }
 
 #[allow(dead_code)]
@@ -813,10 +794,22 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
     let mut br = Bridge::new(context);
     let ctx_registry = crate::context::ContextRegistry::from(&br.context);
 
-    // Initialize RouterHandle and attach to Bridge
+    // Initialize one shared RouterHandle for bridge, endpoints, and inbounds.
     let router_options = Arc::new(br.context.runtime_options.router.clone());
-    let handle = router_handle_from_ir(cfg, router_options.clone());
-    br.router = Some(handle);
+    let router_handle = match router_handle_from_ir(cfg, router_options.clone()) {
+        Ok(handle) => handle,
+        Err(error) => {
+            let message = format!("router configuration is invalid: {error}");
+            br.startup_errors.push(message.clone());
+            tracing::error!(
+                target: "sb_core::adapter",
+                error = %error,
+                "router build failed; refusing runtime startup"
+            );
+            Arc::new(RouterHandle::from_options(router_options))
+        }
+    };
+    br.router = Some(router_handle.clone());
     br.experimental = cfg.experimental.clone();
 
     // Step 1 & 2: Outbounds and selectors
@@ -825,8 +818,6 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
     // Extract dependency graph from IR (L2.9)
     br.outbound_deps = crate::outbound::manager::compute_outbound_deps(&cfg.outbounds);
     let outbound_handle = outbound_registry_handle_from_bridge(&br);
-
-    let router_handle = router_handle_from_ir(cfg, router_options);
 
     let endpoint_handler = {
         let stats = br.context.v2ray_server.as_ref().and_then(|s| s.stats());
@@ -971,11 +962,11 @@ mod tests {
     use super::{
         add_endpoint_with_outbound, outbound_registry_handle_from_bridge,
         parse_optional_inbound_duration, parse_optional_outbound_duration,
-        parse_optional_outbound_ipv4_addr, parse_optional_outbound_ipv6_addr, to_inbound_param,
-        to_outbound_param,
+        parse_optional_outbound_ipv4_addr, parse_optional_outbound_ipv6_addr,
+        router_handle_from_ir, to_inbound_param, to_outbound_param,
     };
     use crate::endpoint::{Endpoint, StartStage};
-    use sb_config::ir::{InboundIR, InboundType, OutboundIR, OutboundType};
+    use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RuleSetIR};
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -1050,6 +1041,30 @@ mod tests {
         fn close(&self) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             Ok(())
         }
+    }
+
+    #[test]
+    fn router_build_rejects_missing_local_rule_set() {
+        let mut config = ConfigIR::default();
+        config.route.rule_set.push(RuleSetIR {
+            tag: "missing-local".to_string(),
+            ty: "local".to_string(),
+            format: "source".to_string(),
+            path: Some("target/does-not-exist/routing-rule-set.json".to_string()),
+            ..RuleSetIR::default()
+        });
+
+        let error = router_handle_from_ir(
+            &config,
+            Arc::new(crate::runtime_options::RouterRuntimeOptions::default()),
+        )
+        .expect_err("missing local rule set must reject router startup");
+
+        assert!(error.contains("missing-local"), "unexpected error: {error}");
+        assert!(
+            error.contains("routing-rule-set.json"),
+            "unexpected error: {error}"
+        );
     }
 
     #[tokio::test]

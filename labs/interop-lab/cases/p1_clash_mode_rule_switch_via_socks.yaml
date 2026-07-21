@@ -1,0 +1,101 @@
+id: p1_clash_mode_rule_switch_via_socks
+title: clash mode patch changes routing outcome on both kernels
+priority: p1
+kernel_mode: both
+env_class: strict
+tags:
+  - control-plane
+  - dataplane
+  - routing
+  - clash-mode
+  - dual_core
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args:
+      - -c
+      - labs/interop-lab/configs/rust_core_clash_api_clash_mode_rule.json
+      - run
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.13.13/sing-box
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/go_core_clash_api_clash_mode_rule.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence:
+  - kind: http
+    name: version
+    method: GET
+    path: /version
+    expect_status: 200
+upstream_topology:
+  - name: local_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:18897
+traffic_plan:
+  - kind: tcp_round_trip
+    name: default_rule_mode_blocked
+    addr: "localhost:18897"
+    payload: should-be-blocked
+    proxy: socks5://127.0.0.1:11801
+  - kind: api_http
+    name: switch_to_global
+    method: PATCH
+    path: /configs
+    body:
+      mode: Global
+    expect_status: 204
+  - kind: tcp_round_trip
+    name: global_mode_direct
+    addr: "localhost:18897"
+    payload: global-direct
+    proxy: socks5://127.0.0.1:11801
+  - kind: api_http
+    name: switch_to_rule
+    method: PATCH
+    path: /configs
+    body:
+      mode: Rule
+    expect_status: 204
+  - kind: tcp_round_trip
+    name: restored_rule_mode_blocked
+    addr: "localhost:18897"
+    payload: should-be-blocked-again
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - key: http.version.status
+    op: eq
+    expected: 200
+  - key: traffic.default_rule_mode_blocked.success
+    op: eq
+    expected: false
+  - key: traffic.switch_to_global.success
+    op: eq
+    expected: true
+  - key: traffic.global_mode_direct.success
+    op: eq
+    expected: true
+  - key: traffic.switch_to_rule.success
+    op: eq
+    expected: true
+  - key: traffic.restored_rule_mode_blocked.success
+    op: eq
+    expected: false
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths:
+    - /version
+    - /configs
