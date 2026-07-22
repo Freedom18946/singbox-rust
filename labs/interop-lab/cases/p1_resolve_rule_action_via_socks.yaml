@@ -1,0 +1,58 @@
+id: p1_resolve_rule_action_via_socks
+title: resolve action feeds later destination IP rule
+priority: p1
+kernel_mode: both
+env_class: strict
+tags: [dataplane, routing, resolve-action, dual_core]
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args: [-c, labs/interop-lab/configs/rust_core_clash_api_resolve_rule_action.json, run]
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.13.13/sing-box
+    args: [run, -c, labs/interop-lab/configs/go_core_clash_api_resolve_rule_action.json]
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence:
+  - kind: http
+    name: version
+    method: GET
+    path: /version
+    expect_status: 200
+upstream_topology:
+  - { name: resolve_match_tcp, kind: tcp_echo, bind: "127.0.0.1:18897" }
+  - { name: resolve_miss_tcp, kind: tcp_echo, bind: "127.0.0.1:18898" }
+  - { name: direct_control_tcp, kind: tcp_echo, bind: "127.0.0.1:18899" }
+traffic_plan:
+  - kind: tcp_round_trip
+    name: resolve_then_ip_match
+    addr: "localhost:18897"
+    payload: resolve-ip-match
+    proxy: socks5://127.0.0.1:11801
+  - kind: tcp_round_trip
+    name: resolve_direct_control
+    addr: "127.0.0.1:18899"
+    payload: resolve-control
+    proxy: socks5://127.0.0.1:11801
+  - kind: tcp_round_trip
+    name: resolved_ip_port_miss_blocked
+    addr: "localhost:18898"
+    payload: should-be-blocked
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - { key: http.version.status, op: eq, expected: 200 }
+  - { key: traffic.resolve_then_ip_match.success, op: eq, expected: true }
+  - { key: traffic.resolve_direct_control.success, op: eq, expected: true }
+  - { key: traffic.resolved_ip_port_miss_blocked.success, op: eq, expected: false }
+  - { key: errors.count, op: eq, expected: 0 }
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths: [/version]

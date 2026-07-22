@@ -1,0 +1,58 @@
+id: p1_direct_rule_action_via_socks
+title: direct route action continues to final outbound in Go 1.13.13
+priority: p1
+kernel_mode: both
+env_class: strict
+tags: [dataplane, routing, direct-action, dual_core]
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args: [-c, labs/interop-lab/configs/rust_core_clash_api_direct_rule_action.json, run]
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.13.13/sing-box
+    args: [run, -c, labs/interop-lab/configs/go_core_clash_api_direct_rule_action.json]
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence:
+  - kind: http
+    name: version
+    method: GET
+    path: /version
+    expect_status: 200
+upstream_topology:
+  - { name: direct_action_fallthrough_tcp, kind: tcp_echo, bind: "127.0.0.1:18897" }
+  - { name: final_block_tcp, kind: tcp_echo, bind: "127.0.0.1:18898" }
+  - { name: route_control_tcp, kind: tcp_echo, bind: "127.0.0.1:18899" }
+traffic_plan:
+  - kind: tcp_round_trip
+    name: direct_action_continues_to_final
+    addr: "127.0.0.1:18897"
+    payload: direct-action
+    proxy: socks5://127.0.0.1:11801
+  - kind: tcp_round_trip
+    name: route_control_direct
+    addr: "127.0.0.1:18899"
+    payload: route-control
+    proxy: socks5://127.0.0.1:11801
+  - kind: tcp_round_trip
+    name: direct_action_miss_blocked
+    addr: "127.0.0.1:18898"
+    payload: should-be-blocked
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - { key: http.version.status, op: eq, expected: 200 }
+  - { key: traffic.direct_action_continues_to_final.success, op: eq, expected: false }
+  - { key: traffic.route_control_direct.success, op: eq, expected: true }
+  - { key: traffic.direct_action_miss_blocked.success, op: eq, expected: false }
+  - { key: errors.count, op: eq, expected: 0 }
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths: [/version]

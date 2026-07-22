@@ -71,6 +71,10 @@
 | `p1_auth_user_rule_via_socks` | SOCKS TCP 认证用户名大小写精确分流 (BHV-DP-035) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_rule_set_source_ip_cidr_via_socks` | rule_set IP CIDR source mode 区分源/目标地址 (BHV-DP-036) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_reject_rule_action_via_socks` | reject action 拒绝命中流量，miss 走 final direct (BHV-DP-037) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_direct_rule_action_via_socks` | Go 1.13.13 direct action 继续到 final block (BHV-DP-038) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_bypass_rule_action_via_socks` | 无 bypass 支持时空 bypass 继续到后续 reject (BHV-DP-039) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_route_options_override_via_socks` | route-options 改写地址/端口并驱动后续规则与拨号 (BHV-DP-040) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_resolve_rule_action_via_socks` | resolve 结果供后续目标 IP 规则匹配 (BHV-DP-041) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_block_outbound_via_socks` | Block outbound 拒绝 SOCKS TCP CONNECT | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
 | `p1_fault_delay_http_via_socks` | upstream delay 超时可观测 | `strict` | implemented |

@@ -147,6 +147,8 @@ impl RouteDecision {
 pub struct RouteCtx<'a> {
     pub host: Option<&'a str>,
     pub ip: Option<std::net::IpAddr>,
+    /// Addresses populated by a non-terminal route `resolve` action.
+    pub resolved_ips: Vec<std::net::IpAddr>,
     pub port: Option<u16>,
     pub transport: Transport,
     pub network: &'a str,
@@ -190,6 +192,7 @@ impl<'a> Default for RouteCtx<'a> {
         Self {
             host: None,
             ip: None,
+            resolved_ips: Vec::new(),
             port: None,
             transport: Transport::Tcp,
             network: "tcp",

@@ -11,11 +11,11 @@
 | Code | Domain | Sub-domains | Behaviors | Both-Covered | Coverage |
 |------|--------|-------------|-----------|--------------|----------|
 | CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 21 | 100.0% |
-| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 37 | 37 | 100.0% |
+| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 41 | 41 | 100.0% |
 | LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 8 | 88.9% |
 | SV | Services | 1 (Provider) | 3 | 0 | 0% |
 | PF | Performance | 3 (Latency / Memory / Startup) | 5 | 5 | 100.0% |
-| **Total** | | **15** | **75** | **71** | **94.7%** |
+| **Total** | | **15** | **79** | **75** | **94.9%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
 > Coverage gaps still cluster in SV (structural) and LC (1 infeasible).
@@ -43,7 +43,7 @@ Maps `diff_report.rs` comparison dimensions to behavior IDs in S3. When a diff f
 > **Subscription dimension deprecated (2026-03-16)**: BHV-SV-001…004 reclassified as harness-only.
 > The subscription diff dimension remains functional in the harness but does not contribute to
 > dual-kernel parity scoring. See S1 reclassification note.
-| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 016, BHV-DP-018 … 037, BHV-PF-001, BHV-PF-002 | `tolerate_counter_jitter`, `counter_jitter_abs` |
+| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 016, BHV-DP-018 … 041, BHV-PF-001, BHV-PF-002 | `tolerate_counter_jitter`, `counter_jitter_abs` |
 | Connections | `connection_mismatches` | connections.count + downloadTotal/uploadTotal | BHV-CP-006, BHV-DP-005 … 009 | `tolerate_counter_jitter` |
 | Memory | `memory_mismatches` | peak RSS ratio (>2x = mismatch) | BHV-PF-003, BHV-PF-004 | — |
 
@@ -145,6 +145,10 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-DP-035 | auth_user matches authenticated SOCKS TCP user exactly | Two valid users differing only by case | Exact user → outbound; other user → final | Traffic | `p1_auth_user_rule_via_socks` | — | — |
 | BHV-DP-036 | rule_set IP CIDR source mode selects source address | Same IPv4 destination from IPv4 and IPv6 SOCKS peers | Source member → outbound; destination-only member → final | Traffic | `p1_rule_set_source_ip_cidr_via_socks` | — | — |
 | BHV-DP-037 | reject route action denies matched connection | Matched and unmatched destination ports | Match rejected; miss → final direct | Traffic | `p1_reject_rule_action_via_socks` | — | — |
+| BHV-DP-038 | direct route action is non-terminal in Go 1.13.13 | Matching direct action before final block | Action continues; final block denies connection | Traffic | `p1_direct_rule_action_via_socks` | — | — |
+| BHV-DP-039 | empty bypass action continues without bypass support | Matching empty bypass before reject | Later reject rule denies connection | Traffic | `p1_bypass_rule_action_via_socks` | — | — |
+| BHV-DP-040 | route-options rewrites destination and continues | Address/port override before IP+port route | Later rule matches rewritten target; dial reaches override | Traffic | `p1_route_options_override_via_socks` | — | — |
+| BHV-DP-041 | resolve action feeds later destination-IP rules | Domain resolve before IP-CIDR route | Resolved IP matches later route; port miss reaches final | Traffic | `p1_resolve_rule_action_via_socks` | — | — |
 
 ### DP.4: DNS
 
@@ -495,7 +499,7 @@ gate).
 
 | Tier | Target | Cases | Cumulative Both | Projected Coverage |
 |------|--------|-------|-----------------|-------------------|
-| Current | Expanded routing-rule breadth | 61 | 61 / 122 | 94.7% (71/75 BHV) |
+| Current | Expanded routing-rule breadth | 65 | 65 / 126 | 94.9% (75/79 BHV) |
 | T1 Immediate (Completed) | GUI critical path strict | +0 | 31 / 95 | 92.9% (52/56 BHV) |
 | T2 Near-term (Promoted) | Coverage-neutral strict promotions | +3 | 30 / 92 | 92.9% (52/56 BHV) |
 | T3 | CLOSED — SV.1 reclassified as harness-only | — | — | — |
@@ -574,6 +578,10 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 46 | `p1_auth_user_rule_via_socks` | both | E4 | BHV-DP-035 | New on 2026-07-22: two valid SOCKS users differing only by case prove Go-exact auth-user matching. Rust now carries multi-user inbound config and authenticated username into both initial and post-sniff route decisions; harness supports RFC 1929 credentials in SOCKS URLs. |
 | 47 | `p1_rule_set_source_ip_cidr_via_socks` | both | E4 | BHV-DP-036 | New on 2026-07-22: IPv4 source matches a local source rule set while IPv6 source misses even though both destinations match its IPv4 CIDR. Rust now separates domain, destination-IP, and source-IP rule-set tags for Go source-mode semantics. |
 | 48 | `p1_reject_rule_action_via_socks` | both | E2 | BHV-DP-037 | New on 2026-07-22: matched destination port is rejected by route action; unmatched port reaches final direct on both kernels. |
+| 49 | `p1_direct_rule_action_via_socks` | both | E4 | BHV-DP-038 | New on 2026-07-23: live Go 1.13.13 and source audit prove `direct` is non-terminal in the route loop; both kernels continue to final block while an explicit route control succeeds (`20260722T204419Z-8f796e28-f2ed-41b9-9568-2c654237fcd8`). |
+| 50 | `p1_bypass_rule_action_via_socks` | both | E4 | BHV-DP-039 | New on 2026-07-23: empty `bypass` on SOCKS, where bypass support is unavailable, continues to a later reject rule; explicit route control stays connected (`20260722T204542Z-d47bd3c4-e82f-4748-988b-3b683062d314`). |
+| 51 | `p1_route_options_override_via_socks` | both | E4 | BHV-DP-040 | New on 2026-07-23: non-terminal route-options rewrites a TEST-NET destination to loopback, updates later IP+port rule matching, and dials the rewritten target (`20260722T204641Z-8e87c9c6-02d1-49c5-8e23-1def894d09ce`). |
+| 52 | `p1_resolve_rule_action_via_socks` | both | E4 | BHV-DP-041 | New on 2026-07-23: default resolve populates destination addresses for a later loopback CIDR rule; a resolved port miss reaches final block (`20260722T204744Z-6b7debce-4f1c-463f-abf8-cd6d9f620010`). |
 
 ### T4: Long-term — CLOSED (2026-07-18)
 
@@ -620,9 +628,9 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 50.0% (61/122) |
-| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 94.7% (71/75) |
-| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 81.3% (61/75) |
+| Both-mode case ratio | both cases / total cases | 51.6% (65/126) |
+| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 94.9% (75/79) |
+| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 82.3% (65/79) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
 | GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |
 | MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 55.6% (5/9) |
@@ -636,10 +644,10 @@ These cases should **never** be promoted to `kernel_mode: both`:
 > denominator (the old 56 + 4 SV.1 basis); its "Current 45/60 (75.0%)" row is superseded and
 > contradicts the authoritative Current Metrics above. All S5 tiers are delivered/closed (see
 > S5), so a per-tier projection is obsolete and no mechanical per-tier recompute is meaningful
-> for closed tiers. **Authoritative current coverage = `94.7% (71/75)`** (Current Metrics
+> for closed tiers. **Authoritative current coverage = `94.9% (75/79)`** (Current Metrics
 > above; S1). No REALITY tier-3 BHV is added to the denominator.
-> **Note on the `/75`:** the current denominator is `56 BHV + 19 routing-rule BHVs`
-> (DP-019…037, added 2026-07-21/22, each both-covered) — a different basis from the retired
+> **Note on the `/79`:** the current denominator is `56 BHV + 23 routing-rule/action BHVs`
+> (DP-019…041, added 2026-07-21/22/23, each both-covered) — a different basis from the retired
 > pre-2026-03-16 `56 + 4 SV.1` `/60`. The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC) are unchanged.
 
 ---

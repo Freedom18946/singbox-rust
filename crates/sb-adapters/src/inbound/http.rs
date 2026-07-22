@@ -77,8 +77,8 @@ use std::{
 static HTTP_ACTIVE: AtomicUsize = AtomicUsize::new(0);
 
 use crate::inbound::connect::{
-    direct_connect_hostport, http_proxy_connect_through_proxy, socks5_connect_through_socks5,
-    ConnectOpts,
+    apply_route_target_options, direct_connect_hostport, http_proxy_connect_through_proxy,
+    socks5_connect_through_socks5, ConnectOpts,
 };
 use crate::outbound::pool_selector::PoolSelector;
 #[cfg(feature = "metrics")]
@@ -664,9 +664,14 @@ where
         inbound_sniff_override: cfg.sniff_override_destination,
         ..Default::default()
     };
-    let meta = cfg.router.decide_with_meta(&route_ctx);
+    let meta = cfg
+        .router
+        .decide_with_meta_resolved(&route_ctx)
+        .await
+        .map_err(anyhow::Error::msg)?;
     let mut rule: Option<String> = meta.rule;
     let mut decision: RDecision = meta.decision;
+    let mut route_options = meta.route_options;
 
     // Handle Decision::Sniff: send 200 early, read initial bytes, sniff, re-decide
     let mut sniff_prefix: Vec<u8> = Vec::new();
@@ -719,9 +724,14 @@ where
                     inbound_tag: cfg.tag.as_deref(),
                     ..Default::default()
                 };
-                let meta2 = cfg.router.decide_with_meta(&route_ctx2);
+                let meta2 = cfg
+                    .router
+                    .decide_with_meta_resolved(&route_ctx2)
+                    .await
+                    .map_err(anyhow::Error::msg)?;
                 decision = meta2.decision;
                 rule = meta2.rule;
+                route_options.merge_from(&meta2.route_options);
                 sniff_prefix = buf;
 
                 // OverrideDestination: replace outbound target with sniffed domain
@@ -746,6 +756,7 @@ where
     } else {
         host.to_string()
     };
+    let (dial_host, port) = apply_route_target_options(&dial_host, port, &route_options);
 
     // Only Direct/Proxy left here; default direct
     // 到这里只剩 Direct/Proxy 两种；默认 direct

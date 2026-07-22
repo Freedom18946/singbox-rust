@@ -1,9 +1,13 @@
 use sb_config::ir::{ConfigIR, RuleAction, RuleIR};
 use sb_core::outbound::RouteTarget;
 use sb_core::router::rules::{CompositeRule, Decision, RouteCtx as RuleRouteCtx};
-use sb_core::router::{router_build_index_from_str, RouteCtx, RouterHandle, Transport};
+use sb_core::router::{
+    router_build_index_from_str, DnsResolve, DnsResult, RouteCtx, RouterHandle, Transport,
+};
 use std::collections::BTreeMap;
+use std::future::Future;
 use std::net::IpAddr;
+use std::pin::Pin;
 use std::time::Duration;
 
 #[test]
@@ -50,6 +54,7 @@ default=unresolved
 #[test]
 fn decide_with_meta_carries_udp_route_action_options() {
     let mut cfg = ConfigIR::default();
+    cfg.route.final_outbound = Some("direct".to_string());
     cfg.route.rules.push(RuleIR {
         action: RuleAction::RouteOptions,
         domain_suffix: vec!["example.test".to_string()],
@@ -78,7 +83,7 @@ fn decide_with_meta_carries_udp_route_action_options() {
         ..Default::default()
     });
 
-    assert_eq!(meta.rule.as_deref(), Some("rule#0"));
+    assert_eq!(meta.rule.as_deref(), Some("final"));
     assert!(matches!(
         meta.decision,
         sb_core::router::rules::Decision::Direct
@@ -124,6 +129,7 @@ fn decide_matches_go_11313_interface_and_preferred_by_fields() {
     cfg.route.final_outbound = Some("unresolved".to_string());
     cfg.route.rules.push(RuleIR {
         action: RuleAction::Bypass,
+        outbound: Some("direct".to_string()),
         inbound: vec!["mixed-in".to_string()],
         auth_user: vec!["alice".to_string()],
         process_path_regex: vec!["^/usr/bin/curl$".to_string()],
@@ -172,6 +178,260 @@ fn decide_matches_go_11313_interface_and_preferred_by_fields() {
         ..Default::default()
     });
     assert!(matches!(missed, Decision::Proxy(Some(ref tag)) if tag == "unresolved"));
+}
+
+#[test]
+fn empty_bypass_continues_to_later_rule() {
+    let mut cfg = ConfigIR::default();
+    cfg.route.final_outbound = Some("block".to_string());
+    cfg.route.rules = vec![
+        RuleIR {
+            action: RuleAction::Bypass,
+            port: vec!["18897".to_string()],
+            ..Default::default()
+        },
+        RuleIR {
+            action: RuleAction::Route,
+            outbound: Some("direct".to_string()),
+            port: vec!["18897".to_string()],
+            ..Default::default()
+        },
+    ];
+
+    let idx = sb_core::router::builder::build_index_from_ir(&cfg).expect("build router");
+    let handle = RouterHandle::from_index(idx);
+    let meta = handle.decide_with_meta(&RouteCtx {
+        port: Some(18897),
+        ..Default::default()
+    });
+    assert_eq!(meta.decision, Decision::Direct);
+    assert_eq!(meta.rule.as_deref(), Some("rule#1"));
+}
+
+#[test]
+fn direct_action_continues_to_later_rule_like_go_11313() {
+    let mut cfg = ConfigIR::default();
+    cfg.route.final_outbound = Some("block".to_string());
+    cfg.route.rules = vec![
+        RuleIR {
+            action: RuleAction::Direct,
+            port: vec!["18897".to_string()],
+            ..Default::default()
+        },
+        RuleIR {
+            action: RuleAction::Reject,
+            port: vec!["18897".to_string()],
+            ..Default::default()
+        },
+    ];
+
+    let idx = sb_core::router::builder::build_index_from_ir(&cfg).expect("build router");
+    let handle = RouterHandle::from_index(idx);
+    let meta = handle.decide_with_meta(&RouteCtx {
+        port: Some(18897),
+        ..Default::default()
+    });
+    assert_eq!(meta.decision, Decision::Reject);
+    assert_eq!(meta.rule.as_deref(), Some("rule#1"));
+}
+
+#[test]
+fn resolved_meta_preserves_inbound_sniff_before_route_rules() {
+    let mut cfg = ConfigIR::default();
+    cfg.route.rules.push(RuleIR {
+        action: RuleAction::Reject,
+        port: vec!["18897".to_string()],
+        ..Default::default()
+    });
+
+    let idx = sb_core::router::builder::build_index_from_ir(&cfg).expect("build router");
+    let handle = RouterHandle::from_index(idx);
+    let meta = handle.decide_with_meta(&RouteCtx {
+        port: Some(18897),
+        inbound_sniff: true,
+        inbound_sniff_override: true,
+        ..Default::default()
+    });
+    assert_eq!(
+        meta.decision,
+        Decision::Sniff {
+            override_destination: true
+        }
+    );
+    assert_eq!(meta.rule.as_deref(), Some("sniff"));
+
+    let routed = handle.decide_with_meta(&RouteCtx {
+        port: Some(18897),
+        protocol: Some("tls"),
+        inbound_sniff: true,
+        inbound_sniff_override: true,
+        ..Default::default()
+    });
+    assert_eq!(routed.decision, Decision::Reject);
+    assert_eq!(routed.rule.as_deref(), Some("rule#0"));
+}
+
+#[test]
+fn route_options_accumulate_and_mutate_later_port_match() {
+    let mut cfg = ConfigIR::default();
+    cfg.route.final_outbound = Some("block".to_string());
+    cfg.route.rules = vec![
+        RuleIR {
+            action: RuleAction::RouteOptions,
+            port: vec!["18897".to_string()],
+            override_port: Some(18898),
+            ..Default::default()
+        },
+        RuleIR {
+            action: RuleAction::Route,
+            outbound: Some("direct".to_string()),
+            port: vec!["18898".to_string()],
+            ..Default::default()
+        },
+    ];
+
+    let idx = sb_core::router::builder::build_index_from_ir(&cfg).expect("build router");
+    let handle = RouterHandle::from_index(idx);
+    let meta = handle.decide_with_meta(&RouteCtx {
+        port: Some(18897),
+        ..Default::default()
+    });
+    assert_eq!(meta.decision, Decision::Direct);
+    assert_eq!(meta.rule.as_deref(), Some("rule#1"));
+    assert_eq!(meta.route_options.override_port, Some(18898));
+}
+
+#[test]
+fn route_options_override_domain_mutates_later_domain_match() {
+    let mut cfg = ConfigIR::default();
+    cfg.route.final_outbound = Some("block".to_string());
+    cfg.route.rules = vec![
+        RuleIR {
+            action: RuleAction::RouteOptions,
+            port: vec!["18897".to_string()],
+            override_address: Some("rewritten.test".to_string()),
+            ..Default::default()
+        },
+        RuleIR {
+            action: RuleAction::Route,
+            outbound: Some("direct".to_string()),
+            domain: vec!["rewritten.test".to_string()],
+            ..Default::default()
+        },
+    ];
+
+    let idx = sb_core::router::builder::build_index_from_ir(&cfg).expect("build router");
+    let handle = RouterHandle::from_index(idx);
+    let meta = handle.decide_with_meta(&RouteCtx {
+        host: Some("original.test"),
+        port: Some(18897),
+        ..Default::default()
+    });
+    assert_eq!(meta.decision, Decision::Direct);
+    assert_eq!(meta.rule.as_deref(), Some("rule#1"));
+    assert_eq!(
+        meta.route_options.override_address.as_deref(),
+        Some("rewritten.test")
+    );
+}
+
+struct LoopbackResolver(&'static str);
+
+impl DnsResolve for LoopbackResolver {
+    fn resolve<'a>(
+        &'a self,
+        host: &'a str,
+        _timeout_ms: u64,
+    ) -> Pin<Box<dyn Future<Output = DnsResult> + Send + 'a>> {
+        assert_eq!(host, self.0);
+        Box::pin(async { DnsResult::Ok(vec!["127.0.0.1".parse().unwrap()]) })
+    }
+}
+
+#[tokio::test]
+async fn resolve_action_continues_with_resolved_destination_ips() {
+    let mut cfg = ConfigIR::default();
+    cfg.route.final_outbound = Some("block".to_string());
+    cfg.route.rules = vec![
+        RuleIR {
+            action: RuleAction::Resolve,
+            domain: vec!["localhost".to_string()],
+            ..Default::default()
+        },
+        RuleIR {
+            action: RuleAction::Route,
+            outbound: Some("direct".to_string()),
+            ipcidr: vec!["127.0.0.0/8".to_string()],
+            ..Default::default()
+        },
+    ];
+
+    let idx = sb_core::router::builder::build_index_from_ir(&cfg).expect("build router");
+    let handle = RouterHandle::from_index(idx)
+        .with_resolver(std::sync::Arc::new(LoopbackResolver("localhost")));
+    let meta = handle
+        .decide_with_meta_resolved(&RouteCtx {
+            host: Some("localhost"),
+            port: Some(18897),
+            ..Default::default()
+        })
+        .await
+        .expect("resolve and route");
+
+    assert_eq!(meta.decision, Decision::Direct);
+    assert_eq!(meta.rule.as_deref(), Some("rule#1"));
+    assert_eq!(
+        meta.resolved_ips,
+        vec!["127.0.0.1".parse::<IpAddr>().unwrap()]
+    );
+}
+
+#[tokio::test]
+async fn route_options_domain_override_survives_resolve_resume() {
+    let mut cfg = ConfigIR::default();
+    cfg.route.final_outbound = Some("block".to_string());
+    cfg.route.rules = vec![
+        RuleIR {
+            action: RuleAction::RouteOptions,
+            domain: vec!["original.test".to_string()],
+            override_address: Some("rewritten.test".to_string()),
+            ..Default::default()
+        },
+        RuleIR {
+            action: RuleAction::Resolve,
+            domain: vec!["rewritten.test".to_string()],
+            ..Default::default()
+        },
+        RuleIR {
+            action: RuleAction::Route,
+            outbound: Some("direct".to_string()),
+            ipcidr: vec!["127.0.0.0/8".to_string()],
+            ..Default::default()
+        },
+    ];
+
+    let idx = sb_core::router::builder::build_index_from_ir(&cfg).expect("build router");
+    let handle = RouterHandle::from_index(idx)
+        .with_resolver(std::sync::Arc::new(LoopbackResolver("rewritten.test")));
+    let meta = handle
+        .decide_with_meta_resolved(&RouteCtx {
+            host: Some("original.test"),
+            port: Some(18897),
+            ..Default::default()
+        })
+        .await
+        .expect("override, resolve, and route");
+
+    assert_eq!(meta.decision, Decision::Direct);
+    assert_eq!(meta.rule.as_deref(), Some("rule#2"));
+    assert_eq!(
+        meta.route_options.override_address.as_deref(),
+        Some("rewritten.test")
+    );
+    assert_eq!(
+        meta.resolved_ips,
+        vec!["127.0.0.1".parse::<IpAddr>().unwrap()]
+    );
 }
 
 #[test]

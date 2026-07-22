@@ -86,6 +86,10 @@
 | Auth-user routing via SOCKS | exact authenticated username → direct | valid differently-cased user → final block | — | — | `p1_auth_user_rule_via_socks` (both, BHV-DP-035) |
 | Rule-set source-IP routing via SOCKS | source IP CIDR member → direct | destination-only member → final block | — | — | `p1_rule_set_source_ip_cidr_via_socks` (both, BHV-DP-036) |
 | Reject route action via SOCKS | matched port rejected | unmatched port → final direct | — | — | `p1_reject_rule_action_via_socks` (both, BHV-DP-037) |
+| Direct route action via SOCKS | Go 1.13.13 continues action | final block denies match | — | — | `p1_direct_rule_action_via_socks` (both, BHV-DP-038) |
+| Empty bypass action via SOCKS | action continues without bypass support | later reject denies match | — | — | `p1_bypass_rule_action_via_socks` (both, BHV-DP-039) |
+| Route-options override via SOCKS | address+port rewrite feeds later rule | rewritten target echoes | — | — | `p1_route_options_override_via_socks` (both, BHV-DP-040) |
+| Resolve route action via SOCKS | resolved IP feeds later CIDR rule | port miss → final block | — | — | `p1_resolve_rule_action_via_socks` (both, BHV-DP-041) |
 | Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |

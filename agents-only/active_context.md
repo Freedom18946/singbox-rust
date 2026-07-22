@@ -6,51 +6,27 @@
 > Other docs point here, not copy.
 
 ---
-## Resume (2026-07-22) - dual-kernel routing-rule coverage batch 5 +4 BHV DONE
+## Resume (2026-07-23) - dual-kernel routing-action coverage batch 6 +4 BHV DONE
 
-- Added strict both-kernel coverage for destination `ip_version` (BHV-DP-034), case-sensitive
-  authenticated SOCKS TCP users (BHV-DP-035), source-IP CIDR rule-set mode (BHV-DP-036), and
-  `reject` route actions (BHV-DP-037). Every case proves both match and miss behavior.
-- Red-team comparison with Go closed production mismatches: invalid/multiple IP versions compiled
-  as permanent misses; inbound `users` never reached SOCKS/HTTP/mixed builders; authenticated SOCKS
-  usernames were omitted from initial and post-sniff route contexts and matched case-insensitively;
-  source-mode rule sets could not distinguish domain, destination-IP, and source-IP matches.
-- Harness SOCKS TCP client now supports structured RFC 1929 credentials in proxy URLs while fixed
-  source-port support remains intact.
-- Evidence: `p1_{ip_version_rule,auth_user_rule,rule_set_source_ip_cidr,reject_rule_action}_via_socks`;
-  final PASS run IDs `20260722T165533Z-9f17516a-6732-42ed-acf5-4aaef8a98f51`,
-  `20260722T165659Z-1f7b5493-aea9-47b8-9b8d-0066194327e8`,
-  `20260722T165738Z-3fcaac91-156b-491e-ba2a-05e977de737c`, and
-  `20260722T165817Z-1e5ee156-e1b0-45fe-a785-01e5429a2f06`; all normalized diffs clean.
-- Coverage moved **67/71 → 71/75 (94.4% → 94.7%)**; inventory is **61 both / 122 total**.
+- Added strict both-kernel coverage for Go 1.13.13 nonterminal `direct` (BHV-DP-038), empty
+  `bypass` continuation (BHV-DP-039), destination-rewriting `route-options` (BHV-DP-040), and
+  default `resolve` feeding later destination-IP rules (BHV-DP-041).
+- Red-team source/live comparison corrected Rust assumptions: `direct` is nonterminal in the
+  current Go route loop; empty `bypass` continues without bypass support; `route-options` mutates
+  ordered matching and the dial target; `resolve` populates destination addresses and resumes.
+- Rust SOCKS/HTTP TCP routing now executes `resolve` asynchronously, retains route options across
+  sniffing, updates effective destination matching and final dial target, and preserves inbound
+  sniff priority.
+- Evidence: `p1_{direct_rule_action,bypass_rule_action,route_options_override,resolve_rule_action}_via_socks`;
+  final PASS run IDs `20260722T204419Z-8f796e28-f2ed-41b9-9568-2c654237fcd8`,
+  `20260722T204542Z-d47bd3c4-e82f-4748-988b-3b683062d314`,
+  `20260722T204641Z-8e87c9c6-02d1-49c5-8e23-1def894d09ce`, and
+  `20260722T204744Z-6b7debce-4f1c-463f-abf8-cd6d9f620010`; all normalized diffs clean.
+- Coverage moved **71/75 -> 75/79 (94.7% -> 94.9%)**; inventory is **65 both / 126 total**.
   The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC-003) remain unchanged.
-- Gates: `sb-core` 579 passed/8 ignored, `sb-adapters --lib` 62 passed, interop-lab 47 passed,
-  eight Go/Rust config checks, acceptance app build, clippy, consistency, boundaries, fmt, and
-  diff-check PASS.
-
----
-## Resume (2026-07-22) - dual-kernel routing-rule coverage batch 4 +4 BHV DONE
-
-- Added strict both-kernel coverage for logical OR (BHV-DP-030), destination/source private
-  addresses (BHV-DP-031), remote source `rule_set` initial loading (BHV-DP-032), and exact/range
-  source ports (BHV-DP-033). Every case proves direct matches plus a final-block miss.
-- Red-team comparison with Go closed production mismatches: canonical source-port ranges were
-  dropped; private matching omitted multicast/unspecified addresses; remote sets never entered the
-  runtime router. Startup/reload now loads remote sets asynchronously, treats bad initial content
-  as fatal, honors declared format, commits only parsed cache payloads, and rejects unsupported
-  explicit or inherited download detours instead of silently dialing direct. Unsupported inline
-  rule sets now fail loudly rather than disappearing from routing; this batch claims no inline parity.
-- Harness adds deterministic `http_static` content and fixed TCP source-port binding. Abortive close
-  prevents lane/repeat TIME_WAIT collisions without weakening traffic assertions.
-- Evidence: `p1_{logical_or_rule,private_ip_rule,remote_rule_set,source_port_rule}_via_socks`;
-  final PASS run IDs `20260722T153319Z-715e73c5-a4af-4890-92dc-169f8a27681b`,
-  `20260722T153331Z-af0fa16b-c7ed-42c6-ab3d-83148fa59800`,
-  `20260722T153358Z-79bbd559-0e60-41ff-82f3-fe7fd4586aa8`, and
-  `20260722T153413Z-2d651400-b5ae-453b-be59-040618f87a1b`; all normalized diffs clean.
-- Coverage moved **63/67 → 67/71 (94.0% → 94.4%)**; inventory is **57 both / 118 total**.
-  The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC-003) remain unchanged.
-- Gates: `sb-core` 575 passed/8 ignored, interop-lab 46 passed, four Go/Rust config checks,
-  acceptance app build, clippy, consistency, boundaries, fmt, and diff-check PASS.
+- Gates: `sb-core` 580 passed/8 ignored, focused route 12 passed, `sb-adapters --lib` 63 passed,
+  interop-lab 47 passed, eight Go/Rust config checks, normal and isolated acceptance app builds,
+  clippy, consistency, boundaries (430 assertions), fmt, and diff-check PASS.
 
 ## Resume (2026-07-20) - REALITY ServerHello target-profile borrowing DONE
 
@@ -212,7 +188,7 @@
 ## Strategic State
 
 Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
-(non-gating). Parity **71/75 BHV (94.7%) current** — REALITY has no S3 BHV-ID, not in the
+(non-gating). Parity **75/79 BHV (94.9%) current** — REALITY has no S3 BHV-ID, not in the
 S1/S6 denominator. `DEV-REALITY-01` local implementation line is CLOSED: Chrome-current profile,
 BoringSSL ordering, FoxIO JA4 cross-check, active-probing relay, canonical first-flight/session_id,
 inbound Vision, production server, reverse Go-client interop, and success-path target ServerHello

@@ -71,6 +71,29 @@ fn compat_router_index_from_default(default: &str) -> Arc<RouterIndex> {
     Arc::new(idx)
 }
 
+fn composite_rule_matches_with_options<'a>(
+    rule: &crate::router::rules::CompositeRule,
+    ctx: &crate::router::rules::RouteCtx<'a>,
+    options: &'a crate::router::rules::RouteActionOptions,
+) -> bool {
+    let Some(address) = options
+        .override_address
+        .as_deref()
+        .filter(|address| !address.is_empty())
+    else {
+        return rule.matches(ctx);
+    };
+    let address = address.trim_start_matches('[').trim_end_matches(']');
+    if address.parse::<IpAddr>().is_ok() {
+        return rule.matches(ctx);
+    }
+
+    let mut override_ctx = ctx.clone();
+    override_ctx.domain = Some(address);
+    override_ctx.ip = None;
+    rule.matches(&override_ctx)
+}
+
 /// 兼容历史导出：在大多数调用场景里只使用 `RouterHandle`
 pub struct RouterHandle {
     runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
@@ -110,6 +133,10 @@ pub struct DecideWithMeta {
     pub decision: crate::router::rules::Decision,
     pub rule: Option<String>,
     pub route_options: crate::router::rules::RouteActionOptions,
+    /// Rule cursor used to resume after a non-terminal async action.
+    pub next_rule_index: usize,
+    /// Addresses populated by route `resolve` actions.
+    pub resolved_ips: Vec<IpAddr>,
 }
 
 impl std::fmt::Debug for RouterHandle {
@@ -681,6 +708,7 @@ impl RouterHandle {
             geoip_code: None,
             source_geoip_code: None,
             rule_sets: vec![],
+            destination_ips: ctx.resolved_ips.clone(),
             source_ip: ctx.source_ip,
             source_port: ctx.source_port,
             process_name: ctx.process_name,
@@ -763,14 +791,30 @@ impl RouterHandle {
             };
         }
 
-        // 2. Iterate composite rules
+        // 2. Iterate composite rules. Go 1.13.13 route-options, direct, and an
+        // empty bypass are non-terminal; keep walking the ordered rule list.
+        let mut route_options = crate::router::rules::RouteActionOptions::default();
         for rule in &idx.rules {
-            if rule.matches(&rules_ctx) {
+            if composite_rule_matches_with_options(rule, &rules_ctx, &route_options) {
+                if rule.action == sb_config::ir::RuleAction::RouteOptions {
+                    route_options.merge_from(&rule.route_options);
+                    route_options.apply_to_rule_ctx(&mut rules_ctx);
+                    continue;
+                }
+                if rule.action == sb_config::ir::RuleAction::Bypass && rule.outbound.is_none() {
+                    continue;
+                }
+                if rule.action == sb_config::ir::RuleAction::Direct {
+                    continue;
+                }
                 // Already sniffed: skip non-terminal Sniff action (Go parity: metadata.Protocol != "")
                 if matches!(rule.decision, crate::router::rules::Decision::Sniff { .. })
                     && rules_ctx.protocol.is_some()
                 {
                     continue;
+                }
+                if rule.action == sb_config::ir::RuleAction::Route {
+                    route_options.merge_from(&rule.route_options);
                 }
                 return rule.decision.clone();
             }
@@ -1295,6 +1339,15 @@ impl RouterHandle {
     /// This does NOT change routing behavior: it mirrors `decide()` and only adds
     /// a `rule` string that is stable enough for UI display and debugging.
     pub fn decide_with_meta(&self, ctx: &crate::router::RouteCtx) -> DecideWithMeta {
+        self.decide_with_meta_from(ctx, 0, crate::router::rules::RouteActionOptions::default())
+    }
+
+    fn decide_with_meta_from(
+        &self,
+        ctx: &crate::router::RouteCtx,
+        start_rule_index: usize,
+        mut route_options: crate::router::rules::RouteActionOptions,
+    ) -> DecideWithMeta {
         let idx = { self.idx.read().unwrap_or_else(|e| e.into_inner()).clone() };
 
         // 1) Composite rules: expose rule index as "rule#<idx>"
@@ -1310,6 +1363,7 @@ impl RouterHandle {
                 geoip_code: None,
                 source_geoip_code: None,
                 rule_sets: vec![],
+                destination_ips: ctx.resolved_ips.clone(),
                 source_ip: ctx.source_ip,
                 source_port: ctx.source_port,
                 process_name: ctx.process_name,
@@ -1361,6 +1415,14 @@ impl RouterHandle {
                     rules_ctx.rule_sets.extend(matched_tags);
                 }
             }
+            if let Some(rule_set_db) = &self.rule_set_db {
+                for ip in &ctx.resolved_ips {
+                    let mut matched_tags = Vec::new();
+                    rule_set_db.match_ip(*ip, &mut matched_tags);
+                    rules_ctx.ip_rule_sets.extend(matched_tags.clone());
+                    rules_ctx.rule_sets.extend(matched_tags);
+                }
+            }
             if let Some(ip) = ctx.source_ip {
                 if let Some(geoip_db) = &self.geoip_db {
                     if let Some(code) = geoip_db.lookup_country(ip) {
@@ -1374,27 +1436,66 @@ impl RouterHandle {
                 }
             }
 
-            for (i, rule) in idx.rules.iter().enumerate() {
-                if rule.matches(&rules_ctx) {
+            if start_rule_index == 0 && ctx.inbound_sniff && rules_ctx.protocol.is_none() {
+                return DecideWithMeta {
+                    decision: crate::router::rules::Decision::Sniff {
+                        override_destination: ctx.inbound_sniff_override,
+                    },
+                    rule: Some("sniff".to_string()),
+                    route_options,
+                    next_rule_index: 0,
+                    resolved_ips: ctx.resolved_ips.clone(),
+                };
+            }
+
+            route_options.apply_to_rule_ctx(&mut rules_ctx);
+            if start_rule_index > 0 && !ctx.resolved_ips.is_empty() {
+                rules_ctx.destination_ips.clone_from(&ctx.resolved_ips);
+            }
+
+            for (i, rule) in idx.rules.iter().enumerate().skip(start_rule_index) {
+                if composite_rule_matches_with_options(rule, &rules_ctx, &route_options) {
+                    if rule.action == sb_config::ir::RuleAction::RouteOptions {
+                        route_options.merge_from(&rule.route_options);
+                        route_options.apply_to_rule_ctx(&mut rules_ctx);
+                        continue;
+                    }
+                    if rule.action == sb_config::ir::RuleAction::Bypass && rule.outbound.is_none() {
+                        continue;
+                    }
+                    if rule.action == sb_config::ir::RuleAction::Direct {
+                        continue;
+                    }
                     // Already sniffed: skip non-terminal Sniff action (Go parity: metadata.Protocol != "")
                     if matches!(rule.decision, crate::router::rules::Decision::Sniff { .. })
                         && rules_ctx.protocol.is_some()
                     {
                         continue;
                     }
+                    if rule.action == sb_config::ir::RuleAction::Route {
+                        route_options.merge_from(&rule.route_options);
+                    }
                     return DecideWithMeta {
                         decision: rule.decision.clone(),
                         rule: Some(format!("rule#{i}")),
-                        route_options: rule.route_options.clone(),
+                        route_options,
+                        next_rule_index: i + 1,
+                        resolved_ips: ctx.resolved_ips.clone(),
                     };
                 }
             }
 
-            // No composite rule matched: fall back to the actual decide() result.
+            let decision = match idx.default {
+                "direct" => crate::router::rules::Decision::Direct,
+                "reject" => crate::router::rules::Decision::Reject,
+                tag => crate::router::rules::Decision::Proxy(Some(tag.to_string())),
+            };
             return DecideWithMeta {
-                decision: self.decide(ctx),
+                decision,
                 rule: Some("final".to_string()),
-                route_options: Default::default(),
+                route_options,
+                next_rule_index: idx.rules.len(),
+                resolved_ips: ctx.resolved_ips.clone(),
             };
         }
 
@@ -1410,6 +1511,8 @@ impl RouterHandle {
                     decision: self.decide(ctx),
                     rule: Some(kind.to_string()),
                     route_options: Default::default(),
+                    next_rule_index: 0,
+                    resolved_ips: ctx.resolved_ips.clone(),
                 };
             }
         }
@@ -1418,6 +1521,58 @@ impl RouterHandle {
             decision: self.decide(ctx),
             rule: Some("final".to_string()),
             route_options: Default::default(),
+            next_rule_index: 0,
+            resolved_ips: ctx.resolved_ips.clone(),
+        }
+    }
+
+    /// Evaluate ordered route rules while executing non-terminal `resolve`
+    /// actions before later IP/rule-set conditions.
+    pub async fn decide_with_meta_resolved(
+        &self,
+        ctx: &crate::router::RouteCtx<'_>,
+    ) -> Result<DecideWithMeta, String> {
+        let mut next_ctx = ctx.clone();
+        let mut next_rule_index = 0;
+        let mut route_options = crate::router::rules::RouteActionOptions::default();
+
+        loop {
+            let meta =
+                self.decide_with_meta_from(&next_ctx, next_rule_index, route_options.clone());
+            if meta.decision != crate::router::rules::Decision::Resolve {
+                return Ok(meta);
+            }
+
+            next_rule_index = meta.next_rule_index;
+            route_options = meta.route_options;
+
+            let host = route_options
+                .override_address
+                .as_deref()
+                .filter(|address| !address.is_empty())
+                .or(next_ctx.host);
+            let Some(host) = host else {
+                continue;
+            };
+            let host = host.trim_start_matches('[').trim_end_matches(']');
+            if let Ok(ip) = host.parse::<IpAddr>() {
+                next_ctx.resolved_ips = vec![ip];
+                continue;
+            }
+
+            let timeout_ms = self.runtime_options.dns_timeout_ms;
+            next_ctx.resolved_ips = match self.resolve_with_fallback(host, timeout_ms).await {
+                DnsResult::Ok(ips) if !ips.is_empty() => ips,
+                DnsResult::Ok(_) | DnsResult::Miss => {
+                    return Err(format!("route resolve returned no addresses for {host}"));
+                }
+                DnsResult::Timeout => {
+                    return Err(format!("route resolve timed out for {host}"));
+                }
+                DnsResult::Error => {
+                    return Err(format!("route resolve failed for {host}"));
+                }
+            };
         }
     }
 }

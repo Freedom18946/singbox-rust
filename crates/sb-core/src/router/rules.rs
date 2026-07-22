@@ -104,7 +104,10 @@ impl Decision {
         use sb_config::ir::RuleAction;
         match action {
             RuleAction::Route => Self::from_outbound_or_unresolved(outbound.as_deref()),
-            RuleAction::Direct | RuleAction::Bypass => Decision::Direct,
+            RuleAction::Direct => Decision::Direct,
+            RuleAction::Bypass => outbound.as_deref().map_or(Decision::Direct, |tag| {
+                Self::from_outbound_or_unresolved(Some(tag))
+            }),
             RuleAction::Reject => Decision::Reject,
             RuleAction::RejectDrop => Decision::RejectDrop,
             RuleAction::Hijack => Decision::Hijack {
@@ -180,6 +183,58 @@ impl RouteActionOptions {
             && !self.tls_fragment
             && !self.tls_record_fragment
             && self.tls_fragment_fallback_delay.is_none()
+    }
+
+    /// Apply non-empty values from a later matching action, mirroring Go's
+    /// ordered route-options accumulation.
+    pub fn merge_from(&mut self, later: &Self) {
+        if later.override_address.is_some() {
+            self.override_address.clone_from(&later.override_address);
+        }
+        if later.override_port.is_some() {
+            self.override_port = later.override_port;
+        }
+        if later.network_strategy.is_some() {
+            self.network_strategy.clone_from(&later.network_strategy);
+        }
+        if later.fallback_network_type.is_some() {
+            self.fallback_network_type
+                .clone_from(&later.fallback_network_type);
+        }
+        if later.fallback_delay.is_some() {
+            self.fallback_delay = later.fallback_delay;
+        }
+        self.udp_disable_domain_unmapping |= later.udp_disable_domain_unmapping;
+        self.udp_connect |= later.udp_connect;
+        if later.udp_timeout.is_some() {
+            self.udp_timeout = later.udp_timeout;
+        }
+        self.tls_fragment |= later.tls_fragment;
+        self.tls_record_fragment |= later.tls_record_fragment;
+        if later.tls_fragment_fallback_delay.is_some() {
+            self.tls_fragment_fallback_delay = later.tls_fragment_fallback_delay;
+        }
+    }
+
+    pub(crate) fn apply_to_rule_ctx(&self, ctx: &mut RouteCtx<'_>) {
+        if let Some(port) = self.override_port {
+            ctx.port = Some(port);
+        }
+        if let Some(address) = self
+            .override_address
+            .as_deref()
+            .filter(|address| !address.is_empty())
+        {
+            let address = address.trim_start_matches('[').trim_end_matches(']');
+            if let Ok(ip) = address.parse::<IpAddr>() {
+                ctx.ip = Some(ip);
+                ctx.destination_ips.clear();
+                ctx.domain = None;
+            } else {
+                ctx.ip = None;
+                ctx.destination_ips.clear();
+            }
+        }
     }
 
     fn from_rule_ir(ir: &sb_config::ir::RuleIR) -> Result<Self, String> {
@@ -426,6 +481,9 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
         let decision = Decision::from_rule_ir(ir)?;
 
         let route_options = RouteActionOptions::from_rule_ir(ir)?;
+        if ir.action == sb_config::ir::RuleAction::RouteOptions && route_options.is_empty() {
+            return Err("route-options action requires at least one option".to_string());
+        }
         let mut destination_ports = parse_port_or_ranges(&ir.port)?;
         destination_ports
             .ranges
@@ -437,6 +495,8 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             sub_rules,
             decision,
             route_options,
+            action: ir.action.clone(),
+            outbound: ir.outbound.clone(),
             domain: ir.domain.clone(),
             domain_suffix: ir.domain_suffix.clone(),
             domain_keyword: ir.domain_keyword.clone(),
@@ -875,12 +935,16 @@ pub struct CompositeRule {
 
     pub decision: Decision,
     pub route_options: RouteActionOptions,
+    pub action: sb_config::ir::RuleAction,
+    pub outbound: Option<String>,
 }
 
 #[derive(Debug, Clone, Default)]
 pub struct RouteCtx<'a> {
     pub domain: Option<&'a str>,
     pub ip: Option<IpAddr>,
+    /// Addresses produced by an earlier non-terminal `resolve` action.
+    pub destination_ips: Vec<IpAddr>,
     pub transport_udp: bool,
     pub port: Option<u16>,
     pub process_name: Option<&'a str>,
@@ -1005,12 +1069,14 @@ impl CompositeRule {
         {
             return false;
         }
-        if !self.not_ip_cidr.is_empty() {
-            if let Some(ip) = ctx.ip {
-                if self.not_ip_cidr.iter().any(|n| n.contains(&ip)) {
-                    return false;
-                }
-            }
+        if !self.not_ip_cidr.is_empty()
+            && ctx
+                .ip
+                .iter()
+                .chain(ctx.destination_ips.iter())
+                .any(|ip| self.not_ip_cidr.iter().any(|net| net.contains(ip)))
+        {
+            return false;
         }
         if !self.not_geoip.is_empty() {
             if let Some(code) = &ctx.geoip_code {
@@ -1185,12 +1251,14 @@ impl CompositeRule {
                 }
             }
         }
-        if self.not_ip_is_private {
-            if let Some(ip) = ctx.ip {
-                if RuleEngine::is_private_ip(&ip) {
-                    return false;
-                }
-            }
+        if self.not_ip_is_private
+            && ctx
+                .ip
+                .iter()
+                .chain(ctx.destination_ips.iter())
+                .any(RuleEngine::is_private_ip)
+        {
+            return false;
         }
 
         // 2. Positive checks (all non-empty fields must match)
@@ -1250,11 +1318,11 @@ impl CompositeRule {
             }
         }
         if !self.ip_cidr.is_empty() {
-            let matched = if let Some(ip) = ctx.ip {
-                self.ip_cidr.iter().any(|n| n.contains(&ip))
-            } else {
-                false
-            };
+            let matched = ctx
+                .ip
+                .iter()
+                .chain(ctx.destination_ips.iter())
+                .any(|ip| self.ip_cidr.iter().any(|net| net.contains(ip)));
             if !matched {
                 return false;
             }
@@ -1493,11 +1561,11 @@ impl CompositeRule {
             }
         }
         if self.ip_is_private {
-            let matched = if let Some(ip) = ctx.ip {
-                RuleEngine::is_private_ip(&ip)
-            } else {
-                false
-            };
+            let matched = ctx
+                .ip
+                .iter()
+                .chain(ctx.destination_ips.iter())
+                .any(RuleEngine::is_private_ip);
             if !matched {
                 return false;
             }
@@ -2637,25 +2705,34 @@ mod tests {
     }
 
     #[test]
-    fn route_options_missing_outbound_defaults_to_unresolved_marker() {
+    fn route_options_compile_as_non_terminal_action() {
+        let rule = RuleIR {
+            action: RuleAction::RouteOptions,
+            domain_suffix: vec![".example.com".into()],
+            override_port: Some(8443),
+            ..Default::default()
+        };
+
+        let compiled = CompositeRule::try_from(&rule).expect("compile");
+        assert_eq!(compiled.action, RuleAction::RouteOptions);
+        assert_eq!(compiled.route_options.override_port, Some(8443));
+    }
+
+    #[test]
+    fn empty_route_options_action_is_rejected_like_go() {
         let rule = RuleIR {
             action: RuleAction::RouteOptions,
             domain_suffix: vec![".example.com".into()],
             ..Default::default()
         };
-
-        let compiled = CompositeRule::try_from(&rule).expect("compile");
-        assert_eq!(
-            compiled.decision,
-            Decision::Proxy(Some("unresolved".to_string()))
-        );
+        assert!(CompositeRule::try_from(&rule).is_err());
     }
 
     #[test]
-    fn route_options_preserve_explicit_outbound_tag() {
+    fn bypass_with_explicit_outbound_preserves_terminal_target() {
         assert_eq!(
             Decision::from_rule_action(
-                &RuleAction::RouteOptions,
+                &RuleAction::Bypass,
                 Some("proxy-a".to_string()),
                 None,
                 None,

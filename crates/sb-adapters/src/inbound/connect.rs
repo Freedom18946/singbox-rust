@@ -12,11 +12,29 @@ use tokio::{
     time::timeout,
 };
 
+use sb_core::router::rules::RouteActionOptions;
+
 const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
 const HANDSHAKE_TIMEOUT: Duration = Duration::from_secs(10);
 
 #[derive(Clone, Debug, Default)]
 pub struct ConnectOpts;
+
+pub fn apply_route_target_options(
+    host: &str,
+    port: u16,
+    options: &RouteActionOptions,
+) -> (String, u16) {
+    let host = options
+        .override_address
+        .as_deref()
+        .filter(|address| !address.is_empty())
+        .unwrap_or(host)
+        .trim_start_matches('[')
+        .trim_end_matches(']')
+        .to_string();
+    (host, options.override_port.unwrap_or(port))
+}
 
 async fn connect_with_keepalive(address: SocketAddr) -> io::Result<TcpStream> {
     let socket = if address.is_ipv4() {
@@ -258,4 +276,23 @@ pub async fn socks5_connect_through_socks5(
         Ok(Ok(())) => outbound_handshake("socks5", "ok", None),
     }
     Ok(stream)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::apply_route_target_options;
+    use sb_core::router::rules::RouteActionOptions;
+
+    #[test]
+    fn route_target_options_override_address_and_port() {
+        let options = RouteActionOptions {
+            override_address: Some("[::1]".to_string()),
+            override_port: Some(8443),
+            ..Default::default()
+        };
+        assert_eq!(
+            apply_route_target_options("example.test", 443, &options),
+            ("::1".to_string(), 8443)
+        );
+    }
 }

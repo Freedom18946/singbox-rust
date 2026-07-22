@@ -1,0 +1,23 @@
+{
+  "log": { "level": "info" },
+  "inbounds": [
+    { "type": "socks", "name": "socks-in", "listen": "127.0.0.1:11801" }
+  ],
+  "outbounds": [
+    { "type": "direct", "name": "direct" }
+  ],
+  "route": {
+    "rules": [
+      { "port": ["18897"], "action": "bypass" },
+      { "port": ["18897"], "action": "reject" },
+      { "port": ["18898"], "outbound": "direct" }
+    ],
+    "final": "direct"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19290",
+      "secret": "test-secret"
+    }
+  }
+}
