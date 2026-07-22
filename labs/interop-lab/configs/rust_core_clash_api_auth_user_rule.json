@@ -1,0 +1,31 @@
+{
+  "log": { "level": "info" },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19290",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "socks",
+      "name": "socks-in",
+      "listen": "127.0.0.1:11801",
+      "users": [
+        { "username": "Alice", "password": "upper-secret" },
+        { "username": "alice", "password": "lower-secret" }
+      ]
+    }
+  ],
+  "outbounds": [
+    { "type": "direct", "name": "direct" },
+    { "type": "block", "name": "block" }
+  ],
+  "route": {
+    "rules": [
+      { "auth_user": ["Alice"], "outbound": "direct" },
+      { "port": ["18898"], "outbound": "direct" }
+    ],
+    "final": "block"
+  }
+}

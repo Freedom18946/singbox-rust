@@ -719,6 +719,7 @@ impl RouterHandle {
             if let Some(rule_set_db) = &self.rule_set_db {
                 let mut matched_tags = Vec::new();
                 rule_set_db.match_host(host, &mut matched_tags);
+                rules_ctx.domain_rule_sets.extend(matched_tags.clone());
                 rules_ctx.rule_sets.extend(matched_tags);
             }
         }
@@ -1343,6 +1344,7 @@ impl RouterHandle {
                 if let Some(rule_set_db) = &self.rule_set_db {
                     let mut matched_tags = Vec::new();
                     rule_set_db.match_host(host, &mut matched_tags);
+                    rules_ctx.domain_rule_sets.extend(matched_tags.clone());
                     rules_ctx.rule_sets.extend(matched_tags);
                 }
             }

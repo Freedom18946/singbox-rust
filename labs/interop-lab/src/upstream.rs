@@ -2083,6 +2083,58 @@ async fn tcp_roundtrip(addr: &str, payload: &[u8], source_port: Option<u16>) -> 
     Ok(buf)
 }
 
+#[derive(Debug, Clone, PartialEq, Eq)]
+struct Socks5ProxySpec {
+    addr: String,
+    username: Option<String>,
+    password: Option<String>,
+}
+
+impl Socks5ProxySpec {
+    fn auth(&self) -> Option<(&str, &str)> {
+        self.username
+            .as_deref()
+            .map(|username| (username, self.password.as_deref().unwrap_or_default()))
+    }
+}
+
+fn parse_socks5_proxy(proxy: &str) -> Result<Socks5ProxySpec> {
+    let parsed = url::Url::parse(proxy).with_context(|| format!("parsing SOCKS5 proxy {proxy}"))?;
+    if !matches!(parsed.scheme(), "socks5" | "socks5h") {
+        return Err(anyhow!(
+            "unsupported SOCKS5 proxy scheme: {}",
+            parsed.scheme()
+        ));
+    }
+    if !matches!(parsed.path(), "" | "/") || parsed.query().is_some() || parsed.fragment().is_some()
+    {
+        return Err(anyhow!(
+            "SOCKS5 proxy URL must not contain path, query, or fragment"
+        ));
+    }
+    let host = parsed
+        .host()
+        .ok_or_else(|| anyhow!("SOCKS5 proxy URL is missing host"))?;
+    let port = parsed.port().unwrap_or(1080);
+    let addr = match host {
+        url::Host::Ipv6(address) => format!("[{address}]:{port}"),
+        url::Host::Ipv4(address) => format!("{address}:{port}"),
+        url::Host::Domain(domain) => format!("{domain}:{port}"),
+    };
+    let username = (!parsed.username().is_empty()).then(|| parsed.username().to_string());
+    if username.is_none() && parsed.password().is_some() {
+        return Err(anyhow!("SOCKS5 proxy password requires username"));
+    }
+    let password = username
+        .as_ref()
+        .map(|_| parsed.password().unwrap_or_default().to_string());
+    Ok(Socks5ProxySpec {
+        addr,
+        username,
+        password,
+    })
+}
+
 async fn tcp_roundtrip_via_proxy(
     proxy: &str,
     addr: &str,
@@ -2090,12 +2142,9 @@ async fn tcp_roundtrip_via_proxy(
     source_port: Option<u16>,
 ) -> Result<Vec<u8>> {
     if proxy.starts_with("socks5://") || proxy.starts_with("socks5h://") {
-        let proxy_addr = normalize_addr(
-            proxy
-                .trim_start_matches("socks5://")
-                .trim_start_matches("socks5h://"),
-        );
-        return tcp_roundtrip_via_socks5(&proxy_addr, addr, payload, source_port).await;
+        let proxy = parse_socks5_proxy(proxy)?;
+        return tcp_roundtrip_via_socks5(&proxy.addr, addr, payload, source_port, proxy.auth())
+            .await;
     }
     if proxy.starts_with("http://") {
         let proxy_addr = normalize_addr(proxy.trim_start_matches("http://"));
@@ -2110,8 +2159,10 @@ async fn tcp_roundtrip_via_socks5(
     target_addr: &str,
     payload: &[u8],
     source_port: Option<u16>,
+    auth: Option<(&str, &str)>,
 ) -> Result<Vec<u8>> {
-    let mut stream = socks5_connect_with_source_port(proxy_addr, target_addr, source_port).await?;
+    let mut stream =
+        socks5_connect_with_source_port(proxy_addr, target_addr, source_port, auth).await?;
     stream
         .write_all(payload)
         .await
@@ -2256,7 +2307,7 @@ async fn udp_roundtrip_via_socks5(
         .await
         .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;
 
-    socks5_greet(&mut control).await?;
+    socks5_greet(&mut control, None).await?;
 
     // UDP ASSOCIATE command.
     control
@@ -2514,10 +2565,11 @@ async fn ws_roundtrip(
     }
 }
 
-/// SOCKS5 greeting: send auth method, validate server accepts no-auth.
-async fn socks5_greet(stream: &mut TcpStream) -> Result<()> {
+/// SOCKS5 greeting and optional RFC 1929 username/password authentication.
+async fn socks5_greet(stream: &mut TcpStream, auth: Option<(&str, &str)>) -> Result<()> {
+    let method = if auth.is_some() { 0x02 } else { 0x00 };
     stream
-        .write_all(&[0x05_u8, 0x01, 0x00])
+        .write_all(&[0x05_u8, 0x01, method])
         .await
         .with_context(|| "writing socks5 greeting")?;
     let mut resp = [0_u8; 2];
@@ -2525,12 +2577,39 @@ async fn socks5_greet(stream: &mut TcpStream) -> Result<()> {
         .read_exact(&mut resp)
         .await
         .with_context(|| "reading socks5 greeting response")?;
-    if resp != [0x05, 0x00] {
+    if resp != [0x05, method] {
         return Err(anyhow!(
             "socks5 greeting rejected: version={} method={}",
             resp[0],
             resp[1]
         ));
+    }
+    if let Some((username, password)) = auth {
+        if username.len() > u8::MAX as usize || password.len() > u8::MAX as usize {
+            return Err(anyhow!("SOCKS5 username/password exceeds 255 bytes"));
+        }
+        let mut request = Vec::with_capacity(3 + username.len() + password.len());
+        request.push(0x01);
+        request.push(username.len() as u8);
+        request.extend_from_slice(username.as_bytes());
+        request.push(password.len() as u8);
+        request.extend_from_slice(password.as_bytes());
+        stream
+            .write_all(&request)
+            .await
+            .with_context(|| "writing SOCKS5 username/password authentication")?;
+        let mut response = [0_u8; 2];
+        stream
+            .read_exact(&mut response)
+            .await
+            .with_context(|| "reading SOCKS5 username/password response")?;
+        if response != [0x01, 0x00] {
+            return Err(anyhow!(
+                "SOCKS5 username/password rejected: version={} status={}",
+                response[0],
+                response[1]
+            ));
+        }
     }
     Ok(())
 }
@@ -2557,19 +2636,20 @@ fn socks5_append_addr(buf: &mut Vec<u8>, host: &str, port: u16) {
 }
 
 pub(crate) async fn socks5_connect(proxy_addr: &str, target_addr: &str) -> Result<TcpStream> {
-    socks5_connect_with_source_port(proxy_addr, target_addr, None).await
+    socks5_connect_with_source_port(proxy_addr, target_addr, None, None).await
 }
 
 async fn socks5_connect_with_source_port(
     proxy_addr: &str,
     target_addr: &str,
     source_port: Option<u16>,
+    auth: Option<(&str, &str)>,
 ) -> Result<TcpStream> {
     let mut stream = connect_tcp(proxy_addr, source_port)
         .await
         .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;
 
-    socks5_greet(&mut stream).await?;
+    socks5_greet(&mut stream, auth).await?;
 
     let (host, port) = parse_host_port(target_addr)?;
     let mut req = vec![0x05_u8, 0x01, 0x00]; // v5, connect, reserved
@@ -2704,13 +2784,24 @@ impl rustls::client::danger::ServerCertVerifier for DangerousVerifier {
 
 #[cfg(test)]
 mod tests {
-    use super::{connect_tcp, throughput_bytes_per_sec};
+    use super::{connect_tcp, parse_socks5_proxy, throughput_bytes_per_sec};
     use tokio::net::TcpListener;
 
     #[test]
     fn throughput_rate_uses_payload_bytes_and_never_divides_by_zero() {
         assert_eq!(throughput_bytes_per_sec(1_048_576, 1_000_000), 1_048_576);
         assert_eq!(throughput_bytes_per_sec(1024, 0), 1_024_000_000);
+    }
+
+    #[test]
+    fn socks5_proxy_url_preserves_case_sensitive_credentials_and_ipv6() {
+        let proxy = parse_socks5_proxy("socks5://Alice:Secret@[::1]:11801").unwrap();
+        assert_eq!(proxy.addr, "[::1]:11801");
+        assert_eq!(proxy.auth(), Some(("Alice", "Secret")));
+
+        let no_auth = parse_socks5_proxy("socks5h://127.0.0.1:11802").unwrap();
+        assert_eq!(no_auth.addr, "127.0.0.1:11802");
+        assert_eq!(no_auth.auth(), None);
     }
 
     #[tokio::test]

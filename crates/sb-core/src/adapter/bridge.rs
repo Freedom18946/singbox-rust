@@ -602,6 +602,10 @@ fn to_inbound_param(
         listen: ib.listen.clone(),
         port: ib.port,
         basic_auth: ib.basic_auth.clone(),
+        users: ib
+            .users
+            .clone()
+            .or_else(|| ib.basic_auth.clone().map(|user| vec![user])),
         sniff: ib.sniff,
         sniff_override_destination: ib.sniff_override_destination,
         udp: ib.udp,

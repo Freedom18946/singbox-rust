@@ -344,11 +344,7 @@ impl RuleMatcher {
 
         if !rule.auth_user.is_empty() {
             if let Some(ref auth_user) = ctx.auth_user {
-                if !rule
-                    .auth_user
-                    .iter()
-                    .any(|u| u.eq_ignore_ascii_case(auth_user))
-                {
+                if !rule.auth_user.iter().any(|u| u == auth_user) {
                     return false;
                 }
             } else {
@@ -779,6 +775,25 @@ mod tests {
             let ip = raw.parse().unwrap();
             assert!(!is_private_ip(&ip), "expected public: {raw}");
         }
+    }
+
+    #[test]
+    fn auth_user_match_is_case_sensitive_like_go() {
+        let mut ruleset = create_test_ruleset();
+        ruleset.rules = vec![Rule::Default(DefaultRule {
+            auth_user: vec!["Alice".to_string()],
+            ..Default::default()
+        })];
+        let matcher = RuleMatcher::new(Arc::new(ruleset));
+
+        assert!(matcher.matches(&MatchContext {
+            auth_user: Some("Alice".to_string()),
+            ..Default::default()
+        }));
+        assert!(!matcher.matches(&MatchContext {
+            auth_user: Some("alice".to_string()),
+            ..Default::default()
+        }));
     }
 
     #[test]

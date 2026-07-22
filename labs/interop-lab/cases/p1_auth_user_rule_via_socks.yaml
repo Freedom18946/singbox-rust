@@ -1,0 +1,61 @@
+id: p1_auth_user_rule_via_socks
+title: authenticated SOCKS user routes with exact case before final block
+priority: p1
+kernel_mode: both
+env_class: strict
+tags: [dataplane, routing, auth-user, dual_core]
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args: [-c, labs/interop-lab/configs/rust_core_clash_api_auth_user_rule.json, run]
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.13.13/sing-box
+    args: [run, -c, labs/interop-lab/configs/go_core_clash_api_auth_user_rule.json]
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence:
+  - kind: http
+    name: version
+    method: GET
+    path: /version
+    expect_status: 200
+upstream_topology:
+  - name: local_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:18897
+  - name: lowercase_auth_control_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:18898
+traffic_plan:
+  - kind: tcp_round_trip
+    name: exact_auth_user_match_direct
+    addr: "127.0.0.1:18897"
+    payload: exact-auth-user-direct
+    proxy: socks5://Alice:upper-secret@127.0.0.1:11801
+  - kind: tcp_round_trip
+    name: lowercase_auth_control_direct
+    addr: "127.0.0.1:18898"
+    payload: lowercase-auth-control-direct
+    proxy: socks5://alice:lower-secret@127.0.0.1:11801
+  - kind: tcp_round_trip
+    name: different_case_auth_user_miss_blocked
+    addr: "127.0.0.1:18897"
+    payload: should-be-blocked
+    proxy: socks5://alice:lower-secret@127.0.0.1:11801
+assertions:
+  - { key: http.version.status, op: eq, expected: 200 }
+  - { key: traffic.exact_auth_user_match_direct.success, op: eq, expected: true }
+  - { key: traffic.lowercase_auth_control_direct.success, op: eq, expected: true }
+  - { key: traffic.different_case_auth_user_miss_blocked.success, op: eq, expected: false }
+  - { key: errors.count, op: eq, expected: 0 }
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths: [/version]

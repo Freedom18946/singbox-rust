@@ -45,6 +45,8 @@ pub struct InboundParam {
     pub listen: String,
     pub port: u16,
     pub basic_auth: Option<Credentials>,
+    /// Multiple inbound credentials (Go `users` field).
+    pub users: Option<Vec<Credentials>>,
     pub sniff: bool,
     /// Override destination with sniffed hostname (Go parity: sniff_override_destination).
     pub sniff_override_destination: bool,
@@ -170,6 +172,7 @@ impl Default for InboundParam {
             listen: "127.0.0.1".to_string(),
             port: 0,
             basic_auth: None,
+            users: None,
             sniff: false,
             sniff_override_destination: false,
             udp: false,

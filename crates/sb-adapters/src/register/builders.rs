@@ -9,6 +9,14 @@ use tracing::warn;
 
 type CanonicalOutboundBuilderResult = Option<Arc<dyn sb_types::Outbound>>;
 
+#[allow(dead_code)] // Callers are feature-gated inbound builders.
+fn inbound_auth_users(param: &InboundParam) -> Option<Vec<sb_config::ir::Credentials>> {
+    param
+        .users
+        .clone()
+        .or_else(|| param.basic_auth.clone().map(|user| vec![user]))
+}
+
 macro_rules! canonical_inbound_builder {
     ($canonical:ident, $driver:ident) => {
         fn $canonical(
@@ -1020,7 +1028,7 @@ fn build_http_inbound(
         router: ctx.router.clone(),
         outbounds: ctx.outbounds.clone(),
         tls: None,
-        users: param.basic_auth.clone().map(|c| vec![c]),
+        users: inbound_auth_users(param),
         set_system_proxy: param.set_system_proxy,
         allow_private_network: param.allow_private_network,
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
@@ -1519,8 +1527,7 @@ fn build_socks_inbound(
         router: ctx.router.clone(),
         outbounds: ctx.outbounds.clone(),
         udp_nat_ttl: std::time::Duration::from_secs(60),
-        // NOTE: User authentication mapping can be added via IR flow
-        users: None,
+        users: inbound_auth_users(param),
         udp_timeout: param.udp_timeout,
         domain_strategy,
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
@@ -1568,7 +1575,7 @@ fn build_mixed_inbound(
         outbounds: ctx.outbounds.clone(),
         read_timeout: None,
         tls: None,
-        users: param.basic_auth.clone().map(|c| vec![c]),
+        users: inbound_auth_users(param),
         set_system_proxy: param.set_system_proxy,
         allow_private_network: param.allow_private_network,
         udp_timeout: param.udp_timeout,
@@ -2916,6 +2923,20 @@ mod tests {
         feature = "adapter-vless",
     ))]
     use sb_config::ir::{OutboundIR, OutboundType};
+
+    #[test]
+    fn inbound_auth_users_preserves_legacy_basic_auth_fallback() {
+        let credential = sb_config::ir::Credentials {
+            username: Some("legacy".into()),
+            password: Some("secret".into()),
+            ..Default::default()
+        };
+        let param = InboundParam {
+            basic_auth: Some(credential.clone()),
+            ..Default::default()
+        };
+        assert_eq!(inbound_auth_users(&param), Some(vec![credential]));
+    }
 
     #[test]
     #[cfg(feature = "adapter-dns")]

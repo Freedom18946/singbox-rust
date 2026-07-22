@@ -334,6 +334,24 @@ fn parse_port_or_ranges(values: &[String]) -> Result<ParsedPorts, String> {
     Ok(parsed)
 }
 
+fn parse_ip_versions(values: &[String]) -> Result<Vec<String>, String> {
+    if values.len() > 1 {
+        return Err("route rule ip_version accepts one value (4 or 6)".to_string());
+    }
+    values
+        .iter()
+        .map(|raw| match raw.as_str() {
+            "4" => Ok("4".to_string()),
+            "6" => Ok("6".to_string()),
+            _ if raw.eq_ignore_ascii_case("ipv4") => Ok("4".to_string()),
+            _ if raw.eq_ignore_ascii_case("ipv6") => Ok("6".to_string()),
+            _ => Err(format!(
+                "invalid route rule ip_version {raw:?}: expected 4 or 6"
+            )),
+        })
+        .collect()
+}
+
 fn parse_net_map(map: &BTreeMap<String, Vec<String>>) -> BTreeMap<String, Vec<IpNet>> {
     map.iter()
         .filter_map(|(key, values)| {
@@ -453,7 +471,7 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
             auth_user: ir.auth_user.clone(),
             query_type: Vec::new(), // RuleIR doesn't typically have query_type for routing
             ip_is_private: ir.ip_is_private.unwrap_or(false),
-            ip_version: ir.ip_version.clone(),
+            ip_version: parse_ip_versions(&ir.ip_version)?,
             clash_mode: ir.clash_mode.clone(),
             client: ir.client.clone(),
             package_name: ir.package_name.clone(),
@@ -879,6 +897,7 @@ pub struct RouteCtx<'a> {
     pub geosite_codes: Vec<String>,
     pub geoip_code: Option<String>,
     pub source_geoip_code: Option<String>,
+    pub domain_rule_sets: Vec<String>,
     pub rule_sets: Vec<String>,
     pub ip_rule_sets: Vec<String>,
     pub source_ip_rule_sets: Vec<String>,
@@ -1161,11 +1180,7 @@ impl CompositeRule {
         }
         if !self.not_auth_user.is_empty() {
             if let Some(user) = ctx.auth_user {
-                if self
-                    .not_auth_user
-                    .iter()
-                    .any(|u| u.eq_ignore_ascii_case(user))
-                {
+                if self.not_auth_user.iter().any(|u| u == user) {
                     return false;
                 }
             }
@@ -1409,10 +1424,16 @@ impl CompositeRule {
             }
         }
         if !self.rule_set.is_empty() {
-            let matched = self
-                .rule_set
-                .iter()
-                .any(|rs| ctx.rule_sets.iter().any(|r| r == rs));
+            let matched = if self.rule_set_ip_cidr_match_source {
+                self.rule_set.iter().any(|rs| {
+                    ctx.domain_rule_sets.iter().any(|r| r == rs)
+                        || ctx.source_ip_rule_sets.iter().any(|r| r == rs)
+                })
+            } else {
+                self.rule_set
+                    .iter()
+                    .any(|rs| ctx.rule_sets.iter().any(|r| r == rs))
+            };
             if !matched {
                 return false;
             }
@@ -1453,7 +1474,7 @@ impl CompositeRule {
         }
         if !self.auth_user.is_empty() {
             let matched = if let Some(user) = ctx.auth_user {
-                self.auth_user.iter().any(|u| u.eq_ignore_ascii_case(user))
+                self.auth_user.iter().any(|u| u == user)
             } else {
                 false
             };
@@ -1974,7 +1995,7 @@ impl RuleEngine {
             }
             RuleKind::AuthUser(user) => {
                 if let Some(auth_user) = ctx.auth_user {
-                    auth_user.eq_ignore_ascii_case(user)
+                    auth_user == user
                 } else {
                     false
                 }
@@ -2682,6 +2703,79 @@ mod tests {
         assert!(parse_port_ranges(&[" 18897:18898".into()]).is_err());
         assert!(parse_port_ranges(&["18897: ".into()]).is_err());
         assert!(parse_port_ranges(&["18897:bad".into()]).is_err());
+    }
+
+    #[test]
+    fn ip_version_is_single_validated_go_value() {
+        let ipv4 = CompositeRule::try_from(&RuleIR {
+            ip_version: vec!["4".into()],
+            outbound: Some("direct".into()),
+            ..Default::default()
+        })
+        .expect("compile IPv4 rule");
+        assert!(ipv4.matches(&RouteCtx {
+            ip: Some("127.0.0.1".parse().unwrap()),
+            ..Default::default()
+        }));
+        assert!(!ipv4.matches(&RouteCtx {
+            ip: Some("::1".parse().unwrap()),
+            ..Default::default()
+        }));
+
+        assert!(CompositeRule::try_from(&RuleIR {
+            ip_version: vec!["5".into()],
+            ..Default::default()
+        })
+        .is_err());
+        assert!(CompositeRule::try_from(&RuleIR {
+            ip_version: vec!["4".into(), "6".into()],
+            ..Default::default()
+        })
+        .is_err());
+    }
+
+    #[test]
+    fn auth_user_match_is_case_sensitive_like_go() {
+        let rule = CompositeRule::try_from(&RuleIR {
+            auth_user: vec!["Alice".into()],
+            outbound: Some("direct".into()),
+            ..Default::default()
+        })
+        .expect("compile auth-user rule");
+
+        assert!(rule.matches(&RouteCtx {
+            auth_user: Some("Alice"),
+            ..Default::default()
+        }));
+        assert!(!rule.matches(&RouteCtx {
+            auth_user: Some("alice"),
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn go_rule_set_source_mode_uses_domain_or_source_ip_tags() {
+        let rule = CompositeRule::try_from(&RuleIR {
+            rule_set: vec!["source-rules".into()],
+            rule_set_ip_cidr_match_source: Some(true),
+            outbound: Some("direct".into()),
+            ..Default::default()
+        })
+        .expect("compile source-mode rule-set rule");
+
+        assert!(rule.matches(&RouteCtx {
+            source_ip_rule_sets: vec!["source-rules".into()],
+            ..Default::default()
+        }));
+        assert!(rule.matches(&RouteCtx {
+            domain_rule_sets: vec!["source-rules".into()],
+            ..Default::default()
+        }));
+        assert!(!rule.matches(&RouteCtx {
+            ip_rule_sets: vec!["source-rules".into()],
+            rule_sets: vec!["source-rules".into()],
+            ..Default::default()
+        }));
     }
 
     #[test]

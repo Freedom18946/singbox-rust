@@ -82,6 +82,10 @@
 | Private-address routing via SOCKS | private destination/source → direct | public destination → final block | — | — | `p1_private_ip_rule_via_socks` (both, BHV-DP-031) |
 | Remote source rule-set routing via SOCKS | downloaded domain/IP member → direct | non-member → final block | — | — | `p1_remote_rule_set_via_socks` (both, BHV-DP-032) |
 | Source-port routing via SOCKS | exact/range source port → direct | outside range → final block | — | — | `p1_source_port_rule_via_socks` (both, BHV-DP-033) |
+| IP-version routing via SOCKS | IPv4 literal → direct | IPv6 literal → final block | — | — | `p1_ip_version_rule_via_socks` (both, BHV-DP-034) |
+| Auth-user routing via SOCKS | exact authenticated username → direct | valid differently-cased user → final block | — | — | `p1_auth_user_rule_via_socks` (both, BHV-DP-035) |
+| Rule-set source-IP routing via SOCKS | source IP CIDR member → direct | destination-only member → final block | — | — | `p1_rule_set_source_ip_cidr_via_socks` (both, BHV-DP-036) |
+| Reject route action via SOCKS | matched port rejected | unmatched port → final direct | — | — | `p1_reject_rule_action_via_socks` (both, BHV-DP-037) |
 | Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |

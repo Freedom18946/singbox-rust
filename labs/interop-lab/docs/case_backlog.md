@@ -67,6 +67,10 @@
 | `p1_private_ip_rule_via_socks` | destination/source private address 命中 direct，public destination final block (BHV-DP-031) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_remote_rule_set_via_socks` | direct detour 下载 remote source rule_set，domain/IP 成员命中 direct (BHV-DP-032) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_source_port_rule_via_socks` | source_port 精确值与 canonical range 分流 (BHV-DP-033) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_ip_version_rule_via_socks` | IPv4 destination 命中，IPv6 destination final block (BHV-DP-034) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_auth_user_rule_via_socks` | SOCKS TCP 认证用户名大小写精确分流 (BHV-DP-035) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_rule_set_source_ip_cidr_via_socks` | rule_set IP CIDR source mode 区分源/目标地址 (BHV-DP-036) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_reject_rule_action_via_socks` | reject action 拒绝命中流量，miss 走 final direct (BHV-DP-037) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_block_outbound_via_socks` | Block outbound 拒绝 SOCKS TCP CONNECT | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
 | `p1_fault_delay_http_via_socks` | upstream delay 超时可观测 | `strict` | implemented |

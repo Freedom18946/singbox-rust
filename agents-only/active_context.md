@@ -6,6 +6,29 @@
 > Other docs point here, not copy.
 
 ---
+## Resume (2026-07-22) - dual-kernel routing-rule coverage batch 5 +4 BHV DONE
+
+- Added strict both-kernel coverage for destination `ip_version` (BHV-DP-034), case-sensitive
+  authenticated SOCKS TCP users (BHV-DP-035), source-IP CIDR rule-set mode (BHV-DP-036), and
+  `reject` route actions (BHV-DP-037). Every case proves both match and miss behavior.
+- Red-team comparison with Go closed production mismatches: invalid/multiple IP versions compiled
+  as permanent misses; inbound `users` never reached SOCKS/HTTP/mixed builders; authenticated SOCKS
+  usernames were omitted from initial and post-sniff route contexts and matched case-insensitively;
+  source-mode rule sets could not distinguish domain, destination-IP, and source-IP matches.
+- Harness SOCKS TCP client now supports structured RFC 1929 credentials in proxy URLs while fixed
+  source-port support remains intact.
+- Evidence: `p1_{ip_version_rule,auth_user_rule,rule_set_source_ip_cidr,reject_rule_action}_via_socks`;
+  final PASS run IDs `20260722T165533Z-9f17516a-6732-42ed-acf5-4aaef8a98f51`,
+  `20260722T165659Z-1f7b5493-aea9-47b8-9b8d-0066194327e8`,
+  `20260722T165738Z-3fcaac91-156b-491e-ba2a-05e977de737c`, and
+  `20260722T165817Z-1e5ee156-e1b0-45fe-a785-01e5429a2f06`; all normalized diffs clean.
+- Coverage moved **67/71 → 71/75 (94.4% → 94.7%)**; inventory is **61 both / 122 total**.
+  The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC-003) remain unchanged.
+- Gates: `sb-core` 579 passed/8 ignored, `sb-adapters --lib` 62 passed, interop-lab 47 passed,
+  eight Go/Rust config checks, acceptance app build, clippy, consistency, boundaries, fmt, and
+  diff-check PASS.
+
+---
 ## Resume (2026-07-22) - dual-kernel routing-rule coverage batch 4 +4 BHV DONE
 
 - Added strict both-kernel coverage for logical OR (BHV-DP-030), destination/source private
@@ -28,26 +51,6 @@
   The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC-003) remain unchanged.
 - Gates: `sb-core` 575 passed/8 ignored, interop-lab 46 passed, four Go/Rust config checks,
   acceptance app build, clippy, consistency, boundaries, fmt, and diff-check PASS.
-
----
-## Resume (2026-07-22) - dual-kernel routing-rule coverage batch 3 +4 BHV DONE
-
-- Added strict both-kernel coverage for local source `rule_set` (BHV-DP-026), logical AND with
-  nested `invert` (BHV-DP-027), two-inbound tag routing (BHV-DP-028), and runtime `clash_mode`
-  switching through `PATCH /configs` (BHV-DP-029). Each case proves direct match and final-block miss.
-- Red-team comparison with Go closed four Rust production gaps: default-rule invert was ignored;
-  malformed logical type/mode/empty groups were accepted; unreadable local rule-set files silently
-  disappeared during startup; schema-v2 lowering discarded `clash_mode` into an empty match-all rule.
-  Bridge construction now shares one router handle and reports router-build failures as startup errors.
-- Evidence: `p1_{local_rule_set_domain,logical_and_invert_rule,inbound_rule,clash_mode_rule_switch}_via_socks`;
-  final PASS run IDs `20260721T190415Z-09961c58-d668-4859-8736-183fbd73b2c6`,
-  `20260721T190428Z-5aae1c39-a9f3-4c6e-b875-9a92205bb89a`,
-  `20260721T190508Z-cc9ac821-dd58-4873-85df-b71b5e322aa6`, and
-  `20260721T190519Z-ce4378d9-028d-4b8f-835a-653498aabc67`; all S4-normalized diffs clean.
-- Coverage moved **59/63 → 63/67 (93.7% → 94.0%)**; inventory is **53 both / 114 total**.
-  The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC-003) remain unchanged.
-- Gates: focused regressions, inventory, Go/Rust config checks, app/interop builds, consistency,
-  boundaries, fmt, and diff-check PASS.
 
 ## Resume (2026-07-20) - REALITY ServerHello target-profile borrowing DONE
 
@@ -209,7 +212,7 @@
 ## Strategic State
 
 Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
-(non-gating). Parity **67/71 BHV (94.4%) current** — REALITY has no S3 BHV-ID, not in the
+(non-gating). Parity **71/75 BHV (94.7%) current** — REALITY has no S3 BHV-ID, not in the
 S1/S6 denominator. `DEV-REALITY-01` local implementation line is CLOSED: Chrome-current profile,
 BoringSSL ordering, FoxIO JA4 cross-check, active-probing relay, canonical first-flight/session_id,
 inbound Vision, production server, reverse Go-client interop, and success-path target ServerHello
