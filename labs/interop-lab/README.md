@@ -67,8 +67,12 @@ Top-level fields:
 - `assertions`
 - `oracle`
 
+`upstream_topology` supports `http_static` with `bind`, `content_path`, and optional
+`content_type` for deterministic local downloads.
+
 `traffic_plan` additional actions:
 
+- `tcp_round_trip` accepts optional `source_port` to bind the client connection before dialing
 - `tcp_throughput` (`addr`, SOCKS5 `proxy`, `payload_size`, `samples`, `warmup`,
   `timeout_ms`, `min_mib_per_sec`); each sample includes a fresh SOCKS5 negotiation and full echo
 - `kernel_control` (`action=restart|reload`, `target=rust|go`, `wait_ready_ms`)

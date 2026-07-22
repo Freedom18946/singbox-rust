@@ -63,6 +63,10 @@
 | `p1_logical_and_invert_rule_via_socks` | logical AND 与嵌套 invert 组合命中 direct，边界 miss final block (BHV-DP-027) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_inbound_rule_via_socks` | 两个 SOCKS inbound 按 inbound tag 分流 (BHV-DP-028) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_clash_mode_rule_switch_via_socks` | PATCH /configs 切换 clash mode 后规则分流变化 (BHV-DP-029) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_logical_or_rule_via_socks` | logical OR 任一子规则命中 direct，全部未命中 final block (BHV-DP-030) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_private_ip_rule_via_socks` | destination/source private address 命中 direct，public destination final block (BHV-DP-031) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_remote_rule_set_via_socks` | direct detour 下载 remote source rule_set，domain/IP 成员命中 direct (BHV-DP-032) | `strict` | implemented (`kernel_mode: both`) |
+| `p1_source_port_rule_via_socks` | source_port 精确值与 canonical range 分流 (BHV-DP-033) | `strict` | implemented (`kernel_mode: both`) |
 | `p1_block_outbound_via_socks` | Block outbound 拒绝 SOCKS TCP CONNECT | `strict` | implemented (`kernel_mode: both`) |
 | `p1_fault_disconnect_http_via_socks` | upstream disconnect 故障可观测 | `strict` | implemented |
 | `p1_fault_delay_http_via_socks` | upstream delay 超时可观测 | `strict` | implemented |

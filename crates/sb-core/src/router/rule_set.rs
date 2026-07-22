@@ -1,7 +1,7 @@
 use crate::router::ruleset::{
     binary,
     matcher::{MatchContext, RuleMatcher},
-    RuleSetFormat, RuleSetSource,
+    RuleSet, RuleSetFormat, RuleSetSource,
 };
 use anyhow::Result;
 use parking_lot::RwLock;
@@ -165,6 +165,15 @@ impl RuleSetDb {
         let matcher = Self::load_rule_set_sync(&tag, path, format_str)?;
         self.matchers.write().push((tag, matcher));
         Ok(())
+    }
+
+    /// Add an already downloaded and parsed rule-set.
+    ///
+    /// Remote sources are loaded asynchronously by the runtime bridge. Keeping
+    /// insertion here avoids a second parser or a silent gap between the modern
+    /// remote loader and the synchronous routing database.
+    pub fn add_compiled_rule_set(&self, tag: String, ruleset: Arc<RuleSet>) {
+        self.matchers.write().push((tag, RuleMatcher::new(ruleset)));
     }
 
     /// Match a host against all rule sets and collect matching tags

@@ -6,6 +6,30 @@
 > Other docs point here, not copy.
 
 ---
+## Resume (2026-07-22) - dual-kernel routing-rule coverage batch 4 +4 BHV DONE
+
+- Added strict both-kernel coverage for logical OR (BHV-DP-030), destination/source private
+  addresses (BHV-DP-031), remote source `rule_set` initial loading (BHV-DP-032), and exact/range
+  source ports (BHV-DP-033). Every case proves direct matches plus a final-block miss.
+- Red-team comparison with Go closed production mismatches: canonical source-port ranges were
+  dropped; private matching omitted multicast/unspecified addresses; remote sets never entered the
+  runtime router. Startup/reload now loads remote sets asynchronously, treats bad initial content
+  as fatal, honors declared format, commits only parsed cache payloads, and rejects unsupported
+  explicit or inherited download detours instead of silently dialing direct. Unsupported inline
+  rule sets now fail loudly rather than disappearing from routing; this batch claims no inline parity.
+- Harness adds deterministic `http_static` content and fixed TCP source-port binding. Abortive close
+  prevents lane/repeat TIME_WAIT collisions without weakening traffic assertions.
+- Evidence: `p1_{logical_or_rule,private_ip_rule,remote_rule_set,source_port_rule}_via_socks`;
+  final PASS run IDs `20260722T153319Z-715e73c5-a4af-4890-92dc-169f8a27681b`,
+  `20260722T153331Z-af0fa16b-c7ed-42c6-ab3d-83148fa59800`,
+  `20260722T153358Z-79bbd559-0e60-41ff-82f3-fe7fd4586aa8`, and
+  `20260722T153413Z-2d651400-b5ae-453b-be59-040618f87a1b`; all normalized diffs clean.
+- Coverage moved **63/67 → 67/71 (94.0% → 94.4%)**; inventory is **57 both / 118 total**.
+  The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC-003) remain unchanged.
+- Gates: `sb-core` 575 passed/8 ignored, interop-lab 46 passed, four Go/Rust config checks,
+  acceptance app build, clippy, consistency, boundaries, fmt, and diff-check PASS.
+
+---
 ## Resume (2026-07-22) - dual-kernel routing-rule coverage batch 3 +4 BHV DONE
 
 - Added strict both-kernel coverage for local source `rule_set` (BHV-DP-026), logical AND with
@@ -25,47 +49,6 @@
 - Gates: focused regressions, inventory, Go/Rust config checks, app/interop builds, consistency,
   boundaries, fmt, and diff-check PASS.
 
----
-## Resume (2026-07-21) - dual-kernel routing-rule coverage batch 2 +3 BHV DONE
-
-- Added strict both-kernel coverage for `port_range` (BHV-DP-023), `domain_regex`
-  (BHV-DP-024), and `source_ip_cidr` (BHV-DP-025). Every case proves match→direct and
-  miss→final block with identical Rust/Go traffic decisions.
-- Red-team runs found and closed three Rust production-path gaps: Go-canonical colon/open-bound
-  port ranges were silently dropped; bare IPv6 inbound hosts normalized without brackets; SOCKS
-  TCP route contexts omitted peer source IP/port. Focused regressions cover range parsing and IPv6
-  listen normalization; source routing is covered end-to-end through IPv4/IPv6 loopback inbounds.
-- Coverage moved **56/60 → 59/63 (93.3% → 93.7%)**. Actual case inventory is 49 both / 110 total;
-  the prior S6 ratio and repository-case test count were stale and are corrected. The 4 open gaps
-  (3 SV.2 STRUCTURAL + 1 LC-003) are unchanged.
-- `protocol` did not receive a duplicate BHV: existing strict both case
-  `p1_sniff_rule_action_tls` already proves sniffed `protocol` rule dispatch under BHV-DP-014.
-- Evidence: `p1_{port_range,domain_regex,source_ip_cidr}_rule_via_socks`; PASS run IDs
-  `20260721T053752Z-0cb89a95-8fd1-4299-959d-3a8fbe57292b`,
-  `20260721T053753Z-cdd09261-3153-446b-ace0-f4e71cab45c4`, and
-  `20260721T053753Z-8037b3aa-c50c-48dc-a7b0-65650b2e99f6`.
-- Gates: focused regressions, case inventory, Go config checks, app/interop builds, consistency,
-  boundaries, fmt, and diff-check PASS.
-
----
-## Resume (2026-07-21) - dual-kernel routing-rule coverage +4 BHV DONE
-
-- Expanded the S3 behavior registry with 4 previously-unregistered route-rule conditions, each
-  now carried by a `kernel_mode: both` interop case: `domain_suffix` (BHV-DP-019),
-  `domain_keyword` (BHV-DP-020), destination `port` (BHV-DP-021), `network` tcp/udp (BHV-DP-022).
-  All follow the `p1_domain_rule_via_socks` template (match→direct, miss→final block).
-- Real dual-kernel parity: Go and Rust snapshots emit **identical** routing decisions on all 4
-  (match=true / miss=false). Config note: Rust `port` is `Vec<String>` via
-  `deserialize_string_or_list` (no int coercion) so rust config uses `"port":["18897"]` while Go
-  uses uint16 `[18897]`; separate config files per kernel, same decision.
-- Coverage moved **52/56 → 56/60 (92.9% → 93.3%)** — honest denominator+numerator growth, NOT a
-  REALITY/camouflage claim and NOT a REALITY BHV (REALITY still has no S3 BHV-ID). The 4 open gaps
-  (3 SV.2 STRUCTURAL + 1 LC-003) are **unchanged**.
-- Evidence: `labs/interop-lab/cases/p1_{domain_suffix,domain_keyword,port,network}_rule_via_socks.yaml`
-  + per-kernel configs; all 4 `case run --kernel both` PASS. golden_spec S1/S3/S5/S6 + case_backlog +
-  compat_matrix updated. Build: `cargo build -p app --features acceptance,clash_api,adapters`.
-
----
 ## Resume (2026-07-20) - REALITY ServerHello target-profile borrowing DONE
 
 - Authenticated Rust server now consumes the same decoy TLS 1.3 profile as Go uTLS REALITY:
@@ -226,7 +209,7 @@
 ## Strategic State
 
 Phase: LNX-RT-01 closed; MT-REAL-02 stage-2 closed; public fresh-cohort = pre-release observation
-(non-gating). Parity **63/67 BHV (94.0%) current** — REALITY has no S3 BHV-ID, not in the
+(non-gating). Parity **67/71 BHV (94.4%) current** — REALITY has no S3 BHV-ID, not in the
 S1/S6 denominator. `DEV-REALITY-01` local implementation line is CLOSED: Chrome-current profile,
 BoringSSL ordering, FoxIO JA4 cross-check, active-probing relay, canonical first-flight/session_id,
 inbound Vision, production server, reverse Go-client interop, and success-path target ServerHello

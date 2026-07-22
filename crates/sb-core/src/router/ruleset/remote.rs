@@ -82,6 +82,7 @@ pub async fn load_from_url_with_cache_file(
             last_modified,
         }) => {
             tracing::info!("downloaded rule-set: {} ({} bytes)", url, data.len());
+            let ruleset = parse_downloaded_rule_set(&data, format, url)?;
             let etag_for_cache_file = etag.clone().unwrap_or_default();
             if let (Some(tag), Some(cache)) = (cache_tag, cache_file.as_ref()) {
                 cache.store_rule_set_cached(
@@ -108,10 +109,7 @@ pub async fn load_from_url_with_cache_file(
                 }
             }
 
-            // Parse and return
-            super::binary::parse_binary(&data, RuleSetSource::Remote(url.to_string())).or_else(
-                |_| super::binary::parse_json(&data, RuleSetSource::Remote(url.to_string())),
-            )
+            Ok(ruleset)
         }
         Err(e) => {
             // Download failed, try to use cached version
@@ -138,6 +136,14 @@ pub async fn load_from_url_with_cache_file(
             }
             Err(e)
         }
+    }
+}
+
+fn parse_downloaded_rule_set(data: &[u8], format: RuleSetFormat, url: &str) -> SbResult<RuleSet> {
+    let source = RuleSetSource::Remote(url.to_string());
+    match format {
+        RuleSetFormat::Binary => super::binary::parse_binary(data, source),
+        RuleSetFormat::Source => super::binary::parse_json(data, source),
     }
 }
 
@@ -339,7 +345,13 @@ async fn load_from_cache(cache_file: &Path, format: RuleSetFormat, url: &str) ->
         });
     }
 
-    super::binary::load_from_file(cache_file, format).await
+    let data = fs::read(cache_file).await.map_err(|e| SbError::Config {
+        code: crate::error::IssueCode::MissingRequired,
+        ptr: "/rule_set/cache/load".to_string(),
+        msg: format!("failed to read cached rule-set: {e}"),
+        hint: Some(format!("Cached path: {}", cache_file.display())),
+    })?;
+    parse_downloaded_rule_set(&data, format, url)
 }
 
 /// Get cache file path
@@ -381,5 +393,14 @@ mod tests {
 
         let path = get_meta_path(cache_dir, url);
         assert!(path.to_string_lossy().ends_with(".meta.json"));
+    }
+
+    #[test]
+    fn downloaded_payload_must_match_declared_format() {
+        let source = br#"{"version":4,"rules":[{"domain":["example.com"]}]}"#;
+        let url = "https://example.invalid/rules.json";
+
+        assert!(parse_downloaded_rule_set(source, RuleSetFormat::Source, url).is_ok());
+        assert!(parse_downloaded_rule_set(source, RuleSetFormat::Binary, url).is_err());
     }
 }

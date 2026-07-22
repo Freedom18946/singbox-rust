@@ -5,7 +5,8 @@ use anyhow::{anyhow, Context, Result};
 use axum::body::Bytes;
 use axum::extract::ws::{Message as AxumWsMessage, WebSocket, WebSocketUpgrade};
 use axum::extract::State;
-use axum::http::{Method, StatusCode, Uri};
+use axum::http::header::CONTENT_TYPE;
+use axum::http::{HeaderValue, Method, StatusCode, Uri};
 use axum::response::IntoResponse;
 use axum::routing::{any, get};
 use axum::{Json, Router};
@@ -28,11 +29,11 @@ use serde_json::json;
 use std::collections::hash_map::DefaultHasher;
 use std::collections::{BTreeMap, HashMap};
 use std::hash::{Hash, Hasher};
-use std::net::{IpAddr, Ipv4Addr};
+use std::net::{IpAddr, Ipv4Addr, Ipv6Addr, SocketAddr};
 use std::sync::Arc;
 use std::sync::Once;
 use tokio::io::{AsyncRead, AsyncReadExt, AsyncWrite, AsyncWriteExt};
-use tokio::net::{TcpListener, TcpStream, UdpSocket};
+use tokio::net::{lookup_host, TcpListener, TcpSocket, TcpStream, UdpSocket};
 use tokio::process::Command;
 use tokio::sync::{oneshot, RwLock, Semaphore};
 use tokio::task::JoinHandle;
@@ -213,6 +214,14 @@ struct HttpState {
 }
 
 #[derive(Clone)]
+struct HttpStaticState {
+    service_name: String,
+    delays_ms: Arc<RwLock<BTreeMap<String, u64>>>,
+    body: Bytes,
+    content_type: HeaderValue,
+}
+
+#[derive(Clone)]
 struct WsState {
     service_name: String,
     delays_ms: Arc<RwLock<BTreeMap<String, u64>>>,
@@ -259,6 +268,61 @@ async fn start_single_upstream(
                     .await
                 {
                     tracing::warn!(error = %err, "http echo upstream serve failed");
+                }
+            });
+            harness.endpoints.insert(
+                spec.name.clone(),
+                format!("http://{}:{}", addr.ip(), addr.port()),
+            );
+            harness.insert_handle(
+                spec.name.clone(),
+                UpstreamHandle {
+                    shutdown: Some(tx),
+                    join,
+                },
+            );
+        }
+        UpstreamKind::HttpStatic => {
+            let content_path = spec.content_path.as_ref().ok_or_else(|| {
+                anyhow!("http_static upstream {} requires content_path", spec.name)
+            })?;
+            let body = tokio::fs::read(content_path)
+                .await
+                .with_context(|| format!("reading static response {}", content_path.display()))?;
+            let content_type = HeaderValue::from_str(
+                spec.content_type
+                    .as_deref()
+                    .unwrap_or("application/octet-stream"),
+            )
+            .with_context(|| format!("invalid content_type for {}", spec.name))?;
+            let listener = TcpListener::bind(&spec.bind)
+                .await
+                .with_context(|| format!("binding http static {}", spec.bind))?;
+            let addr = listener
+                .local_addr()
+                .with_context(|| "http static local_addr")?;
+            let state = HttpStaticState {
+                service_name: spec.name.clone(),
+                delays_ms: harness.service_delays_ms.clone(),
+                body: Bytes::from(body),
+                content_type,
+            };
+            let app = Router::new()
+                .route("/", get(http_static))
+                .route("/*path", get(http_static))
+                .with_state(state);
+            let (tx, rx) = oneshot::channel::<()>();
+            let join = tokio::spawn(async move {
+                let shutdown = async move {
+                    if rx.await.is_err() {
+                        tracing::debug!("http static shutdown channel closed before signal");
+                    }
+                };
+                if let Err(err) = axum::serve(listener, app)
+                    .with_graceful_shutdown(shutdown)
+                    .await
+                {
+                    tracing::warn!(error = %err, "http static upstream serve failed");
                 }
             });
             harness.endpoints.insert(
@@ -1138,6 +1202,7 @@ pub async fn run_traffic_plan(
                 addr,
                 payload,
                 proxy,
+                source_port,
                 payload_size,
                 payload_tls_client_hello,
             } => {
@@ -1149,9 +1214,10 @@ pub async fn run_traffic_plan(
                     Duration::from_millis(TCP_ROUNDTRIP_TIMEOUT_MS),
                     async {
                         if let Some(proxy) = resolved_proxy.as_deref() {
-                            tcp_roundtrip_via_proxy(proxy, &addr, &actual_payload).await
+                            tcp_roundtrip_via_proxy(proxy, &addr, &actual_payload, *source_port)
+                                .await
                         } else {
-                            tcp_roundtrip(&addr, &actual_payload).await
+                            tcp_roundtrip(&addr, &actual_payload, *source_port).await
                         }
                     },
                 )
@@ -1172,6 +1238,7 @@ pub async fn run_traffic_plan(
                             detail: json!({
                                 "addr": addr,
                                 "proxy": resolved_proxy,
+                                "source_port": source_port,
                                 "payload_len": actual_payload.len(),
                                 "echo_len": back.len(),
                                 "payload_hash": payload_hash,
@@ -1183,9 +1250,10 @@ pub async fn run_traffic_plan(
                         name: name.clone(),
                         success: false,
                         detail: json!({
-                            "addr": addr,
-                            "proxy": resolved_proxy,
-                            "error": err.to_string()
+                                "addr": addr,
+                                "proxy": resolved_proxy,
+                                "source_port": source_port,
+                                "error": err.to_string()
                         }),
                     },
                 }
@@ -1211,7 +1279,7 @@ pub async fn run_traffic_plan(
                     let started = tokio::time::Instant::now();
                     let result = tokio::time::timeout(
                         Duration::from_millis((*timeout_ms).max(1)),
-                        tcp_roundtrip_via_proxy(&resolved_proxy, &addr, &payload),
+                        tcp_roundtrip_via_proxy(&resolved_proxy, &addr, &payload, None),
                     )
                     .await;
                     let echoed = match result {
@@ -1891,6 +1959,18 @@ async fn http_echo(
     (StatusCode::OK, Json(payload))
 }
 
+async fn http_static(State(state): State<HttpStaticState>) -> impl IntoResponse {
+    let delay_ms = service_delay(&state.delays_ms, &state.service_name).await;
+    if delay_ms > 0 {
+        tokio::time::sleep(Duration::from_millis(delay_ms)).await;
+    }
+    let mut response = state.body.clone().into_response();
+    response
+        .headers_mut()
+        .insert(CONTENT_TYPE, state.content_type.clone());
+    response
+}
+
 async fn ws_echo(State(state): State<WsState>, ws: WebSocketUpgrade) -> impl IntoResponse {
     ws.on_upgrade(move |socket| handle_ws(socket, state))
 }
@@ -1946,8 +2026,49 @@ fn normalize_addr(input: &str) -> String {
         .to_string()
 }
 
-async fn tcp_roundtrip(addr: &str, payload: &[u8]) -> Result<Vec<u8>> {
-    let mut stream = TcpStream::connect(addr)
+async fn connect_tcp(addr: &str, source_port: Option<u16>) -> Result<TcpStream> {
+    let Some(source_port) = source_port else {
+        return TcpStream::connect(addr)
+            .await
+            .with_context(|| format!("connecting tcp {addr}"));
+    };
+
+    let remote = lookup_host(addr)
+        .await
+        .with_context(|| format!("resolving tcp address {addr}"))?
+        .next()
+        .ok_or_else(|| anyhow!("tcp address resolved empty: {addr}"))?;
+    let socket = if remote.is_ipv4() {
+        TcpSocket::new_v4().with_context(|| "creating IPv4 TCP socket")?
+    } else {
+        TcpSocket::new_v6().with_context(|| "creating IPv6 TCP socket")?
+    };
+    socket
+        .set_reuseaddr(true)
+        .with_context(|| format!("enabling source port reuse for {source_port}"))?;
+    let local_ip = if remote.is_ipv4() {
+        IpAddr::V4(Ipv4Addr::UNSPECIFIED)
+    } else {
+        IpAddr::V6(Ipv6Addr::UNSPECIFIED)
+    };
+    socket
+        .bind(SocketAddr::new(local_ip, source_port))
+        .with_context(|| format!("binding TCP source port {source_port}"))?;
+    let stream = socket
+        .connect(remote)
+        .await
+        .with_context(|| format!("connecting TCP {remote} from source port {source_port}"))?;
+    // Dual-kernel cases reuse fixed source ports against the same proxy endpoint.
+    // Abortive close prevents the first lane's TIME_WAIT tuple from blocking the
+    // second lane or an immediate repeat run.
+    stream
+        .set_linger(Some(Duration::ZERO))
+        .with_context(|| format!("enabling abortive close for source port {source_port}"))?;
+    Ok(stream)
+}
+
+async fn tcp_roundtrip(addr: &str, payload: &[u8], source_port: Option<u16>) -> Result<Vec<u8>> {
+    let mut stream = connect_tcp(addr, source_port)
         .await
         .with_context(|| format!("connecting tcp {addr}"))?;
     stream
@@ -1962,18 +2083,23 @@ async fn tcp_roundtrip(addr: &str, payload: &[u8]) -> Result<Vec<u8>> {
     Ok(buf)
 }
 
-async fn tcp_roundtrip_via_proxy(proxy: &str, addr: &str, payload: &[u8]) -> Result<Vec<u8>> {
+async fn tcp_roundtrip_via_proxy(
+    proxy: &str,
+    addr: &str,
+    payload: &[u8],
+    source_port: Option<u16>,
+) -> Result<Vec<u8>> {
     if proxy.starts_with("socks5://") || proxy.starts_with("socks5h://") {
         let proxy_addr = normalize_addr(
             proxy
                 .trim_start_matches("socks5://")
                 .trim_start_matches("socks5h://"),
         );
-        return tcp_roundtrip_via_socks5(&proxy_addr, addr, payload).await;
+        return tcp_roundtrip_via_socks5(&proxy_addr, addr, payload, source_port).await;
     }
     if proxy.starts_with("http://") {
         let proxy_addr = normalize_addr(proxy.trim_start_matches("http://"));
-        return tcp_roundtrip_via_http_connect(&proxy_addr, addr, payload).await;
+        return tcp_roundtrip_via_http_connect(&proxy_addr, addr, payload, source_port).await;
     }
 
     Err(anyhow!("unsupported tcp proxy scheme: {proxy}"))
@@ -1983,8 +2109,9 @@ async fn tcp_roundtrip_via_socks5(
     proxy_addr: &str,
     target_addr: &str,
     payload: &[u8],
+    source_port: Option<u16>,
 ) -> Result<Vec<u8>> {
-    let mut stream = socks5_connect(proxy_addr, target_addr).await?;
+    let mut stream = socks5_connect_with_source_port(proxy_addr, target_addr, source_port).await?;
     stream
         .write_all(payload)
         .await
@@ -2001,8 +2128,9 @@ async fn tcp_roundtrip_via_http_connect(
     proxy_addr: &str,
     target_addr: &str,
     payload: &[u8],
+    source_port: Option<u16>,
 ) -> Result<Vec<u8>> {
-    let mut stream = TcpStream::connect(proxy_addr)
+    let mut stream = connect_tcp(proxy_addr, source_port)
         .await
         .with_context(|| format!("connecting http proxy {proxy_addr}"))?;
     let request = format!("CONNECT {target_addr} HTTP/1.1\r\nHost: {target_addr}\r\n\r\n");
@@ -2429,7 +2557,15 @@ fn socks5_append_addr(buf: &mut Vec<u8>, host: &str, port: u16) {
 }
 
 pub(crate) async fn socks5_connect(proxy_addr: &str, target_addr: &str) -> Result<TcpStream> {
-    let mut stream = TcpStream::connect(proxy_addr)
+    socks5_connect_with_source_port(proxy_addr, target_addr, None).await
+}
+
+async fn socks5_connect_with_source_port(
+    proxy_addr: &str,
+    target_addr: &str,
+    source_port: Option<u16>,
+) -> Result<TcpStream> {
+    let mut stream = connect_tcp(proxy_addr, source_port)
         .await
         .with_context(|| format!("connecting socks5 proxy {proxy_addr}"))?;
 
@@ -2568,11 +2704,40 @@ impl rustls::client::danger::ServerCertVerifier for DangerousVerifier {
 
 #[cfg(test)]
 mod tests {
-    use super::throughput_bytes_per_sec;
+    use super::{connect_tcp, throughput_bytes_per_sec};
+    use tokio::net::TcpListener;
 
     #[test]
     fn throughput_rate_uses_payload_bytes_and_never_divides_by_zero() {
         assert_eq!(throughput_bytes_per_sec(1_048_576, 1_000_000), 1_048_576);
         assert_eq!(throughput_bytes_per_sec(1024, 0), 1_024_000_000);
+    }
+
+    #[tokio::test]
+    async fn tcp_connect_binds_and_immediately_reuses_requested_source_port() {
+        let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
+        let target = listener.local_addr().unwrap();
+        let source_probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        let source_port = source_probe.local_addr().unwrap().port();
+        drop(source_probe);
+
+        let accepted = tokio::spawn(async move {
+            let mut peers = Vec::new();
+            for _ in 0..2 {
+                let (stream, peer) = listener.accept().await.unwrap();
+                peers.push(peer);
+                drop(stream);
+            }
+            peers
+        });
+        for _ in 0..2 {
+            let stream = connect_tcp(&target.to_string(), Some(source_port))
+                .await
+                .unwrap();
+            drop(stream);
+        }
+
+        let peers = accepted.await.unwrap();
+        assert!(peers.iter().all(|peer| peer.port() == source_port));
     }
 }

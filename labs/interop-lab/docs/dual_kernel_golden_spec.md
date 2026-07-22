@@ -11,11 +11,11 @@
 | Code | Domain | Sub-domains | Behaviors | Both-Covered | Coverage |
 |------|--------|-------------|-----------|--------------|----------|
 | CP | Control Plane | 4 (HTTP / WS / Auth / Non-GUI) | 21 | 21 | 100.0% |
-| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 29 | 29 | 100.0% |
+| DP | Data Plane | 4 (Inbound / Outbound / Routing / DNS) | 33 | 33 | 100.0% |
 | LC | Lifecycle | 3 (Startup / Reload / Shutdown) | 9 | 8 | 88.9% |
 | SV | Services | 1 (Provider) | 3 | 0 | 0% |
 | PF | Performance | 3 (Latency / Memory / Startup) | 5 | 5 | 100.0% |
-| **Total** | | **15** | **67** | **63** | **94.0%** |
+| **Total** | | **15** | **71** | **67** | **94.4%** |
 
 > **Reading this table**: "Both-Covered" = at least one `kernel_mode: both` case exercises this behavior.
 > Coverage gaps still cluster in SV (structural) and LC (1 infeasible).
@@ -43,7 +43,7 @@ Maps `diff_report.rs` comparison dimensions to behavior IDs in S3. When a diff f
 > **Subscription dimension deprecated (2026-03-16)**: BHV-SV-001…004 reclassified as harness-only.
 > The subscription diff dimension remains functional in the harness but does not contribute to
 > dual-kernel parity scoring. See S1 reclassification note.
-| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 016, BHV-DP-018 … 029, BHV-PF-001, BHV-PF-002 | `tolerate_counter_jitter`, `counter_jitter_abs` |
+| Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 016, BHV-DP-018 … 033, BHV-PF-001, BHV-PF-002 | `tolerate_counter_jitter`, `counter_jitter_abs` |
 | Connections | `connection_mismatches` | connections.count + downloadTotal/uploadTotal | BHV-CP-006, BHV-DP-005 … 009 | `tolerate_counter_jitter` |
 | Memory | `memory_mismatches` | peak RSS ratio (>2x = mismatch) | BHV-PF-003, BHV-PF-004 | — |
 
@@ -137,6 +137,10 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-DP-027 | logical AND honors nested invert | AND sub-rules with an inverted domain sub-rule | Composite match → outbound; AND/invert miss → final | Traffic | `p1_logical_and_invert_rule_via_socks` | — | — |
 | BHV-DP-028 | inbound tag selects route | Same destination through two tagged inbounds | Matching inbound → outbound; other inbound → final | Traffic | `p1_inbound_rule_via_socks` | — | — |
 | BHV-DP-029 | clash_mode tracks runtime mode | Traffic before/after PATCH /configs mode changes | Global match → outbound; Rule mode → final | Traffic | `p1_clash_mode_rule_switch_via_socks` | — | DIV-M-006 |
+| BHV-DP-030 | logical OR matches either child | Domain child, port child, or neither | Either child → outbound; neither → final | Traffic | `p1_logical_or_rule_via_socks` | — | — |
+| BHV-DP-031 | private destination/source IP selects route | Private destination or private SOCKS peer source | Non-public address → outbound; public destination → final | Traffic | `p1_private_ip_rule_via_socks` | — | — |
+| BHV-DP-032 | remote source rule_set loads before routing | HTTP-served source JSON via direct download detour | Domain/IP member → outbound; non-member → final | Traffic | `p1_remote_rule_set_via_socks` | — | — |
+| BHV-DP-033 | source_port and source_port_range select route | Fixed SOCKS peer source ports | Exact/range member → outbound; outside → final | Traffic | `p1_source_port_rule_via_socks` | — | — |
 
 ### DP.4: DNS
 
@@ -487,7 +491,7 @@ gate).
 
 | Tier | Target | Cases | Cumulative Both | Projected Coverage |
 |------|--------|-------|-----------------|-------------------|
-| Current | Expanded routing-rule breadth | 53 | 53 / 114 | 94.0% (63/67 BHV) |
+| Current | Expanded routing-rule breadth | 57 | 57 / 118 | 94.4% (67/71 BHV) |
 | T1 Immediate (Completed) | GUI critical path strict | +0 | 31 / 95 | 92.9% (52/56 BHV) |
 | T2 Near-term (Promoted) | Coverage-neutral strict promotions | +3 | 30 / 92 | 92.9% (52/56 BHV) |
 | T3 | CLOSED — SV.1 reclassified as harness-only | — | — | — |
@@ -558,6 +562,10 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 38 | `p1_logical_and_invert_rule_via_socks` | both | E4 | BHV-DP-027 | New on 2026-07-22: logical AND hit/miss plus nested default-rule invert true/false. Rust now applies invert to default rules and rejects malformed logical type/mode/empty rules. |
 | 39 | `p1_inbound_rule_via_socks` | both | E2 | BHV-DP-028 | New on 2026-07-22: two SOCKS inbounds target the same echo; only the matching inbound tag routes direct. |
 | 40 | `p1_clash_mode_rule_switch_via_socks` | both | E4 | BHV-DP-029 | New on 2026-07-22: default Rule blocks, PATCH Global routes direct, PATCH Rule blocks again. Rust schema-v2 lowering now preserves `clash_mode` instead of compiling an empty match-all rule. |
+| 41 | `p1_logical_or_rule_via_socks` | both | E2 | BHV-DP-030 | New on 2026-07-22: domain and destination-port children independently satisfy logical OR; neither child falls through to final block. |
+| 42 | `p1_private_ip_rule_via_socks` | both | E4 | BHV-DP-031 | New on 2026-07-22: destination and source private-address rules route direct while a public destination falls through. Rust now matches Go's complete non-public classification, including multicast and unspecified addresses. |
+| 43 | `p1_remote_rule_set_via_socks` | both | E4 | BHV-DP-032 | New on 2026-07-22: a source JSON rule set is fetched from a local HTTP fixture through explicit direct detour before traffic starts; domain/IP members route direct and a non-member falls through. Rust startup/reload now loads remote sets asynchronously and fails on invalid initial content or unsupported effective download detours. |
+| 44 | `p1_source_port_rule_via_socks` | both | E4 | BHV-DP-033 | New on 2026-07-22: fixed SOCKS peer ports prove exact and canonical `start:end` source-port routing plus an outside-range final-block miss. Harness source binding uses abortive close for repeatable dual-lane reuse. |
 
 ### T4: Long-term — CLOSED (2026-07-18)
 
@@ -604,9 +612,9 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 46.5% (53/114) |
-| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 94.0% (63/67) |
-| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 79.1% (53/67) |
+| Both-mode case ratio | both cases / total cases | 48.3% (57/118) |
+| Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 94.4% (67/71) |
+| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 80.3% (57/71) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
 | GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |
 | MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 55.6% (5/9) |
@@ -620,10 +628,10 @@ These cases should **never** be promoted to `kernel_mode: both`:
 > denominator (the old 56 + 4 SV.1 basis); its "Current 45/60 (75.0%)" row is superseded and
 > contradicts the authoritative Current Metrics above. All S5 tiers are delivered/closed (see
 > S5), so a per-tier projection is obsolete and no mechanical per-tier recompute is meaningful
-> for closed tiers. **Authoritative current coverage = `94.0% (63/67)`** (Current Metrics
+> for closed tiers. **Authoritative current coverage = `94.4% (67/71)`** (Current Metrics
 > above; S1). No REALITY tier-3 BHV is added to the denominator.
-> **Note on the `/67`:** the current denominator is `56 BHV + 11 routing-rule BHVs`
-> (DP-019…029, added 2026-07-21/22, each both-covered) — a different basis from the retired
+> **Note on the `/71`:** the current denominator is `56 BHV + 15 routing-rule BHVs`
+> (DP-019…033, added 2026-07-21/22, each both-covered) — a different basis from the retired
 > pre-2026-03-16 `56 + 4 SV.1` `/60`. The 4 open gaps (3 SV.2 STRUCTURAL + 1 LC) are unchanged.
 
 ---

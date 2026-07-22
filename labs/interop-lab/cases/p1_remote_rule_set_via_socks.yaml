@@ -1,0 +1,81 @@
+id: p1_remote_rule_set_via_socks
+title: remote source rule set downloads and routes domain and ip matches
+priority: p1
+kernel_mode: both
+env_class: strict
+tags:
+  - dataplane
+  - routing
+  - rule-set
+  - remote
+  - dual_core
+bootstrap:
+  rust:
+    command: ./target/debug/app
+    args: [-c, labs/interop-lab/configs/rust_core_clash_api_remote_rule_set.json, run]
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19290
+      secret: test-secret
+  go:
+    command: go_fork_source/sing-box-1.13.13/sing-box
+    args: [run, -c, labs/interop-lab/configs/go_core_clash_api_remote_rule_set.json]
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+gui_sequence:
+  - kind: http
+    name: version
+    method: GET
+    path: /version
+    expect_status: 200
+upstream_topology:
+  - name: remote_rule_set_http
+    kind: http_static
+    bind: 127.0.0.1:19880
+    content_path: labs/interop-lab/fixtures/routing/remote_domains.json
+    content_type: application/json
+  - name: remote_domain_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:18897
+  - name: remote_ip_tcp
+    kind: tcp_echo
+    bind: 127.0.0.1:18898
+traffic_plan:
+  - kind: tcp_round_trip
+    name: remote_rule_set_domain_match_direct
+    addr: "localhost:18897"
+    payload: remote-domain-direct
+    proxy: socks5://127.0.0.1:11801
+  - kind: tcp_round_trip
+    name: remote_rule_set_ip_match_direct
+    addr: "127.0.0.1:18898"
+    payload: remote-ip-direct
+    proxy: socks5://127.0.0.1:11801
+  - kind: tcp_round_trip
+    name: remote_rule_set_miss_blocked
+    addr: "nope.invalid:18897"
+    payload: should-be-blocked
+    proxy: socks5://127.0.0.1:11801
+assertions:
+  - key: http.version.status
+    op: eq
+    expected: 200
+  - key: traffic.remote_rule_set_domain_match_direct.success
+    op: eq
+    expected: true
+  - key: traffic.remote_rule_set_ip_match_direct.success
+    op: eq
+    expected: true
+  - key: traffic.remote_rule_set_miss_blocked.success
+    op: eq
+    expected: false
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  ignore_http_paths: [/version]

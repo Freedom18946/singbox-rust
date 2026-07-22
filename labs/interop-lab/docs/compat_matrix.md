@@ -78,6 +78,10 @@
 | Logical AND + invert routing via SOCKS | AND/nested-invert match → direct | logical miss/invert false → final block | — | — | `p1_logical_and_invert_rule_via_socks` (both, BHV-DP-027) |
 | Inbound-tag routing via SOCKS | matching inbound tag → direct | second inbound tag → final block | — | — | `p1_inbound_rule_via_socks` (both, BHV-DP-028) |
 | Clash-mode routing via SOCKS | Global mode → direct; Rule mode → final block | PATCH mode transitions | — | — | `p1_clash_mode_rule_switch_via_socks` (both, BHV-DP-029) |
+| Logical OR routing via SOCKS | either child match → direct | neither child → final block | — | — | `p1_logical_or_rule_via_socks` (both, BHV-DP-030) |
+| Private-address routing via SOCKS | private destination/source → direct | public destination → final block | — | — | `p1_private_ip_rule_via_socks` (both, BHV-DP-031) |
+| Remote source rule-set routing via SOCKS | downloaded domain/IP member → direct | non-member → final block | — | — | `p1_remote_rule_set_via_socks` (both, BHV-DP-032) |
+| Source-port routing via SOCKS | exact/range source port → direct | outside range → final block | — | — | `p1_source_port_rule_via_socks` (both, BHV-DP-033) |
 | Block outbound via SOCKS | reject | — | — | — | `p1_block_outbound_via_socks` (both) |
 | WS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_ws_*` `p1_recovery_*_ws_*` |
 | TLS upstream | — | disconnect/delay | reconnect | yes | `p1_fault_*_tls_*` `p1_recovery_*_tls_*` |

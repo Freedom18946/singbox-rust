@@ -8,12 +8,13 @@ use crate::context::Context;
 use crate::endpoint::{endpoint_registry, Endpoint, EndpointAsOutbound, EndpointContext};
 use crate::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 
-use crate::router::RouterHandle;
+use crate::router::{RouterHandle, RouterIndex};
 use crate::service::{service_registry, ServiceContext};
 use dashmap::DashMap;
 use once_cell::sync::Lazy;
-use sb_config::ir::{ConfigIR, InboundIR, OutboundIR, OutboundType};
+use sb_config::ir::{ConfigIR, InboundIR, OutboundIR, OutboundType, RuleSetIR};
 use std::sync::Arc;
+use std::time::Duration;
 
 fn outbound_registry_from_bridge(br: &Bridge) -> OutboundRegistry {
     let mut reg = OutboundRegistry::default();
@@ -100,43 +101,233 @@ fn router_handle_from_ir(
     cfg: &ConfigIR,
     runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
 ) -> Result<Arc<RouterHandle>, String> {
-    // Use direct IR builder to support complex/logical rules (P1 parity)
     let idx = crate::router::builder::build_index_from_ir(cfg)
         .map_err(|error| format!("router index build failed: {error}"))?;
-    let mut handle = RouterHandle::from_index_with_options(idx.clone(), runtime_options.clone());
+    let db = build_local_rule_set_db(cfg)?;
+    build_router_handle(cfg, runtime_options, idx, db)
+}
 
-    // Populate local rule sets before accepting runtime startup. Go treats an
-    // unreadable local source as fatal; silently omitting it changes routing.
-    if !cfg.route.rule_set.is_empty() {
-        let db = crate::router::rule_set::RuleSetDb::new();
-        for rule_set in &cfg.route.rule_set {
-            if let Some(path) = &rule_set.path {
-                db.add_rule_set(rule_set.tag.clone(), path, &rule_set.format)
-                    .map_err(|error| {
-                        format!(
-                            "failed to load local rule set '{}' from '{}': {error}",
-                            rule_set.tag, path
-                        )
-                    })?;
+fn rule_set_format(
+    rule_set: &RuleSetIR,
+    source: &str,
+) -> Result<crate::router::ruleset::RuleSetFormat, String> {
+    let source_path = source.split(['?', '#']).next().unwrap_or(source);
+    match rule_set.format.as_str() {
+        "source" | "json" | "headless" => Ok(crate::router::ruleset::RuleSetFormat::Source),
+        "binary" => Ok(crate::router::ruleset::RuleSetFormat::Binary),
+        "" if source_path.ends_with(".srs") => Ok(crate::router::ruleset::RuleSetFormat::Binary),
+        "" if source_path.ends_with(".json") => Ok(crate::router::ruleset::RuleSetFormat::Source),
+        "" => Err(format!(
+            "rule-set format is required when source has no .json or .srs extension: {source}"
+        )),
+        other => Err(format!("unknown rule-set format: {other}")),
+    }
+}
+
+fn effective_remote_rule_set_detour<'a>(
+    cfg: &'a ConfigIR,
+    rule_set: &'a RuleSetIR,
+) -> Option<&'a str> {
+    rule_set
+        .download_detour
+        .as_deref()
+        .filter(|detour| !detour.is_empty())
+        .or(cfg
+            .route
+            .default_rule_set_download_detour
+            .as_deref()
+            .filter(|detour| !detour.is_empty()))
+        .or(cfg
+            .route
+            .final_outbound
+            .as_deref()
+            .filter(|detour| !detour.is_empty()))
+        .or(cfg
+            .route
+            .default
+            .as_deref()
+            .filter(|detour| !detour.is_empty()))
+        .or_else(|| {
+            cfg.outbounds
+                .first()
+                .map(|outbound| outbound.name.as_deref().unwrap_or(outbound.ty.ty_str()))
+        })
+}
+
+fn validate_remote_rule_set_detour(cfg: &ConfigIR, rule_set: &RuleSetIR) -> Result<(), String> {
+    let detour = effective_remote_rule_set_detour(cfg, rule_set);
+    let Some(detour) = detour else {
+        return Ok(());
+    };
+    let outbound = cfg
+        .outbounds
+        .iter()
+        .find(|outbound| outbound.name.as_deref().unwrap_or(outbound.ty.ty_str()) == detour)
+        .ok_or_else(|| {
+            format!(
+                "remote rule set '{}' download_detour '{detour}' does not name an outbound",
+                rule_set.tag
+            )
+        })?;
+    if outbound.ty != OutboundType::Direct {
+        return Err(format!(
+            "remote rule set '{}' download_detour '{detour}' uses unsupported outbound type '{}'; only direct is supported by the runtime HTTP client",
+            rule_set.tag,
+            outbound.ty.ty_str()
+        ));
+    }
+    Ok(())
+}
+
+fn add_local_rule_set(
+    db: &crate::router::rule_set::RuleSetDb,
+    rule_set: &RuleSetIR,
+) -> Result<(), String> {
+    let path = rule_set
+        .path
+        .as_deref()
+        .ok_or_else(|| format!("local rule set '{}' is missing path", rule_set.tag))?;
+    let format = match rule_set_format(rule_set, path)? {
+        crate::router::ruleset::RuleSetFormat::Binary => "binary",
+        crate::router::ruleset::RuleSetFormat::Source => "source",
+    };
+    db.add_rule_set(rule_set.tag.clone(), path, format)
+        .map_err(|error| {
+            format!(
+                "failed to load local rule set '{}' from '{}': {error}",
+                rule_set.tag, path
+            )
+        })
+}
+
+fn build_local_rule_set_db(
+    cfg: &ConfigIR,
+) -> Result<Option<Arc<crate::router::rule_set::RuleSetDb>>, String> {
+    if cfg.route.rule_set.is_empty() {
+        return Ok(None);
+    }
+    let db = crate::router::rule_set::RuleSetDb::new();
+    for rule_set in &cfg.route.rule_set {
+        match rule_set.ty.as_str() {
+            "inline" | "" => {
+                return Err(format!(
+                    "inline rule set '{}' is not supported by the runtime router",
+                    rule_set.tag
+                ));
+            }
+            "local" => add_local_rule_set(&db, rule_set)?,
+            "remote" => {
+                let url = rule_set
+                    .url
+                    .as_deref()
+                    .ok_or_else(|| format!("remote rule set '{}' is missing url", rule_set.tag))?;
+                rule_set_format(rule_set, url)?;
+                validate_remote_rule_set_detour(cfg, rule_set)?;
+            }
+            other => {
+                return Err(format!(
+                    "unsupported rule-set type '{other}' for '{}'",
+                    rule_set.tag
+                ));
             }
         }
-        handle = handle.with_rule_set_db(Arc::new(db));
     }
+    Ok(Some(Arc::new(db)))
+}
 
-    // Attach GeoIP/Geosite databases when paths are provided in RouteIR.
+async fn build_remote_rule_set_db(
+    cfg: &ConfigIR,
+    context: &Context,
+) -> Result<Option<Arc<crate::router::rule_set::RuleSetDb>>, String> {
+    if cfg.route.rule_set.is_empty() {
+        return Ok(None);
+    }
+    let db = crate::router::rule_set::RuleSetDb::new();
+    let cache_dir = std::env::temp_dir().join(format!(
+        "singbox-rust-rule-set-cache-{}",
+        std::process::id()
+    ));
+    for rule_set in &cfg.route.rule_set {
+        match rule_set.ty.as_str() {
+            "inline" | "" => {
+                return Err(format!(
+                    "inline rule set '{}' is not supported by the runtime router",
+                    rule_set.tag
+                ));
+            }
+            "local" => add_local_rule_set(&db, rule_set)?,
+            "remote" => {
+                let url = rule_set
+                    .url
+                    .as_deref()
+                    .ok_or_else(|| format!("remote rule set '{}' is missing url", rule_set.tag))?;
+                let format = rule_set_format(rule_set, url)?;
+                validate_remote_rule_set_detour(cfg, rule_set)?;
+                let mut manager = crate::router::ruleset::RuleSetManager::new(
+                    cache_dir.clone(),
+                    Duration::from_secs(3600),
+                );
+                if let Some(cache_file) = context.cache_file.clone() {
+                    manager = manager.with_cache_file(cache_file);
+                }
+                let loaded = manager
+                    .load(
+                        rule_set.tag.clone(),
+                        crate::router::ruleset::RuleSetSource::Remote(url.to_string()),
+                        format,
+                    )
+                    .await
+                    .map_err(|error| {
+                        format!(
+                            "failed to download remote rule set '{}' from '{}': {error}",
+                            rule_set.tag, url
+                        )
+                    })?;
+                db.add_compiled_rule_set(rule_set.tag.clone(), loaded);
+            }
+            other => {
+                return Err(format!(
+                    "unsupported rule-set type '{other}' for '{}'",
+                    rule_set.tag
+                ));
+            }
+        }
+    }
+    Ok(Some(Arc::new(db)))
+}
+
+fn build_router_handle(
+    cfg: &ConfigIR,
+    runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
+    idx: Arc<RouterIndex>,
+    rule_set_db: Option<Arc<crate::router::rule_set::RuleSetDb>>,
+) -> Result<Arc<RouterHandle>, String> {
+    let mut handle = RouterHandle::from_index_with_options(idx, runtime_options);
+    if let Some(db) = rule_set_db {
+        handle = handle.with_rule_set_db(db);
+    }
     if let Some(path) = &cfg.route.geoip_path {
         handle = handle.with_geoip_file(path).map_err(|error| {
             format!("failed to load GeoIP database from route.geoip_path '{path}': {error}")
         })?;
     }
-
     if let Some(path) = &cfg.route.geosite_path {
         handle = handle.with_geosite_file(path).map_err(|error| {
             format!("failed to load Geosite database from route.geosite_path '{path}': {error}")
         })?;
     }
-
     Ok(Arc::new(handle))
+}
+
+async fn router_handle_from_ir_async(
+    cfg: &ConfigIR,
+    runtime_options: Arc<crate::runtime_options::RouterRuntimeOptions>,
+    context: &Context,
+) -> Result<Arc<RouterHandle>, String> {
+    let idx = crate::router::builder::build_index_from_ir(cfg)
+        .map_err(|error| format!("router index build failed: {error}"))?;
+    let db = build_remote_rule_set_db(cfg, context).await?;
+    build_router_handle(cfg, runtime_options, idx, db)
 }
 
 #[allow(dead_code)]
@@ -789,14 +980,36 @@ fn assemble_selectors(cfg: &ConfigIR, br: &mut Bridge) {
 }
 
 pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Context) -> Bridge {
+    let router_options = Arc::new(context.runtime_options.router.clone());
+    let router_result = router_handle_from_ir(cfg, router_options);
+    build_bridge_with_router(cfg, engine, context, router_result)
+}
+
+/// Runtime bridge builder with asynchronous remote rule-set initialization.
+/// Initial download failure is fatal, matching Go's `RemoteRuleSet.StartContext`.
+pub async fn build_bridge_async(
+    cfg: &ConfigIR,
+    engine: crate::router::Engine,
+    context: Context,
+) -> Bridge {
+    let router_options = Arc::new(context.runtime_options.router.clone());
+    let router_result = router_handle_from_ir_async(cfg, router_options, &context).await;
+    build_bridge_with_router(cfg, engine, context, router_result)
+}
+
+fn build_bridge_with_router(
+    cfg: &ConfigIR,
+    engine: crate::router::Engine,
+    context: Context,
+    router_result: Result<Arc<RouterHandle>, String>,
+) -> Bridge {
     crate::endpoint::register_builtins();
     crate::services::register_builtins();
     let mut br = Bridge::new(context);
     let ctx_registry = crate::context::ContextRegistry::from(&br.context);
 
     // Initialize one shared RouterHandle for bridge, endpoints, and inbounds.
-    let router_options = Arc::new(br.context.runtime_options.router.clone());
-    let router_handle = match router_handle_from_ir(cfg, router_options.clone()) {
+    let router_handle = match router_result {
         Ok(handle) => handle,
         Err(error) => {
             let message = format!("router configuration is invalid: {error}");
@@ -806,7 +1019,9 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
                 error = %error,
                 "router build failed; refusing runtime startup"
             );
-            Arc::new(RouterHandle::from_options(router_options))
+            Arc::new(RouterHandle::from_options(Arc::new(
+                br.context.runtime_options.router.clone(),
+            )))
         }
     };
     br.router = Some(router_handle.clone());
@@ -960,10 +1175,10 @@ pub fn build_bridge(cfg: &ConfigIR, engine: crate::router::Engine, context: Cont
 #[cfg(test)]
 mod tests {
     use super::{
-        add_endpoint_with_outbound, outbound_registry_handle_from_bridge,
+        add_endpoint_with_outbound, build_local_rule_set_db, outbound_registry_handle_from_bridge,
         parse_optional_inbound_duration, parse_optional_outbound_duration,
         parse_optional_outbound_ipv4_addr, parse_optional_outbound_ipv6_addr,
-        router_handle_from_ir, to_inbound_param, to_outbound_param,
+        router_handle_from_ir, rule_set_format, to_inbound_param, to_outbound_param,
     };
     use crate::endpoint::{Endpoint, StartStage};
     use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RuleSetIR};
@@ -1065,6 +1280,105 @@ mod tests {
             error.contains("routing-rule-set.json"),
             "unexpected error: {error}"
         );
+    }
+
+    #[test]
+    fn rule_set_format_uses_url_path_before_query() {
+        let rule_set = RuleSetIR::default();
+        assert_eq!(
+            rule_set_format(&rule_set, "https://example.invalid/rules.srs?token=test").unwrap(),
+            crate::router::ruleset::RuleSetFormat::Binary
+        );
+        assert_eq!(
+            rule_set_format(&rule_set, "https://example.invalid/rules.json#published").unwrap(),
+            crate::router::ruleset::RuleSetFormat::Source
+        );
+        assert!(rule_set_format(&rule_set, "https://example.invalid/rules").is_err());
+    }
+
+    #[test]
+    fn router_build_rejects_inline_rule_set_instead_of_misrouting() {
+        let mut config = ConfigIR::default();
+        config.route.rule_set.push(RuleSetIR {
+            tag: "inline-domains".to_string(),
+            ty: String::new(),
+            rules: Some(vec![sb_config::ir::RuleIR {
+                domain: vec!["example.com".to_string()],
+                ..sb_config::ir::RuleIR::default()
+            }]),
+            ..RuleSetIR::default()
+        });
+
+        let error = build_local_rule_set_db(&config)
+            .expect_err("unsupported inline rule sets must not disappear from routing");
+        assert!(
+            error.contains("inline-domains"),
+            "unexpected error: {error}"
+        );
+        assert!(error.contains("not supported"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn remote_rule_set_rejects_non_direct_download_detour() {
+        let mut config = ConfigIR::default();
+        config.outbounds.push(OutboundIR {
+            ty: OutboundType::Block,
+            name: Some("blocked-download".to_string()),
+            ..OutboundIR::default()
+        });
+        config.route.rule_set.push(RuleSetIR {
+            tag: "remote".to_string(),
+            ty: "remote".to_string(),
+            format: "source".to_string(),
+            url: Some("https://example.invalid/rules.json".to_string()),
+            download_detour: Some("blocked-download".to_string()),
+            ..RuleSetIR::default()
+        });
+
+        let error = router_handle_from_ir(
+            &config,
+            Arc::new(crate::runtime_options::RouterRuntimeOptions::default()),
+        )
+        .expect_err("unsupported rule-set detour must reject startup");
+
+        assert!(
+            error.contains("blocked-download"),
+            "unexpected error: {error}"
+        );
+        assert!(error.contains("only direct"), "unexpected error: {error}");
+    }
+
+    #[test]
+    fn remote_rule_set_uses_effective_default_download_detour() {
+        let mut config = ConfigIR::default();
+        config.outbounds.extend([
+            OutboundIR {
+                ty: OutboundType::Direct,
+                name: Some("direct".to_string()),
+                ..OutboundIR::default()
+            },
+            OutboundIR {
+                ty: OutboundType::Block,
+                name: Some("block".to_string()),
+                ..OutboundIR::default()
+            },
+        ]);
+        config.route.final_outbound = Some("block".to_string());
+        config.route.rule_set.push(RuleSetIR {
+            tag: "remote".to_string(),
+            ty: "remote".to_string(),
+            format: "source".to_string(),
+            url: Some("https://example.invalid/rules.json".to_string()),
+            ..RuleSetIR::default()
+        });
+
+        let error = router_handle_from_ir(
+            &config,
+            Arc::new(crate::runtime_options::RouterRuntimeOptions::default()),
+        )
+        .expect_err("implicit block default must not be treated as direct download");
+        assert!(error.contains("block"), "unexpected error: {error}");
+        assert!(error.contains("only direct"), "unexpected error: {error}");
     }
 
     #[tokio::test]

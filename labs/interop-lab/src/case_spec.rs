@@ -194,12 +194,18 @@ pub struct UpstreamServiceSpec {
     pub answer_ipv4: Option<String>,
     #[serde(default)]
     pub ttl_secs: Option<u32>,
+    /// File served verbatim by `http_static`.
+    #[serde(default)]
+    pub content_path: Option<PathBuf>,
+    #[serde(default)]
+    pub content_type: Option<String>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum UpstreamKind {
     HttpEcho,
+    HttpStatic,
     TcpEcho,
     UdpEcho,
     WsEcho,
@@ -246,6 +252,9 @@ pub enum TrafficAction {
         payload: String,
         #[serde(default)]
         proxy: Option<String>,
+        /// Bind client connection to this local source port before connecting.
+        #[serde(default)]
+        source_port: Option<u16>,
         /// When set, generates a deterministic payload of this size (bytes)
         /// instead of using the `payload` string.
         #[serde(default)]
@@ -798,7 +807,7 @@ gui_sequence:
     fn repository_cases_validate_against_s4_registry() {
         let cases_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("cases");
         let cases = load_cases(&cases_dir).expect("repository cases must validate");
-        assert_eq!(cases.len(), 114);
+        assert_eq!(cases.len(), 118);
     }
 
     #[test]

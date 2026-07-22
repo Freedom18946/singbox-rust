@@ -582,7 +582,8 @@ impl Supervisor {
         tracing::debug!(target: "sb_core::runtime", "Context managers initialized");
 
         // Build bridge via adapter bridge to enable routed inbounds/outbounds
-        let bridge = crate::adapter::bridge::build_bridge(&ir, engine.clone(), context.clone());
+        let bridge =
+            crate::adapter::bridge::build_bridge_async(&ir, engine.clone(), context.clone()).await;
         if let Err(e) = ensure_bridge_startup_ready(&bridge) {
             LifecycleCoordinator::new(&context, dns_runtime.as_ref())
                 .close_all(true)
@@ -945,11 +946,12 @@ impl Supervisor {
             tracing::debug!(target: "sb_core::runtime", "New context managers initialized on reload");
 
             // Build new bridge via adapter bridge
-            let new_bridge = crate::adapter::bridge::build_bridge(
+            let new_bridge = crate::adapter::bridge::build_bridge_async(
                 &new_ir,
                 new_engine.clone(),
                 new_context.clone(),
-            );
+            )
+            .await;
             ensure_bridge_startup_ready(&new_bridge)?;
 
             // Wrap in Arc and register components BEFORE Start stage. See LC-003

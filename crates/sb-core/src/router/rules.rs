@@ -267,37 +267,71 @@ fn parse_ip_net(raw: &str) -> Option<IpNet> {
     }
 }
 
-fn parse_port_values(values: &[String]) -> Vec<u16> {
+fn parse_port_value(raw: &str) -> Result<u16, String> {
+    raw.parse::<u16>()
+        .map_err(|error| format!("invalid port {raw:?}: {error}"))
+}
+
+fn parse_port_values(values: &[String]) -> Result<Vec<u16>, String> {
     values
         .iter()
-        .filter(|s| !s.contains('-'))
-        .filter_map(|s| s.parse().ok())
+        .map(|raw| {
+            if raw.contains(':') || raw.contains('-') {
+                return Err(format!(
+                    "invalid port {raw:?}: range belongs in port_range/source_port_range"
+                ));
+            }
+            parse_port_value(raw)
+        })
         .collect()
 }
 
-fn parse_port_ranges(values: &[String]) -> Vec<(u16, u16)> {
+fn parse_port_ranges(values: &[String]) -> Result<Vec<(u16, u16)>, String> {
     values
         .iter()
-        .filter_map(|s| {
-            let (start, end, canonical) = if let Some((start, end)) = s.split_once(':') {
+        .map(|raw| {
+            let (start, end, canonical) = if let Some((start, end)) = raw.split_once(':') {
                 (start, end, true)
-            } else {
-                let (start, end) = s.split_once('-')?;
+            } else if let Some((start, end)) = raw.split_once('-') {
                 (start, end, false)
+            } else {
+                return Err(format!("invalid port range {raw:?}: expected start:end"));
             };
-            let start = if canonical && start.trim().is_empty() {
+            let start = if canonical && start.is_empty() {
                 0
             } else {
-                start.trim().parse().ok()?
+                parse_port_value(start)?
             };
-            let end = if canonical && end.trim().is_empty() {
+            let end = if canonical && end.is_empty() {
                 u16::MAX
             } else {
-                end.trim().parse().ok()?
+                parse_port_value(end)?
             };
-            Some((start, end))
+            Ok((start, end))
         })
         .collect()
+}
+
+struct ParsedPorts {
+    exact: Vec<u16>,
+    ranges: Vec<(u16, u16)>,
+}
+
+fn parse_port_or_ranges(values: &[String]) -> Result<ParsedPorts, String> {
+    let mut parsed = ParsedPorts {
+        exact: Vec::new(),
+        ranges: Vec::new(),
+    };
+    for raw in values {
+        if raw.contains(':') || raw.contains('-') {
+            parsed
+                .ranges
+                .extend(parse_port_ranges(std::slice::from_ref(raw))?);
+        } else {
+            parsed.exact.push(parse_port_value(raw)?);
+        }
+    }
+    Ok(parsed)
 }
 
 fn parse_net_map(map: &BTreeMap<String, Vec<String>>) -> BTreeMap<String, Vec<IpNet>> {
@@ -374,6 +408,10 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
         let decision = Decision::from_rule_ir(ir)?;
 
         let route_options = RouteActionOptions::from_rule_ir(ir)?;
+        let mut destination_ports = parse_port_or_ranges(&ir.port)?;
+        destination_ports
+            .ranges
+            .extend(parse_port_ranges(&ir.port_range)?);
 
         let rule = CompositeRule {
             rule_type,
@@ -396,14 +434,10 @@ impl TryFrom<&sb_config::ir::RuleIR> for CompositeRule {
                 .collect(),
             source_geoip: ir.source_geoip.clone(),
             source_ip_is_private: ir.source_ip_is_private.unwrap_or(false),
-            port: parse_port_values(&ir.port),
-            port_range: {
-                let mut ranges = parse_port_ranges(&ir.port);
-                ranges.extend(parse_port_ranges(&ir.port_range));
-                ranges
-            },
-            source_port: parse_port_values(&ir.source_port),
-            source_port_range: parse_port_ranges(&ir.source_port_range),
+            port: destination_ports.exact,
+            port_range: destination_ports.ranges,
+            source_port: parse_port_values(&ir.source_port)?,
+            source_port_range: parse_port_ranges(&ir.source_port_range)?,
             network: ir.network.clone(),
             protocol: ir.protocol.clone(),
             process_name: ir.process_name.clone(),
@@ -1815,7 +1849,8 @@ impl RuleEngine {
         e
     }
 
-    /// Check if an IP address is private (RFC 1918, RFC 4193, loopback, link-local)
+    /// Match Go's `!network.IsPublicAddr`: private, loopback, link-local,
+    /// multicast, or unspecified addresses are non-public rule inputs.
     #[inline]
     fn is_private_ip(ip: &IpAddr) -> bool {
         match ip {
@@ -1829,8 +1864,13 @@ impl RuleEngine {
                     || octets[0] == 127 // 127.0.0.0/8
                     // Link-local
                     || (octets[0] == 169 && octets[1] == 254) // 169.254.0.0/16
+                    || ipv4.is_multicast()
+                    || ipv4.is_unspecified()
             }
             IpAddr::V6(ipv6) => {
+                if let Some(ipv4) = ipv6.to_ipv4_mapped() {
+                    return Self::is_private_ip(&IpAddr::V4(ipv4));
+                }
                 let segments = ipv6.segments();
                 // ULA (Unique Local Address): fc00::/7
                 (segments[0] & 0xfe00) == 0xfc00
@@ -1838,6 +1878,8 @@ impl RuleEngine {
                     || (segments[0] & 0xffc0) == 0xfe80
                     // Loopback: ::1
                     || ipv6.is_loopback()
+                    || ipv6.is_multicast()
+                    || ipv6.is_unspecified()
             }
         }
     }
@@ -2622,11 +2664,76 @@ mod tests {
 
     #[test]
     fn go_port_range_open_bounds_match_go_semantics() {
-        assert_eq!(parse_port_ranges(&[":1024".into()]), vec![(0, 1024)]);
         assert_eq!(
-            parse_port_ranges(&["49152:".into()]),
+            parse_port_ranges(&[":1024".into()]).unwrap(),
+            vec![(0, 1024)]
+        );
+        assert_eq!(
+            parse_port_ranges(&["49152:".into()]).unwrap(),
             vec![(49152, u16::MAX)]
         );
+    }
+
+    #[test]
+    fn port_parser_rejects_malformed_values_instead_of_dropping_them() {
+        assert!(parse_port_values(&["not-a-port".into()]).is_err());
+        assert!(parse_port_values(&[" 18897".into()]).is_err());
+        assert!(parse_port_ranges(&["18897".into()]).is_err());
+        assert!(parse_port_ranges(&[" 18897:18898".into()]).is_err());
+        assert!(parse_port_ranges(&["18897: ".into()]).is_err());
+        assert!(parse_port_ranges(&["18897:bad".into()]).is_err());
+    }
+
+    #[test]
+    fn composite_rule_matches_source_port_and_canonical_range() {
+        let exact = CompositeRule::try_from(&RuleIR {
+            source_port: vec!["32101".into()],
+            outbound: Some("direct".into()),
+            ..Default::default()
+        })
+        .expect("compile exact source port");
+        let range = CompositeRule::try_from(&RuleIR {
+            source_port_range: vec!["32102:32103".into()],
+            outbound: Some("direct".into()),
+            ..Default::default()
+        })
+        .expect("compile source port range");
+
+        assert!(exact.matches(&RouteCtx {
+            source_port: Some(32101),
+            ..Default::default()
+        }));
+        assert!(!exact.matches(&RouteCtx {
+            source_port: Some(32104),
+            ..Default::default()
+        }));
+        assert!(range.matches(&RouteCtx {
+            source_port: Some(32103),
+            ..Default::default()
+        }));
+        assert!(!range.matches(&RouteCtx {
+            source_port: Some(32104),
+            ..Default::default()
+        }));
+    }
+
+    #[test]
+    fn private_rule_matches_go_non_public_addresses() {
+        for raw in [
+            "127.0.0.1",
+            "0.0.0.0",
+            "224.0.0.1",
+            "::",
+            "ff02::1",
+            "::ffff:127.0.0.1",
+        ] {
+            let ip = raw.parse().unwrap();
+            assert!(RuleEngine::is_private_ip(&ip), "expected non-public: {raw}");
+        }
+        for raw in ["8.8.8.8", "::ffff:8.8.8.8", "2001:4860:4860::8888"] {
+            let ip = raw.parse().unwrap();
+            assert!(!RuleEngine::is_private_ip(&ip), "expected public: {raw}");
+        }
     }
 
     #[test]

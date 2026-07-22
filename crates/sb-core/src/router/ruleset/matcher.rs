@@ -656,12 +656,23 @@ fn domain_matches_suffix(domain: &str, suffix: &str) -> bool {
 
 fn is_private_ip(ip: &IpAddr) -> bool {
     match ip {
-        IpAddr::V4(ip) => ip.is_private() || ip.is_loopback() || ip.is_link_local(),
+        IpAddr::V4(ip) => {
+            ip.is_private()
+                || ip.is_loopback()
+                || ip.is_link_local()
+                || ip.is_multicast()
+                || ip.is_unspecified()
+        }
         IpAddr::V6(ip) => {
+            if let Some(ipv4) = ip.to_ipv4_mapped() {
+                return is_private_ip(&IpAddr::V4(ipv4));
+            }
             // IPv6 unique local: fc00::/7
             (ip.segments()[0] & 0xfe00) == 0xfc00
                 || ip.is_loopback()
                 || (ip.segments()[0] & 0xffc0) == 0xfe80
+                || ip.is_multicast()
+                || ip.is_unspecified()
         }
     }
 }
@@ -749,6 +760,25 @@ mod tests {
         };
 
         assert!(!matcher.matches(&ctx));
+    }
+
+    #[test]
+    fn private_match_uses_go_non_public_classification() {
+        for raw in [
+            "127.0.0.1",
+            "0.0.0.0",
+            "224.0.0.1",
+            "::",
+            "ff02::1",
+            "::ffff:127.0.0.1",
+        ] {
+            let ip = raw.parse().unwrap();
+            assert!(is_private_ip(&ip), "expected non-public: {raw}");
+        }
+        for raw in ["8.8.8.8", "::ffff:8.8.8.8", "2001:4860:4860::8888"] {
+            let ip = raw.parse().unwrap();
+            assert!(!is_private_ip(&ip), "expected public: {raw}");
+        }
     }
 
     #[test]
