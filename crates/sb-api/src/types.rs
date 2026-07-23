@@ -140,8 +140,8 @@ pub struct Proxy {
     /// Delay test history
     pub history: Vec<DelayHistory>,
     /// All available proxies (for groups)
-    #[serde(default, skip_serializing_if = "Vec::is_empty")]
-    pub all: Vec<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub all: Option<Vec<String>>,
     /// Currently selected proxy (for groups)
     #[serde(default, skip_serializing_if = "String::is_empty")]
     pub now: String,

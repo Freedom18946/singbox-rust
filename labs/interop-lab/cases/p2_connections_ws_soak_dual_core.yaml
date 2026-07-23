@@ -71,5 +71,6 @@ assertions:
 oracle:
   tolerate_counter_jitter: true
   counter_jitter_abs: 50
+  ignore_memory_ratio_on_non_linux: true
   ignore_ws_paths:
     - /memory

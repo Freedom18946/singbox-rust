@@ -4,7 +4,7 @@ use crate::util::{resolve_command_with_fallback, resolve_with_env};
 use anyhow::{anyhow, Context, Result};
 use reqwest::StatusCode;
 use std::io::ErrorKind;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::{Duration, Instant};
 use tokio::io::{AsyncBufReadExt, BufReader};
@@ -84,10 +84,17 @@ pub async fn launch_kernel(
         .map(resolve_command_with_fallback)
         .ok_or_else(|| anyhow!("kernel command missing"))?;
 
-    let mut cmd = Command::new(command);
-    for arg in &spec.args {
-        cmd.arg(resolve_with_env(arg));
+    let mut resolved_args = spec
+        .args
+        .iter()
+        .map(|arg| resolve_with_env(arg))
+        .collect::<Vec<_>>();
+    if spec.isolate_cache_file {
+        resolved_args = materialize_isolated_cache_config(kind.clone(), &resolved_args, logs_dir)?;
     }
+
+    let mut cmd = Command::new(command);
+    cmd.args(&resolved_args);
 
     for (k, v) in &spec.env {
         cmd.env(k, resolve_with_env(v));
@@ -166,6 +173,57 @@ pub async fn launch_kernel(
     })
 }
 
+fn materialize_isolated_cache_config(
+    kind: KernelKind,
+    args: &[String],
+    logs_dir: &Path,
+) -> Result<Vec<String>> {
+    let config_index = args
+        .iter()
+        .position(|arg| arg == "-c" || arg == "--config")
+        .and_then(|index| args.get(index + 1).map(|_| index + 1))
+        .ok_or_else(|| anyhow!("isolated cache launch requires -c/--config argument"))?;
+    let source_path = PathBuf::from(&args[config_index]);
+    let raw = std::fs::read(&source_path)
+        .with_context(|| format!("reading cache-isolated config {}", source_path.display()))?;
+    let mut config: serde_json::Value = serde_json::from_slice(&raw)
+        .with_context(|| format!("parsing cache-isolated config {}", source_path.display()))?;
+    let artifact_dir = logs_dir
+        .parent()
+        .ok_or_else(|| anyhow!("kernel logs directory has no run parent"))?;
+    let artifact_dir = if artifact_dir.is_absolute() {
+        artifact_dir.to_path_buf()
+    } else {
+        std::env::current_dir()
+            .with_context(|| "resolving current directory for cache-isolated config")?
+            .join(artifact_dir)
+    };
+    let kernel_name = match kind {
+        KernelKind::Rust => "rust",
+        KernelKind::Go => "go",
+    };
+    let isolated_cache_path = artifact_dir.join(format!("{kernel_name}.cache"));
+    let cache_path = config
+        .pointer_mut("/experimental/cache_file/path")
+        .ok_or_else(|| {
+            anyhow!(
+                "cache-isolated config {} lacks experimental.cache_file.path",
+                source_path.display()
+            )
+        })?;
+    *cache_path = serde_json::Value::String(isolated_cache_path.display().to_string());
+
+    let materialized_path = artifact_dir.join(format!("{kernel_name}.config.json"));
+    let materialized = serde_json::to_vec_pretty(&config)
+        .with_context(|| "serializing cache-isolated kernel config")?;
+    std::fs::write(&materialized_path, materialized)
+        .with_context(|| format!("writing {}", materialized_path.display()))?;
+
+    let mut resolved = args.to_vec();
+    resolved[config_index] = materialized_path.display().to_string();
+    Ok(resolved)
+}
+
 pub async fn wait_until_ready(api: &ApiAccess, ready_path: &str, timeout_ms: u64) -> Result<()> {
     let deadline = Instant::now() + Duration::from_millis(timeout_ms.max(100));
     let client = reqwest::Client::builder()
@@ -240,4 +298,40 @@ pub async fn wait_until_unready(api: &ApiAccess, ready_path: &str, timeout_ms: u
     Err(anyhow!(
         "kernel stayed ready for {timeout_ms} ms at {normalized_path}"
     ))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn isolated_cache_config_rewrites_path_per_kernel() -> anyhow::Result<()> {
+        let temp = tempfile::tempdir()?;
+        let logs_dir = temp.path().join("logs");
+        std::fs::create_dir_all(&logs_dir)?;
+        let source = temp.path().join("source.json");
+        std::fs::write(
+            &source,
+            br#"{"experimental":{"cache_file":{"enabled":true,"path":"stale.db"}}}"#,
+        )?;
+        let args = vec![
+            "run".to_string(),
+            "-c".to_string(),
+            source.display().to_string(),
+        ];
+
+        let resolved = materialize_isolated_cache_config(KernelKind::Rust, &args, &logs_dir)?;
+        let materialized: serde_json::Value =
+            serde_json::from_slice(&std::fs::read(&resolved[2])?)?;
+        let expected_cache_path = temp.path().join("rust.cache").display().to_string();
+
+        assert_eq!(
+            materialized
+                .pointer("/experimental/cache_file/path")
+                .and_then(serde_json::Value::as_str),
+            Some(expected_cache_path.as_str())
+        );
+        assert_eq!(resolved[0], "run");
+        Ok(())
+    }
 }

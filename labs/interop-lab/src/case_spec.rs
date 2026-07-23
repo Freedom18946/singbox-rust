@@ -94,6 +94,10 @@ pub struct KernelLaunchSpec {
     pub command: Option<String>,
     #[serde(default)]
     pub args: Vec<String>,
+    /// Rewrite `experimental.cache_file.path` into this run's artifact directory.
+    /// Persistent-cache cases use this to avoid state leaking across replays.
+    #[serde(default)]
+    pub isolate_cache_file: bool,
     #[serde(default)]
     pub env: BTreeMap<String, String>,
     #[serde(default)]
@@ -643,6 +647,10 @@ pub struct OracleSpec {
     pub tolerate_counter_jitter: bool,
     #[serde(default)]
     pub counter_jitter_abs: i64,
+    /// Rust reports process RSS while Go reports runtime heap outside Linux.
+    /// Keep the 2x gate on Linux, but record the non-comparable host sample as ignored.
+    #[serde(default)]
+    pub ignore_memory_ratio_on_non_linux: bool,
 }
 
 pub fn load_cases(cases_dir: &Path) -> Result<Vec<CaseSpec>> {

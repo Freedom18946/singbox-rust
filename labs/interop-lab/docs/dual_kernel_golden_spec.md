@@ -45,7 +45,7 @@ Maps `diff_report.rs` comparison dimensions to behavior IDs in S3. When a diff f
 > dual-kernel parity scoring. See S1 reclassification note.
 | Traffic | `traffic_mismatches` | action success + counter up/down | BHV-DP-001 … 016, BHV-DP-018 … 041, BHV-PF-001, BHV-PF-002 | `tolerate_counter_jitter`, `counter_jitter_abs` |
 | Connections | `connection_mismatches` | connections.count + downloadTotal/uploadTotal | BHV-CP-006, BHV-DP-005 … 009 | `tolerate_counter_jitter` |
-| Memory | `memory_mismatches` | peak RSS ratio (>2x = mismatch) | BHV-PF-003, BHV-PF-004 | — |
+| Memory | `memory_mismatches` | peak memory ratio (>2x = mismatch) | BHV-PF-003, BHV-PF-004 | `ignore_memory_ratio_on_non_linux` (RSS/Go-heap metrics are incomparable off Linux; Linux gate remains strict) |
 
 > **Tester workflow**: diff report shows `http_mismatches` on `/proxies` → look up BHV-CP-003 → check S4 for known divergences → decide pass/fail.
 
@@ -61,10 +61,10 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-CP-001 | GET /configs returns runtime config | GET /configs | 200 + JSON with `mode`, `mixed-port` | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-006 |
+| BHV-CP-001 | GET /configs returns runtime config | GET /configs | 200 + JSON with `mode`, `mixed-port` | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | — |
 | BHV-CP-002 | PATCH /configs updates mode | PATCH /configs `{"mode":"rule"}` | 204 No Content | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_clash_mode_rule_switch_via_socks` | — | — |
-| BHV-CP-003 | GET /proxies lists groups+members | GET /proxies | 200 + JSON with `proxies` map | HTTP | `p0_clash_api_contract`, `p1_gui_proxy_switch_replay`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-007 |
-| BHV-CP-004 | PUT /proxies/{group} switches active | PUT /proxies/{group} `{"name":"..."}` | 204 + selector.now updated | HTTP | `p1_gui_proxy_switch_replay` | — | DIV-M-007 |
+| BHV-CP-003 | GET /proxies lists groups+members | GET /proxies | 200 + JSON with `proxies` map | HTTP | `p0_clash_api_contract`, `p1_gui_proxy_switch_replay`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | — |
+| BHV-CP-004 | PUT /proxies/{group} switches active | PUT /proxies/{group} `{"name":"..."}` | 204 + selector.now updated | HTTP | `p1_gui_proxy_switch_replay` | — | — |
 | BHV-CP-005 | GET /proxies/{name}/delay tests latency | GET /proxies/{name}/delay?timeout=N | 200 + `{"delay": ms}` or timeout | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_proxy_delay_replay`, `p1_gui_group_delay_replay` | — | DIV-M-009 |
 | BHV-CP-006 | GET /connections lists active conns | GET /connections | 200 + `{connections[], downloadTotal, uploadTotal}` | HTTP, Conn | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_connections_tracking` | — | DIV-M-008 |
 | BHV-CP-007 | DELETE /connections/{id} closes conn | DELETE /connections/{id} | 204 or 404 | HTTP | `p0_clash_api_contract`, `p0_clash_api_contract_strict` | — | — |
@@ -75,7 +75,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-CP-008 | /traffic streams real-time bandwidth | WS /traffic | JSON frames `{up, down}` | WS | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | — |
 | BHV-CP-009 | /memory streams RSS usage | WS /memory | JSON frames `{inuse, oslimit}` | WS | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | — |
-| BHV-CP-010 | /connections streams conn updates | WS /connections | JSON frames with connection list | WS | `p0_clash_api_contract`, `p2_connections_ws_soak_dual_core` | `p2_connections_ws_concurrency_suite` | DIV-M-004 |
+| BHV-CP-010 | /connections streams conn updates | WS /connections | JSON frames with connection list | WS | `p0_clash_api_contract`, `p2_connections_ws_soak_dual_core` | `p2_connections_ws_concurrency_suite` | — |
 | BHV-CP-011 | /logs streams log entries | WS /logs | JSON frames with log message | WS | `p0_clash_api_contract`, `p0_clash_api_contract_strict`, `p1_gui_full_boot_replay` | — | DIV-M-002 |
 
 ### CP.3: Authentication
@@ -96,7 +96,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-CP-018 | GET /providers returns provider list | GET /providers/proxies | 200 + provider JSON | HTTP | `p1_optional_endpoints_contract` | — | DIV-H-003 |
 | BHV-CP-019 | GET /rules returns rule list | GET /rules | 200 + rules array | HTTP | `p1_optional_endpoints_contract` | — | — |
 | BHV-CP-020 | GET /version returns version info | GET /version | 200 + `{version, ...}` | HTTP | `p1_version_endpoint_contract` | — | — |
-| BHV-CP-021 | GET /dns/query resolves domain | GET /dns/query?name=example.com | 200 + DNS result JSON | HTTP | `p1_dns_query_endpoint_contract` | — | DIV-M-005 |
+| BHV-CP-021 | GET /dns/query resolves domain | GET /dns/query?name=example.com | 200 + DNS result JSON | HTTP | `p1_dns_query_endpoint_contract` | — | DIV-M-010 |
 
 ### DP.1: Inbound
 
@@ -136,7 +136,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV-DP-026 | local source rule_set matches domain | Domain present in a local source JSON rule set | Matched outbound; non-member → final | Traffic | `p1_local_rule_set_domain_via_socks` | — | — |
 | BHV-DP-027 | logical AND honors nested invert | AND sub-rules with an inverted domain sub-rule | Composite match → outbound; AND/invert miss → final | Traffic | `p1_logical_and_invert_rule_via_socks` | — | — |
 | BHV-DP-028 | inbound tag selects route | Same destination through two tagged inbounds | Matching inbound → outbound; other inbound → final | Traffic | `p1_inbound_rule_via_socks` | — | — |
-| BHV-DP-029 | clash_mode tracks runtime mode | Traffic before/after PATCH /configs mode changes | Global match → outbound; Rule mode → final | Traffic | `p1_clash_mode_rule_switch_via_socks` | — | DIV-M-006 |
+| BHV-DP-029 | clash_mode tracks runtime mode | Traffic before/after PATCH /configs mode changes | Global match → outbound; Rule mode → final | Traffic | `p1_clash_mode_rule_switch_via_socks` | — | — |
 | BHV-DP-030 | logical OR matches either child | Domain child, port child, or neither | Either child → outbound; neither → final | Traffic | `p1_logical_or_rule_via_socks` | — | — |
 | BHV-DP-031 | private destination/source IP selects route | Private destination or private SOCKS peer source | Non-public address → outbound; public destination → final | Traffic | `p1_private_ip_rule_via_socks` | — | — |
 | BHV-DP-032 | remote source rule_set loads before routing | HTTP-served source JSON via direct download detour | Domain/IP member → outbound; non-member → final | Traffic | `p1_remote_rule_set_via_socks` | — | — |
@@ -155,8 +155,8 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
 | BHV-DP-015 | DNS resolves via configured servers | Domain lookup | IP address returned | Traffic | `p1_rust_core_dns_via_socks` | — | — |
-| BHV-DP-016 | FakeIP pool allocates addresses | Domain in fakeip range | Fake IP from pool | Traffic | `p1_fakeip_dns_query_contract` | — | DIV-M-001 |
-| BHV-DP-017 | FakeIP cache flush via API | DELETE /cache/fakeip/flush | Cache cleared, 204 | HTTP | `p1_fakeip_cache_flush_contract` | — | DIV-M-001 |
+| BHV-DP-016 | FakeIP pool allocates addresses | Domain in fakeip range | Fake IP from pool | Traffic | `p1_fakeip_dns_query_contract` | — | — |
+| BHV-DP-017 | FakeIP cache flush via API | POST /cache/fakeip/flush | Mappings cleared, allocator cursor preserved, 204 | HTTP | `p1_fakeip_cache_flush_contract` | — | — |
 | BHV-DP-018 | DNS result caching and TTL | Repeated domain lookup | Cached response, respects TTL | Traffic | `p1_dns_cache_ttl_via_socks` | — | — |
 
 ### LC.1: Startup
@@ -171,7 +171,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-LC-004 | PATCH /configs mode switch | PATCH /configs `{"mode":"..."}` | Mode updated, 204 | HTTP | `p0_clash_api_contract_strict`, `p1_clash_mode_rule_switch_via_socks` | — | DIV-M-006 |
+| BHV-LC-004 | PATCH /configs mode switch | PATCH /configs `{"mode":"..."}` | Mode updated, 204 | HTTP | `p0_clash_api_contract_strict`, `p1_clash_mode_rule_switch_via_socks` | — | — |
 | BHV-LC-005 | Inbound hot-reload on config change | Config file update + signal | Inbound rebind without restart | — | `p1_inbound_hot_reload_sighup` | — | — |
 | BHV-LC-006 | State preservation across reload | Reload signal | Connections/proxy state preserved | — | `p1_selector_switch_traffic_replay` | — | — |
 
@@ -469,18 +469,23 @@ gate).
 
 | DIV ID | Tag | Description | Affected BHV | Oracle Action |
 |--------|-----|-------------|--------------|---------------|
-| DIV-M-001 | COSMETIC | FakeIP flush: Rust uses DELETE /cache/fakeip/flush, Go uses POST. | BHV-DP-016, BHV-DP-017 | `ignore_http_paths: ["/cache/fakeip/flush"]` |
 | DIV-M-002 | COSMETIC | /logs WS: Rust frames include extra `timestamp` and `source` fields not in Go. | BHV-CP-011 | `ignore_ws_paths: ["/logs"]` or structural diff |
 | DIV-M-003 | COSMETIC | Shutdown grace period: Rust configurable, Go fixed 30s. | BHV-LC-007 | No oracle action (not observed in API) |
-| DIV-M-004 | COSMETIC | /connections WS: Rust hardcodes 1s push interval, Go uses `?interval=` param. | BHV-CP-010 | `tolerate_counter_jitter: true` for connection counts |
-| DIV-M-005 | COSMETIC | /dns/query response: Rust returns simplified JSON vs Go's full dig-style output. | BHV-CP-021 | `ignore_http_paths: ["/dns/query*"]` |
-| DIV-M-006 | COSMETIC | `/configs` payload normalization still differs in mode casing, mode-list, and exposed port fields under strict self-managed configs. | BHV-CP-001, BHV-LC-004, BHV-DP-029 | `ignore_http_paths: ["/configs"]` |
-| DIV-M-007 | COSMETIC | `/proxies` inventory differs because Rust injects synthetic entries and richer group metadata than Go. | BHV-CP-003, BHV-CP-004 | `ignore_http_paths: ["/proxies"]` |
-| DIV-M-008 | COSMETIC | `/connections` HTTP snapshot includes runtime/platform-specific `memory` values; Rust returns 0 on non-Linux. | BHV-CP-006 | `ignore_http_paths: ["/connections"]` |
+| DIV-M-008 | COSMETIC | Memory telemetry uses process RSS on Rust/macOS and Go runtime heap on Go, so exact values and peak ratios are not comparable off Linux. | BHV-CP-006, BHV-PF-003 | Connection HTTP bodies compare through the dedicated connection dimension; `ignore_memory_ratio_on_non_linux: true` records, but does not gate, the off-Linux ratio. Linux keeps the 2x gate. |
 | DIV-M-009 | COSMETIC | `/proxies/{name}/delay` exact millisecond values are timing-sensitive across kernels even when status is consistent. | BHV-CP-005 | Path-specific `ignore_http_paths` until numeric tolerance exists |
-| DIV-M-010 | COSMETIC | `/dns/query` on non-resolvable name: Rust propagates the internal resolver's lookup error as HTTP 500; Go's internal DNS router synthesizes a fake-IP-shaped answer (`198.18.x.x`, `"Server":"internal"`) and returns 200. Distinct axis from DIV-M-005 (which covers body shape of successful answers). Design divergence, not a parity gap — Rust should not adopt Go's fake-answer path. Evidence: `agents-only/archive/MT-GUI/mt_gui_02_evidence/control_plane.txt` CP-13, `extra_shape_probe.txt`. Classified by MT-GUI-03 (2026-04-12). | BHV-CP-021 | Already covered by `ignore_http_paths: ["/dns/query*"]` (inherited from DIV-M-005); dual-kernel cases that probe non-resolvable names should assert `status in {200, 500}` |
-| DIV-M-011 | COSMETIC | `/connections` top-level `downloadTotal`/`uploadTotal`: Rust scopes byte counters per-active-connection only and does not retain accumulated totals after connections close; Go accumulates across the process lifetime. Per-connection live counters (`connections[].upload`/`.download`) match on both kernels (verified by `p1_gui_connections_tracking`). Only the top-level aggregate diverges once the active list is empty. Distinct axis from DIV-M-008 (which covers the `memory` field). GUI bandwidth chart (WS `/traffic`) is unaffected; only the connection panel's "total transferred" stat reads 0 on Rust after closes. Evidence: `agents-only/archive/MT-GUI/mt_gui_01_acceptance.md §5`, `agents-only/archive/MT-GUI/mt_gui_02_evidence/data_plane.txt` DP-16. Classified by MT-GUI-03 (2026-04-12). | BHV-CP-006 | Already covered by `ignore_http_paths: ["/connections"]` (inherited from DIV-M-008); dual-kernel cases should assert per-connection fields on live connections, not top-level aggregates after close |
-| DIV-M-012 | COSMETIC | FakeIP flush clears persisted/in-memory mappings on both kernels. Go `Store.Reset()` delegates only to storage and keeps live allocation cursors; Rust reset also rewinds cursors. A new domain therefore gets the next Go address but the initial Rust address. | BHV-DP-017 | `p1_fakeip_cache_flush_contract` uses kernel-scoped assertions and declares `covered_divergences: [DIV-M-001, DIV-M-012]` |
+| DIV-M-010 | COSMETIC | `/dns/query` on non-resolvable name: Rust propagates the internal resolver's lookup error as HTTP 500; Go's internal DNS router synthesizes a fake-IP-shaped answer (`198.18.x.x`, `"Server":"internal"`) and returns 200. Successful-answer wire shape is now exact after DIV-M-005 closed. Design divergence, not a parity gap — Rust should not adopt Go's fake-answer path. Evidence: `agents-only/archive/MT-GUI/mt_gui_02_evidence/control_plane.txt` CP-13, `extra_shape_probe.txt`. Classified by MT-GUI-03 (2026-04-12). | BHV-CP-021 | Dual-kernel cases probing non-resolvable names must use path-scoped ignore plus kernel-specific status assertions |
+
+### Resolved Cosmetic
+
+| DIV ID | Closed | Resolution |
+|--------|--------|------------|
+| DIV-M-001 | 2026-07-23 | Rust fake-IP flush now uses Go's POST + 204 contract. |
+| DIV-M-004 | 2026-07-23 | Connections WS honors the requested interval. |
+| DIV-M-005 | 2026-07-23 | Successful `/dns/query` responses use Go DNS-message fields and compare exactly. |
+| DIV-M-006 | 2026-07-23 | Strict fixtures align lowercase GUI mode; Rust derives nested route/DNS mode-list entries in Go order and matches zero ports, absent interface-name, and null tun. |
+| DIV-M-007 | 2026-07-23 | Proxy wire projection matches Go, including group-only `all`, empty GLOBAL `all`, and configured GLOBAL `now`. |
+| DIV-M-011 | 2026-07-23 | Connection totals remain accumulated after active connections close. |
+| DIV-M-012 | 2026-07-23 | Fake-IP flush clears isolated persistent mappings while retaining v4/v6 allocation cursors. |
 
 ---
 
@@ -527,6 +532,11 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 > No cases to promote — removed from roadmap.
 
 ### Recent Promotions
+
+> **2026-07-23 strict-wire closeout:** the eight Clash API cases were already strict
+> `kernel_mode: both` and already credited in S3/S6. Live Go/Rust replay closed
+> DIV-M-001/004/005/006/007/011/012 without adding a case or a BHV; coverage and inventory
+> therefore remain unchanged. Evidence: `agents-only/archive/clash_api_strict_parity/acceptance.md`.
 
 | # | Case ID | Current Mode | Effort | New BHVs Covered | Notes |
 |---|---------|-------------|--------|------------------|-------|
@@ -637,6 +647,8 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 > **Note**: SV.1 (4 subscription BHVs) excluded from denominator since 2026-03-16.
 > See S1 reclassification note. Remaining gaps: 3 SV.2 (STRUCTURAL) + 1 LC (NOT-FEASIBLE).
+> The 2026-07-23 Clash API strict-wire closeout changed divergence status, not the S6 numerator:
+> all eight cases and their BHVs were already counted as strict/both before the replay.
 
 ### Projected Coverage by Tier
 
@@ -736,10 +748,11 @@ For known divergences (S4), add oracle ignore/tolerance rules:
 ```yaml
 oracle:
   ignore_http_paths:
-    - /dns/query          # DIV-M-005
-    - /cache/fakeip/flush # DIV-M-001
+    - /proxies/direct/delay* # DIV-M-009
+    - /dns/query?name=unresolvable* # DIV-M-010
   ignore_ws_paths:
     - /logs               # DIV-M-002
   tolerate_counter_jitter: true
   counter_jitter_abs: 10  # byte-level jitter tolerance
+  ignore_memory_ratio_on_non_linux: true # DIV-M-008
 ```

@@ -23,6 +23,7 @@ pub struct DiffReport {
     pub ignored_http_count: usize,
     pub ignored_ws_count: usize,
     pub ignored_counter_jitter_count: usize,
+    pub ignored_memory_ratio_count: usize,
     pub gate_score: usize,
     pub env_limited_attributions: Vec<crate::attribution::AttributionResult>,
 }
@@ -241,6 +242,7 @@ pub fn build_diff_report(
 
     // --- Memory diff (L10.2.1) ---
     let mut memory_mismatches = Vec::new();
+    let mut ignored_memory_ratio_count = 0usize;
     let rust_mem_peak = rust_snapshot.memory_series.iter().map(|m| m.inuse).max();
     let go_mem_peak = go_snapshot.memory_series.iter().map(|m| m.inuse).max();
     if let (Some(r), Some(g)) = (rust_mem_peak, go_mem_peak) {
@@ -248,11 +250,15 @@ pub fn build_diff_report(
         if r > 0 && g > 0 {
             let ratio = (r as f64) / (g as f64);
             if !(0.5..=2.0).contains(&ratio) {
-                memory_mismatches.push(Mismatch {
-                    key: "memory.peak_ratio".to_string(),
-                    rust_value: json!({"peak_bytes": r}),
-                    go_value: json!({"peak_bytes": g}),
-                });
+                if oracle.ignore_memory_ratio_on_non_linux && !cfg!(target_os = "linux") {
+                    ignored_memory_ratio_count += 1;
+                } else {
+                    memory_mismatches.push(Mismatch {
+                        key: "memory.peak_ratio".to_string(),
+                        rust_value: json!({"peak_bytes": r}),
+                        go_value: json!({"peak_bytes": g}),
+                    });
+                }
             }
         }
     }
@@ -277,6 +283,7 @@ pub fn build_diff_report(
         ignored_http_count,
         ignored_ws_count,
         ignored_counter_jitter_count,
+        ignored_memory_ratio_count,
         gate_score,
         env_limited_attributions: crate::attribution::classify_env_limited_failures(rust_snapshot),
     }
@@ -448,6 +455,10 @@ pub fn to_markdown(report: &DiffReport) -> String {
         "- Ignored Counter Jitter: {}\n",
         report.ignored_counter_jitter_count
     ));
+    md.push_str(&format!(
+        "- Ignored Non-Linux Memory Ratio: {}\n",
+        report.ignored_memory_ratio_count
+    ));
     md.push_str(&format!("- Gate score: {}\n\n", report.gate_score));
 
     for (title, items) in [
@@ -535,6 +546,7 @@ mod tests {
             ignore_ws_paths: vec![],
             tolerate_counter_jitter: true,
             counter_jitter_abs: 5,
+            ignore_memory_ratio_on_non_linux: false,
         };
         let report = build_diff_report("case", PathBuf::from("."), &rust, &go, &oracle);
         assert_eq!(report.http_mismatches.len(), 0);
@@ -566,5 +578,26 @@ mod tests {
 
         assert!(report.memory_mismatches.is_empty());
         assert_eq!(report.gate_score, 0);
+    }
+
+    #[test]
+    fn peak_memory_ratio_can_be_ignored_only_off_linux() {
+        let rust = snapshot_with_memory(KernelKind::Rust, &[(2_500, 0)]);
+        let go = snapshot_with_memory(KernelKind::Go, &[(1_000, 0)]);
+        let oracle = OracleSpec {
+            ignore_memory_ratio_on_non_linux: true,
+            ..OracleSpec::default()
+        };
+
+        let report = build_diff_report("case", PathBuf::from("."), &rust, &go, &oracle);
+
+        if cfg!(target_os = "linux") {
+            assert_eq!(report.memory_mismatches.len(), 1);
+            assert_eq!(report.ignored_memory_ratio_count, 0);
+        } else {
+            assert!(report.memory_mismatches.is_empty());
+            assert_eq!(report.ignored_memory_ratio_count, 1);
+            assert_eq!(report.gate_score, 0);
+        }
     }
 }

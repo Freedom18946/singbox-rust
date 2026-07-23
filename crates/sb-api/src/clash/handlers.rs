@@ -608,10 +608,23 @@ fn lookup_proxy_history(
 pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     let mut proxies = HashMap::new();
     let mut all_proxy_tags: Vec<String> = Vec::new();
-    let mut default_tag = String::new();
+    let configured_default = if let Some(runtime_state) = &state.runtime_state {
+        runtime_state
+            .read()
+            .await
+            .current_ir
+            .route
+            .final_outbound
+            .clone()
+    } else {
+        state
+            .global_config
+            .as_ref()
+            .and_then(|config| config.route.final_outbound.clone())
+    };
 
     // Get proxies from outbound registry
-    let entries = if let Some(registry) = &state.outbound_registry {
+    let mut entries = if let Some(registry) = &state.outbound_registry {
         let reg = registry.read();
         reg.keys()
             .filter_map(|key| {
@@ -623,6 +636,7 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
     } else {
         Vec::new()
     };
+    entries.sort_by(|left, right| left.0.cmp(&right.0));
 
     for (key, outbound) in &entries {
         let proxy_type = infer_proxy_type(key, Some(outbound));
@@ -640,7 +654,7 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
             r#type: proxy_type,
             udp: true,
             history,
-            all: vec![],
+            all: None,
             now: String::new(),
             alive: None,
             delay: None,
@@ -649,7 +663,7 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
 
         let OutboundImpl::Connector(c) = outbound;
         if let Some(group) = c.as_group() {
-            proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
+            proxy.all = Some(group.all().into_iter().map(|tag| tag.to_string()).collect());
             proxy.now = group.now().to_string();
             proxy.r#type = infer_proxy_type(key, Some(outbound));
             // Group-level alive/delay are None (matches Go behavior)
@@ -657,17 +671,15 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
             proxy.delay = None;
         }
 
-        if default_tag.is_empty() {
-            default_tag.clone_from(key);
-        }
         proxies.insert(key.clone(), proxy);
     }
 
     // Inject GLOBAL virtual group (matches Go's getProxies behavior)
     // GLOBAL is a Fallback group containing all non-direct/block/dns outbounds
-    if default_tag.is_empty() {
-        default_tag = DIRECT_PROXY_NAME.to_string();
-    }
+    let default_tag = configured_default
+        .filter(|tag| entries.iter().any(|(key, _)| key == tag))
+        .or_else(|| entries.first().map(|(key, _)| key.clone()))
+        .unwrap_or_else(|| DIRECT_PROXY_NAME.to_string());
     proxies.insert(
         "GLOBAL".to_string(),
         Proxy {
@@ -675,7 +687,7 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
             r#type: "Fallback".to_string(),
             udp: true,
             history: vec![],
-            all: all_proxy_tags,
+            all: Some(all_proxy_tags),
             now: default_tag,
             alive: None,
             delay: None,
@@ -707,7 +719,7 @@ pub async fn get_proxy(
             r#type: proxy_type,
             udp: true,
             history,
-            all: vec![],
+            all: None,
             now: String::new(),
             alive: None,
             delay: None,
@@ -716,7 +728,7 @@ pub async fn get_proxy(
 
         let OutboundImpl::Connector(c) = &outbound;
         if let Some(group) = c.as_group() {
-            proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
+            proxy.all = Some(group.all().into_iter().map(|tag| tag.to_string()).collect());
             proxy.now = group.now().to_string();
             proxy.r#type = infer_proxy_type(&proxy_name, Some(&outbound));
             proxy.alive = None;
@@ -738,7 +750,7 @@ pub async fn get_proxy(
                 r#type: PROXY_TYPE_DIRECT.to_string(),
                 udp: true,
                 history: vec![],
-                all: vec![],
+                all: None,
                 now: String::new(),
                 alive: None,
                 delay: None,
@@ -756,7 +768,7 @@ pub async fn get_proxy(
                 r#type: PROXY_TYPE_REJECT.to_string(),
                 udp: false,
                 history: vec![],
-                all: vec![],
+                all: None,
                 now: String::new(),
                 alive: None,
                 delay: None,
@@ -1077,6 +1089,7 @@ pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
             }
         })
         .unwrap_or_else(|| "info".to_string());
+    let mode_list = calculate_clash_mode_list(config_snapshot.as_deref());
 
     let config = Config {
         port: 0,
@@ -1091,13 +1104,81 @@ pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
         // `config.mode` case-sensitively against its lowercase ClashMode enum
         // (frontend enums/kernel.ts), so emit the raw lowercase mode, not a capitalized form.
         mode,
-        mode_list: vec!["Rule".to_string()],
+        mode_list,
         log_level,
         ipv6: false,
         tun: serde_json::Value::Null,
     };
 
     Json(config)
+}
+
+fn calculate_clash_mode_list(config: Option<&sb_config::ir::ConfigIR>) -> Vec<String> {
+    fn collect_route_modes(rules: &[sb_config::ir::RuleIR], modes: &mut Vec<String>) {
+        for rule in rules {
+            if rule.rule_type.as_deref() == Some("logical") {
+                for nested in &rule.rules {
+                    collect_route_modes(std::slice::from_ref(nested.as_ref()), modes);
+                }
+            } else {
+                modes.extend(
+                    rule.clash_mode
+                        .iter()
+                        .filter(|mode| !mode.is_empty())
+                        .cloned(),
+                );
+            }
+        }
+    }
+
+    fn collect_dns_modes(rules: &[sb_config::ir::DnsRuleIR], modes: &mut Vec<String>) {
+        for rule in rules {
+            if rule.rule_type.as_deref() == Some("logical") {
+                collect_dns_modes(&rule.rules, modes);
+            } else if let Some(mode) = rule.clash_mode.as_ref().filter(|mode| !mode.is_empty()) {
+                modes.push(mode.clone());
+            }
+        }
+    }
+
+    let Some(config) = config else {
+        return vec!["Rule".to_string()];
+    };
+    let mut modes = Vec::new();
+    collect_route_modes(&config.route.rules, &mut modes);
+    if let Some(dns) = &config.dns {
+        collect_dns_modes(&dns.rules, &mut modes);
+    }
+    let mut unique_modes = Vec::new();
+    for mode in modes {
+        if !unique_modes.contains(&mode) {
+            unique_modes.push(mode);
+        }
+    }
+
+    let predefined = ["Rule", "Global", "Direct"];
+    let mut ordered = unique_modes
+        .iter()
+        .filter(|mode| !predefined.contains(&mode.as_str()))
+        .cloned()
+        .collect::<Vec<_>>();
+    ordered.sort();
+    for mode in predefined {
+        if unique_modes.iter().any(|candidate| candidate == mode) {
+            ordered.push(mode.to_string());
+        }
+    }
+
+    let default_mode = config
+        .experimental
+        .as_ref()
+        .and_then(|experimental| experimental.clash_api.as_ref())
+        .and_then(|clash_api| clash_api.default_mode.as_deref())
+        .unwrap_or("Rule");
+    if !ordered.iter().any(|mode| mode == default_mode) {
+        ordered.insert(0, default_mode.to_string());
+    }
+    ordered
 }
 
 /// Extract inbound listen ports from ConfigIR
@@ -2190,6 +2271,71 @@ pub async fn upgrade_external_ui(
         })),
     )
         .into_response()
+}
+
+#[cfg(test)]
+mod clash_mode_list_tests {
+    use super::calculate_clash_mode_list;
+    use sb_config::ir::{ClashApiIR, ConfigIR, DnsIR, DnsRuleIR, ExperimentalIR, RouteIR, RuleIR};
+
+    #[test]
+    fn matches_go_recursive_unique_and_predefined_order() {
+        let config = ConfigIR {
+            route: RouteIR {
+                rules: vec![
+                    RuleIR {
+                        clash_mode: vec!["Zulu".to_string()],
+                        ..RuleIR::default()
+                    },
+                    RuleIR {
+                        rule_type: Some("logical".to_string()),
+                        rules: vec![
+                            Box::new(RuleIR {
+                                clash_mode: vec!["Direct".to_string(), "Global".to_string()],
+                                ..RuleIR::default()
+                            }),
+                            Box::new(RuleIR {
+                                clash_mode: vec!["Zulu".to_string()],
+                                ..RuleIR::default()
+                            }),
+                        ],
+                        ..RuleIR::default()
+                    },
+                ],
+                ..RouteIR::default()
+            },
+            dns: Some(DnsIR {
+                rules: vec![
+                    DnsRuleIR {
+                        clash_mode: Some("Alpha".to_string()),
+                        ..DnsRuleIR::default()
+                    },
+                    DnsRuleIR {
+                        rule_type: Some("logical".to_string()),
+                        rules: vec![DnsRuleIR {
+                            clash_mode: Some("Rule".to_string()),
+                            ..DnsRuleIR::default()
+                        }],
+                        ..DnsRuleIR::default()
+                    },
+                ],
+                ..DnsIR::default()
+            }),
+            experimental: Some(ExperimentalIR {
+                clash_api: Some(ClashApiIR {
+                    default_mode: Some("rule".to_string()),
+                    ..ClashApiIR::default()
+                }),
+                ..ExperimentalIR::default()
+            }),
+            ..ConfigIR::default()
+        };
+
+        assert_eq!(
+            calculate_clash_mode_list(Some(&config)),
+            ["rule", "Alpha", "Zulu", "Rule", "Global", "Direct"]
+        );
+    }
 }
 
 #[cfg(test)]

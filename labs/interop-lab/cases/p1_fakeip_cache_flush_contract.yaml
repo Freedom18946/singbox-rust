@@ -1,5 +1,5 @@
 id: p1_fakeip_cache_flush_contract
-title: fakeip cache flush resets allocation sequence on both kernels
+title: fakeip cache flush preserves allocation sequence on both kernels
 priority: p1
 kernel_mode: both
 env_class: strict
@@ -18,6 +18,7 @@ bootstrap:
       - run
       - --admin-listen
       - 127.0.0.1:19190
+    isolate_cache_file: true
     startup_timeout_ms: 15000
     ready_path: /version
     api:
@@ -29,6 +30,7 @@ bootstrap:
       - run
       - -c
       - labs/interop-lab/configs/go_core_clash_api_fakeip_flush.json
+    isolate_cache_file: true
     startup_timeout_ms: 15000
     ready_path: /version
     api:

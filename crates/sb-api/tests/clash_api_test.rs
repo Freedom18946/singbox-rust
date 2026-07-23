@@ -175,7 +175,7 @@ fn test_api_data_structures() -> anyhow::Result<()> {
         r#type: "Direct".to_string(),
         udp: true,
         history: vec![],
-        all: vec!["DIRECT".to_string(), "PROXY".to_string()],
+        all: Some(vec!["DIRECT".to_string(), "PROXY".to_string()]),
         now: "DIRECT".to_string(),
         alive: Some(true),
         delay: Some(50),
@@ -188,6 +188,20 @@ fn test_api_data_structures() -> anyhow::Result<()> {
     assert_eq!(proxy.r#type, deserialized.r#type);
     assert_eq!(proxy.alive, deserialized.alive);
     assert_eq!(proxy.delay, deserialized.delay);
+
+    let non_group = Proxy {
+        name: "DIRECT".to_string(),
+        r#type: "Direct".to_string(),
+        udp: true,
+        history: vec![],
+        all: None,
+        now: String::new(),
+        alive: None,
+        delay: None,
+        extra: std::collections::HashMap::new(),
+    };
+    let non_group_json = serde_json::to_value(non_group)?;
+    assert!(non_group_json.get("all").is_none());
 
     // Test TrafficStats serialization
     let traffic = TrafficStats {

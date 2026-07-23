@@ -67,7 +67,7 @@ traffic_plan:
     timeout_ms: 10000
   - kind: sleep
     name: settle_closed_totals
-    ms: 300
+    ms: 1000
   - kind: api_http
     name: capture_closed_totals
     method: GET

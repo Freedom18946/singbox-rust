@@ -5,7 +5,8 @@
   "experimental": {
     "clash_api": {
       "external_controller": "127.0.0.1:19290",
-      "secret": "test-secret"
+      "secret": "test-secret",
+      "default_mode": "rule"
     }
   },
   "inbounds": [

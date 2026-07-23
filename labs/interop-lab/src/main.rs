@@ -234,6 +234,7 @@ async fn handle_case_command(
                 "ignored_counter_jitter={}",
                 report.ignored_counter_jitter_count
             );
+            println!("ignored_memory_ratio={}", report.ignored_memory_ratio_count);
             println!("gate_score={}", report.gate_score);
             println!("report={}", canonicalize_or(&markdown_path).display());
             Ok(())

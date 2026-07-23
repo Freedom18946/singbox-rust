@@ -16,6 +16,7 @@
 | `ignore_ws_paths` | `string[]` | `[]` | 命中的 WS path 差异计入 ignored，不计 mismatch |
 | `tolerate_counter_jitter` | `bool` | `false` | 是否启用计数器抖动容忍 |
 | `counter_jitter_abs` | `int` | `0` | 抖动绝对阈值 |
+| `ignore_memory_ratio_on_non_linux` | `bool` | `false` | 非 Linux 主机忽略 RSS（Rust）与 Go heap 的不可比峰值比率；Linux 仍执行 2x gate |
 
 备注：`ignore_*` 支持精确匹配和 `prefix*` 前缀匹配。
 
@@ -37,6 +38,7 @@
 - `ignored_http_count`
 - `ignored_ws_count`
 - `ignored_counter_jitter_count`
+- `ignored_memory_ratio_count`
 - `gate_score`
 
 `gate_score = http + ws + subscription + traffic + connection + memory mismatch 总数`，不包含 ignored 项。

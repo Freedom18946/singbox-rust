@@ -13,7 +13,9 @@ use sb_api::{
     managers::{DnsResolver, Provider as ManagerProvider},
     types::ApiConfig,
 };
-use sb_config::ir::{ConfigIR, InboundIR, InboundType};
+use sb_config::ir::{
+    ClashApiIR, ConfigIR, ExperimentalIR, InboundIR, InboundType, RouteIR, RuleIR,
+};
 use sb_core::outbound::{OutboundImpl, OutboundRegistry, OutboundRegistryHandle};
 use sb_core::service::{Service, ServiceManager, StartStage};
 use std::collections::HashMap;
@@ -522,6 +524,20 @@ async fn test_get_configs_gui_1251_shape_from_config_ir() -> anyhow::Result<()> 
                 ..InboundIR::default()
             },
         ],
+        route: RouteIR {
+            rules: vec![RuleIR {
+                clash_mode: vec!["Global".to_string()],
+                ..RuleIR::default()
+            }],
+            ..RouteIR::default()
+        },
+        experimental: Some(ExperimentalIR {
+            clash_api: Some(ClashApiIR {
+                default_mode: Some("rule".to_string()),
+                ..ClashApiIR::default()
+            }),
+            ..ExperimentalIR::default()
+        }),
         ..ConfigIR::default()
     };
 
@@ -542,7 +558,10 @@ async fn test_get_configs_gui_1251_shape_from_config_ir() -> anyhow::Result<()> 
     assert!(json.get("interface-name").is_none());
     assert_eq!(json.get("allow-lan").and_then(|v| v.as_bool()), Some(false));
     assert_eq!(json.get("tun"), Some(&serde_json::Value::Null));
-    assert_eq!(json.get("mode-list"), Some(&serde_json::json!(["Rule"])));
+    assert_eq!(
+        json.get("mode-list"),
+        Some(&serde_json::json!(["rule", "Global"]))
+    );
     Ok(())
 }
 
@@ -685,8 +704,51 @@ async fn test_get_proxies() -> anyhow::Result<()> {
     assert_eq!(response.status(), StatusCode::OK);
     let json: serde_json::Value = response.json().await?;
 
-    // Should return proxies object
-    assert!(json.get("proxies").is_some());
+    let global = json
+        .pointer("/proxies/GLOBAL")
+        .expect("GLOBAL virtual group");
+    assert_eq!(global.get("all"), Some(&serde_json::json!([])));
+    assert_eq!(
+        global.get("now").and_then(|value| value.as_str()),
+        Some("DIRECT")
+    );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_get_proxies_uses_configured_final_for_global_now() -> anyhow::Result<()> {
+    let mut map = HashMap::new();
+    map.insert(
+        "chosen".to_string(),
+        OutboundImpl::Connector(Arc::new(DirectTestOutbound)),
+    );
+    let registry = Arc::new(OutboundRegistryHandle::new(OutboundRegistry::new(map)));
+    let mut ir = ConfigIR::default();
+    ir.route.final_outbound = Some("chosen".to_string());
+    let Some(server) = TestServer::start_with_server(
+        TestServer::new_server()?
+            .with_outbound_registry(registry)
+            .with_config_ir(Arc::new(ir)),
+    )
+    .await?
+    else {
+        return Ok(());
+    };
+
+    let response = server.get("/proxies").await?;
+    assert_eq!(response.status(), StatusCode::OK);
+    let json: serde_json::Value = response.json().await?;
+
+    assert_eq!(
+        json.pointer("/proxies/GLOBAL/now")
+            .and_then(|value| value.as_str()),
+        Some("chosen")
+    );
+    assert_eq!(
+        json.pointer("/proxies/GLOBAL/all"),
+        Some(&serde_json::json!([]))
+    );
+    assert!(json.pointer("/proxies/chosen/all").is_none());
     Ok(())
 }
 

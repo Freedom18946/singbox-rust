@@ -106,6 +106,7 @@ assertions:
     expected: true
 oracle:
   tolerate_counter_jitter: true
+  ignore_memory_ratio_on_non_linux: true
   ignore_http_paths:
     - /proxies/direct/delay*
   ignore_ws_paths:

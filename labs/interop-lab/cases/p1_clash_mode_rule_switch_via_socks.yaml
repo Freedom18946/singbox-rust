@@ -38,6 +38,11 @@ gui_sequence:
     method: GET
     path: /version
     expect_status: 200
+  - kind: http
+    name: configs
+    method: GET
+    path: /configs
+    expect_status: 200
 upstream_topology:
   - name: local_tcp
     kind: tcp_echo
@@ -74,6 +79,9 @@ traffic_plan:
     proxy: socks5://127.0.0.1:11801
 assertions:
   - key: http.version.status
+    op: eq
+    expected: 200
+  - key: http.configs.status
     op: eq
     expected: 200
   - key: traffic.default_rule_mode_blocked.success

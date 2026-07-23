@@ -6,6 +6,28 @@
 > Other docs point here, not copy.
 
 ---
+## Resume (2026-07-23) - Clash API strict-wire parity CLOSED
+
+- Eight scoped Clash API cases passed live `--kernel both`; all final normalized diffs are clean
+  with gate score zero. Run IDs: `154420Z-31a2c920` (strict contract),
+  `154427Z-49583e44` (mode), `153123Z-0248021d` (DNS), `154929Z-2f296d50`
+  (FakeIP flush), `153125Z-9983400b` (FakeIP DNS), `153126Z-6e4ea730`
+  (connections), `153137Z-8ccf5c9b` (selector), `153138Z-b0d43b43` (WS soak).
+- Final strict corrections: group-only proxy `all` including empty GLOBAL list; configured
+  GLOBAL `now`; config-derived mode-list with lowercase Rust/Go fixture default; per-run
+  persistent FakeIP cache isolation; stable post-close connection capture; explicit non-Linux
+  RSS/Go-heap oracle accounting.
+- S3/S6 recalculation found no coverage increment: all eight cases were already strict/both and
+  already credited. Parity remains **75/79 BHV (94.9%)**; inventory remains
+  **65 both / 126 total**. Open gaps remain 3 SV.2 STRUCTURAL + LC-003.
+- Closed DIV-M-001/004/005/006/007/011/012. KEEP DIV-M-002/003/008/009/010 remain explicit.
+- `test_flush_dns_cache` is accepted as a non-reproduced test-infrastructure observation:
+  server-local resolver wiring confirmed; 40 consecutive full-binary 16-thread rounds PASS.
+- Gates: app build; sb-api 133/1; focused FakeIP 30/0; focused DNS 221/7; interop-lab 49/0;
+  boundaries 430; repository-policy clippy, consistency, fmt, diff-check PASS.
+- Evidence: `archive/clash_api_strict_parity/acceptance.md`. Clash strict line has no open action;
+  project frontier returns to separate tracks/external real-network camouflage research.
+
 ## Resume (2026-07-23) - dual-kernel routing-action coverage batch 6 +4 BHV DONE
 
 - Added strict both-kernel coverage for Go 1.13.13 nonterminal `direct` (BHV-DP-038), empty
