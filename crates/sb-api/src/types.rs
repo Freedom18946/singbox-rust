@@ -261,7 +261,7 @@ pub struct Config {
     #[serde(rename = "mixed-port")]
     pub mixed_port: u16,
     /// Interface name used by TUN mode.
-    #[serde(rename = "interface-name")]
+    #[serde(skip_serializing, default)]
     pub interface_name: String,
     /// Allow LAN connections
     #[serde(rename = "allow-lan")]

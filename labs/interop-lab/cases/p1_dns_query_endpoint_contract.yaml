@@ -46,5 +46,3 @@ assertions:
     expected: 0
 oracle:
   tolerate_counter_jitter: true
-  ignore_http_paths:
-    - /dns/query*

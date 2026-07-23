@@ -107,10 +107,10 @@ async fn handle_traffic_websocket(socket: WebSocket, state: ApiState) {
 
 /// Handle connections WebSocket — pushes full snapshot every second.
 /// Public so handlers.rs can call it from the dual HTTP/WS pattern.
-pub async fn handle_connections_websocket(socket: WebSocket, state: ApiState) {
+pub async fn handle_connections_websocket(socket: WebSocket, state: ApiState, interval_ms: u64) {
     let mut shutdown_rx = state.shutdown_rx.clone();
     let (mut sender, mut receiver) = socket.split();
-    let mut tick = interval(Duration::from_secs(1));
+    let mut tick = interval(Duration::from_millis(interval_ms));
 
     loop {
         tokio::select! {

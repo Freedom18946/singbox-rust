@@ -447,6 +447,8 @@ pub enum TrafficAction {
         overall_success_percent: usize,
         #[serde(default = "default_api_ws_soak_frame_timeout_ms")]
         frame_timeout_ms: u64,
+        #[serde(default = "default_api_ws_soak_frames")]
+        frames: usize,
     },
     ApiWsExpectCloseOnKernelControl {
         name: String,
@@ -552,6 +554,10 @@ fn default_api_ws_soak_success_percent() -> usize {
 
 fn default_api_ws_soak_frame_timeout_ms() -> u64 {
     3_000
+}
+
+fn default_api_ws_soak_frames() -> usize {
+    1
 }
 
 fn default_api_ws_close_timeout_ms() -> u64 {

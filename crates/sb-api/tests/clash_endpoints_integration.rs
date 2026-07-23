@@ -379,8 +379,8 @@ fn test_documented_endpoints_summary() {
         ("GET", "/providers/rules/:name"),
         ("PUT", "/providers/rules/:name"),
         // Cache Management (2/2)
-        ("DELETE", "/dns/flush"),
-        ("DELETE", "/cache/fakeip/flush"),
+        ("POST", "/dns/flush"),
+        ("POST", "/cache/fakeip/flush"),
         // DNS Query (1/1) - Sprint 15
         ("GET", "/dns/query"),
         // Meta Endpoints (5/5) - Sprint 15 - COMPLETE!

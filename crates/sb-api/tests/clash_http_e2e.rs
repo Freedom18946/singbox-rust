@@ -8,7 +8,9 @@
 
 use reqwest::{Client, StatusCode};
 use sb_api::{
-    clash::server::ApiState, clash::ClashApiServer, managers::Provider as ManagerProvider,
+    clash::server::ApiState,
+    clash::ClashApiServer,
+    managers::{DnsResolver, Provider as ManagerProvider},
     types::ApiConfig,
 };
 use sb_config::ir::{ConfigIR, InboundIR, InboundType};
@@ -95,6 +97,11 @@ impl TestServer {
         service_manager: Arc<ServiceManager>,
     ) -> anyhow::Result<Option<Self>> {
         Self::start_with_server(Self::new_server()?.with_service_manager(service_manager)).await
+    }
+
+    async fn start_with_dns_resolver() -> anyhow::Result<Option<Self>> {
+        Self::start_with_server(Self::new_server()?.with_dns_resolver(Arc::new(DnsResolver::new())))
+            .await
     }
 
     fn new_server() -> anyhow::Result<ClashApiServer> {
@@ -529,22 +536,13 @@ async fn test_get_configs_gui_1251_shape_from_config_ir() -> anyhow::Result<()> 
     assert_eq!(response.status(), StatusCode::OK);
     let json: serde_json::Value = response.json().await?;
 
-    assert_eq!(json.get("port").and_then(|v| v.as_u64()), Some(18080));
-    assert_eq!(json.get("socks-port").and_then(|v| v.as_u64()), Some(18081));
-    assert_eq!(json.get("mixed-port").and_then(|v| v.as_u64()), Some(18082));
-    assert_eq!(
-        json.get("interface-name").and_then(|v| v.as_str()),
-        Some("utun-test")
-    );
-    assert_eq!(json.get("allow-lan").and_then(|v| v.as_bool()), Some(true));
-    assert_eq!(
-        json.pointer("/tun/enable").and_then(|v| v.as_bool()),
-        Some(true)
-    );
-    assert_eq!(
-        json.pointer("/tun/device").and_then(|v| v.as_str()),
-        Some("utun-test")
-    );
+    assert_eq!(json.get("port").and_then(|v| v.as_u64()), Some(0));
+    assert_eq!(json.get("socks-port").and_then(|v| v.as_u64()), Some(0));
+    assert_eq!(json.get("mixed-port").and_then(|v| v.as_u64()), Some(0));
+    assert!(json.get("interface-name").is_none());
+    assert_eq!(json.get("allow-lan").and_then(|v| v.as_bool()), Some(false));
+    assert_eq!(json.get("tun"), Some(&serde_json::Value::Null));
+    assert_eq!(json.get("mode-list"), Some(&serde_json::json!(["Rule"])));
     Ok(())
 }
 
@@ -1078,33 +1076,29 @@ async fn test_get_rule_providers_with_data() -> anyhow::Result<()> {
 // Cache Management (2/36)
 // ============================================================================
 
-/// Test DELETE /cache/fakeip/flush - Flush FakeIP cache
+/// Test POST /cache/fakeip/flush - Flush FakeIP cache
 #[tokio::test]
 async fn test_flush_fakeip_cache() -> anyhow::Result<()> {
-    let Some(server) = TestServer::start().await? else {
+    let Some(server) = TestServer::start_with_dns_resolver().await? else {
         return Ok(());
     };
-    let response = server.delete("/cache/fakeip/flush").await?;
+    let response = server
+        .post("/cache/fakeip/flush", serde_json::json!({}))
+        .await?;
 
-    // Returns 503 when DNS resolver not available, 200 if successful
-    assert!(
-        response.status() == StatusCode::OK || response.status() == StatusCode::SERVICE_UNAVAILABLE
-    );
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
     Ok(())
 }
 
-/// Test DELETE /dns/flush - Flush DNS cache (note: endpoint is /dns/flush, not /cache/dns/flush)
+/// Test POST /dns/flush - Flush DNS cache (note: endpoint is /dns/flush, not /cache/dns/flush)
 #[tokio::test]
 async fn test_flush_dns_cache() -> anyhow::Result<()> {
-    let Some(server) = TestServer::start().await? else {
+    let Some(server) = TestServer::start_with_dns_resolver().await? else {
         return Ok(());
     };
-    let response = server.delete("/dns/flush").await?;
+    let response = server.post("/dns/flush", serde_json::json!({})).await?;
 
-    // Returns 503 when DNS resolver not available, 200 if successful
-    assert!(
-        response.status() == StatusCode::OK || response.status() == StatusCode::SERVICE_UNAVAILABLE
-    );
+    assert_eq!(response.status(), StatusCode::NO_CONTENT);
     Ok(())
 }
 

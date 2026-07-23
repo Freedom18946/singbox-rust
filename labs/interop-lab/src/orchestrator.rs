@@ -703,6 +703,7 @@ async fn run_traffic_plan_with_kernel_control(
                 wave_success_percent,
                 overall_success_percent,
                 frame_timeout_ms,
+                frames,
             } => {
                 let result = execute_api_ws_soak_action(
                     name,
@@ -715,6 +716,7 @@ async fn run_traffic_plan_with_kernel_control(
                     *wave_success_percent,
                     *overall_success_percent,
                     *frame_timeout_ms,
+                    *frames,
                     session,
                 )
                 .await;
@@ -1055,7 +1057,13 @@ async fn execute_api_http_action(
             });
             if path.contains("/connections") {
                 if let Some(value) = parsed_body.clone() {
-                    snapshot.conn_summary = Some(value);
+                    let has_connections = value
+                        .get("connections")
+                        .and_then(Value::as_array)
+                        .is_some_and(|connections| !connections.is_empty());
+                    if has_connections || snapshot.conn_summary.is_none() {
+                        snapshot.conn_summary = Some(value);
+                    }
                 }
             }
 
@@ -1071,6 +1079,14 @@ async fn execute_api_http_action(
                 .as_ref()
                 .map(extract_dns_answer_ips)
                 .unwrap_or_default();
+            let upload_total = parsed_body
+                .as_ref()
+                .and_then(|value| value.get("uploadTotal"))
+                .and_then(Value::as_u64);
+            let download_total = parsed_body
+                .as_ref()
+                .and_then(|value| value.get("downloadTotal"))
+                .and_then(Value::as_u64);
 
             TrafficResult {
                 name: name.to_string(),
@@ -1083,6 +1099,8 @@ async fn execute_api_http_action(
                     "expect_status": expect_status,
                     "body_hash": body_hash,
                     "connection_count": connection_count,
+                    "upload_total": upload_total,
+                    "download_total": download_total,
                     "answer_ips": answer_ips,
                 }),
             }
@@ -1260,6 +1278,7 @@ async fn execute_api_ws_soak_action(
     wave_success_percent: usize,
     overall_success_percent: usize,
     frame_timeout_ms: u64,
+    frames: usize,
     session: &KernelSession,
 ) -> TrafficResult {
     let ws_url = build_api_ws_url(&session.api, path, no_auth, auth_secret);
@@ -1272,7 +1291,7 @@ async fn execute_api_ws_soak_action(
             let ws_url = ws_url.clone();
             let path = path.to_string();
             set.spawn(async move {
-                receive_api_ws_frame(&ws_url, &path, frame_timeout_ms)
+                receive_api_ws_frame(&ws_url, &path, frame_timeout_ms, frames)
                     .await
                     .unwrap_or(false)
             });
@@ -1312,6 +1331,7 @@ async fn execute_api_ws_soak_action(
             "wave_success_percent": wave_success_percent,
             "overall_success_percent": overall_success_percent,
             "frame_timeout_ms": frame_timeout_ms,
+            "frames": frames,
             "total_success": total_success,
             "total_clients": total_clients,
             "failing_wave": failing_wave.map(|(wave, wave_success)| json!({
@@ -1738,25 +1758,37 @@ fn parse_ip_token(value: &str) -> Option<IpAddr> {
     None
 }
 
-async fn receive_api_ws_frame(ws_url: &str, path: &str, frame_timeout_ms: u64) -> Result<bool> {
+async fn receive_api_ws_frame(
+    ws_url: &str,
+    path: &str,
+    frame_timeout_ms: u64,
+    frames: usize,
+) -> Result<bool> {
     let (mut stream, _) = connect_async(ws_url).await?;
-    let next = timeout(
-        Duration::from_millis(frame_timeout_ms.max(1)),
-        stream.next(),
-    )
-    .await;
-    let ok = match next {
-        Ok(Some(Ok(Message::Text(text)))) => {
-            validate_ws_payload(path, parse_ws_payload_text(&text, path))
+    let mut ok = frames > 0;
+    for _ in 0..frames.max(1) {
+        let next = timeout(
+            Duration::from_millis(frame_timeout_ms.max(1)),
+            stream.next(),
+        )
+        .await;
+        let frame_ok = match next {
+            Ok(Some(Ok(Message::Text(text)))) => {
+                validate_ws_payload(path, parse_ws_payload_text(&text, path))
+            }
+            Ok(Some(Ok(Message::Binary(data)))) => {
+                validate_ws_payload(path, parse_ws_payload_binary(&data, path))
+            }
+            Ok(Some(Ok(_))) => false,
+            Ok(Some(Err(err))) => return Err(err.into()),
+            Ok(None) => false,
+            Err(_) => false,
+        };
+        ok &= frame_ok;
+        if !frame_ok {
+            break;
         }
-        Ok(Some(Ok(Message::Binary(data)))) => {
-            validate_ws_payload(path, parse_ws_payload_binary(&data, path))
-        }
-        Ok(Some(Ok(_))) => false,
-        Ok(Some(Err(err))) => return Err(err.into()),
-        Ok(None) => false,
-        Err(_) => false,
-    };
+    }
     if let Err(err) = stream.close(None).await {
         tracing::debug!(path = %path, error = %err, "receive_api_ws_frame close failed");
     }

@@ -57,13 +57,13 @@ fn ipv6_add(ip: Ipv6Addr, delta: u128) -> Ipv6Addr {
 }
 
 fn start_v4(base: Ipv4Addr) -> Ipv4Addr {
-    // Mirror sing-box behavior: skip network address and one reserved slot.
-    ipv4_add(base, 2)
+    // Go stores the address before the next allocation; Create() advances first.
+    ipv4_add(base, 1)
 }
 
 fn start_v6(base: Ipv6Addr) -> Ipv6Addr {
-    // Mirror sing-box behavior: skip network address and one reserved slot.
-    ipv6_add(base, 2)
+    // Go stores the address before the next allocation; Create() advances first.
+    ipv6_add(base, 1)
 }
 
 #[derive(Debug)]
@@ -276,9 +276,6 @@ pub fn reset() -> usize {
     st.by_domain_v4.clear();
     st.by_domain_v6.clear();
     st.by_ip.clear();
-    st.v4_current = start_v4(st.v4_base);
-    st.v6_current = start_v6(st.v6_base);
-
     if let Some(storage) = st.storage.clone() {
         storage.reset();
     }
@@ -374,6 +371,21 @@ mod tests {
         // Reverse lookup should work
         assert_eq!(to_domain(&ip1), Some("example.com".to_string()));
         assert_eq!(to_domain(&ip2), Some("google.com".to_string()));
+    }
+
+    #[test]
+    fn reset_clears_mappings_without_rewinding_cursor() {
+        let _guard = lock_state();
+        configure_options(DnsRuntimeOptions {
+            fakeip_v4_base: "198.18.0.0".parse().unwrap(),
+            fakeip_v4_mask: 16,
+            ..Default::default()
+        });
+
+        assert_eq!(allocate_v4("seed.example").to_string(), "198.18.0.2");
+        assert_eq!(allocate_v4("next.example").to_string(), "198.18.0.3");
+        assert_eq!(reset(), 2);
+        assert_eq!(allocate_v4("after-reset.example").to_string(), "198.18.0.4");
     }
 
     #[test]

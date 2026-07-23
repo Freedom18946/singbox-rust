@@ -64,5 +64,3 @@ assertions:
     expected: 200
 oracle:
   tolerate_counter_jitter: true
-  ignore_http_paths:
-    - /proxies

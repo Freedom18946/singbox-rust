@@ -5,7 +5,7 @@
 use std::io::ErrorKind;
 use std::net::{IpAddr, Ipv4Addr, SocketAddr};
 use std::sync::Arc;
-use std::time::Duration;
+use std::time::{Duration, Instant};
 
 use futures_util::{SinkExt, StreamExt};
 use reqwest::Client;
@@ -354,6 +354,25 @@ async fn test_connections_ws_single_client_snapshot() -> anyhow::Result<()> {
         receive_connections_frame(&ws_url).await,
         "single websocket client should receive valid /connections snapshot"
     );
+    Ok(())
+}
+
+#[tokio::test]
+async fn test_connections_ws_honors_interval_query() -> anyhow::Result<()> {
+    let Some(server) = TestServer::start().await? else {
+        return Ok(());
+    };
+    let (mut stream, _) =
+        connect_async(format!("{}/connections?interval=40", server.ws_base)).await?;
+    let _ = next_connections_snapshot(&mut stream).await?;
+    let started = Instant::now();
+    let _ = next_connections_snapshot(&mut stream).await?;
+    let elapsed = started.elapsed();
+    assert!(
+        elapsed >= Duration::from_millis(25) && elapsed < Duration::from_millis(300),
+        "interval query not applied: {elapsed:?}"
+    );
+    let _ = stream.send(Message::Close(None)).await;
     Ok(())
 }
 

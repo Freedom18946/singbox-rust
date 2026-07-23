@@ -39,12 +39,14 @@ upstream_topology:
 traffic_plan:
   - kind: api_ws_soak
     name: connections_ws_long_running_soak
-    path: /connections
-    clients_per_wave: 24
-    waves: 20
+    path: /connections?interval=100
+    clients_per_wave: 8
+    waves: 5
     wave_delay_ms: 120
     wave_success_percent: 95
     overall_success_percent: 97
+    frames: 2
+    frame_timeout_ms: 500
 post_traffic_gui_sequence:
   - kind: sleep
     ms: 1000

@@ -65,6 +65,14 @@ traffic_plan:
     name: wait_live_http_via_socks
     handle: live_http_via_socks
     timeout_ms: 10000
+  - kind: sleep
+    name: settle_closed_totals
+    ms: 300
+  - kind: api_http
+    name: capture_closed_totals
+    method: GET
+    path: /connections
+    expect_status: 200
 assertions:
   - key: errors.count
     op: eq
@@ -99,8 +107,16 @@ assertions:
   - key: connections.uploadTotal
     op: gt
     expected: 0
+  - key: traffic.capture_closed_totals.success
+    op: eq
+    expected: true
+  - key: traffic.capture_closed_totals.detail.connection_count
+    op: eq
+    expected: 0
+  - key: traffic.capture_closed_totals.detail.upload_total
+    op: gt
+    expected: 0
 oracle:
   tolerate_counter_jitter: true
   ignore_http_paths:
     - /version
-    - /connections

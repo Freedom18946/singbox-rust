@@ -107,9 +107,6 @@ assertions:
 oracle:
   tolerate_counter_jitter: true
   ignore_http_paths:
-    - /configs
-    - /proxies
-    - /connections
     - /proxies/direct/delay*
   ignore_ws_paths:
     - /memory

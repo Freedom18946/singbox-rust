@@ -423,7 +423,11 @@ fn infer_proxy_type(name: &str, impl_: Option<&OutboundImpl>) -> String {
     if let Some(outbound) = impl_ {
         let OutboundImpl::Connector(connector) = outbound;
         if connector.as_group().is_some() {
-            return connector.r#type().to_string();
+            return match connector.r#type().to_ascii_lowercase().as_str() {
+                "selector" => "Selector".to_string(),
+                "urltest" => "URLTest".to_string(),
+                other => other.to_string(),
+            };
         }
         return match connector.r#type().to_ascii_lowercase().as_str() {
             "direct" => PROXY_TYPE_DIRECT.to_string(),
@@ -638,7 +642,7 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
             history,
             all: vec![],
             now: String::new(),
-            alive: Some(true),
+            alive: None,
             delay: None,
             extra: HashMap::new(),
         };
@@ -647,7 +651,7 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
         if let Some(group) = c.as_group() {
             proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
             proxy.now = group.now().to_string();
-            proxy.r#type = c.r#type().to_string();
+            proxy.r#type = infer_proxy_type(key, Some(outbound));
             // Group-level alive/delay are None (matches Go behavior)
             proxy.alive = None;
             proxy.delay = None;
@@ -657,41 +661,6 @@ pub async fn get_proxies(State(state): State<ApiState>) -> impl IntoResponse {
             default_tag.clone_from(key);
         }
         proxies.insert(key.clone(), proxy);
-    }
-
-    // Add default proxies if not present
-    if !proxies.contains_key(DIRECT_PROXY_NAME) {
-        proxies.insert(
-            DIRECT_PROXY_NAME.to_string(),
-            Proxy {
-                name: DIRECT_PROXY_NAME.to_string(),
-                r#type: PROXY_TYPE_DIRECT.to_string(),
-                udp: true,
-                history: vec![],
-                all: vec![],
-                now: String::new(),
-                alive: Some(true),
-                delay: Some(0),
-                extra: HashMap::new(),
-            },
-        );
-    }
-
-    if !proxies.contains_key(REJECT_PROXY_NAME) {
-        proxies.insert(
-            REJECT_PROXY_NAME.to_string(),
-            Proxy {
-                name: REJECT_PROXY_NAME.to_string(),
-                r#type: PROXY_TYPE_REJECT.to_string(),
-                udp: false,
-                history: vec![],
-                all: vec![],
-                now: String::new(),
-                alive: Some(true),
-                delay: None,
-                extra: HashMap::new(),
-            },
-        );
     }
 
     // Inject GLOBAL virtual group (matches Go's getProxies behavior)
@@ -740,7 +709,7 @@ pub async fn get_proxy(
             history,
             all: vec![],
             now: String::new(),
-            alive: Some(true),
+            alive: None,
             delay: None,
             extra: HashMap::new(),
         };
@@ -749,7 +718,7 @@ pub async fn get_proxy(
         if let Some(group) = c.as_group() {
             proxy.all = group.all().into_iter().map(|tag| tag.to_string()).collect();
             proxy.now = group.now().to_string();
-            proxy.r#type = c.r#type().to_string();
+            proxy.r#type = infer_proxy_type(&proxy_name, Some(&outbound));
             proxy.alive = None;
             proxy.delay = None;
         }
@@ -771,8 +740,8 @@ pub async fn get_proxy(
                 history: vec![],
                 all: vec![],
                 now: String::new(),
-                alive: Some(true),
-                delay: Some(0),
+                alive: None,
+                delay: None,
                 extra: HashMap::new(),
             };
             (
@@ -789,7 +758,7 @@ pub async fn get_proxy(
                 history: vec![],
                 all: vec![],
                 now: String::new(),
-                alive: Some(true),
+                alive: None,
                 delay: None,
                 extra: HashMap::new(),
             };
@@ -948,11 +917,25 @@ pub async fn get_proxy_delay(
 /// HTTP: returns single snapshot. WebSocket: pushes snapshot every second.
 pub async fn get_connections_or_ws(
     ws: Option<WebSocketUpgrade>,
+    Query(query): Query<HashMap<String, String>>,
     State(state): State<ApiState>,
 ) -> Response {
+    let interval_ms = match query.get("interval") {
+        None => 1000,
+        Some(value) => match value.parse::<u64>() {
+            Ok(value) if value > 0 => value,
+            _ => {
+                return (
+                    StatusCode::BAD_REQUEST,
+                    Json(json!({"message": "Bad Request"})),
+                )
+                    .into_response();
+            }
+        },
+    };
     if let Some(ws) = ws {
         ws.on_upgrade(move |socket| {
-            crate::clash::websocket::handle_connections_websocket(socket, state)
+            crate::clash::websocket::handle_connections_websocket(socket, state, interval_ms)
         })
         .into_response()
     } else {
@@ -1080,99 +1063,44 @@ pub async fn get_configs(State(state): State<ApiState>) -> impl IntoResponse {
         )
         .unwrap_or_else(|| sb_core::adapter::clash::get_mode().to_string());
 
-    // Read actual ports from config IR if available
-    let (port, socks_port, mixed_port) = if let Some(config) = &config_snapshot {
-        extract_ports_from_config(config)
-    } else {
-        (0u16, 0u16, None)
-    };
-
-    // Determine allow-lan from inbound listen addresses
-    let allow_lan = if let Some(config) = &config_snapshot {
-        config
-            .inbounds
-            .iter()
-            .any(|ib| ib.listen == "0.0.0.0" || ib.listen == "::")
-    } else {
-        false
-    };
-
-    // Build tun info from config IR
-    let (interface_name, tun) = if let Some(config) = &config_snapshot {
-        let tun_ib = config
-            .inbounds
-            .iter()
-            .find(|ib| matches!(ib.ty, sb_config::ir::InboundType::Tun));
-        if let Some(tun_ib) = tun_ib {
-            let device = tun_ib.tag.as_deref().unwrap_or("").to_string();
-            (
-                device.clone(),
-                json!({
-                    "enable": true,
-                    "device": device,
-                    "stack": ""
-                }),
-            )
-        } else {
-            (String::new(), json!({}))
-        }
-    } else {
-        (String::new(), json!({}))
-    };
+    // Go's configSchema leaves port, LAN, and TUN fields at zero/default values;
+    // these are control-plane schema fields, not a projection of inbound listeners.
+    let log_level = config_snapshot
+        .as_ref()
+        .and_then(|config| config.log.as_ref())
+        .and_then(|log| log.level.as_deref())
+        .map(|level| {
+            if level.eq_ignore_ascii_case("trace") {
+                "debug".to_string()
+            } else {
+                level.to_ascii_lowercase()
+            }
+        })
+        .unwrap_or_else(|| "info".to_string());
 
     let config = Config {
-        port,
-        socks_port,
+        port: 0,
+        socks_port: 0,
         redir_port: 0,
         tproxy_port: 0,
-        mixed_port: mixed_port.unwrap_or(0),
-        interface_name,
-        allow_lan,
+        mixed_port: 0,
+        interface_name: String::new(),
+        allow_lan: false,
         bind_address: "*".to_string(),
+        // Go echoes the stored/default mode verbatim (server.go:157/223); GUI compares
+        // `config.mode` case-sensitively against its lowercase ClashMode enum
+        // (frontend enums/kernel.ts), so emit the raw lowercase mode, not a capitalized form.
         mode,
-        mode_list: vec![
-            "rule".to_string(),
-            "global".to_string(),
-            "direct".to_string(),
-        ],
-        log_level: "info".to_string(),
+        mode_list: vec!["Rule".to_string()],
+        log_level,
         ipv6: false,
-        tun,
+        tun: serde_json::Value::Null,
     };
 
     Json(config)
 }
 
 /// Extract inbound listen ports from ConfigIR
-fn extract_ports_from_config(config: &sb_config::ir::ConfigIR) -> (u16, u16, Option<u16>) {
-    let mut http_port = 0u16;
-    let mut socks_port = 0u16;
-    let mut mixed_port = None;
-
-    for ib in &config.inbounds {
-        match ib.ty {
-            sb_config::ir::InboundType::Http => {
-                if http_port == 0 {
-                    http_port = ib.port;
-                }
-            }
-            sb_config::ir::InboundType::Socks => {
-                if socks_port == 0 {
-                    socks_port = ib.port;
-                }
-            }
-            sb_config::ir::InboundType::Mixed => {
-                if mixed_port.is_none() {
-                    mixed_port = Some(ib.port);
-                }
-            }
-            _ => {}
-        }
-    }
-
-    (http_port, socks_port, mixed_port)
-}
-
 /// Update configuration (PATCH /configs) - matches Go's patchConfigs()
 ///
 /// Handles partial configuration updates. Currently only processes `mode` changes.
@@ -1477,15 +1405,7 @@ pub async fn flush_fakeip_cache(State(state): State<ApiState>) -> impl IntoRespo
                     "Successfully flushed {} fake IP cache entries",
                     fakeip_count
                 );
-                (
-                    StatusCode::OK,
-                    Json(json!({
-                        "status": "success",
-                        "flushed": fakeip_count,
-                        "message": format!("Flushed {} fake IP mappings", fakeip_count)
-                    })),
-                )
-                    .into_response()
+                StatusCode::NO_CONTENT.into_response()
             }
             Err(e) => {
                 log::error!("Failed to flush fake IP cache: {}", e);
@@ -1525,15 +1445,7 @@ pub async fn flush_dns_cache(State(state): State<ApiState>) -> impl IntoResponse
         match dns_resolver.flush_dns_cache().await {
             Ok(()) => {
                 log::info!("Successfully flushed {} DNS cache entries", dns_count);
-                (
-                    StatusCode::OK,
-                    Json(json!({
-                        "status": "success",
-                        "flushed": dns_count,
-                        "message": format!("Flushed {} DNS cache entries", dns_count)
-                    })),
-                )
-                    .into_response()
+                StatusCode::NO_CONTENT.into_response()
             }
             Err(e) => {
                 log::error!("Failed to flush DNS cache: {}", e);
@@ -1666,12 +1578,22 @@ pub async fn get_dns_query(
         .map(std::string::String::as_str)
         .unwrap_or("A");
 
-    // Validate query type
-    let valid_types = ["A", "AAAA", "CNAME", "MX", "TXT", "NS", "PTR"];
-    if !valid_types.contains(&query_type) {
-        log::warn!("Unsupported DNS query type: {}", query_type);
-        // We'll allow it but log a warning - the resolver will handle it
-    }
+    let qtype = match query_type {
+        "A" => 1u16,
+        "NS" => 2,
+        "CNAME" => 5,
+        "PTR" => 12,
+        "MX" => 15,
+        "TXT" => 16,
+        "AAAA" => 28,
+        _ => {
+            return (
+                StatusCode::BAD_REQUEST,
+                Json(json!({"message": "invalid query type"})),
+            )
+                .into_response();
+        }
+    };
 
     log::info!("DNS query requested for {} (type: {})", name, query_type);
 
@@ -1679,39 +1601,40 @@ pub async fn get_dns_query(
     if let Some(dns_resolver) = &state.dns_resolver {
         match dns_resolver.query_dns(name, query_type).await {
             Ok(addresses) => {
-                if addresses.is_empty() {
-                    log::warn!(
-                        "DNS query returned no results for {} ({})",
-                        name,
-                        query_type
-                    );
-                    (
-                        StatusCode::OK,
-                        Json(json!({
-                            "name": name,
-                            "type": query_type,
-                            "addresses": [],
-                            "message": "No DNS records found"
-                        })),
-                    )
-                        .into_response()
+                let fqdn = if name.ends_with('.') {
+                    name.to_string()
                 } else {
-                    log::info!(
-                        "DNS query successful for {}: {} address(es) found",
-                        name,
-                        addresses.len()
-                    );
-                    (
-                        StatusCode::OK,
-                        Json(json!({
-                            "name": name,
-                            "type": query_type,
-                            "addresses": addresses,
-                            "ttl": 300
-                        })),
-                    )
-                        .into_response()
+                    format!("{name}.")
+                };
+                let answer = addresses
+                    .iter()
+                    .map(|address| {
+                        json!({
+                            "name": fqdn,
+                            "type": if address.parse::<std::net::Ipv4Addr>().is_ok() { 1 } else { 28 },
+                            "TTL": 600,
+                            "data": address.to_string(),
+                        })
+                    })
+                    .collect::<Vec<_>>();
+                let mut response = json!({
+                    "Status": 0,
+                    "Question": [{
+                        "Name": fqdn,
+                        "Qtype": qtype,
+                        "Qclass": 1,
+                    }],
+                    "Server": "internal",
+                    "TC": false,
+                    "RD": true,
+                    "RA": true,
+                    "AD": false,
+                    "CD": false,
+                });
+                if !answer.is_empty() {
+                    response["Answer"] = json!(answer);
                 }
+                (StatusCode::OK, Json(response)).into_response()
             }
             Err(e) => {
                 log::error!("DNS query failed for {}: {}", name, e);

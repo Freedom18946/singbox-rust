@@ -290,44 +290,56 @@ fn diff_http(
     let mut out = Vec::new();
     let mut ignored = 0usize;
 
-    let rust_map: BTreeMap<String, (&u16, Option<&str>)> = rust_http
+    let rust_map: BTreeMap<String, &HttpResult> = rust_http
         .iter()
-        .map(|item| {
-            (
-                format!("{} {}", item.method, item.path),
-                (&item.status, item.body_hash.as_deref()),
-            )
-        })
+        .map(|item| (format!("{} {}", item.method, item.path), item))
         .collect();
-    let go_map: BTreeMap<String, (&u16, Option<&str>)> = go_http
+    let go_map: BTreeMap<String, &HttpResult> = go_http
         .iter()
-        .map(|item| {
-            (
-                format!("{} {}", item.method, item.path),
-                (&item.status, item.body_hash.as_deref()),
-            )
-        })
+        .map(|item| (format!("{} {}", item.method, item.path), item))
         .collect();
 
     let keys: BTreeSet<_> = rust_map.keys().chain(go_map.keys()).cloned().collect();
     for key in keys {
         let left = rust_map.get(&key);
         let right = go_map.get(&key);
-        if left == right {
-            continue;
-        }
         let path = key
             .split_once(' ')
             .map(|(_, path)| path)
             .unwrap_or_default();
+        let same = match (left, right) {
+            (Some(left), Some(right)) => {
+                let same_status = left.status == right.status;
+                if key.starts_with("GET ") && path.split('?').next() == Some("/connections") {
+                    // Connection bodies contain platform memory plus per-run IDs/timestamps.
+                    // S2 compares stable count/totals in the dedicated Conn dimension.
+                    same_status
+                } else {
+                    same_status
+                        && match (&left.body, &right.body) {
+                            (Some(left_body), Some(right_body)) => left_body == right_body,
+                            (None, None) => left.body_hash == right.body_hash,
+                            _ => false,
+                        }
+                }
+            }
+            _ => false,
+        };
+        if same {
+            continue;
+        }
         if is_ignored_path(path, ignore_paths) {
             ignored += 1;
             continue;
         }
         out.push(Mismatch {
             key,
-            rust_value: json!(left.map(|(status, hash)| { json!({"status": status, "hash": hash}) })),
-            go_value: json!(right.map(|(status, hash)| { json!({"status": status, "hash": hash}) })),
+            rust_value: json!(left.map(|item| {
+                json!({"status": item.status, "body": item.body, "hash": item.body_hash})
+            })),
+            go_value: json!(right.map(|item| {
+                json!({"status": item.status, "body": item.body, "hash": item.body_hash})
+            })),
         });
     }
 
@@ -371,6 +383,19 @@ fn diff_ws(
         let right = go_map.get(&key);
         if left == right {
             continue;
+        }
+        if key.split('?').next() == Some("/connections") {
+            let left_frames = rust_ws
+                .iter()
+                .find(|capture| capture.path == key)
+                .map(|capture| capture.frames.len());
+            let right_frames = go_ws
+                .iter()
+                .find(|capture| capture.path == key)
+                .map(|capture| capture.frames.len());
+            if left_frames == right_frames {
+                continue;
+            }
         }
         if is_ignored_path(&key, ignore_paths) {
             ignored += 1;

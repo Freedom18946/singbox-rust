@@ -330,8 +330,8 @@ impl ClashApiServer {
                 put(handlers::update_rule_provider),
             )
             // Cache management
-            .route("/cache/fakeip/flush", delete(handlers::flush_fakeip_cache))
-            .route("/dns/flush", delete(handlers::flush_dns_cache))
+            .route("/cache/fakeip/flush", post(handlers::flush_fakeip_cache))
+            .route("/dns/flush", post(handlers::flush_dns_cache))
             // DNS query
             .route("/dns/query", get(handlers::get_dns_query))
             // Meta endpoints

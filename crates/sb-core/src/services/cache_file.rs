@@ -1138,7 +1138,6 @@ impl crate::dns::fakeip::FakeIpStorage for CacheFileService {
                 mem.fakeip_by_domain_v4.write().clear();
                 mem.fakeip_by_domain_v6.write().clear();
                 mem.fakeip_by_ip.write().clear();
-                *mem.fakeip_meta.write() = None;
             }
             CacheBackend::Persistence(db) => {
                 if let Ok(tree) = db.open_tree("fakeip_domain4") {
@@ -1151,9 +1150,6 @@ impl crate::dns::fakeip::FakeIpStorage for CacheFileService {
                     let _ = tree.clear();
                 }
                 if let Ok(tree) = db.open_tree("fakeip_ip") {
-                    let _ = tree.clear();
-                }
-                if let Ok(tree) = db.open_tree("fakeip_meta") {
                     let _ = tree.clear();
                 }
             }
