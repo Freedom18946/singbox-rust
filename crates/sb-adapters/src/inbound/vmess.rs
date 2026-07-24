@@ -90,6 +90,15 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
     serve_inner(cfg, &mut stop_rx, None).await
 }
 
+/// Run VMess with an explicit startup-readiness result.
+pub async fn serve_with_ready(
+    cfg: VmessInboundConfig,
+    mut stop_rx: mpsc::Receiver<()>,
+    ready: sb_core::adapter::InboundReadySender,
+) -> Result<()> {
+    serve_inner(cfg, &mut stop_rx, Some(ready)).await
+}
+
 async fn serve_inner(
     cfg: VmessInboundConfig,
     stop_rx: &mut mpsc::Receiver<()>,
@@ -110,17 +119,10 @@ async fn serve_inner(
     // Create listener based on transport configuration (defaults to TCP if not specified)
     // 根据传输配置创建监听器 (如果未指定则默认为 TCP)
     let transport = cfg.transport_layer.clone().unwrap_or_default();
-    if cfg.tls.is_some()
-        && transport.transport_type() != crate::transport_config::TransportType::Tcp
+    let listener = match transport
+        .create_inbound_listener_with_tls(cfg.listen, cfg.tls.clone(), cfg.tls_handshake_timeout)
+        .await
     {
-        let error = anyhow!(
-            "vmess: TLS with {:?} transport requires transport-owned termination; refusing plain or double TLS",
-            transport.transport_type()
-        );
-        report_ready_error(&mut ready, &error);
-        return Err(error);
-    }
-    let listener = match transport.create_inbound_listener(cfg.listen).await {
         Ok(listener) => listener,
         Err(error) => {
             report_ready_error(&mut ready, &error);
@@ -160,49 +162,6 @@ async fn serve_inner(
                 let cfg_clone = cfg.clone();
 
                 tokio::spawn(async move {
-                    let stream = if let Some(acceptor) = &cfg_clone.tls {
-                        match tokio::time::timeout(
-                            cfg_clone.tls_handshake_timeout,
-                            acceptor.accept(stream),
-                        )
-                        .await
-                        {
-                            Ok(Ok(stream)) => {
-                                let negotiated_alpn = stream
-                                    .get_ref()
-                                    .1
-                                    .alpn_protocol()
-                                    .map(|value| String::from_utf8_lossy(value).into_owned());
-                                let negotiated_version = stream.get_ref().1.protocol_version();
-                                info!(
-                                    %peer,
-                                    alpn=?negotiated_alpn,
-                                    version=?negotiated_version,
-                                    "vmess: TLS handshake complete"
-                                );
-                                Box::new(stream) as Box<dyn crate::transport_config::InboundStream>
-                            }
-                            Ok(Err(error)) => {
-                                warn!(%peer, error=%error, "vmess: TLS handshake failed");
-                                sb_core::metrics::record_inbound_error_display("vmess", &error);
-                                return;
-                            }
-                            Err(_) => {
-                                warn!(
-                                    %peer,
-                                    timeout_ms=cfg_clone.tls_handshake_timeout.as_millis(),
-                                    "vmess: TLS handshake timed out"
-                                );
-                                sb_core::metrics::record_inbound_error_display(
-                                    "vmess",
-                                    &"TLS handshake timeout",
-                                );
-                                return;
-                            }
-                        }
-                    } else {
-                        stream
-                    };
                     if let Some(mux_cfg) = &cfg_clone.multiplex {
                         use futures::future::poll_fn;
                         use sb_transport::yamux::{Config, Connection, Mode};

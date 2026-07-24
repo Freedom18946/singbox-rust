@@ -171,9 +171,21 @@ impl Dialer for WebSocketDialer {
             .parse::<Uri>()
             .map_err(|e| DialError::Other(format!("Invalid URI: {}", e)))?;
 
+        let default_host = if host.contains(':') && !host.starts_with('[') {
+            format!("[{host}]:{port}")
+        } else {
+            format!("{host}:{port}")
+        };
+        let configured_host = self
+            .config
+            .headers
+            .iter()
+            .find(|(name, _)| name.eq_ignore_ascii_case("host"))
+            .map(|(_, value)| value.as_str())
+            .unwrap_or(&default_host);
         let mut request = Request::builder()
             .uri(uri)
-            .header("Host", host)
+            .header("Host", configured_host)
             .header("User-Agent", "singbox-rust/0.1.0")
             .header("Upgrade", "websocket")
             .header("Connection", "Upgrade")
@@ -183,6 +195,9 @@ impl Dialer for WebSocketDialer {
         // Add custom headers
         // 添加自定义头部
         for (k, v) in &self.config.headers {
+            if k.eq_ignore_ascii_case("host") {
+                continue;
+            }
             request = request.header(k, v);
         }
 
@@ -245,6 +260,7 @@ pub struct WebSocketStreamAdapter<S> {
     inner: TungsteniteStream<S>,
     read_buffer: Vec<u8>,
     read_pos: usize,
+    pending_flush: bool,
 }
 
 impl<S> WebSocketStreamAdapter<S> {
@@ -253,6 +269,7 @@ impl<S> WebSocketStreamAdapter<S> {
             inner,
             read_buffer: Vec::new(),
             read_pos: 0,
+            pending_flush: false,
         }
     }
 }
@@ -266,6 +283,18 @@ where
         cx: &mut Context<'_>,
         buf: &mut ReadBuf<'_>,
     ) -> Poll<std::io::Result<()>> {
+        if self.pending_flush {
+            match self.inner.poll_flush_unpin(cx) {
+                Poll::Ready(Ok(())) => self.pending_flush = false,
+                Poll::Ready(Err(error)) => {
+                    return Poll::Ready(Err(std::io::Error::other(format!(
+                        "WebSocket flush error: {error}"
+                    ))));
+                }
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+
         // If we have buffered data, return it first
         // 如果我们有缓冲数据，先返回它
         if self.read_pos < self.read_buffer.len() {
@@ -340,6 +369,18 @@ where
         cx: &mut Context<'_>,
         buf: &[u8],
     ) -> Poll<std::io::Result<usize>> {
+        if self.pending_flush {
+            match self.inner.poll_flush_unpin(cx) {
+                Poll::Ready(Ok(())) => self.pending_flush = false,
+                Poll::Ready(Err(error)) => {
+                    return Poll::Ready(Err(std::io::Error::other(format!(
+                        "WebSocket flush error: {error}"
+                    ))));
+                }
+                Poll::Pending => return Poll::Pending,
+            }
+        }
+
         // Create a binary message
         // 创建二进制消息
         let msg = tokio_tungstenite::tungstenite::Message::Binary(buf.to_vec());
@@ -348,7 +389,18 @@ where
         // 发送消息
         match self.inner.poll_ready_unpin(cx) {
             Poll::Ready(Ok(())) => match self.inner.start_send_unpin(msg) {
-                Ok(()) => Poll::Ready(Ok(buf.len())),
+                Ok(()) => {
+                    match self.inner.poll_flush_unpin(cx) {
+                        Poll::Ready(Ok(())) => self.pending_flush = false,
+                        Poll::Ready(Err(error)) => {
+                            return Poll::Ready(Err(std::io::Error::other(format!(
+                                "WebSocket flush error: {error}"
+                            ))));
+                        }
+                        Poll::Pending => self.pending_flush = true,
+                    }
+                    Poll::Ready(Ok(buf.len()))
+                }
                 Err(e) => Poll::Ready(Err(std::io::Error::other(format!(
                     "WebSocket write error: {}",
                     e
@@ -364,7 +416,10 @@ where
 
     fn poll_flush(mut self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<std::io::Result<()>> {
         match self.inner.poll_flush_unpin(cx) {
-            Poll::Ready(Ok(())) => Poll::Ready(Ok(())),
+            Poll::Ready(Ok(())) => {
+                self.pending_flush = false;
+                Poll::Ready(Ok(()))
+            }
             Poll::Ready(Err(e)) => Poll::Ready(Err(std::io::Error::other(format!(
                 "WebSocket flush error: {}",
                 e
@@ -480,26 +535,11 @@ impl WebSocketListener {
 
         debug!("Accepted TCP connection from {}", peer_addr);
 
-        // Prepare tungstenite config
-        let mut ws_cfg = TungsteniteConfig::default();
-        if let Some(m) = self.config.max_message_size {
-            ws_cfg.max_message_size = Some(m);
-        }
-        if let Some(f) = self.config.max_frame_size {
-            ws_cfg.max_frame_size = Some(f);
-        }
-
-        // Perform WebSocket handshake
-        // accept_async_with_config handles the HTTP Upgrade request
-        let ws_stream = tokio_tungstenite::accept_async_with_config(stream, Some(ws_cfg))
-            .await
-            .map_err(|e| DialError::Other(format!("WebSocket handshake failed: {}", e)))?;
+        let ws_stream = accept_stream(stream, &self.config).await?;
 
         debug!("WebSocket handshake successful for {}", peer_addr);
 
-        // Wrap in adapter
-        let adapter = WebSocketStreamAdapter::new(ws_stream);
-        Ok(Box::new(adapter))
+        Ok(ws_stream)
     }
 
     /// Get the local address this listener is bound to
@@ -508,10 +548,62 @@ impl WebSocketListener {
     }
 }
 
+/// Perform a server-side WebSocket handshake over an already-established
+/// stream. This lets V2Ray transports own TLS below the HTTP upgrade.
+pub async fn accept_stream<S>(
+    stream: S,
+    config: &WebSocketServerConfig,
+) -> Result<IoStream, DialError>
+where
+    S: AsyncRead + AsyncWrite + Unpin + Send + 'static,
+{
+    let ws_cfg = TungsteniteConfig {
+        max_message_size: config.max_message_size,
+        max_frame_size: config.max_frame_size,
+        ..Default::default()
+    };
+
+    let expected_path = config.path.clone();
+    let require_path_match = config.require_path_match;
+    let callback = move |request: &tokio_tungstenite::tungstenite::handshake::server::Request,
+                         response| {
+        if require_path_match && request.uri().path() != expected_path {
+            let rejection = tokio_tungstenite::tungstenite::http::Response::builder()
+                .status(404)
+                .body(Some("WebSocket path mismatch".to_string()))
+                .expect("static WebSocket rejection");
+            return Err(rejection);
+        }
+        Ok(response)
+    };
+    let ws_stream = tokio_tungstenite::accept_hdr_async_with_config(stream, callback, Some(ws_cfg))
+        .await
+        .map_err(|error| DialError::Other(format!("WebSocket handshake failed: {error}")))?;
+    Ok(Box::new(WebSocketStreamAdapter::new(ws_stream)))
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
     use crate::TcpDialer;
+    use tokio::io::{AsyncReadExt, AsyncWriteExt};
+
+    struct OneShotDialer(std::sync::Mutex<Option<IoStream>>);
+
+    #[async_trait]
+    impl Dialer for OneShotDialer {
+        async fn connect(&self, _host: &str, _port: u16) -> Result<IoStream, DialError> {
+            self.0
+                .lock()
+                .expect("stream lock")
+                .take()
+                .ok_or_else(|| DialError::Other("stream already taken".to_string()))
+        }
+
+        fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+            self
+        }
+    }
 
     #[tokio::test]
     async fn test_websocket_config_default() {
@@ -539,6 +631,43 @@ mod tests {
         assert_eq!(config.max_message_size, Some(64 * 1024 * 1024));
         assert_eq!(config.max_frame_size, Some(16 * 1024 * 1024));
         assert!(!config.require_path_match);
+    }
+
+    #[tokio::test]
+    async fn client_default_host_includes_port_and_write_flushes_before_read() {
+        let (client, server) = tokio::io::duplex(4096);
+        let server_task = tokio::spawn(async move {
+            let callback =
+                |request: &tokio_tungstenite::tungstenite::handshake::server::Request, response| {
+                    assert_eq!(request.headers().get("host").unwrap(), "example.test:8443");
+                    Ok(response)
+                };
+            let ws = tokio_tungstenite::accept_hdr_async(server, callback)
+                .await
+                .expect("server handshake");
+            let mut stream = WebSocketStreamAdapter::new(ws);
+            let mut payload = [0_u8; 4];
+            stream.read_exact(&mut payload).await.expect("server read");
+            assert_eq!(&payload, b"ping");
+            stream.write_all(b"pong").await.expect("server write");
+            stream.flush().await.expect("server flush");
+        });
+        let dialer = OneShotDialer(std::sync::Mutex::new(Some(Box::new(client))));
+        let mut stream = WebSocketDialer::new(WebSocketConfig::default(), Box::new(dialer))
+            .connect("example.test", 8443)
+            .await
+            .expect("client handshake");
+        stream.write_all(b"ping").await.expect("client write");
+        let mut response = [0_u8; 4];
+        tokio::time::timeout(
+            std::time::Duration::from_secs(3),
+            stream.read_exact(&mut response),
+        )
+        .await
+        .expect("client read timeout")
+        .expect("client read");
+        assert_eq!(&response, b"pong");
+        server_task.await.expect("server task");
     }
 
     // Integration tests for server listener are in tests/websocket_server_integration.rs

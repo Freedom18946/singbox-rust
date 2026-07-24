@@ -89,13 +89,16 @@ dependency. The VMess registry builder lowers it and constructs a reusable
 was audited and wired too; malformed certificate/key input refuses startup in
 both paths instead of producing a plain listener.
 
-The VMess accept loop owns TLS only for raw TCP. Each accepted socket receives
-one bounded server handshake before project yamux or canonical VMess parsing.
+The VMess accept loop owns TLS when no V2Ray application transport is configured.
+Each accepted socket receives one bounded server handshake before project yamux
+or canonical VMess parsing.
 Handshake failure records a VMess inbound error and closes that connection;
 there is no plaintext retry or parser probe. Successful handshakes log only
 negotiated ALPN/version metadata. Private-key and PEM contents are not logged.
-TLS plus a non-TCP V2Ray transport currently fails startup explicitly; group E
-will move ownership into those transports without double termination.
+When WebSocket or HTTPUpgrade is configured, one layered listener performs
+TCP → TLS → application-transport handshakes before VMess parsing. It rejects
+unsupported or multiple application transports rather than falling back to raw
+TCP. gRPC plus TLS remains explicit unsupported configuration.
 
 Production live testing exposed and fixed a separate startup defect:
 `VmessInboundAdapter::serve` called `tokio::runtime::Handle::current()` from the
@@ -103,11 +106,48 @@ supervisor's dedicated inbound thread, which has no Tokio reactor. The adapter
 now owns a current-thread runtime, reports readiness only after bind, accepts
 shutdown through the existing driver channel, and exits cleanly on app SIGTERM.
 
+## V2Ray Transport and Multiplex Closure
+
+Go 1.13.13 source and live testing fixed transport ownership at the physical
+connection. Outbound construction lowers TLS once, builds one client config,
+then wraps TCP with TLS before WebSocket/HTTPUpgrade. Inbound construction
+lowers TLS once, builds one reusable acceptor before bind, then performs TLS
+before the application handshake. Neither direction performs a second TLS
+handshake or retries plaintext.
+
+WebSocket `Host` and HTTPUpgrade `host` are HTTP routing values, distinct from
+TLS `server_name`. Explicit HTTP host wins; HTTPUpgrade alone uses Go's TLS
+server-name fallback before socket authority. Both HTTP transports install
+Go's `http/1.1` ALPN default only when user ALPN is empty. HTTPUpgrade follows Go's
+HTTP/1.1 upgrade wire, rejects real WebSocket keys, validates method/path/host,
+and preserves early bytes already buffered after the header delimiter.
+WebSocket's stream adapter now flushes pending frames from `poll_write`, fixing
+a live data stall hidden by handshake-only tests.
+
+Project multiplex remains yamux-outer rather than canonical Go
+`v1.mux.cool`. Its physical order is TCP → verified TLS → yamux, with canonical
+VMess run independently on each substream. A counting proxy proves four logical
+streams reuse exactly one TLS connection; a non-mux attempt neither echoes nor
+falls back to plaintext.
+
+## Composition Matrix
+
+| Composition | Go supports? | Rust config parses? | Rust production builds? | Rust→Go live? | Go→Rust live? | Strict test? | Explicit non-goal? |
+|---|---:|---:|---:|---:|---:|---:|---:|
+| raw TCP | yes | yes | yes | yes | yes | pending group G | no |
+| raw TCP + TLS | yes | yes | yes | yes | yes | pending group G | no |
+| WebSocket | yes | yes | yes | yes | yes | pending group G | no |
+| WebSocket + TLS | yes | yes | yes | yes | yes | pending group G | no |
+| HTTPUpgrade | yes | yes | yes | yes | yes | pending group G | no |
+| HTTPUpgrade + TLS | yes | yes | yes | yes | yes | pending group G | no |
+| TLS + project yamux | no | yes | yes | Rust↔Rust | Rust↔Rust | local live E2E | canonical `v1.mux.cool` |
+
 ## Evidence So Far
 
 - ledger correction: `ce99c0a1ab4cd82c42a021d00f364b76a9b6d0ac`
 - config/TLS lowering: `74fd5f68ef276fd53d4df7b4db92a191487c8c0d`
 - outbound TLS closure: `248c84a4349a0d2b0bf08c7c04a159bed35c3163`
+- inbound TLS closure: `426ef5e405c5e35193e9385fba60ca208aaf7120`
 - config focused tests: 7 passed, 0 failed, 0 ignored
 - shared TLS focused tests: 12 passed, 0 failed, 0 ignored
 - adapter TLS-lowering focused tests: 4 passed, 0 failed, 0 ignored
@@ -130,6 +170,13 @@ shutdown through the existing driver channel, and exits cleanly on app SIGTERM.
 - canonical VMess unit regressions: 11 passed, 0 failed, 0 ignored
 - app multiplex/protocol-chain focused regressions: 14 passed, 0 failed, 0 ignored
 - plain project-yamux VMess regression: 6 passed, 0 failed, 0 ignored
+- V2Ray transport unit/integration suite: 85 unit tests passed plus 23 integration
+  tests and 19 doc tests; 0 failed, 1 unrelated ignored
+- live Go/Rust transport matrix: inbound 7 passed, outbound 6 passed, project
+  TLS-yamux 1 passed; 0 failed, 0 ignored
+- project TLS-yamux regression: 4 logical VMess streams over 1 verified TLS
+  physical connection; non-mux negative opens a separate verified connection
+  and receives no echo
 
 Remaining sections—live matrices, strict interop IDs, Linux verdict, full gates,
 inventory accounting, and complete commit list—will be filled only from final

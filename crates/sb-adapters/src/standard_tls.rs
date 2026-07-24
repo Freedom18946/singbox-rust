@@ -55,9 +55,6 @@ pub fn lower_vmess_inbound_tls_options(
         key_pem: joined_pem(tls.key.as_deref()),
         ..Default::default()
     };
-    // Parse material and validate range now, before listener startup.
-    sb_transport::build_standard_server_config(&config)
-        .map_err(|error| format!("vmess inbound TLS: {error}"))?;
     Ok(Some(config))
 }
 
@@ -80,9 +77,41 @@ pub fn lower_vmess_inbound_tls(ir: &InboundIR) -> Result<Option<StandardTlsConfi
         key_pem: ir.tls_key_pem.clone(),
         ..Default::default()
     };
-    sb_transport::build_standard_server_config(&config)
-        .map_err(|error| format!("vmess inbound TLS: {error}"))?;
     Ok(Some(config))
+}
+
+/// Lower and build the reusable VMess inbound acceptor exactly once.
+#[cfg(feature = "transport_tls")]
+pub fn build_vmess_inbound_tls_options(
+    tls: Option<&sb_config::ir::InboundTlsOptionsIR>,
+    default_alpn: Option<&str>,
+) -> Result<Option<tokio_rustls::TlsAcceptor>, String> {
+    lower_vmess_inbound_tls_options(tls)?
+        .map(|mut config| {
+            if config.alpn.is_empty() {
+                config.alpn.extend(default_alpn.map(str::to_string));
+            }
+            sb_transport::build_standard_tls_acceptor(&config)
+                .map_err(|error| format!("vmess inbound TLS: {error}"))
+        })
+        .transpose()
+}
+
+/// Lower and build the reusable VMess inbound acceptor exactly once.
+#[cfg(feature = "transport_tls")]
+pub fn build_vmess_inbound_tls(
+    ir: &InboundIR,
+    default_alpn: Option<&str>,
+) -> Result<Option<tokio_rustls::TlsAcceptor>, String> {
+    lower_vmess_inbound_tls(ir)?
+        .map(|mut config| {
+            if config.alpn.is_empty() {
+                config.alpn.extend(default_alpn.map(str::to_string));
+            }
+            sb_transport::build_standard_tls_acceptor(&config)
+                .map_err(|error| format!("vmess inbound TLS: {error}"))
+        })
+        .transpose()
 }
 
 /// Lower VMess outbound TLS once during adapter construction.
@@ -114,8 +143,6 @@ pub fn lower_vmess_outbound_tls(ir: &OutboundIR) -> Result<Option<TlsConfig>, St
             client_key_pem: joined_pem(tls.client_key.as_deref()),
             ..Default::default()
         };
-        sb_transport::build_standard_client_config(&config)
-            .map_err(|error| format!("vmess outbound TLS: {error}"))?;
         return Ok(Some(TlsConfig::Standard(config)));
     }
 
@@ -138,8 +165,6 @@ pub fn lower_vmess_outbound_tls(ir: &OutboundIR) -> Result<Option<TlsConfig>, St
         client_key_pem: ir.tls_client_key_pem.clone(),
         ..Default::default()
     };
-    sb_transport::build_standard_client_config(&config)
-        .map_err(|error| format!("vmess outbound TLS: {error}"))?;
     Ok(Some(TlsConfig::Standard(config)))
 }
 
@@ -162,7 +187,7 @@ mod tests {
     }
 
     #[test]
-    fn inbound_lowering_builds_inline_server_config_once() {
+    fn inbound_builder_builds_inline_server_config_once() {
         let (certificate, key) = certificate_lines();
         let mut ir = InboundIR {
             ty: InboundType::Vmess,
@@ -181,8 +206,7 @@ mod tests {
         assert_eq!(lowered.alpn, vec!["h2"]);
         assert_eq!(lowered.min_version, Some(TlsVersion::V1_2));
         assert_eq!(lowered.max_version, Some(TlsVersion::V1_3));
-        assert!(lowered.cert_pem.is_some());
-        assert!(lowered.key_pem.is_some());
+        assert!(build_vmess_inbound_tls(&ir, None).unwrap().is_some());
     }
 
     #[test]
@@ -204,9 +228,11 @@ mod tests {
             enabled: true,
             ..Default::default()
         });
-        assert!(lower_vmess_inbound_tls(&ir)
-            .unwrap_err()
-            .contains("missing TLS server certificate"));
+        let error = match build_vmess_inbound_tls(&ir, None) {
+            Ok(_) => panic!("missing certificate must fail"),
+            Err(error) => error,
+        };
+        assert!(error.contains("missing TLS server certificate"));
     }
 
     #[test]

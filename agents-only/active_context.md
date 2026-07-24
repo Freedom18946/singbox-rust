@@ -6,23 +6,23 @@
 > Other docs point here, not copy.
 
 ---
-## Resume (2026-07-24) - VMESS-TLS-01 raw TCP TLS bidirectional DONE
+## Resume (2026-07-24) - VMESS-TLS-01 transport layering DONE; acceptance active
 
-- Go 1.13.13 source audit fixed raw/transport TLS ownership, disabled/default,
-  SNI/ALPN/version/material/custom-root/insecure, mux, and lifecycle contracts.
-- Added strict Go-shaped VMess inbound/outbound TLS IR plus one typed
-  IR-to-runtime lowering path and reusable rustls client/server builders.
-- Invalid versions, unknown fields, missing/malformed material, incomplete client
-  identity, and inbound `insecure` now fail instead of degrading to plain.
-- Production VMess outbound now consumes TLS options. Go-compatible TCP zero mode
-  closes `auto+TLS`; live Rust→Go TLS 1.2/1.3, CA/SNI/insecure/version negatives,
-  multi-connection, and 32 KiB+ echo pass.
-- Production VMess inbound now prebuilds its TLS acceptor, reports bind readiness,
-  bounds handshakes, and enters VMess/mux only after TLS. Live Go→Rust TLS 1.2/1.3,
-  ALPN, SNI/CA/UUID negatives, malformed-key startup rejection, repeated 32 KiB+
-  echo, graceful shutdown, and plain regression pass.
-- WS/HTTPUpgrade transport ownership, ignored-test replacement, strict interop,
-  and Linux proof remain active.
+- VMess raw TCP and WebSocket/HTTPUpgrade, with and without standard TLS, pass
+  live Rust→Go and Go→production-Rust dataplanes. TLS is built once and owned by
+  the physical chain: TCP → TLS → V2Ray transport → VMess.
+- WS/HTTP Host stays independent from TLS SNI. HTTPUpgrade now matches Go's
+  non-WebSocket handshake and preserves bytes buffered past upgrade headers;
+  WebSocket byte-stream writes now flush instead of hanging.
+- Project yamux remains an explicit non-Go outer layer:
+  TCP → verified TLS → yamux → canonical VMess per substream. Four logical streams
+  reuse one TLS connection; failure opens no plaintext fallback.
+- Typed config rejects unsupported/multiple transports, malformed TLS material,
+  invalid versions, and incomplete identities instead of falling back to TCP/plain.
+- Raw TLS live coverage includes TLS 1.2/1.3, ALPN, SNI/CA/UUID/version negatives,
+  repeated 32 KiB+ echo, startup readiness, and graceful shutdown.
+- Remaining: replace five ignored/fake variant tests, add repeated strict
+  dual-kernel production cases, run Linux proof/full gates, then close archive.
   Evidence: `archive/vmess_tls_01/acceptance.md`.
 
 ## Resume (2026-07-24) - dual-kernel strict ledger correction DONE

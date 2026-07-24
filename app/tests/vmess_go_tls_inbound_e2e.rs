@@ -17,6 +17,35 @@ use uuid::Uuid;
 
 const IO_TIMEOUT: Duration = Duration::from_secs(10);
 
+#[derive(Clone, Copy)]
+enum TestTransport {
+    WebSocket {
+        path: &'static str,
+        host: &'static str,
+    },
+    HttpUpgrade {
+        path: &'static str,
+        host: &'static str,
+    },
+}
+
+impl TestTransport {
+    fn json(self) -> serde_json::Value {
+        match self {
+            Self::WebSocket { path, host } => serde_json::json!({
+                "type": "ws",
+                "path": path,
+                "headers": {"Host": host}
+            }),
+            Self::HttpUpgrade { path, host } => serde_json::json!({
+                "type": "httpupgrade",
+                "path": path,
+                "host": host
+            }),
+        }
+    }
+}
+
 struct ManagedChild {
     child: Child,
     log_path: PathBuf,
@@ -155,13 +184,28 @@ async fn start_rust_app(
     uuid: Uuid,
     tls: Option<(&Path, &Path, &str)>,
 ) -> ManagedChild {
+    start_rust_app_with_transport(temp, listen, uuid, tls, None).await
+}
+
+async fn start_rust_app_with_transport(
+    temp: &TempDir,
+    listen: SocketAddr,
+    uuid: Uuid,
+    tls: Option<(&Path, &Path, &str)>,
+    transport: Option<TestTransport>,
+) -> ManagedChild {
     let config_path = temp.path().join(format!("rust-{}.json", listen.port()));
     let log_path = temp.path().join(format!("rust-{}.log", listen.port()));
+    let alpn = if transport.is_some() {
+        "http/1.1"
+    } else {
+        "h2"
+    };
     let tls = tls.map(|(certificate, key, version)| {
         serde_json::json!({
             "enabled": true,
             "server_name": "localhost",
-            "alpn": ["h2"],
+            "alpn": [alpn],
             "min_version": version,
             "max_version": version,
             "certificate_path": certificate,
@@ -181,6 +225,12 @@ async fn start_rust_app(
             .as_object_mut()
             .expect("inbound object")
             .insert("tls".to_string(), tls);
+    }
+    if let Some(transport) = transport {
+        inbound
+            .as_object_mut()
+            .expect("inbound object")
+            .insert("transport".to_string(), transport.json());
     }
     let config = serde_json::json!({
         "log": {"level": "debug", "timestamp": false},
@@ -218,13 +268,30 @@ async fn start_go_client(
     uuid: Uuid,
     tls: Option<(&Path, &str)>,
 ) -> ManagedChild {
+    start_go_client_with_transport(temp, index, socks, server, uuid, tls, None).await
+}
+
+async fn start_go_client_with_transport(
+    temp: &TempDir,
+    index: &str,
+    socks: SocketAddr,
+    server: SocketAddr,
+    uuid: Uuid,
+    tls: Option<(&Path, &str)>,
+    transport: Option<TestTransport>,
+) -> ManagedChild {
     let config_path = temp.path().join(format!("go-client-{index}.json"));
     let log_path = temp.path().join(format!("go-client-{index}.log"));
+    let alpn = if transport.is_some() {
+        "http/1.1"
+    } else {
+        "h2"
+    };
     let tls = tls.map(|(ca_path, server_name)| {
         serde_json::json!({
             "enabled": true,
             "server_name": server_name,
-            "alpn": ["h2"],
+            "alpn": [alpn],
             "certificate_path": ca_path
         })
     });
@@ -241,6 +308,12 @@ async fn start_go_client(
             .as_object_mut()
             .expect("outbound object")
             .insert("tls".to_string(), tls);
+    }
+    if let Some(transport) = transport {
+        outbound
+            .as_object_mut()
+            .expect("outbound object")
+            .insert("transport".to_string(), transport.json());
     }
     let config = serde_json::json!({
         "log": {"level": "debug", "timestamp": false},
@@ -498,6 +571,182 @@ async fn go_plain_client_to_production_rust_app_regression() {
         .await
         .expect("Go plain client -> Rust app echo");
     rust.stop_gracefully("Rust plain VMess app").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn go_plain_v2ray_transports_to_production_rust_app() {
+    let temp = TempDir::new().expect("temp dir");
+    let echo = start_echo_server().await;
+    let cases = [
+        (
+            "plain-ws",
+            TestTransport::WebSocket {
+                path: "/plain-ws",
+                host: "ws.plain.test",
+            },
+        ),
+        (
+            "plain-httpupgrade",
+            TestTransport::HttpUpgrade {
+                path: "/plain-upgrade",
+                host: "http.plain.test",
+            },
+        ),
+    ];
+
+    for (label, transport) in cases {
+        let rust_addr = unused_loopback_addr().await;
+        let uuid = Uuid::new_v4();
+        let mut rust =
+            start_rust_app_with_transport(&temp, rust_addr, uuid, None, Some(transport)).await;
+        let socks = unused_loopback_addr().await;
+        let _go = start_go_client_with_transport(
+            &temp,
+            label,
+            socks,
+            rust_addr,
+            uuid,
+            None,
+            Some(transport),
+        )
+        .await;
+        assert_socks_echo(socks, echo.addr, &vec![0x5c; 20 * 1024 + 11])
+            .await
+            .unwrap_or_else(|error| panic!("{label} Go client -> Rust app failed: {error}"));
+        rust.stop_gracefully(label).await;
+    }
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn go_websocket_tls_client_to_production_rust_app() {
+    let temp = TempDir::new().expect("temp dir");
+    let (ca_path, cert_path, key_path) = generate_local_ca(&temp);
+    let echo = start_echo_server().await;
+    let rust_addr = unused_loopback_addr().await;
+    let uuid = Uuid::new_v4();
+    let transport = TestTransport::WebSocket {
+        path: "/vmess-ws",
+        host: "ws.virtual.test",
+    };
+    let mut rust = start_rust_app_with_transport(
+        &temp,
+        rust_addr,
+        uuid,
+        Some((&cert_path, &key_path, "1.3")),
+        Some(transport),
+    )
+    .await;
+    let socks = unused_loopback_addr().await;
+    let _go = start_go_client_with_transport(
+        &temp,
+        "ws-valid",
+        socks,
+        rust_addr,
+        uuid,
+        Some((&ca_path, "localhost")),
+        Some(transport),
+    )
+    .await;
+    let payload = vec![0x77; 24 * 1024 + 41];
+    for _ in 0..3 {
+        assert_socks_echo(socks, echo.addr, &payload)
+            .await
+            .expect("Go WS+TLS client -> Rust app echo");
+    }
+
+    let bad_path_socks = unused_loopback_addr().await;
+    let _bad_path = start_go_client_with_transport(
+        &temp,
+        "ws-bad-path",
+        bad_path_socks,
+        rust_addr,
+        uuid,
+        Some((&ca_path, "localhost")),
+        Some(TestTransport::WebSocket {
+            path: "/wrong",
+            host: "ws.virtual.test",
+        }),
+    )
+    .await;
+    assert!(
+        assert_socks_echo(bad_path_socks, echo.addr, b"must fail")
+            .await
+            .is_err(),
+        "wrong WebSocket path must fail"
+    );
+
+    let log = wait_for_log(
+        &rust.log_path,
+        &[
+            "inbound transport TLS handshake complete",
+            "http/1.1",
+            "transport=\"ws\"",
+        ],
+    )
+    .await;
+    assert!(log.contains("http/1.1"), "WS ALPN missing: {log}");
+    assert!(
+        log.contains("transport=\"ws\""),
+        "WS transport ownership missing: {log}"
+    );
+    rust.stop_gracefully("Rust WS+TLS app").await;
+}
+
+#[tokio::test(flavor = "multi_thread", worker_threads = 2)]
+async fn go_httpupgrade_tls_client_to_production_rust_app() {
+    let temp = TempDir::new().expect("temp dir");
+    let (ca_path, cert_path, key_path) = generate_local_ca(&temp);
+    let echo = start_echo_server().await;
+    let rust_addr = unused_loopback_addr().await;
+    let uuid = Uuid::new_v4();
+    let transport = TestTransport::HttpUpgrade {
+        path: "/vmess-upgrade",
+        host: "http.virtual.test",
+    };
+    let mut rust = start_rust_app_with_transport(
+        &temp,
+        rust_addr,
+        uuid,
+        Some((&cert_path, &key_path, "1.3")),
+        Some(transport),
+    )
+    .await;
+    let socks = unused_loopback_addr().await;
+    let _go = start_go_client_with_transport(
+        &temp,
+        "httpupgrade-valid",
+        socks,
+        rust_addr,
+        uuid,
+        Some((&ca_path, "localhost")),
+        Some(transport),
+    )
+    .await;
+    assert_socks_echo(socks, echo.addr, &vec![0x48; 20 * 1024 + 17])
+        .await
+        .expect("Go HTTPUpgrade+TLS client -> Rust app echo");
+
+    let wrong_host_socks = unused_loopback_addr().await;
+    let _wrong_host = start_go_client_with_transport(
+        &temp,
+        "httpupgrade-wrong-host",
+        wrong_host_socks,
+        rust_addr,
+        uuid,
+        Some((&ca_path, "localhost")),
+        Some(TestTransport::HttpUpgrade {
+            path: "/vmess-upgrade",
+            host: "wrong.virtual.test",
+        }),
+    )
+    .await;
+    assert!(
+        assert_socks_echo(wrong_host_socks, echo.addr, b"must fail")
+            .await
+            .is_err(),
+        "wrong HTTPUpgrade Host must fail"
+    );
+    rust.stop_gracefully("Rust HTTPUpgrade+TLS app").await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 2)]

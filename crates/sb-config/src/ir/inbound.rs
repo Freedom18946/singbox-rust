@@ -720,6 +720,21 @@ pub struct InboundIR {
     /// gRPC 服务名称。
     #[serde(default)]
     pub grpc_service: Option<String>,
+    /// gRPC method name.
+    #[serde(default)]
+    pub grpc_method: Option<String>,
+    /// Additional gRPC metadata.
+    #[serde(default)]
+    pub grpc_metadata: Vec<super::HeaderEntry>,
+    /// HTTPUpgrade path.
+    #[serde(default)]
+    pub http_upgrade_path: Option<String>,
+    /// HTTPUpgrade host, independent from TLS SNI.
+    #[serde(default)]
+    pub http_upgrade_host: Option<String>,
+    /// Additional HTTPUpgrade headers.
+    #[serde(default)]
+    pub http_upgrade_headers: Vec<super::HeaderEntry>,
 
     // TLS options
     /// Go-shaped standard TLS options. Legacy flat fields remain accepted for

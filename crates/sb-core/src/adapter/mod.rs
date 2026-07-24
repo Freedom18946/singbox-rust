@@ -70,6 +70,17 @@ pub struct InboundParam {
     pub security: Option<String>,
     pub flow: Option<String>,
 
+    // V2Ray transport configuration.
+    pub transport: Option<Vec<String>>,
+    pub ws_path: Option<String>,
+    pub ws_host: Option<String>,
+    pub grpc_service: Option<String>,
+    pub grpc_method: Option<String>,
+    pub grpc_metadata: Vec<sb_config::ir::HeaderEntry>,
+    pub http_upgrade_path: Option<String>,
+    pub http_upgrade_host: Option<String>,
+    pub http_upgrade_headers: Vec<sb_config::ir::HeaderEntry>,
+
     // TLS configuration (for inbounds that need TLS)
     /// Path to TLS certificate file (PEM format)
     pub tls_cert_path: Option<String>,
@@ -188,6 +199,15 @@ impl Default for InboundParam {
             method: None,
             security: None,
             flow: None,
+            transport: None,
+            ws_path: None,
+            ws_host: None,
+            grpc_service: None,
+            grpc_method: None,
+            grpc_metadata: Vec::new(),
+            http_upgrade_path: None,
+            http_upgrade_host: None,
+            http_upgrade_headers: Vec::new(),
             tls_cert_path: None,
             tls_key_path: None,
             tls_cert_pem: None,

@@ -12,10 +12,8 @@ async fn test_trojan_httpupgrade_config_creation() {
 
     let httpupgrade_config = HttpUpgradeTransportConfig {
         path: "/upgrade".to_string(),
-        headers: vec![
-            ("Host".to_string(), "example.com".to_string()),
-            ("User-Agent".to_string(), "Mozilla/5.0".to_string()),
-        ],
+        host: Some("example.com".to_string()),
+        headers: vec![("User-Agent".to_string(), "Mozilla/5.0".to_string())],
     };
 
     let config = TrojanConfig {
@@ -53,6 +51,7 @@ async fn test_trojan_httpupgrade_with_multiplex() {
         skip_cert_verify: false,
         transport_layer: TransportConfig::HttpUpgrade(HttpUpgradeTransportConfig {
             path: "/trojan-upgrade".to_string(),
+            host: None,
             headers: vec![],
         }),
         reality: None,
@@ -81,6 +80,7 @@ async fn test_trojan_httpupgrade_path_variants() {
             skip_cert_verify: true,
             transport_layer: TransportConfig::HttpUpgrade(HttpUpgradeTransportConfig {
                 path: path.to_string(),
+                host: None,
                 headers: vec![],
             }),
             reality: None,
@@ -123,6 +123,7 @@ async fn test_trojan_tcp_vs_httpupgrade() {
         skip_cert_verify: false,
         transport_layer: TransportConfig::HttpUpgrade(HttpUpgradeTransportConfig {
             path: "/upgrade".to_string(),
+            host: None,
             headers: vec![],
         }),
         reality: None,

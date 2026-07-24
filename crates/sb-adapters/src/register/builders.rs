@@ -791,7 +791,17 @@ fn build_trojan_outbound(
     let server_addr = format!("{}:{}", server, port);
 
     // Build transport config from IR
-    let transport_layer = build_transport_config(ir);
+    let transport_layer = match build_transport_config(ir) {
+        Ok(transport) => transport,
+        Err(reason) => {
+            warn!("trojan outbound transport: {reason}");
+            return canonicalize_outbound_result(
+                invalid_config_outbound("trojan", reason),
+                param,
+                ir,
+            );
+        }
+    };
 
     // Build adapter-level TrojanConfig
     let cfg = TrojanConfig {
@@ -900,7 +910,17 @@ fn build_vmess_outbound(
         additional_data: None,
     };
 
-    let transport_layer = build_transport_config(ir);
+    let transport_layer = match build_transport_config(ir) {
+        Ok(transport) => transport,
+        Err(reason) => {
+            warn!("vmess outbound transport: {reason}");
+            return canonicalize_outbound_result(
+                invalid_config_outbound("vmess", reason),
+                param,
+                ir,
+            );
+        }
+    };
 
     #[cfg(feature = "transport_tls")]
     let tls = match crate::standard_tls::lower_vmess_outbound_tls(ir) {
@@ -931,7 +951,18 @@ fn build_vmess_outbound(
         tls,
     };
 
-    let connector = VmessConnector::new(cfg);
+    let connector = match VmessConnector::try_new(cfg) {
+        Ok(connector) => connector,
+        Err(error) => {
+            let reason = error.to_string();
+            warn!("vmess outbound build: {reason}");
+            return canonicalize_outbound_result(
+                invalid_config_outbound("vmess", reason),
+                param,
+                ir,
+            );
+        }
+    };
     let connector_arc = Arc::new(connector);
 
     Some(connector_arc)
@@ -1000,7 +1031,17 @@ fn build_vless_outbound(
         _ => Encryption::None,
     };
 
-    let transport_layer = build_transport_config(ir);
+    let transport_layer = match build_transport_config(ir) {
+        Ok(transport) => transport,
+        Err(reason) => {
+            warn!("vless outbound transport: {reason}");
+            return canonicalize_outbound_result(
+                invalid_config_outbound("vless", reason),
+                param,
+                ir,
+            );
+        }
+    };
 
     let cfg = VlessConfig {
         tag: ir.name.clone().or_else(|| param.name.clone()),
@@ -1184,20 +1225,54 @@ fn convert_multiplex_config(
 /// Build transport config from IR fields.
 /// Maps IR transport fields to sb-adapters' TransportConfig.
 #[allow(dead_code)]
-fn build_transport_config(ir: &OutboundIR) -> crate::transport_config::TransportConfig {
+fn build_transport_config(
+    ir: &OutboundIR,
+) -> Result<crate::transport_config::TransportConfig, String> {
     use crate::transport_config::*;
 
-    // Transport field is Vec<String>, take first element as transport type
-    let transport_type = ir
-        .transport
-        .as_ref()
-        .and_then(|v| v.first())
-        .map(|s| s.as_str());
+    let mut transport_type = None;
+    for token in ir.transport.iter().flatten() {
+        let kind = match token.trim().to_ascii_lowercase().as_str() {
+            "" | "tls" | "tcp" => continue,
+            "ws" | "websocket" => "ws",
+            "grpc" => "grpc",
+            "httpupgrade" | "http_upgrade" => "httpupgrade",
+            other => return Err(format!("unsupported V2Ray transport {other:?}")),
+        };
+        if transport_type.is_some_and(|current| current != kind) {
+            return Err("multiple V2Ray application transports are not supported".to_string());
+        }
+        transport_type = Some(kind);
+    }
+    if transport_type.is_none() {
+        transport_type = if ir.ws_path.is_some() || ir.ws_host.is_some() {
+            Some("ws")
+        } else if ir.http_upgrade_path.is_some() || !ir.http_upgrade_headers.is_empty() {
+            Some("httpupgrade")
+        } else if ir.grpc_service.is_some()
+            || ir.grpc_method.is_some()
+            || !ir.grpc_metadata.is_empty()
+        {
+            Some("grpc")
+        } else {
+            None
+        };
+    }
 
     match transport_type {
-        Some("ws") | Some("websocket") => {
+        Some("ws") => {
             let ws_cfg = WebSocketTransportConfig {
-                path: ir.ws_path.clone().unwrap_or_else(|| "/".to_string()),
+                path: ir
+                    .ws_path
+                    .as_deref()
+                    .map(|path| {
+                        if path.starts_with('/') {
+                            path.to_string()
+                        } else {
+                            format!("/{path}")
+                        }
+                    })
+                    .unwrap_or_else(|| "/".to_string()),
                 headers: ir
                     .ws_host
                     .as_ref()
@@ -1205,7 +1280,7 @@ fn build_transport_config(ir: &OutboundIR) -> crate::transport_config::Transport
                     .unwrap_or_default(),
                 ..Default::default()
             };
-            TransportConfig::WebSocket(ws_cfg)
+            Ok(TransportConfig::WebSocket(ws_cfg))
         }
         Some("grpc") => {
             let grpc_cfg = GrpcTransportConfig {
@@ -1223,7 +1298,7 @@ fn build_transport_config(ir: &OutboundIR) -> crate::transport_config::Transport
                     .map(|e| (e.key.clone(), e.value.clone()))
                     .collect(),
             };
-            TransportConfig::Grpc(grpc_cfg)
+            Ok(TransportConfig::Grpc(grpc_cfg))
         }
         Some("httpupgrade") => {
             let mut headers: Vec<(String, String)> = ir
@@ -1231,22 +1306,29 @@ fn build_transport_config(ir: &OutboundIR) -> crate::transport_config::Transport
                 .iter()
                 .map(|e| (e.key.clone(), e.value.clone()))
                 .collect();
-            // Add Host header if not already present
-            if let Some(host) = ir.ws_host.as_ref().or(ir.tls_sni.as_ref()) {
-                if !headers.iter().any(|(k, _)| k.eq_ignore_ascii_case("host")) {
-                    headers.push(("Host".to_string(), host.clone()));
-                }
-            }
+            let host = headers
+                .iter()
+                .find(|(name, _)| name.eq_ignore_ascii_case("host"))
+                .map(|(_, value)| value.clone());
+            headers.retain(|(name, _)| !name.eq_ignore_ascii_case("host"));
             let hu_cfg = HttpUpgradeTransportConfig {
                 path: ir
                     .http_upgrade_path
-                    .clone()
+                    .as_deref()
+                    .map(|path| {
+                        if path.starts_with('/') {
+                            path.to_string()
+                        } else {
+                            format!("/{path}")
+                        }
+                    })
                     .unwrap_or_else(|| "/".to_string()),
+                host,
                 headers,
             };
-            TransportConfig::HttpUpgrade(hu_cfg)
+            Ok(TransportConfig::HttpUpgrade(hu_cfg))
         }
-        _ => TransportConfig::Tcp,
+        _ => Ok(TransportConfig::Tcp),
     }
 }
 
@@ -1315,15 +1397,19 @@ fn build_vmess_inbound(
         None => "auto".to_string(),
     };
 
-    let tls = match crate::standard_tls::lower_vmess_inbound_tls_options(param.tls.as_ref()) {
-        Ok(Some(config)) => match sb_transport::build_standard_tls_acceptor(&config) {
-            Ok(acceptor) => Some(acceptor),
+    let transport_layer =
+        match crate::transport_config::build_inbound_transport_config_from_param(param) {
+            Ok(transport) => transport,
             Err(error) => {
-                warn!("VMess inbound TLS config invalid: {error}");
+                warn!("VMess inbound transport config invalid: {error}");
                 return None;
             }
-        },
-        Ok(None) => None,
+        };
+    let tls = match crate::standard_tls::build_vmess_inbound_tls_options(
+        param.tls.as_ref(),
+        transport_layer.default_tls_alpn(),
+    ) {
+        Ok(tls) => tls,
         Err(error) => {
             warn!("{error}");
             return None;
@@ -1339,7 +1425,7 @@ fn build_vmess_inbound(
         stats: ctx.context.v2ray_server.as_ref().and_then(|s| s.stats()),
         conn_tracker: ctx.context.conn_tracker.clone(),
         multiplex: convert_multiplex_config(&param.multiplex),
-        transport_layer: None,
+        transport_layer: Some(transport_layer),
         fallback: None,
         fallback_for_alpn: std::collections::HashMap::new(),
         tls,
@@ -3013,6 +3099,36 @@ mod tests {
         .expect("unknown security must reject dial");
         assert!(error.to_string().contains("unsupported security"));
         assert!(error.to_string().contains("mystery-cipher"));
+    }
+
+    #[test]
+    #[cfg(feature = "adapter-vmess")]
+    fn httpupgrade_transport_keeps_http_host_separate_from_tls_sni() {
+        let ir = OutboundIR {
+            transport: Some(vec!["tls".to_string(), "httpupgrade".to_string()]),
+            http_upgrade_path: Some("upgrade".to_string()),
+            http_upgrade_headers: vec![
+                sb_config::ir::HeaderEntry {
+                    key: "Host".to_string(),
+                    value: "http.virtual.test".to_string(),
+                },
+                sb_config::ir::HeaderEntry {
+                    key: "X-Test".to_string(),
+                    value: "value".to_string(),
+                },
+            ],
+            tls_sni: Some("tls.virtual.test".to_string()),
+            ..Default::default()
+        };
+        let crate::transport_config::TransportConfig::HttpUpgrade(config) =
+            build_transport_config(&ir).expect("HTTPUpgrade transport")
+        else {
+            panic!("expected HTTPUpgrade transport");
+        };
+        assert_eq!(config.path, "/upgrade");
+        assert_eq!(config.host.as_deref(), Some("http.virtual.test"));
+        assert_eq!(config.headers, vec![("X-Test".into(), "value".into())]);
+        assert_eq!(ir.tls_sni.as_deref(), Some("tls.virtual.test"));
     }
 
     #[test]

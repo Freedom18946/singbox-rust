@@ -2127,6 +2127,16 @@ pub struct RawInboundIR {
     #[serde(default)]
     pub grpc_service: Option<String>,
     #[serde(default)]
+    pub grpc_method: Option<String>,
+    #[serde(default)]
+    pub grpc_metadata: Vec<HeaderEntry>,
+    #[serde(default)]
+    pub http_upgrade_path: Option<String>,
+    #[serde(default)]
+    pub http_upgrade_host: Option<String>,
+    #[serde(default)]
+    pub http_upgrade_headers: Vec<HeaderEntry>,
+    #[serde(default)]
     pub tls_enabled: Option<bool>,
     #[serde(default)]
     pub tls: Option<RawInboundTlsOptionsIR>,
@@ -2235,6 +2245,11 @@ impl From<RawInboundIR> for InboundIR {
             h2_path: raw.h2_path,
             h2_host: raw.h2_host,
             grpc_service: raw.grpc_service,
+            grpc_method: raw.grpc_method,
+            grpc_metadata: raw.grpc_metadata,
+            http_upgrade_path: raw.http_upgrade_path,
+            http_upgrade_host: raw.http_upgrade_host,
+            http_upgrade_headers: raw.http_upgrade_headers,
             tls_enabled: raw.tls_enabled,
             tls: raw.tls.map(Into::into),
             tls_cert_path: raw.tls_cert_path,

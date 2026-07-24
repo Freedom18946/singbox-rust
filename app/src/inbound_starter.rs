@@ -956,15 +956,19 @@ fn start_vmess_inbound(
             }
         };
 
-        let tls = match sb_adapters::standard_tls::lower_vmess_inbound_tls(ib) {
-            Ok(Some(config)) => match sb_transport::build_standard_tls_acceptor(&config) {
-                Ok(acceptor) => Some(acceptor),
+        let transport_layer =
+            match sb_adapters::transport_config::build_inbound_transport_config_from_ir(ib) {
+                Ok(transport) => transport,
                 Err(error) => {
-                    warn!(addr=%listen_str, error=%error, "vmess inbound: invalid TLS config; refusing to start");
+                    warn!(addr=%listen_str, error=%error, "vmess inbound: invalid transport config; refusing to start");
                     return None;
                 }
-            },
-            Ok(None) => None,
+            };
+        let tls = match sb_adapters::standard_tls::build_vmess_inbound_tls(
+            ib,
+            transport_layer.default_tls_alpn(),
+        ) {
+            Ok(tls) => tls,
             Err(error) => {
                 warn!(addr=%listen_str, error=%error, "vmess inbound: invalid TLS config; refusing to start");
                 return None;
@@ -983,7 +987,7 @@ fn start_vmess_inbound(
             stats: None,
             conn_tracker,
             multiplex: None,
-            transport_layer: None,
+            transport_layer: Some(transport_layer),
             fallback,
             fallback_for_alpn,
             tls,

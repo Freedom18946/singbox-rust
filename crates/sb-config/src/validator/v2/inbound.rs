@@ -1,4 +1,4 @@
-use crate::ir::{ConfigIR, Credentials, InboundType};
+use crate::ir::{ConfigIR, Credentials, HeaderEntry, InboundType};
 use sb_types::IssueCode;
 use serde_json::Value;
 use std::collections::HashSet;
@@ -64,6 +64,202 @@ fn allowed_tun_inbound_keys(base: &HashSet<String>) -> HashSet<String> {
     let mut set = base.clone();
     insert_keys(&mut set, TUN_ONLY_INBOUND_KEYS);
     set
+}
+
+fn parse_inbound_header_entries(value: Option<&Value>) -> Vec<HeaderEntry> {
+    let mut entries = Vec::new();
+    let Some(value) = value else {
+        return entries;
+    };
+    match value {
+        Value::Object(headers) => {
+            for (name, value) in headers {
+                match value {
+                    Value::String(value) => entries.push(HeaderEntry {
+                        key: name.clone(),
+                        value: value.clone(),
+                    }),
+                    Value::Array(values) => {
+                        for value in values.iter().filter_map(Value::as_str) {
+                            entries.push(HeaderEntry {
+                                key: name.clone(),
+                                value: value.to_string(),
+                            });
+                        }
+                    }
+                    _ => {}
+                }
+            }
+        }
+        Value::Array(values) => {
+            for value in values {
+                let Some(object) = value.as_object() else {
+                    continue;
+                };
+                let Some(name) = object
+                    .get("name")
+                    .or_else(|| object.get("key"))
+                    .and_then(Value::as_str)
+                else {
+                    continue;
+                };
+                let Some(value) = object.get("value").and_then(Value::as_str) else {
+                    continue;
+                };
+                entries.push(HeaderEntry {
+                    key: name.to_string(),
+                    value: value.to_string(),
+                });
+            }
+        }
+        _ => {}
+    }
+    entries
+}
+
+fn validate_inbound_header_entries(value: Option<&Value>, ptr: &str, issues: &mut Vec<Value>) {
+    let Some(value) = value else {
+        return;
+    };
+    match value {
+        Value::Object(headers) => {
+            for (name, value) in headers {
+                let valid = value.is_string()
+                    || value
+                        .as_array()
+                        .is_some_and(|values| values.iter().all(Value::is_string));
+                if !valid {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("{ptr}/{name}"),
+                        "transport header value must be a string or string array",
+                        "use a string value",
+                    ));
+                }
+            }
+        }
+        Value::Array(entries) => {
+            for (index, entry) in entries.iter().enumerate() {
+                let valid = entry.as_object().is_some_and(|object| {
+                    object
+                        .get("name")
+                        .or_else(|| object.get("key"))
+                        .is_some_and(Value::is_string)
+                        && object.get("value").is_some_and(Value::is_string)
+                });
+                if !valid {
+                    issues.push(emit_issue(
+                        "error",
+                        IssueCode::TypeMismatch,
+                        &format!("{ptr}/{index}"),
+                        "transport header entry requires string name/key and value",
+                        "use {\"name\":\"Header\",\"value\":\"value\"}",
+                    ));
+                }
+            }
+        }
+        _ => issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            ptr,
+            "transport headers must be an object or entry array",
+            "use an object",
+        )),
+    }
+}
+
+fn validate_inbound_transport(ib: &Value, index: usize, issues: &mut Vec<Value>) {
+    let Some(transport) = ib.get("transport") else {
+        return;
+    };
+    let base = format!("/inbounds/{index}/transport");
+    if let Some(tokens) = transport.as_array() {
+        for (token_index, token) in tokens.iter().enumerate() {
+            let Some(token) = token.as_str() else {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::TypeMismatch,
+                    &format!("{base}/{token_index}"),
+                    "transport token must be a string",
+                    "use tls, tcp, ws, grpc, or httpupgrade",
+                ));
+                continue;
+            };
+            if !matches!(
+                token.to_ascii_lowercase().as_str(),
+                "tls" | "tcp" | "ws" | "websocket" | "grpc" | "httpupgrade" | "http_upgrade"
+            ) {
+                issues.push(emit_issue(
+                    "error",
+                    IssueCode::InvalidEnum,
+                    &format!("{base}/{token_index}"),
+                    "unsupported inbound transport",
+                    "use tcp, ws, grpc, or httpupgrade",
+                ));
+            }
+        }
+        return;
+    }
+    let Some(object) = transport.as_object() else {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            &base,
+            "transport must be a Go-shaped object or legacy string array",
+            "use {\"type\":\"ws\"}",
+        ));
+        return;
+    };
+    let Some(kind) = object.get("type").and_then(Value::as_str) else {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::MissingRequired,
+            &format!("{base}/type"),
+            "transport type is required",
+            "add type",
+        ));
+        return;
+    };
+    let allowed: &[&str] = match kind {
+        "ws" | "websocket" => &["type", "path", "headers"],
+        "grpc" => &["type", "service_name", "method_name", "metadata"],
+        "httpupgrade" | "http_upgrade" => &["type", "host", "path", "headers"],
+        _ => {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::InvalidEnum,
+                &format!("{base}/type"),
+                "unsupported inbound transport",
+                "use ws, grpc, or httpupgrade",
+            ));
+            return;
+        }
+    };
+    for key in object.keys() {
+        if !allowed.contains(&key.as_str()) {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::UnknownField,
+                &format!("{base}/{key}"),
+                "unknown inbound transport field",
+                "remove it",
+            ));
+        }
+    }
+    for field in ["path", "host", "service_name", "method_name"] {
+        if object.get(field).is_some_and(|value| !value.is_string()) {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                &format!("{base}/{field}"),
+                "transport option must be a string",
+                "use a string value",
+            ));
+        }
+    }
+    validate_inbound_header_entries(object.get("headers"), &format!("{base}/headers"), issues);
+    validate_inbound_header_entries(object.get("metadata"), &format!("{base}/metadata"), issues);
 }
 
 fn validate_reality_short_ids(value: Option<&Value>, ptr: &str, issues: &mut Vec<Value>) {
@@ -722,6 +918,7 @@ pub(crate) fn validate_inbounds(doc: &Value, allow_unknown: bool, issues: &mut V
         if ib.get("tls").is_some() {
             validate_inbound_tls(ib, i, issues);
         }
+        validate_inbound_transport(ib, i, issues);
 
         // additionalProperties=false (V2 allowed fields; TUN-only flat
         // fields are gated on `type: "tun"`)
@@ -1077,6 +1274,74 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
         } else {
             None
         };
+        let mut transport = string_list(i.get("transport"));
+        let mut ws_path = i.get("ws_path").and_then(Value::as_str).map(str::to_string);
+        let mut ws_host = i.get("ws_host").and_then(Value::as_str).map(str::to_string);
+        let mut grpc_service = i
+            .get("grpc_service")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let mut grpc_method = i
+            .get("grpc_method")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let mut grpc_metadata = parse_inbound_header_entries(i.get("grpc_metadata"));
+        let mut http_upgrade_path = i
+            .get("http_upgrade_path")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let mut http_upgrade_host = i
+            .get("http_upgrade_host")
+            .and_then(Value::as_str)
+            .map(str::to_string);
+        let mut http_upgrade_headers = parse_inbound_header_entries(i.get("http_upgrade_headers"));
+        if let Some(object) = i.get("transport").and_then(Value::as_object) {
+            if let Some(kind) = object.get("type").and_then(Value::as_str) {
+                transport = Some(vec![kind.to_ascii_lowercase()]);
+                match kind.to_ascii_lowercase().as_str() {
+                    "ws" | "websocket" => {
+                        ws_path = object
+                            .get("path")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                            .or(ws_path);
+                        let headers = parse_inbound_header_entries(object.get("headers"));
+                        ws_host = headers
+                            .iter()
+                            .find(|entry| entry.key.eq_ignore_ascii_case("host"))
+                            .map(|entry| entry.value.clone())
+                            .or(ws_host);
+                    }
+                    "grpc" => {
+                        grpc_service = object
+                            .get("service_name")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                            .or(grpc_service);
+                        grpc_method = object
+                            .get("method_name")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                            .or(grpc_method);
+                        grpc_metadata = parse_inbound_header_entries(object.get("metadata"));
+                    }
+                    "httpupgrade" | "http_upgrade" => {
+                        http_upgrade_path = object
+                            .get("path")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                            .or(http_upgrade_path);
+                        http_upgrade_host = object
+                            .get("host")
+                            .and_then(Value::as_str)
+                            .map(str::to_string)
+                            .or(http_upgrade_host);
+                        http_upgrade_headers = parse_inbound_header_entries(object.get("headers"));
+                    }
+                    _ => {}
+                }
+            }
+        }
 
         ir.inbounds.push(crate::ir::InboundIR {
             // Read both "tag" (raw V2 input, used by direct callers like
@@ -1191,12 +1456,17 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
             }),
             users_anytls: None,
             anytls_padding: None,
-            transport: None,
-            ws_path: None,
-            ws_host: None,
+            transport,
+            ws_path,
+            ws_host,
             h2_path: None,
             h2_host: None,
-            grpc_service: None,
+            grpc_service,
+            grpc_method,
+            grpc_metadata,
+            http_upgrade_path,
+            http_upgrade_host,
+            http_upgrade_headers,
             tls: standard_tls,
             tls_enabled,
             tls_cert_path: None,
@@ -1380,6 +1650,91 @@ mod tests {
                 "missing {expected_code}: {issues:?}"
             );
         }
+    }
+
+    #[test]
+    fn vmess_go_shaped_websocket_transport_validates_and_lowers() {
+        let mut doc = vmess_inbound(None);
+        doc["inbounds"][0]["transport"] = json!({
+            "type": "ws",
+            "path": "/vmess-ws",
+            "headers": {
+                "Host": "ws.virtual.test",
+                "X-Test": ["one", "two"]
+            }
+        });
+        assert!(run_validate(&doc, false).is_empty());
+        let inbound = &super::lower_inbounds_for_test(&doc)[0];
+        assert_eq!(inbound.transport.as_deref(), Some(&["ws".to_string()][..]));
+        assert_eq!(inbound.ws_path.as_deref(), Some("/vmess-ws"));
+        assert_eq!(inbound.ws_host.as_deref(), Some("ws.virtual.test"));
+
+        let (_, production) =
+            crate::config_from_raw_value(doc).expect("production VMess WS config");
+        assert_eq!(
+            production.inbounds[0].transport.as_deref(),
+            Some(&["ws".to_string()][..])
+        );
+        assert_eq!(
+            production.inbounds[0].ws_host.as_deref(),
+            Some("ws.virtual.test")
+        );
+    }
+
+    #[test]
+    fn vmess_go_shaped_httpupgrade_transport_keeps_host_separate() {
+        let mut doc = vmess_inbound(None);
+        doc["inbounds"][0]["transport"] = json!({
+            "type": "httpupgrade",
+            "host": "http.virtual.test",
+            "path": "upgrade",
+            "headers": {"X-Test": "value"}
+        });
+        assert!(run_validate(&doc, false).is_empty());
+        let inbound = &super::lower_inbounds_for_test(&doc)[0];
+        assert_eq!(
+            inbound.transport.as_deref(),
+            Some(&["httpupgrade".to_string()][..])
+        );
+        assert_eq!(inbound.http_upgrade_path.as_deref(), Some("upgrade"));
+        assert_eq!(
+            inbound.http_upgrade_host.as_deref(),
+            Some("http.virtual.test")
+        );
+        assert_eq!(inbound.http_upgrade_headers.len(), 1);
+        assert!(inbound.tls_server_name.is_none());
+    }
+
+    #[test]
+    fn vmess_transport_rejects_unknown_type_and_nested_field() {
+        let mut unknown_type = vmess_inbound(None);
+        unknown_type["inbounds"][0]["transport"] = json!({"type": "quic"});
+        assert!(run_validate(&unknown_type, false).iter().any(|issue| {
+            issue["ptr"] == "/inbounds/0/transport/type" && issue["code"] == "InvalidEnum"
+        }));
+
+        let mut unknown_field = vmess_inbound(None);
+        unknown_field["inbounds"][0]["transport"] =
+            json!({"type": "ws", "path": "/", "mystery": true});
+        assert!(run_validate(&unknown_field, false).iter().any(|issue| {
+            issue["ptr"] == "/inbounds/0/transport/mystery" && issue["code"] == "UnknownField"
+        }));
+
+        let mut invalid_header = vmess_inbound(None);
+        invalid_header["inbounds"][0]["transport"] = json!({"type": "ws", "headers": {"Host": 42}});
+        assert!(run_validate(&invalid_header, false).iter().any(|issue| {
+            issue["ptr"] == "/inbounds/0/transport/headers/Host" && issue["code"] == "TypeMismatch"
+        }));
+
+        let mut unsupported_option = vmess_inbound(None);
+        unsupported_option["inbounds"][0]["transport"] =
+            json!({"type": "ws", "max_message_size": 1024});
+        assert!(run_validate(&unsupported_option, false)
+            .iter()
+            .any(|issue| {
+                issue["ptr"] == "/inbounds/0/transport/max_message_size"
+                    && issue["code"] == "UnknownField"
+            }));
     }
 
     // --- /inbounds non-array ---

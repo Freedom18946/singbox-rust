@@ -171,15 +171,20 @@ pub struct VmessConnector {
     /// 带有可选 TLS 和多路复用层的传输拨号器
     #[cfg(feature = "sb-transport")]
     dialer: Option<std::sync::Arc<dyn sb_transport::Dialer>>,
+    #[cfg(feature = "sb-transport")]
+    dialer_error: Option<String>,
 }
 
 impl std::fmt::Debug for VmessConnector {
     fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-        f.debug_struct("VmessConnector")
+        let mut debug = f.debug_struct("VmessConnector");
+        debug
             .field("config", &self.config)
             .field("auth_cache", &self.auth_cache)
-            .field("dialer", &"<dialer>")
-            .finish()
+            .field("dialer", &"<dialer>");
+        #[cfg(feature = "sb-transport")]
+        debug.field("dialer_error", &self.dialer_error);
+        debug.finish()
     }
 }
 
@@ -191,25 +196,10 @@ impl VmessConnector {
     /// Create a new VMess connector with the given configuration
     /// 使用给定的配置创建一个新的 VMess 连接器
     pub fn new(config: VmessConfig) -> Self {
-        // Create dialer with transport layer, TLS, and multiplex layers
-        // 创建带有传输层、TLS 和多路复用层的拨号器
         #[cfg(feature = "sb-transport")]
-        let dialer = {
-            #[cfg(feature = "transport_tls")]
-            let tls_config = config.tls.as_ref();
-            #[cfg(not(feature = "transport_tls"))]
-            let tls_config = None;
-
-            #[cfg(feature = "transport_mux")]
-            let multiplex_config = config.multiplex.as_ref();
-            #[cfg(not(feature = "transport_mux"))]
-            let multiplex_config = None;
-
-            Some(
-                config
-                    .transport_layer
-                    .create_dialer_with_layers(tls_config, multiplex_config),
-            )
+        let (dialer, dialer_error) = match Self::build_transport_dialer(&config) {
+            Ok(dialer) => (Some(dialer), None),
+            Err(error) => (None, Some(error)),
         };
 
         Self {
@@ -217,7 +207,45 @@ impl VmessConnector {
             auth_cache: None,
             #[cfg(feature = "sb-transport")]
             dialer,
+            #[cfg(feature = "sb-transport")]
+            dialer_error,
         }
+    }
+
+    /// Construct a production connector and surface TLS/transport build errors
+    /// before any dial is attempted.
+    pub fn try_new(config: VmessConfig) -> Result<Self> {
+        #[cfg(feature = "sb-transport")]
+        let dialer = Self::build_transport_dialer(&config)
+            .map_err(|error| AdapterError::Other(format!("vmess transport: {error}")))?;
+
+        Ok(Self {
+            config,
+            auth_cache: None,
+            #[cfg(feature = "sb-transport")]
+            dialer: Some(dialer),
+            #[cfg(feature = "sb-transport")]
+            dialer_error: None,
+        })
+    }
+
+    #[cfg(feature = "sb-transport")]
+    fn build_transport_dialer(
+        config: &VmessConfig,
+    ) -> std::result::Result<std::sync::Arc<dyn sb_transport::Dialer>, String> {
+        #[cfg(feature = "transport_tls")]
+        let tls_config = config.tls.as_ref();
+        #[cfg(not(feature = "transport_tls"))]
+        let tls_config = None;
+
+        #[cfg(feature = "transport_mux")]
+        let multiplex_config = config.multiplex.as_ref();
+        #[cfg(not(feature = "transport_mux"))]
+        let multiplex_config = None;
+
+        config
+            .transport_layer
+            .try_create_dialer_with_layers(tls_config, multiplex_config)
     }
 
     /// Resolve the effective VMess body security byte (wire constant).
@@ -249,8 +277,10 @@ impl VmessConnector {
 
         #[cfg(feature = "sb-transport")]
         {
-            // Use the configured dialer (which already has Transport → TLS → Multiplex layers)
-            // 使用配置的拨号器 (已经包含 传输 → TLS → 多路复用 层)
+            if let Some(error) = &self.dialer_error {
+                return Err(AdapterError::Other(format!("vmess transport: {error}")));
+            }
+            // Physical order: TCP → TLS → V2Ray transport → project yamux.
             if let Some(ref dialer) = self.dialer {
                 tracing::debug!(
                     "Using transport dialer for VMess connection (transport: {:?})",

@@ -18,6 +18,7 @@ async fn test_vless_httpupgrade_config_creation() {
     // Test that HTTPUpgrade transport configuration can be created
     let http_upgrade_config = HttpUpgradeTransportConfig {
         path: "/vless".to_string(),
+        host: None,
         headers: vec![],
     };
 
@@ -34,6 +35,7 @@ async fn test_vless_inbound_with_httpupgrade_transport() {
 
     let http_upgrade_config = HttpUpgradeTransportConfig {
         path: "/vless-upgrade".to_string(),
+        host: None,
         headers: vec![("User-Agent".to_string(), "sing-box-rust/1.0".to_string())],
     };
 
@@ -97,6 +99,7 @@ async fn test_vless_httpupgrade_with_custom_headers() {
     // Test HTTPUpgrade with custom headers and path
     let http_upgrade_config = HttpUpgradeTransportConfig {
         path: "/custom-vless-path".to_string(),
+        host: None,
         headers: vec![
             ("X-Custom-Header".to_string(), "custom-value".to_string()),
             ("Authorization".to_string(), "Bearer token123".to_string()),
@@ -124,6 +127,7 @@ async fn test_vless_httpupgrade_with_reality_tls() {
     // Test HTTPUpgrade transport combined with REALITY TLS
     let http_upgrade_config = HttpUpgradeTransportConfig {
         path: "/vless".to_string(),
+        host: None,
         headers: vec![],
     };
 
@@ -156,7 +160,8 @@ async fn test_vless_httpupgrade_minimal_config() {
     // Test HTTPUpgrade with minimal configuration (defaults)
     let http_upgrade_config = HttpUpgradeTransportConfig {
         path: "/".to_string(), // Default path
-        headers: vec![],       // No custom headers
+        host: None,
+        headers: vec![], // No custom headers
     };
 
     let transport = TransportConfig::HttpUpgrade(http_upgrade_config.clone());

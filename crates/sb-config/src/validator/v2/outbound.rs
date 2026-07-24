@@ -217,6 +217,11 @@ fn parse_transport_object(
                         .and_then(|v| v.as_str())
                         .map(|s| s.to_string());
                 }
+                if let Some(host) = obj.get("host").and_then(Value::as_str) {
+                    ob.http_upgrade_headers
+                        .retain(|entry| !entry.key.eq_ignore_ascii_case("host"));
+                    push_header_entry(&mut ob.http_upgrade_headers, "Host", host);
+                }
                 if let Some(headers_val) = obj.get("headers") {
                     parse_header_entries(headers_val, &mut ob.http_upgrade_headers);
                 }
@@ -2099,6 +2104,7 @@ mod tests {
                 "transport": {
                     "type": "httpupgrade",
                     "path": "/upgrade",
+                    "host": "http.virtual.test",
                     "headers": {
                         "User-Agent": "singbox",
                         "Authorization": "Bearer token"
@@ -2121,9 +2127,10 @@ mod tests {
             .map(|h| (h.key.clone(), h.value.clone()))
             .collect();
         headers.sort();
-        assert_eq!(headers.len(), 2);
+        assert_eq!(headers.len(), 3);
         assert!(headers.contains(&("User-Agent".to_string(), "singbox".to_string())));
         assert!(headers.contains(&("Authorization".to_string(), "Bearer token".to_string())));
+        assert!(headers.contains(&("Host".to_string(), "http.virtual.test".to_string())));
     }
 
     #[test]
