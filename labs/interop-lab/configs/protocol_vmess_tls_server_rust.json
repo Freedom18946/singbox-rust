@@ -1,0 +1,41 @@
+{
+  "log": {
+    "level": "warn"
+  },
+  "experimental": {
+    "clash_api": {
+      "external_controller": "127.0.0.1:19191",
+      "secret": "test-secret"
+    }
+  },
+  "inbounds": [
+    {
+      "type": "vmess",
+      "tag": "vmess-tls-in",
+      "listen": "127.0.0.1",
+      "listen_port": 12085,
+      "uuid": "00000000-0000-0000-0000-000000000002",
+      "security": "auto",
+      "tls": {
+        "enabled": true,
+        "server_name": "anytls.local",
+        "alpn": [
+          "h2"
+        ],
+        "min_version": "1.3",
+        "max_version": "1.3",
+        "certificate_path": "vendor/anytls-rs/examples/singbox/certs/anytls.local.crt.fixture",
+        "key_path": "vendor/anytls-rs/examples/singbox/certs/anytls.local.key.fixture"
+      }
+    }
+  ],
+  "outbounds": [
+    {
+      "type": "direct",
+      "tag": "direct"
+    }
+  ],
+  "route": {
+    "final": "direct"
+  }
+}

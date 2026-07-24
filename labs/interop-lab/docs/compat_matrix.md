@@ -98,7 +98,7 @@
 | Shadowsocks 协议 | suite | auth fault | recovery/restart | — | `p2_shadowsocks_*` (both) |
 | ShadowTLS 协议 | wrapper-chain | cert mismatch | — | — | `p2_shadowtls_dual_dataplane_local` (both) |
 | VLESS 协议 | TCP suite | UUID auth fault | — | — | `p2_vless_dual_dataplane_local` (both) |
-| VMess 协议 | ENV-LIMITED | UUID auth fault | — | — | `p2_vmess_dual_dataplane_local` (both; local upstream dialect non-canonical) |
+| VMess 协议 | canonical raw TCP + verified TLS 1.3, crossed production peers | UUID auth + SNI/certificate rejection | 20 consecutive bounded start/teardown rounds | — | `p2_vmess_dual_dataplane_local`, `p2_vmess_tls_dual_dataplane_local` (both, strict) |
 | Large TCP (128KB) | yes | — | — | — | `p1_dataplane_large_payload_tcp` |
 | Large UDP (8KB) | yes | — | — | — | `p1_dataplane_large_payload_udp` |
 | Large HTTP (256KB) | yes | — | — | — | `p1_dataplane_large_payload_http` |

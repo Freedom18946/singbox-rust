@@ -6,7 +6,7 @@
 > Other docs point here, not copy.
 
 ---
-## Resume (2026-07-24) - VMESS-TLS-01 strict local regressions DONE; acceptance active
+## Resume (2026-07-24) - VMESS-TLS-01 strict dual-kernel DONE; Linux/full closure active
 
 - VMess raw TCP and WebSocket/HTTPUpgrade, with and without standard TLS, pass
   live Rust→Go and Go→production-Rust dataplanes. TLS is built once and owned by
@@ -24,16 +24,21 @@
 - Replaced five ignored/fake TLS variants with nine real local E2E tests. Twenty
   16-thread rounds passed (180/0/0). Stress exposed and fixed cancellation of
   in-progress TLS accepts by heartbeat/task-reap select branches.
-- Remaining: add repeated strict dual-kernel production cases, run Linux
-  proof/full gates, then close archive.
+- New strict both case crosses production peers in both directions: Go client→Rust
+  server and Rust client→Go server. Verified TLS 1.3/SNI/ALPN, 32 KiB hash-exact
+  echo, UUID/SNI rejection, bounded readiness/teardown; 20/20 runs PASS and every
+  normalized diff is clean with gate score zero.
+- Current ledger: 127 cases, 66 both/strict; behavioral coverage remains 75/79
+  (coverage-neutral VMess/TLS variant). Remaining: Linux proof/full gates, final
+  archive/review/commit.
   Evidence: `archive/vmess_tls_01/acceptance.md`.
 
 ## Resume (2026-07-24) - dual-kernel strict ledger correction DONE
 
 - Added a typed case-YAML + structured S3/S6 Markdown validator at
   `scripts/tools/validation/validate-dual-kernel-ledger.sh`, with eight drift/error regressions.
-- Mechanical result: 126 cases, 65 both, all 65 both cases strict; 79 active BHVs, 75 covered,
-  and all 75 covered BHVs carry strict both-case evidence.
+- Mechanical result at correction time: 126 cases, 65 both, all 65 both cases strict;
+  79 active BHVs, 75 covered, and all 75 covered BHVs carry strict both-case evidence.
 - Corrected S6 strict behavioral coverage from the mistakenly copied both-case count to
   **75/79 (94.9%)**. This is ledger-only: no case/BHV/denominator/implementation/gap movement.
 

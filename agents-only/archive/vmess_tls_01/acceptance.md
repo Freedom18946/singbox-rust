@@ -134,12 +134,12 @@ falls back to plaintext.
 
 | Composition | Go supports? | Rust config parses? | Rust production builds? | Rust→Go live? | Go→Rust live? | Strict test? | Explicit non-goal? |
 |---|---:|---:|---:|---:|---:|---:|---:|
-| raw TCP | yes | yes | yes | yes | yes | pending group G | no |
-| raw TCP + TLS | yes | yes | yes | yes | yes | pending group G | no |
-| WebSocket | yes | yes | yes | yes | yes | pending group G | no |
-| WebSocket + TLS | yes | yes | yes | yes | yes | pending group G | no |
-| HTTPUpgrade | yes | yes | yes | yes | yes | pending group G | no |
-| HTTPUpgrade + TLS | yes | yes | yes | yes | yes | pending group G | no |
+| raw TCP | yes | yes | yes | yes | yes | `p2_vmess_dual_dataplane_local` | no |
+| raw TCP + TLS | yes | yes | yes | yes | yes | `p2_vmess_tls_dual_dataplane_local` | no |
+| WebSocket | yes | yes | yes | yes | yes | bidirectional live E2E | no |
+| WebSocket + TLS | yes | yes | yes | yes | yes | bidirectional live E2E | no |
+| HTTPUpgrade | yes | yes | yes | yes | yes | bidirectional live E2E | no |
+| HTTPUpgrade + TLS | yes | yes | yes | yes | yes | bidirectional live E2E | no |
 | TLS + project yamux | no | yes | yes | Rust↔Rust | Rust↔Rust | local live E2E | canonical `v1.mux.cool` |
 
 ## Strict Local TLS Regression Closure
@@ -166,6 +166,58 @@ after TCP accept and reset a valid TLS client. The heartbeat is removed; one
 pinned accept future now survives task-reap branches. Connection and mux-stream
 tasks are tracked and aborted/drained on shutdown. Final 16-thread full-binary
 stress: 20 rounds, 180 passed, 0 failed, 0 ignored.
+
+## Strict Dual-Kernel Production Closure
+
+`p2_vmess_tls_dual_dataplane_local` is `kernel_mode: both`, `env_class: strict`.
+Its Rust snapshot starts the production Rust VMess+TLS server and a production
+Go client; its Go snapshot starts the production Go server and a production
+Rust client. Both clients expose a local SOCKS5 inbound, so the same harness
+traffic crosses opposite implementations rather than talking to an in-process
+protocol stub.
+
+Server and client configs require TLS 1.3, SNI `anytls.local`, ALPN `h2`, and
+the committed local self-signed CA fixture. Positive traffic sends a
+deterministic 32 KiB payload through SOCKS5 and requires byte count and SHA-256
+equality. Separate route targets select wrong-UUID and wrong-SNI outbounds;
+both must fail. Generic kernel-specific background-command selection and
+bounded TCP readiness polling contain no VMess special case. Harness cleanup
+terminates and waits for crossed clients; kernel teardown remains bounded.
+
+An initial harness draft using Go `tools connect` was rejected: that CLI closes
+the connection when finite stdin reaches EOF and can exit zero before the
+download goroutine returns, so it cannot prove request/echo round trips.
+Acceptance uses long-lived production clients and harness-owned SOCKS5 traffic
+instead.
+
+Twenty consecutive post-fix runs passed both snapshots. Every per-run
+normalized diff was `clean=true`, `traffic_mismatches=0`, and `gate_score=0`:
+
+| Round | Run ID |
+|---:|---|
+| 1 | `20260724T074141Z-5910b96d-9a83-4c90-858f-6794f8efe179` |
+| 2 | `20260724T074145Z-a671b5ee-f5c0-4352-b31e-5d767bf7f032` |
+| 3 | `20260724T074149Z-d9ce4e00-630e-4bc2-bb45-639c7edfd7bb` |
+| 4 | `20260724T074153Z-d5c80657-e815-4db0-bf93-817acdfdbb18` |
+| 5 | `20260724T074157Z-3b73ea52-6406-4286-a249-51477311228f` |
+| 6 | `20260724T074201Z-1aebc11a-ba16-45c3-8434-d05f713c7ad9` |
+| 7 | `20260724T074206Z-6bfbf088-0f57-4bfc-9301-0e5ec63edef2` |
+| 8 | `20260724T074211Z-c766fc18-2c6e-456e-91b7-76cfcbb036cc` |
+| 9 | `20260724T074215Z-5d471960-de54-40ce-bd85-2bb2f2bfd10d` |
+| 10 | `20260724T074219Z-f64120f3-547e-415b-a0ed-4966f415c9d4` |
+| 11 | `20260724T074223Z-859fcc3f-67a2-4e60-b1ff-3ccadc9d42c7` |
+| 12 | `20260724T074227Z-accb2b4f-9abc-4de8-9062-32f1793ece94` |
+| 13 | `20260724T074231Z-c85a12ba-239d-4c3a-8001-fb09a8631b0e` |
+| 14 | `20260724T074235Z-9d78e08e-4f70-4541-90c4-1036f0071df3` |
+| 15 | `20260724T074239Z-48083cc2-347e-4963-ab89-490a487b25f6` |
+| 16 | `20260724T074243Z-d836ef8c-b849-4274-b716-64c832d15239` |
+| 17 | `20260724T074247Z-4df4b709-3901-40df-beee-ec31e8024998` |
+| 18 | `20260724T074251Z-369694e7-e417-46a5-a2a1-18aca92a4287` |
+| 19 | `20260724T074255Z-5a9904a2-3754-4614-9b5f-f24ca6e6bb3e` |
+| 20 | `20260724T074259Z-91ef2901-1640-4df3-bf21-2f58fec13cc1` |
+
+Ledger effect is coverage-neutral: inventory moves to 127 cases and 66 strict
+both cases; distinct covered behavior remains 75/79.
 
 ## Evidence So Far
 
@@ -205,6 +257,9 @@ stress: 20 rounds, 180 passed, 0 failed, 0 ignored.
   and receives no echo
 - strict local TLS regression: 9 passed, 0 failed, 0 ignored per round; 20
   consecutive 16-thread rounds produced 180 passed, 0 failed, 0 ignored
+- strict dual-kernel production VMess+TLS: 20/20 repeated runs PASS; 40/40
+  kernel snapshots PASS; 20/20 normalized diffs clean with gate score zero
+- interop-lab unit suite after harness extension: 60 passed, 0 failed, 0 ignored
 
 Remaining sections—live matrices, strict interop IDs, Linux verdict, full gates,
 inventory accounting, and complete commit list—will be filled only from final

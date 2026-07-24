@@ -26,6 +26,7 @@ use std::net::IpAddr;
 use std::path::{Path, PathBuf};
 use std::process::Stdio;
 use std::time::Duration;
+use tokio::net::TcpStream;
 use tokio::process::Child;
 use tokio::task::JoinSet;
 use tokio::time::timeout;
@@ -541,15 +542,31 @@ async fn run_traffic_plan_with_kernel_control(
                 name,
                 handle,
                 command,
+                command_rust,
+                command_go,
                 args,
+                args_rust,
+                args_go,
                 env,
                 workdir,
             } => {
+                let selected_command = select_kernel_string_override(
+                    mode,
+                    command,
+                    command_rust.as_deref(),
+                    command_go.as_deref(),
+                );
+                let selected_args = select_kernel_slice_override(
+                    mode,
+                    args,
+                    args_rust.as_deref(),
+                    args_go.as_deref(),
+                );
                 let result = execute_command_start_action(
                     name,
                     handle,
-                    command,
-                    args,
+                    selected_command,
+                    selected_args,
                     env,
                     workdir.as_deref(),
                     harness,
@@ -569,6 +586,23 @@ async fn run_traffic_plan_with_kernel_control(
                     handle,
                     *timeout_ms,
                     *expect_exit,
+                    &mut background_commands,
+                )
+                .await;
+                outputs.push(result);
+            }
+            TrafficAction::CommandWaitTcp {
+                name,
+                handle,
+                addr,
+                timeout_ms,
+            } => {
+                let result = execute_command_wait_tcp_action(
+                    name,
+                    handle,
+                    addr,
+                    *timeout_ms,
+                    harness,
                     &mut background_commands,
                 )
                 .await;
@@ -885,6 +919,101 @@ async fn execute_command_start_action(
                 "error": err.to_string(),
             }),
         },
+    }
+}
+
+async fn execute_command_wait_tcp_action(
+    name: &str,
+    handle: &str,
+    addr: &str,
+    timeout_ms: u64,
+    harness: &crate::upstream::UpstreamHarness,
+    background_commands: &mut HashMap<String, BackgroundCommandProcess>,
+) -> TrafficResult {
+    let resolved = resolve_with_env(&harness.resolve_templates(addr));
+    let connect_addr = resolved.strip_prefix("tcp://").unwrap_or(&resolved);
+    let started_at = tokio::time::Instant::now();
+    let deadline = started_at + Duration::from_millis(timeout_ms.max(1));
+
+    loop {
+        let Some(process) = background_commands.get_mut(handle) else {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "command_wait_tcp",
+                    "handle": handle,
+                    "addr": connect_addr,
+                    "error": "background command handle not found",
+                }),
+            };
+        };
+        match process.child.try_wait() {
+            Ok(Some(status)) => {
+                return TrafficResult {
+                    name: name.to_string(),
+                    success: false,
+                    detail: json!({
+                        "action": "command_wait_tcp",
+                        "handle": handle,
+                        "addr": connect_addr,
+                        "exit_code": status.code(),
+                        "error": "background command exited before TCP readiness",
+                    }),
+                };
+            }
+            Ok(None) => {}
+            Err(error) => {
+                return TrafficResult {
+                    name: name.to_string(),
+                    success: false,
+                    detail: json!({
+                        "action": "command_wait_tcp",
+                        "handle": handle,
+                        "addr": connect_addr,
+                        "error": error.to_string(),
+                    }),
+                };
+            }
+        }
+        let remaining = deadline.saturating_duration_since(tokio::time::Instant::now());
+        let attempt_timeout = remaining.min(Duration::from_millis(250));
+        let last_error = match timeout(attempt_timeout, TcpStream::connect(connect_addr)).await {
+            Ok(Ok(stream)) => {
+                drop(stream);
+                return TrafficResult {
+                    name: name.to_string(),
+                    success: true,
+                    detail: json!({
+                        "action": "command_wait_tcp",
+                        "handle": handle,
+                        "addr": connect_addr,
+                        "elapsed_ms": started_at.elapsed().as_millis() as u64,
+                    }),
+                };
+            }
+            Ok(Err(error)) => error.to_string(),
+            Err(_) => format!(
+                "TCP readiness attempt timed out after {}ms",
+                attempt_timeout.as_millis()
+            ),
+        };
+        let now = tokio::time::Instant::now();
+        if now >= deadline {
+            return TrafficResult {
+                name: name.to_string(),
+                success: false,
+                detail: json!({
+                    "action": "command_wait_tcp",
+                    "handle": handle,
+                    "addr": connect_addr,
+                    "elapsed_ms": started_at.elapsed().as_millis() as u64,
+                    "timeout_ms": timeout_ms,
+                    "error": last_error,
+                }),
+            };
+        }
+        tokio::time::sleep((deadline - now).min(Duration::from_millis(20))).await;
     }
 }
 
@@ -2254,6 +2383,18 @@ fn select_kernel_string_override<'a>(
     }
 }
 
+fn select_kernel_slice_override<'a, T>(
+    mode: &KernelKind,
+    default_value: &'a [T],
+    rust_override: Option<&'a [T]>,
+    go_override: Option<&'a [T]>,
+) -> &'a [T] {
+    match mode {
+        KernelKind::Rust => rust_override.unwrap_or(default_value),
+        KernelKind::Go => go_override.unwrap_or(default_value),
+    }
+}
+
 fn select_kernel_u16_override(
     mode: &KernelKind,
     default_value: Option<u16>,
@@ -2820,5 +2961,95 @@ bootstrap: {}
         );
         assert_eq!(ordered[0].id, "functional");
         assert_eq!(ordered[1].id, "bench");
+    }
+
+    #[test]
+    fn command_start_selects_crossed_kernel_arguments() {
+        assert_eq!(
+            select_kernel_string_override(
+                &KernelKind::Go,
+                "go-client",
+                Some("go-to-rust"),
+                Some("rust-to-go"),
+            ),
+            "rust-to-go"
+        );
+        let defaults = vec!["go-client".to_string()];
+        let rust = vec!["go-to-rust".to_string()];
+        let go = vec!["rust-to-go".to_string()];
+        assert_eq!(
+            select_kernel_slice_override(&KernelKind::Rust, &defaults, Some(&rust), Some(&go),),
+            rust
+        );
+        assert_eq!(
+            select_kernel_slice_override(&KernelKind::Go, &defaults, Some(&rust), Some(&go)),
+            go
+        );
+    }
+
+    #[tokio::test]
+    async fn command_wait_tcp_uses_bounded_listener_readiness() {
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind readiness listener");
+        let addr = listener.local_addr().expect("listener addr").to_string();
+        let harness = start_upstreams(&[]).await.expect("empty harness");
+        let mut background_commands = HashMap::new();
+        let started = execute_command_start_action(
+            "start",
+            "server",
+            "sh",
+            &["-c".to_string(), "sleep 5".to_string()],
+            &BTreeMap::new(),
+            None,
+            &harness,
+            &mut background_commands,
+        )
+        .await;
+        assert!(started.success, "start detail: {}", started.detail);
+        let result = execute_command_wait_tcp_action(
+            "ready",
+            "server",
+            &addr,
+            500,
+            &harness,
+            &mut background_commands,
+        )
+        .await;
+        assert!(result.success, "readiness detail: {}", result.detail);
+        cleanup_background_commands(&mut background_commands).await;
+        drop(listener);
+        harness.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn command_wait_tcp_rejects_exited_background_command() {
+        let harness = start_upstreams(&[]).await.expect("empty harness");
+        let mut background_commands = HashMap::new();
+        let started = execute_command_start_action(
+            "start",
+            "exited",
+            "sh",
+            &["-c".to_string(), "exit 7".to_string()],
+            &BTreeMap::new(),
+            None,
+            &harness,
+            &mut background_commands,
+        )
+        .await;
+        assert!(started.success, "start detail: {}", started.detail);
+        let result = execute_command_wait_tcp_action(
+            "ready",
+            "exited",
+            "127.0.0.1:0",
+            500,
+            &harness,
+            &mut background_commands,
+        )
+        .await;
+        assert!(!result.success, "readiness detail: {}", result.detail);
+        assert_eq!(result.detail["exit_code"], json!(7));
+        cleanup_background_commands(&mut background_commands).await;
+        harness.shutdown().await;
     }
 }

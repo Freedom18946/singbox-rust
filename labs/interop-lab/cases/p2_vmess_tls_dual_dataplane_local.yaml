@@ -1,0 +1,102 @@
+id: p2_vmess_tls_dual_dataplane_local
+title: vmess standard TLS crossed-client dual-kernel dataplane parity
+priority: p2
+kernel_mode: both
+env_class: strict
+tags:
+  - protocol
+  - dataplane
+  - dual_core
+  - vmess
+  - tls
+bootstrap:
+  rust:
+    command: ./labs/interop-lab/scripts/run_acceptance_app.sh
+    args:
+      - -c
+      - labs/interop-lab/configs/protocol_vmess_tls_server_rust.json
+      - run
+      - --admin-listen
+      - 127.0.0.1:19190
+    startup_timeout_ms: 600000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:19191
+      secret: test-secret
+  go:
+    command: ${INTEROP_GO_BINARY}
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/protocol_vmess_tls_server_go.json
+    startup_timeout_ms: 15000
+    ready_path: /version
+    api:
+      base_url: http://127.0.0.1:9090
+      secret: test-secret
+upstream_topology:
+  - name: local_tcp_echo
+    kind: tcp_echo
+    bind: 127.0.0.1:18113
+  - name: local_tcp_bad_uuid
+    kind: tcp_echo
+    bind: 127.0.0.1:18114
+  - name: local_tcp_bad_sni
+    kind: tcp_echo
+    bind: 127.0.0.1:18115
+traffic_plan:
+  - kind: command_start
+    name: start_crossed_vmess_tls_client
+    handle: crossed_vmess_tls_client
+    command: ${INTEROP_GO_BINARY}
+    args:
+      - run
+      - -c
+      - labs/interop-lab/configs/protocol_vmess_tls_client_go.json
+    command_go: ./labs/interop-lab/scripts/run_acceptance_app.sh
+    args_go:
+      - -c
+      - labs/interop-lab/configs/protocol_vmess_tls_client_rust.json
+      - run
+  - kind: command_wait_tcp
+    name: crossed_vmess_tls_client_ready
+    handle: crossed_vmess_tls_client
+    addr: 127.0.0.1:11802
+    timeout_ms: 600000
+  - kind: tcp_round_trip
+    name: vmess_tls_echo_32k
+    addr: "{{upstream.local_tcp_echo}}"
+    proxy: socks5://127.0.0.1:11802
+    payload_size: 32768
+  - kind: tcp_round_trip
+    name: vmess_tls_wrong_uuid_rejected
+    addr: "{{upstream.local_tcp_bad_uuid}}"
+    proxy: socks5://127.0.0.1:11802
+    payload: vmess-wrong-uuid
+  - kind: tcp_round_trip
+    name: vmess_tls_wrong_sni_rejected
+    addr: "{{upstream.local_tcp_bad_sni}}"
+    proxy: socks5://127.0.0.1:11802
+    payload: vmess-wrong-sni
+assertions:
+  - key: traffic.start_crossed_vmess_tls_client.success
+    op: eq
+    expected: true
+  - key: traffic.crossed_vmess_tls_client_ready.success
+    op: eq
+    expected: true
+  - key: traffic.vmess_tls_echo_32k.success
+    op: eq
+    expected: true
+  - key: traffic.vmess_tls_wrong_uuid_rejected.success
+    op: eq
+    expected: false
+  - key: traffic.vmess_tls_wrong_sni_rejected.success
+    op: eq
+    expected: false
+  - key: errors.count
+    op: eq
+    expected: 0
+oracle:
+  tolerate_counter_jitter: true
+  counter_jitter_abs: 64

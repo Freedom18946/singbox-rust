@@ -2,13 +2,11 @@
 
 联测执行基线与实战流程见：`labs/interop-lab/docs/REALWORLD-TEST-PLAN.md`。
 
-## 统计快照（2026-02-12）
+## 统计口径
 
-- 总 case：83
-- `strict`：72
-- `env_limited`：10
-- `env_limited` → `strict` 升级：1（`p0_clash_api_contract` → `p0_clash_api_contract_strict`）
-- 状态口径：`implemented` / `planned` / `blocked`
+实时 case/BHV 统计只维护于 `dual_kernel_golden_spec.md` S6，并由
+`scripts/tools/validation/validate-dual-kernel-ledger.sh` 机械校验。本表只维护 case
+目标、环境类别与实现状态，避免复制易漂移数字。
 
 ## P0 (gating)
 
@@ -175,6 +173,7 @@
 | `p2_shadowsocks_network_restart_suite` | Shadowsocks 重启/抖动恢复 | `strict` | implemented |
 | `p2_connections_ws_concurrency_suite` | `/connections` WS 并发稳定性 | `strict` | implemented |
 | `p2_connections_ws_soak_suite` | `/connections` WS 长时 soak | `strict` | implemented |
+| `p2_vmess_tls_dual_dataplane_local` | Go client→Rust server、Rust client→Go server 的生产 VMess + verified TLS 1.3；32 KiB echo、UUID/SNI negatives、bounded lifecycle | `strict` | implemented (`kernel_mode: both`; 20/20 repeated clean diff) |
 
 ### 协议单测编入（L8.1.2）
 

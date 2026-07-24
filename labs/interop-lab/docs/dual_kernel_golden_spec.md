@@ -102,7 +102,7 @@ Stable ID format: `BHV-{domain}-{seq}`. Each row = one testable behavior.
 
 | BHV ID | Behavior | Input | Expected Output | Diff Dim | Both Cases | Rust-Only Cases | Known Div |
 |--------|----------|-------|-----------------|----------|------------|-----------------|-----------|
-| BHV-DP-001 | SOCKS5 TCP CONNECT proxies streams | TCP via SOCKS5 | Round-trip echo success | Traffic | `p1_rust_core_tcp_via_socks` | — | — |
+| BHV-DP-001 | SOCKS5 TCP CONNECT proxies streams | TCP via SOCKS5 | Round-trip echo success | Traffic | `p1_rust_core_tcp_via_socks`, `p2_vmess_tls_dual_dataplane_local` | — | — |
 | BHV-DP-002 | SOCKS5 UDP relays packets | UDP via SOCKS5 | Round-trip echo success | Traffic | `p1_rust_core_udp_via_socks` | — | DIV-C-002 |
 | BHV-DP-003 | HTTP CONNECT proxies tunnels | HTTP CONNECT via proxy | HTTP GET through proxy succeeds | Traffic | `p1_http_connect_via_http_proxy` | — | — |
 | BHV-DP-004 | Mixed inbound detects protocol | SOCKS5 or HTTP to same port | Auto-detect and handle | Traffic | `p1_mixed_inbound_dual_protocol` | `p0_clash_api_contract_strict` | — |
@@ -504,7 +504,7 @@ gate).
 
 | Tier | Target | Cases | Cumulative Both | Projected Coverage |
 |------|--------|-------|-----------------|-------------------|
-| Current | Expanded routing-rule breadth | 65 | 65 / 126 | 94.9% (75/79 BHV) |
+| Current | Expanded routing-rule breadth + VMess TLS crossed production variant | 66 | 66 / 127 | 94.9% (75/79 BHV) |
 | T1 Immediate (Completed) | GUI critical path strict | +0 | 31 / 95 | 92.9% (52/56 BHV) |
 | T2 Near-term (Promoted) | Coverage-neutral strict promotions | +3 | 30 / 92 | 92.9% (52/56 BHV) |
 | T3 | CLOSED — SV.1 reclassified as harness-only | — | — | — |
@@ -592,6 +592,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 50 | `p1_bypass_rule_action_via_socks` | both | E4 | BHV-DP-039 | New on 2026-07-23: empty `bypass` on SOCKS, where bypass support is unavailable, continues to a later reject rule; explicit route control stays connected (`20260722T204542Z-d47bd3c4-e82f-4748-988b-3b683062d314`). |
 | 51 | `p1_route_options_override_via_socks` | both | E4 | BHV-DP-040 | New on 2026-07-23: non-terminal route-options rewrites a TEST-NET destination to loopback, updates later IP+port rule matching, and dials the rewritten target (`20260722T204641Z-8e87c9c6-02d1-49c5-8e23-1def894d09ce`). |
 | 52 | `p1_resolve_rule_action_via_socks` | both | E4 | BHV-DP-041 | New on 2026-07-23: default resolve populates destination addresses for a later loopback CIDR rule; a resolved port miss reaches final block (`20260722T204744Z-6b7debce-4f1c-463f-abf8-cd6d9f620010`). |
+| 53 | `p2_vmess_tls_dual_dataplane_local` | both | E4 | — (coverage-neutral VMess/TLS variant) | New on 2026-07-24: crossed production peers (Go client→Rust server and Rust client→Go server), verified TLS 1.3/SNI/ALPN, 32 KiB hash-exact echo, UUID and SNI rejection, bounded readiness/teardown. Twenty consecutive runs and all normalized diffs PASS/clean with gate score zero. |
 
 ### T4: Long-term — CLOSED (2026-07-18)
 
@@ -602,6 +603,7 @@ These cases already exist as Rust-only strict and are the GUI critical path.
 | 3 | `p2_vless_dual_dataplane_local` | E3 | BHV-DP-001 (VLESS variant) | ✅ delivered 2026-03-16 |
 | 4 | `p2_vmess_dual_dataplane_local` | E3 | — | ✅ delivered 2026-07-17; canonical local peer, strict both-kernel PASS |
 | 5 | `p2_bench_socks5_throughput` | E3 | coverage-neutral perf stress (BHV-PF-001 covered by `p1_rust_core_http_via_socks`) | ✅ delivered 2026-07-18; strict live both-kernel throughput floor |
+| 6 | `p2_vmess_tls_dual_dataplane_local` | E4 | — | ✅ delivered 2026-07-24; verified standard TLS crossed production peers, strict 20/20 both-kernel PASS |
 
 ### Non-Promotable Cases
 
@@ -638,7 +640,7 @@ These cases should **never** be promoted to `kernel_mode: both`:
 
 | Metric | Formula | Value |
 |--------|---------|-------|
-| Both-mode case ratio | both cases / total cases | 51.6% (65/126) |
+| Both-mode case ratio | both cases / total cases | 52.0% (66/127) |
 | Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 94.9% (75/79) |
 | Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 94.9% (75/79) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |

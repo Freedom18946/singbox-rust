@@ -337,11 +337,26 @@ pub enum TrafficAction {
         handle: String,
         command: String,
         #[serde(default)]
+        command_rust: Option<String>,
+        #[serde(default)]
+        command_go: Option<String>,
+        #[serde(default)]
         args: Vec<String>,
+        #[serde(default)]
+        args_rust: Option<Vec<String>>,
+        #[serde(default)]
+        args_go: Option<Vec<String>>,
         #[serde(default)]
         env: BTreeMap<String, String>,
         #[serde(default)]
         workdir: Option<PathBuf>,
+    },
+    CommandWaitTcp {
+        name: String,
+        handle: String,
+        addr: String,
+        #[serde(default = "default_startup_timeout_ms")]
+        timeout_ms: u64,
     },
     CommandWait {
         name: String,
@@ -746,6 +761,47 @@ fn validate_case_spec(case: &CaseSpec, cases_dir: &Path) -> Result<()> {
                 "tcp_throughput min_mib_per_sec must be finite and > 0"
             );
         }
+        if let TrafficAction::CommandStart {
+            command,
+            command_rust,
+            command_go,
+            ..
+        } = action
+        {
+            anyhow::ensure!(
+                !command.trim().is_empty(),
+                "command_start command must not be empty"
+            );
+            anyhow::ensure!(
+                command_rust
+                    .as_ref()
+                    .is_none_or(|value| !value.trim().is_empty()),
+                "command_start command_rust must not be empty"
+            );
+            anyhow::ensure!(
+                command_go
+                    .as_ref()
+                    .is_none_or(|value| !value.trim().is_empty()),
+                "command_start command_go must not be empty"
+            );
+        }
+        if let TrafficAction::CommandWaitTcp {
+            handle,
+            addr,
+            timeout_ms,
+            ..
+        } = action
+        {
+            anyhow::ensure!(
+                !handle.trim().is_empty(),
+                "command_wait_tcp handle must not be empty"
+            );
+            anyhow::ensure!(
+                !addr.trim().is_empty(),
+                "command_wait_tcp addr must not be empty"
+            );
+            anyhow::ensure!(*timeout_ms > 0, "command_wait_tcp timeout_ms must be > 0");
+        }
     }
 
     if case.covered_divergences.is_empty() {
@@ -821,7 +877,7 @@ gui_sequence:
     fn repository_cases_validate_against_s4_registry() {
         let cases_dir = Path::new(env!("CARGO_MANIFEST_DIR")).join("cases");
         let cases = load_cases(&cases_dir).expect("repository cases must validate");
-        assert_eq!(cases.len(), 126);
+        assert_eq!(cases.len(), 127);
     }
 
     #[test]

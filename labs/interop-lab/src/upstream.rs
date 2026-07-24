@@ -1578,6 +1578,15 @@ pub async fn run_traffic_plan(
                     },
                 }
             }
+            TrafficAction::CommandWaitTcp { name, addr, .. } => TrafficResult {
+                name: name.clone(),
+                success: false,
+                detail: json!({
+                    "action": "command_wait_tcp",
+                    "addr": addr,
+                    "error": "command_wait_tcp requires kernel-aware orchestrator context",
+                }),
+            },
             TrafficAction::CommandStart { name, handle, .. } => TrafficResult {
                 name: name.clone(),
                 success: false,
@@ -2811,16 +2820,22 @@ mod tests {
     async fn tcp_connect_binds_and_immediately_reuses_requested_source_port() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target = listener.local_addr().unwrap();
-        let source_probe = std::net::TcpListener::bind("127.0.0.1:0").unwrap();
+        // Keep source port outside OS ephemeral range so concurrent socket
+        // tests cannot hand us a just-used outbound port in TIME_WAIT.
+        let source_probe = (20_000..40_000)
+            .find_map(|port| std::net::TcpListener::bind(("127.0.0.1", port)).ok())
+            .expect("reserve non-ephemeral source port");
         let source_port = source_probe.local_addr().unwrap().port();
         drop(source_probe);
 
+        let (accepted_tx, mut accepted_rx) = tokio::sync::mpsc::channel(2);
         let accepted = tokio::spawn(async move {
             let mut peers = Vec::new();
             for _ in 0..2 {
                 let (stream, peer) = listener.accept().await.unwrap();
                 peers.push(peer);
                 drop(stream);
+                accepted_tx.send(()).await.unwrap();
             }
             peers
         });
@@ -2829,6 +2844,7 @@ mod tests {
                 .await
                 .unwrap();
             drop(stream);
+            accepted_rx.recv().await.unwrap();
         }
 
         let peers = accepted.await.unwrap();
