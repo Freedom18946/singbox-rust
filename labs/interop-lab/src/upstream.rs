@@ -1003,6 +1003,8 @@ async fn start_single_upstream(
                 transport_layer: None,
                 fallback: None,
                 fallback_for_alpn: HashMap::new(),
+                tls: None,
+                tls_handshake_timeout: Duration::from_secs(10),
             };
 
             let join = tokio::spawn(async move {

@@ -625,6 +625,7 @@ fn to_inbound_param(
         tls_key_pem: ib.tls_key_pem.clone(),
         tls_server_name: ib.tls_server_name.clone(),
         tls_alpn: ib.tls_alpn.clone(),
+        tls: ib.tls.clone(),
         reality: ib.reality.clone(),
         users_hysteria2,
         congestion_control: ib.congestion_control.clone(),
@@ -1185,7 +1186,9 @@ mod tests {
         router_handle_from_ir, rule_set_format, to_inbound_param, to_outbound_param,
     };
     use crate::endpoint::{Endpoint, StartStage};
-    use sb_config::ir::{ConfigIR, InboundIR, InboundType, OutboundIR, OutboundType, RuleSetIR};
+    use sb_config::ir::{
+        ConfigIR, InboundIR, InboundTlsOptionsIR, InboundType, OutboundIR, OutboundType, RuleSetIR,
+    };
     use std::sync::Arc;
 
     #[derive(Debug)]
@@ -1485,6 +1488,32 @@ mod tests {
         assert!(err
             .to_string()
             .contains("mixed inbound udp_timeout 'bad' is invalid"));
+    }
+
+    #[test]
+    fn to_inbound_param_preserves_typed_tls_options() {
+        let tls = InboundTlsOptionsIR {
+            enabled: true,
+            server_name: Some("vmess.example".to_string()),
+            alpn: Some(vec!["h2".to_string()]),
+            min_version: Some("1.3".to_string()),
+            max_version: Some("1.3".to_string()),
+            certificate_path: Some("/tmp/vmess-cert.pem".to_string()),
+            key_path: Some("/tmp/vmess-key.pem".to_string()),
+            ..Default::default()
+        };
+        let ib = InboundIR {
+            ty: InboundType::Vmess,
+            listen: "127.0.0.1".to_string(),
+            port: 443,
+            tls: Some(tls.clone()),
+            ..InboundIR::default()
+        };
+
+        let param = to_inbound_param(&ib, Arc::new(sb_common::conntrack::ConnTracker::new()))
+            .expect("VMess inbound bridge");
+
+        assert_eq!(param.tls, Some(tls));
     }
 
     #[test]

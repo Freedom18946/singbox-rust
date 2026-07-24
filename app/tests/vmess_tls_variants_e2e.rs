@@ -100,6 +100,8 @@ async fn start_vmess_tls_server(
         transport_layer: Some(TransportConfig::Tcp),
         fallback: None,
         fallback_for_alpn: HashMap::new(),
+        tls: None,
+        tls_handshake_timeout: Duration::from_secs(10),
     };
 
     tokio::spawn(async move {

@@ -189,7 +189,7 @@ adapter-shadowsocks = ["shadowsocks", "dep:sb-transport", "sb-transport/transpor
 # `register.rs` registers both Trojan directions under this product feature, so
 # keep the inbound module gate in the same closure as the outbound transport.
 adapter-trojan = ["trojan", "dep:sb-transport", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
-adapter-vmess = ["vmess", "dep:sb-transport", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde"]
+adapter-vmess = ["vmess", "dep:sb-transport", "transport_tls", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde", "dep:tokio-rustls"]
 adapter-vless = ["vless", "dep:sb-transport", "transport_mux", "transport_ws", "transport_grpc", "transport_httpupgrade", "sb-transport/serde", "dep:rustls", "dep:rustls-pki-types", "dep:tokio-rustls", "dep:webpki-roots"]
 adapter-hysteria = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile", "dep:sb-tls"]
 adapter-hysteria2 = ["dep:quinn", "dep:rustls", "dep:webpki-roots", "dep:rustls-pemfile", "dep:sb-tls", "dep:sb-transport"]

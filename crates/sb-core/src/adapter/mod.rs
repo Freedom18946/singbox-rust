@@ -83,6 +83,8 @@ pub struct InboundParam {
     pub tls_server_name: Option<String>,
     /// TLS ALPN protocols
     pub tls_alpn: Option<Vec<String>>,
+    /// Typed Go-shaped inbound TLS options.
+    pub tls: Option<sb_config::ir::InboundTlsOptionsIR>,
     /// VLESS inbound REALITY server configuration.
     pub reality: Option<InboundRealityIR>,
 
@@ -192,6 +194,7 @@ impl Default for InboundParam {
             tls_key_pem: None,
             tls_server_name: None,
             tls_alpn: None,
+            tls: None,
             reality: None,
             users_hysteria2: None,
             congestion_control: None,

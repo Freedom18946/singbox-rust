@@ -41,7 +41,7 @@ use sb_core::router::rules::Decision as RDecision;
 use sb_core::router::{RouteCtx, Transport};
 use sb_core::v2ray_stats::StatsManager;
 
-#[derive(Clone, Debug)]
+#[derive(Clone)]
 pub struct VmessInboundConfig {
     pub listen: SocketAddr,
     pub uuid: Uuid,
@@ -62,21 +62,71 @@ pub struct VmessInboundConfig {
     pub fallback: Option<SocketAddr>,
     /// Fallback targets by ALPN
     pub fallback_for_alpn: HashMap<String, SocketAddr>,
+    /// Prebuilt raw-TCP TLS acceptor. Certificate/key material is loaded before
+    /// listener startup and never re-read per connection.
+    pub tls: Option<tokio_rustls::TlsAcceptor>,
+    /// Bound each TLS handshake independently.
+    pub tls_handshake_timeout: Duration,
+}
+
+impl std::fmt::Debug for VmessInboundConfig {
+    fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
+        f.debug_struct("VmessInboundConfig")
+            .field("listen", &self.listen)
+            .field("uuid", &self.uuid)
+            .field("security", &self.security)
+            .field("tag", &self.tag)
+            .field("multiplex", &self.multiplex)
+            .field("transport_layer", &self.transport_layer)
+            .field("fallback", &self.fallback)
+            .field("fallback_for_alpn", &self.fallback_for_alpn)
+            .field("tls", &self.tls.is_some())
+            .field("tls_handshake_timeout", &self.tls_handshake_timeout)
+            .finish_non_exhaustive()
+    }
 }
 
 pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> Result<()> {
+    serve_inner(cfg, &mut stop_rx, None).await
+}
+
+async fn serve_inner(
+    cfg: VmessInboundConfig,
+    stop_rx: &mut mpsc::Receiver<()>,
+    mut ready: Option<sb_core::adapter::InboundReadySender>,
+) -> Result<()> {
     // The server honors the security type the client selects in its request
     // header (canonical VMess behavior); `cfg.security` is validated only to
     // reject obvious misconfiguration.
     match cfg.security.to_ascii_lowercase().as_str() {
-        "aes-128-gcm" | "chacha20-poly1305" | "auto" | "" => {}
-        other => return Err(anyhow!("Unsupported VMess security: {other}")),
+        "aes-128-gcm" | "chacha20-poly1305" | "auto" | "none" | "zero" | "" => {}
+        other => {
+            let error = anyhow!("Unsupported VMess security: {other}");
+            report_ready_error(&mut ready, &error);
+            return Err(error);
+        }
     }
 
     // Create listener based on transport configuration (defaults to TCP if not specified)
     // 根据传输配置创建监听器 (如果未指定则默认为 TCP)
     let transport = cfg.transport_layer.clone().unwrap_or_default();
-    let listener = transport.create_inbound_listener(cfg.listen).await?;
+    if cfg.tls.is_some()
+        && transport.transport_type() != crate::transport_config::TransportType::Tcp
+    {
+        let error = anyhow!(
+            "vmess: TLS with {:?} transport requires transport-owned termination; refusing plain or double TLS",
+            transport.transport_type()
+        );
+        report_ready_error(&mut ready, &error);
+        return Err(error);
+    }
+    let listener = match transport.create_inbound_listener(cfg.listen).await {
+        Ok(listener) => listener,
+        Err(error) => {
+            report_ready_error(&mut ready, &error);
+            return Err(error.into());
+        }
+    };
     let actual = listener.local_addr().unwrap_or(cfg.listen);
 
     info!(
@@ -86,6 +136,9 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         multiplex=?cfg.multiplex.is_some(),
         "vmess: inbound bound"
     );
+    if let Some(sender) = ready.take() {
+        let _ = sender.send(Ok(()));
+    }
 
     let mut hb = interval(Duration::from_secs(5));
     loop {
@@ -107,6 +160,49 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
                 let cfg_clone = cfg.clone();
 
                 tokio::spawn(async move {
+                    let stream = if let Some(acceptor) = &cfg_clone.tls {
+                        match tokio::time::timeout(
+                            cfg_clone.tls_handshake_timeout,
+                            acceptor.accept(stream),
+                        )
+                        .await
+                        {
+                            Ok(Ok(stream)) => {
+                                let negotiated_alpn = stream
+                                    .get_ref()
+                                    .1
+                                    .alpn_protocol()
+                                    .map(|value| String::from_utf8_lossy(value).into_owned());
+                                let negotiated_version = stream.get_ref().1.protocol_version();
+                                info!(
+                                    %peer,
+                                    alpn=?negotiated_alpn,
+                                    version=?negotiated_version,
+                                    "vmess: TLS handshake complete"
+                                );
+                                Box::new(stream) as Box<dyn crate::transport_config::InboundStream>
+                            }
+                            Ok(Err(error)) => {
+                                warn!(%peer, error=%error, "vmess: TLS handshake failed");
+                                sb_core::metrics::record_inbound_error_display("vmess", &error);
+                                return;
+                            }
+                            Err(_) => {
+                                warn!(
+                                    %peer,
+                                    timeout_ms=cfg_clone.tls_handshake_timeout.as_millis(),
+                                    "vmess: TLS handshake timed out"
+                                );
+                                sb_core::metrics::record_inbound_error_display(
+                                    "vmess",
+                                    &"TLS handshake timeout",
+                                );
+                                return;
+                            }
+                        }
+                    } else {
+                        stream
+                    };
                     if let Some(mux_cfg) = &cfg_clone.multiplex {
                         use futures::future::poll_fn;
                         use sb_transport::yamux::{Config, Connection, Mode};
@@ -155,6 +251,15 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
         }
     }
     Ok(())
+}
+
+fn report_ready_error<E: std::fmt::Display>(
+    ready: &mut Option<sb_core::adapter::InboundReadySender>,
+    error: &E,
+) {
+    if let Some(sender) = ready.take() {
+        let _ = sender.send(Err(std::io::Error::other(error.to_string())));
+    }
 }
 
 async fn handle_fallback(
@@ -385,7 +490,7 @@ pub fn parse_vmess_request(data: &[u8]) -> Result<(String, u16, u8)> {
 }
 
 use parking_lot::Mutex;
-use sb_core::adapter::InboundTaskDriver;
+use sb_core::adapter::{InboundReadySender, InboundTaskDriver};
 
 #[derive(Debug)]
 pub struct VmessInboundAdapter {
@@ -404,11 +509,22 @@ impl VmessInboundAdapter {
 
 impl InboundTaskDriver for VmessInboundAdapter {
     fn serve(&self) -> std::io::Result<()> {
-        let (tx, rx) = mpsc::channel(1);
+        self.serve_with_ready(None)
+    }
+
+    fn supports_startup_readiness(&self) -> bool {
+        true
+    }
+
+    fn serve_with_ready(&self, ready: Option<InboundReadySender>) -> std::io::Result<()> {
+        let (tx, mut rx) = mpsc::channel(1);
         *self.stop_tx.lock() = Some(tx);
 
-        let rt = tokio::runtime::Handle::current();
-        rt.block_on(async { serve(self.config.clone(), rx).await })
+        let rt = tokio::runtime::Builder::new_current_thread()
+            .enable_all()
+            .build()
+            .map_err(std::io::Error::other)?;
+        rt.block_on(async { serve_inner(self.config.clone(), &mut rx, ready).await })
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
 

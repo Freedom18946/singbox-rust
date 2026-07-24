@@ -285,6 +285,7 @@ dependencies = [
  "jsonschema 0.25.1",
  "jsonwebtoken",
  "lazy_static",
+ "libc",
  "loom",
  "maxminddb",
  "metrics 0.24.3",

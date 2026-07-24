@@ -52,7 +52,7 @@ had no TLS runtime dependency or termination.
 | `insecure` | client skips certificate verification | client-only; inbound use is rejected, never auto-generates a cert |
 | multiplex | mux is above physical VMess dial path | project yamux remains outer to TLS physical connection; not Go mux |
 | security `auto` with TLS | Go selects `zero` | SECURITY_NONE request byte, option=0, raw TCP body after protected AEAD headers |
-| startup/reload/close | TLS config starts/closes with adapter | material read and rustls config built once; lifecycle proof pending |
+| startup/reload/close | TLS config starts/closes with adapter | material is parsed before bind; acceptor is reused; readiness and graceful close are live-tested |
 
 ## Config and TLS Lowering
 
@@ -80,10 +80,34 @@ inside TLS while keeping AEAD request/response headers. Rust implements that
 mode without changing AES-128-GCM or ChaCha20-Poly1305. Plain `auto` remains AES
 on this architecture; TLS `auto` selects zero.
 
+## Inbound Raw-TCP TLS Closure
+
+The primary production path is `app run` → supervisor → bridge → canonical
+adapter registry. `InboundTlsOptionsIR` now survives that bridge as a typed
+dependency. The VMess registry builder lowers it and constructs a reusable
+`TlsAcceptor` before the listener can report ready. The compatibility starter
+was audited and wired too; malformed certificate/key input refuses startup in
+both paths instead of producing a plain listener.
+
+The VMess accept loop owns TLS only for raw TCP. Each accepted socket receives
+one bounded server handshake before project yamux or canonical VMess parsing.
+Handshake failure records a VMess inbound error and closes that connection;
+there is no plaintext retry or parser probe. Successful handshakes log only
+negotiated ALPN/version metadata. Private-key and PEM contents are not logged.
+TLS plus a non-TCP V2Ray transport currently fails startup explicitly; group E
+will move ownership into those transports without double termination.
+
+Production live testing exposed and fixed a separate startup defect:
+`VmessInboundAdapter::serve` called `tokio::runtime::Handle::current()` from the
+supervisor's dedicated inbound thread, which has no Tokio reactor. The adapter
+now owns a current-thread runtime, reports readiness only after bind, accepts
+shutdown through the existing driver channel, and exits cleanly on app SIGTERM.
+
 ## Evidence So Far
 
 - ledger correction: `ce99c0a1ab4cd82c42a021d00f364b76a9b6d0ac`
 - config/TLS lowering: `74fd5f68ef276fd53d4df7b4db92a191487c8c0d`
+- outbound TLS closure: `248c84a4349a0d2b0bf08c7c04a159bed35c3163`
 - config focused tests: 7 passed, 0 failed, 0 ignored
 - shared TLS focused tests: 12 passed, 0 failed, 0 ignored
 - adapter TLS-lowering focused tests: 4 passed, 0 failed, 0 ignored
@@ -95,6 +119,16 @@ on this architecture; TLS `auto` selects zero.
   0 ignored; TLS 1.2/1.3, verified local CA, correct/wrong SNI,
   untrusted CA, insecure, no-version-overlap, explicit AES/zero,
   TLS-auto zero, 32 KiB+ payload, and three repeated connections covered
+- typed inbound TLS bridge regression: 1 passed, 0 failed, 0 ignored
+- Go 1.13.13 client → production Rust app: 4 tests passed, 0 failed,
+  0 ignored; TLS 1.2/1.3, ALPN, correct/wrong SNI, untrusted CA, wrong UUID,
+  malformed-key pre-readiness rejection, 20/32 KiB+ payload, three repeated
+  connections, graceful shutdown, and plain VMess covered
+- production pre-fix run: 0 passed, 3 failed because the registry VMess inbound
+  thread panicked with `there is no reactor running`; the runtime/readiness fix
+  makes the same three dataplanes pass, and the suite now carries four tests
+- canonical VMess unit regressions: 11 passed, 0 failed, 0 ignored
+- app multiplex/protocol-chain focused regressions: 14 passed, 0 failed, 0 ignored
 - plain project-yamux VMess regression: 6 passed, 0 failed, 0 ignored
 
 Remaining sections—live matrices, strict interop IDs, Linux verdict, full gates,

@@ -956,6 +956,21 @@ fn start_vmess_inbound(
             }
         };
 
+        let tls = match sb_adapters::standard_tls::lower_vmess_inbound_tls(ib) {
+            Ok(Some(config)) => match sb_transport::build_standard_tls_acceptor(&config) {
+                Ok(acceptor) => Some(acceptor),
+                Err(error) => {
+                    warn!(addr=%listen_str, error=%error, "vmess inbound: invalid TLS config; refusing to start");
+                    return None;
+                }
+            },
+            Ok(None) => None,
+            Err(error) => {
+                warn!(addr=%listen_str, error=%error, "vmess inbound: invalid TLS config; refusing to start");
+                return None;
+            }
+        };
+
         let cfg = VmessInboundConfig {
             listen: addr,
             uuid,
@@ -971,6 +986,8 @@ fn start_vmess_inbound(
             transport_layer: None,
             fallback,
             fallback_for_alpn,
+            tls,
+            tls_handshake_timeout: std::time::Duration::from_secs(10),
         };
         let listen_str_log = listen_str.clone();
         let join = tokio::spawn(async move {

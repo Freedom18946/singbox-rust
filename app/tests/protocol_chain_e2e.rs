@@ -193,6 +193,8 @@ async fn start_vmess_server(
         transport_layer: None,
         fallback: None,
         fallback_for_alpn: std::collections::HashMap::new(),
+        tls: None,
+        tls_handshake_timeout: Duration::from_secs(10),
     };
 
     tokio::spawn(async move {

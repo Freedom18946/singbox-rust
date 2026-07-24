@@ -55,6 +55,8 @@ async fn test_vmess_inbound_with_websocket_transport() {
         transport_layer: Some(TransportConfig::WebSocket(ws_config)),
         fallback: None,
         fallback_for_alpn: std::collections::HashMap::new(),
+        tls: None,
+        tls_handshake_timeout: std::time::Duration::from_secs(10),
     };
 
     // Verify configuration
@@ -82,6 +84,8 @@ async fn test_vmess_inbound_tcp_fallback() {
         transport_layer: None, // No transport specified - should default to TCP
         fallback: None,
         fallback_for_alpn: std::collections::HashMap::new(),
+        tls: None,
+        tls_handshake_timeout: std::time::Duration::from_secs(10),
     };
 
     // Verify that None transport_layer is accepted (TCP fallback)
@@ -136,6 +140,8 @@ async fn test_vmess_security_methods() {
         transport_layer: None,
         fallback: None,
         fallback_for_alpn: std::collections::HashMap::new(),
+        tls: None,
+        tls_handshake_timeout: std::time::Duration::from_secs(10),
     };
     assert_eq!(config_aes.security, "aes-128-gcm");
 
@@ -152,6 +158,8 @@ async fn test_vmess_security_methods() {
         transport_layer: None,
         fallback: None,
         fallback_for_alpn: std::collections::HashMap::new(),
+        tls: None,
+        tls_handshake_timeout: std::time::Duration::from_secs(10),
     };
     assert_eq!(config_chacha.security, "chacha20-poly1305");
 }

@@ -1315,6 +1315,21 @@ fn build_vmess_inbound(
         None => "auto".to_string(),
     };
 
+    let tls = match crate::standard_tls::lower_vmess_inbound_tls_options(param.tls.as_ref()) {
+        Ok(Some(config)) => match sb_transport::build_standard_tls_acceptor(&config) {
+            Ok(acceptor) => Some(acceptor),
+            Err(error) => {
+                warn!("VMess inbound TLS config invalid: {error}");
+                return None;
+            }
+        },
+        Ok(None) => None,
+        Err(error) => {
+            warn!("{error}");
+            return None;
+        }
+    };
+
     let config = VmessInboundConfig {
         listen,
         uuid,
@@ -1327,6 +1342,8 @@ fn build_vmess_inbound(
         transport_layer: None,
         fallback: None,
         fallback_for_alpn: std::collections::HashMap::new(),
+        tls,
+        tls_handshake_timeout: std::time::Duration::from_secs(10),
     };
 
     Some(Arc::new(VmessInboundAdapter::new(config)))

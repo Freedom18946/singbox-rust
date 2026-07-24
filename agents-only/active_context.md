@@ -6,7 +6,7 @@
 > Other docs point here, not copy.
 
 ---
-## Resume (2026-07-24) - VMESS-TLS-01 outbound TLS DONE
+## Resume (2026-07-24) - VMESS-TLS-01 raw TCP TLS bidirectional DONE
 
 - Go 1.13.13 source audit fixed raw/transport TLS ownership, disabled/default,
   SNI/ALPN/version/material/custom-root/insecure, mux, and lifecycle contracts.
@@ -17,7 +17,12 @@
 - Production VMess outbound now consumes TLS options. Go-compatible TCP zero mode
   closes `auto+TLS`; live Rust→Go TLS 1.2/1.3, CA/SNI/insecure/version negatives,
   multi-connection, and 32 KiB+ echo pass.
-- Inbound termination, WS bidirectional proof, strict interop, and Linux proof remain active.
+- Production VMess inbound now prebuilds its TLS acceptor, reports bind readiness,
+  bounds handshakes, and enters VMess/mux only after TLS. Live Go→Rust TLS 1.2/1.3,
+  ALPN, SNI/CA/UUID negatives, malformed-key startup rejection, repeated 32 KiB+
+  echo, graceful shutdown, and plain regression pass.
+- WS/HTTPUpgrade transport ownership, ignored-test replacement, strict interop,
+  and Linux proof remain active.
   Evidence: `archive/vmess_tls_01/acceptance.md`.
 
 ## Resume (2026-07-24) - dual-kernel strict ledger correction DONE
