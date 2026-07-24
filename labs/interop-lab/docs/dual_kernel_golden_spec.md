@@ -640,7 +640,7 @@ These cases should **never** be promoted to `kernel_mode: both`:
 |--------|---------|-------|
 | Both-mode case ratio | both cases / total cases | 51.6% (65/126) |
 | Behavioral coverage (all) | BHVs with ≥1 both case / total BHVs | 94.9% (75/79) |
-| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 82.3% (65/79) |
+| Behavioral coverage (strict) | BHVs with ≥1 strict both case / total BHVs | 94.9% (75/79) |
 | GUI endpoint coverage | GUI BHVs (CP.1+CP.2) with both case / GUI BHVs | 100.0% (11/11) |
 | GUI endpoint coverage (strict) | GUI BHVs with strict both case / GUI BHVs | 100.0% (11/11) |
 | MIG-02 divergence coverage | DIV-C/H BHVs with both case / DIV-C/H BHVs | 55.6% (5/9) |
@@ -649,6 +649,12 @@ These cases should **never** be promoted to `kernel_mode: both`:
 > See S1 reclassification note. Remaining gaps: 3 SV.2 (STRUCTURAL) + 1 LC (NOT-FEASIBLE).
 > The 2026-07-23 Clash API strict-wire closeout changed divergence status, not the S6 numerator:
 > all eight cases and their BHVs were already counted as strict/both before the replay.
+> **Ledger correction (2026-07-24)**: strict behavioral coverage was incorrectly copied from
+> the both-case inventory (`65`) instead of counting distinct BHVs referenced by at least one
+> strict both-case. Mechanical validation confirms all 75 covered BHVs have strict evidence;
+> this correction changes no case, BHV, denominator, implementation, or open-gap status.
+> Run `scripts/tools/validation/validate-dual-kernel-ledger.sh` to recompute case inventory,
+> validate every S3 Both Cases reference, and verify these S6 metrics.
 
 ### Projected Coverage by Tier
 

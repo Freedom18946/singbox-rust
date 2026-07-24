@@ -28,6 +28,11 @@ pub enum TopCommand {
     },
     /// Collect a read-only snapshot from the running Go Clash API.
     GoSnapshot(GoSnapshotArgs),
+    /// Audit dual-kernel behavior ledger accounting.
+    Ledger {
+        #[command(subcommand)]
+        command: LedgerCommand,
+    },
 }
 
 #[derive(Debug, clap::Args)]
@@ -89,6 +94,19 @@ pub enum ReportCommand {
         /// Print report markdown body as well.
         #[arg(long)]
         print: bool,
+    },
+}
+
+#[derive(Debug, Subcommand)]
+pub enum LedgerCommand {
+    /// Validate S3 case references and S6 metrics against case YAML.
+    Validate {
+        /// Authoritative dual-kernel golden spec.
+        #[arg(
+            long,
+            default_value = "labs/interop-lab/docs/dual_kernel_golden_spec.md"
+        )]
+        spec: PathBuf,
     },
 }
 

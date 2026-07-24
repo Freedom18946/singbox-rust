@@ -6,6 +6,7 @@ mod go_collector;
 mod gui_replay;
 mod kernel;
 mod leak_detector;
+mod ledger;
 mod orchestrator;
 mod report;
 mod snapshot;
@@ -17,8 +18,8 @@ use anyhow::{Context, Result};
 use case_spec::{EnvClass, KernelMode, Priority};
 use clap::Parser;
 use cli::{
-    CaseCommand, Cli, EnvClassArg, GoSnapshotArgs, KernelModeArg, PriorityArg, ReportCommand,
-    TopCommand,
+    CaseCommand, Cli, EnvClassArg, GoSnapshotArgs, KernelModeArg, LedgerCommand, PriorityArg,
+    ReportCommand, TopCommand,
 };
 use diff_report::diff_latest_case;
 use go_collector::{collect_go_snapshot, save_go_snapshot};
@@ -44,6 +45,23 @@ async fn main() -> Result<()> {
         }
         TopCommand::Report { command } => handle_report_command(command, &artifacts_dir).await,
         TopCommand::GoSnapshot(args) => handle_go_snapshot(args, &artifacts_dir).await,
+        TopCommand::Ledger { command } => handle_ledger_command(command, &cases_dir),
+    }
+}
+
+fn handle_ledger_command(command: LedgerCommand, cases_dir: &Path) -> Result<()> {
+    match command {
+        LedgerCommand::Validate { spec } => {
+            let metrics = ledger::validate_ledger(cases_dir, &spec)?;
+            println!("ledger=PASS");
+            println!("cases.total={}", metrics.total_cases);
+            println!("cases.both={}", metrics.both_cases);
+            println!("cases.strict_both={}", metrics.strict_both_cases);
+            println!("bhv.total={}", metrics.total_behaviors);
+            println!("bhv.covered_all={}", metrics.all_covered_behaviors);
+            println!("bhv.covered_strict={}", metrics.strict_covered_behaviors);
+            Ok(())
+        }
     }
 }
 

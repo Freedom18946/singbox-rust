@@ -1,6 +1,6 @@
 # Scripts Map
 
-> Last updated: 2026-07-13
+> Last updated: 2026-07-24
 > Scope: top-level `scripts/` only. This file exists to stop agents from guessing old paths, old binary names, or stale CI assumptions.
 
 ## What `scripts/` is
@@ -56,6 +56,7 @@ scripts/
 | Preflight | `scripts/tools/preflight.sh` | Local pre-commit / release-prep checks |
 | Release matrix | `scripts/tools/release/release-matrix.sh` | Current release packaging entrypoint |
 | Metrics validator | `scripts/tools/validation/validate-metrics.sh` | Current validator path |
+| Dual-kernel ledger validator | `scripts/tools/validation/validate-dual-kernel-ledger.sh` | Parses case YAML + S3/S6 Markdown; rejects missing/non-both references and metric drift |
 | Bench acceptance | `scripts/test/bench/l19_perf_acceptance.sh` | Still consumes `scripts/l18/perf_gate.sh` |
 
 ## Binary and crate mapping

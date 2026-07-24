@@ -6,6 +6,15 @@
 > Other docs point here, not copy.
 
 ---
+## Resume (2026-07-24) - dual-kernel strict ledger correction DONE
+
+- Added a typed case-YAML + structured S3/S6 Markdown validator at
+  `scripts/tools/validation/validate-dual-kernel-ledger.sh`, with eight drift/error regressions.
+- Mechanical result: 126 cases, 65 both, all 65 both cases strict; 79 active BHVs, 75 covered,
+  and all 75 covered BHVs carry strict both-case evidence.
+- Corrected S6 strict behavioral coverage from the mistakenly copied both-case count to
+  **75/79 (94.9%)**. This is ledger-only: no case/BHV/denominator/implementation/gap movement.
+
 ## Resume (2026-07-23) - Clash API strict-wire parity CLOSED
 
 - Eight scoped Clash API cases passed live `--kernel both`; all final normalized diffs are clean
