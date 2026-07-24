@@ -6,7 +6,7 @@
 > Other docs point here, not copy.
 
 ---
-## Resume (2026-07-24) - VMESS-TLS-01 transport layering DONE; acceptance active
+## Resume (2026-07-24) - VMESS-TLS-01 strict local regressions DONE; acceptance active
 
 - VMess raw TCP and WebSocket/HTTPUpgrade, with and without standard TLS, pass
   live Rust→Go and Go→production-Rust dataplanes. TLS is built once and owned by
@@ -21,8 +21,11 @@
   invalid versions, and incomplete identities instead of falling back to TCP/plain.
 - Raw TLS live coverage includes TLS 1.2/1.3, ALPN, SNI/CA/UUID/version negatives,
   repeated 32 KiB+ echo, startup readiness, and graceful shutdown.
-- Remaining: replace five ignored/fake variant tests, add repeated strict
-  dual-kernel production cases, run Linux proof/full gates, then close archive.
+- Replaced five ignored/fake TLS variants with nine real local E2E tests. Twenty
+  16-thread rounds passed (180/0/0). Stress exposed and fixed cancellation of
+  in-progress TLS accepts by heartbeat/task-reap select branches.
+- Remaining: add repeated strict dual-kernel production cases, run Linux
+  proof/full gates, then close archive.
   Evidence: `archive/vmess_tls_01/acceptance.md`.
 
 ## Resume (2026-07-24) - dual-kernel strict ledger correction DONE

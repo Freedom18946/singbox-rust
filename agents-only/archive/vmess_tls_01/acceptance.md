@@ -142,12 +142,38 @@ falls back to plaintext.
 | HTTPUpgrade + TLS | yes | yes | yes | yes | yes | pending group G | no |
 | TLS + project yamux | no | yes | yes | Rust↔Rust | Rust↔Rust | local live E2E | canonical `v1.mux.cool` |
 
+## Strict Local TLS Regression Closure
+
+`app/tests/vmess_tls_variants_e2e.rs` no longer contains five ignored
+standard-TLS cases, bind-error skips, fixed readiness sleeps, fake REALITY/ECH
+E2E labels, or error-is-acceptable passes. Nine unignored tests build a local
+ephemeral CA/leaf in memory and exercise production VMess accept/connect paths
+with bounded readiness, I/O, handshakes, and teardown.
+
+Positive coverage proves verified standard TLS, negotiated ALPN, negotiated
+TLS 1.2/1.3, project yamux, and byte-exact 1-byte through 32-KiB-plus payloads.
+Negative coverage proves untrusted CA, wrong name, expired/not-yet-valid leaf,
+missing key, malformed PEM, no common TLS version, Go-equivalent ALPN
+no-overlap rejection, plain-to-TLS, TLS-to-plain, wrong UUID after TLS,
+handshake timeout, and peer close during handshake. Direct rustls pairs expose
+negotiated ALPN/version and certificate errors; identical configurations
+separately traverse real VMess dataplanes.
+
+Stress exposed a production cancellation bug: VMess `accept()` contains the
+TLS/HTTP transport handshake but was recreated inside `select!`. The
+immediately-ready heartbeat, and later task reaping, could drop that future
+after TCP accept and reset a valid TLS client. The heartbeat is removed; one
+pinned accept future now survives task-reap branches. Connection and mux-stream
+tasks are tracked and aborted/drained on shutdown. Final 16-thread full-binary
+stress: 20 rounds, 180 passed, 0 failed, 0 ignored.
+
 ## Evidence So Far
 
 - ledger correction: `ce99c0a1ab4cd82c42a021d00f364b76a9b6d0ac`
 - config/TLS lowering: `74fd5f68ef276fd53d4df7b4db92a191487c8c0d`
 - outbound TLS closure: `248c84a4349a0d2b0bf08c7c04a159bed35c3163`
 - inbound TLS closure: `426ef5e405c5e35193e9385fba60ca208aaf7120`
+- transport/multiplex closure: `786ea4e08544b0ee4179c37e5f0ddce61d7fd562`
 - config focused tests: 7 passed, 0 failed, 0 ignored
 - shared TLS focused tests: 12 passed, 0 failed, 0 ignored
 - adapter TLS-lowering focused tests: 4 passed, 0 failed, 0 ignored
@@ -177,6 +203,8 @@ falls back to plaintext.
 - project TLS-yamux regression: 4 logical VMess streams over 1 verified TLS
   physical connection; non-mux negative opens a separate verified connection
   and receives no echo
+- strict local TLS regression: 9 passed, 0 failed, 0 ignored per round; 20
+  consecutive 16-thread rounds produced 180 passed, 0 failed, 0 ignored
 
 Remaining sections—live matrices, strict interop IDs, Linux verdict, full gates,
 inventory accounting, and complete commit list—will be filled only from final

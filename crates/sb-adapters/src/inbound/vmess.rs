@@ -24,7 +24,8 @@ use std::sync::Arc;
 use tokio::io::{AsyncReadExt, AsyncWriteExt};
 use tokio::select;
 use tokio::sync::mpsc;
-use tokio::time::{interval, Duration};
+use tokio::task::JoinSet;
+use tokio::time::Duration;
 use tracing::{debug, info, warn};
 use uuid::Uuid;
 
@@ -90,19 +91,34 @@ pub async fn serve(cfg: VmessInboundConfig, mut stop_rx: mpsc::Receiver<()>) -> 
     serve_inner(cfg, &mut stop_rx, None).await
 }
 
+enum StartupReporter {
+    Ready(sb_core::adapter::InboundReadySender),
+    Bound(tokio::sync::oneshot::Sender<std::io::Result<SocketAddr>>),
+}
+
 /// Run VMess with an explicit startup-readiness result.
 pub async fn serve_with_ready(
     cfg: VmessInboundConfig,
     mut stop_rx: mpsc::Receiver<()>,
     ready: sb_core::adapter::InboundReadySender,
 ) -> Result<()> {
-    serve_inner(cfg, &mut stop_rx, Some(ready)).await
+    serve_inner(cfg, &mut stop_rx, Some(StartupReporter::Ready(ready))).await
+}
+
+/// Run VMess and report the actual bound address, including an OS-assigned
+/// port when the configured listen port is zero.
+pub async fn serve_with_bound(
+    cfg: VmessInboundConfig,
+    mut stop_rx: mpsc::Receiver<()>,
+    bound: tokio::sync::oneshot::Sender<std::io::Result<SocketAddr>>,
+) -> Result<()> {
+    serve_inner(cfg, &mut stop_rx, Some(StartupReporter::Bound(bound))).await
 }
 
 async fn serve_inner(
     cfg: VmessInboundConfig,
     stop_rx: &mut mpsc::Receiver<()>,
-    mut ready: Option<sb_core::adapter::InboundReadySender>,
+    mut startup: Option<StartupReporter>,
 ) -> Result<()> {
     // The server honors the security type the client selects in its request
     // header (canonical VMess behavior); `cfg.security` is validated only to
@@ -111,7 +127,7 @@ async fn serve_inner(
         "aes-128-gcm" | "chacha20-poly1305" | "auto" | "none" | "zero" | "" => {}
         other => {
             let error = anyhow!("Unsupported VMess security: {other}");
-            report_ready_error(&mut ready, &error);
+            report_startup_error(&mut startup, &error);
             return Err(error);
         }
     }
@@ -125,7 +141,7 @@ async fn serve_inner(
     {
         Ok(listener) => listener,
         Err(error) => {
-            report_ready_error(&mut ready, &error);
+            report_startup_error(&mut startup, &error);
             return Err(error.into());
         }
     };
@@ -138,18 +154,31 @@ async fn serve_inner(
         multiplex=?cfg.multiplex.is_some(),
         "vmess: inbound bound"
     );
-    if let Some(sender) = ready.take() {
-        let _ = sender.send(Ok(()));
+    if let Some(reporter) = startup.take() {
+        match reporter {
+            StartupReporter::Ready(sender) => {
+                let _ = sender.send(Ok(()));
+            }
+            StartupReporter::Bound(sender) => {
+                let _ = sender.send(Ok(actual));
+            }
+        }
     }
 
-    let mut hb = interval(Duration::from_secs(5));
+    let mut connections = JoinSet::new();
+    // `InboundListener::accept` may include TLS and V2Ray handshakes, so it is
+    // not cancellation-safe. Keep one future alive across task-reap branches.
+    let mut accepting = Box::pin(listener.accept());
     loop {
         select! {
             _ = stop_rx.recv() => break,
-            _ = hb.tick() => {
-                // debug!("vmess: accept-loop heartbeat");
+            Some(result) = connections.join_next(), if !connections.is_empty() => {
+                if let Err(error) = result {
+                    warn!(%error, "vmess: connection task failed");
+                }
             }
-            r = listener.accept() => {
+            r = &mut accepting => {
+                accepting.set(listener.accept());
                 let (stream, peer) = match r {
                     Ok(v) => v,
                     Err(e) => {
@@ -161,7 +190,7 @@ async fn serve_inner(
                 };
                 let cfg_clone = cfg.clone();
 
-                tokio::spawn(async move {
+                connections.spawn(async move {
                     if let Some(mux_cfg) = &cfg_clone.multiplex {
                         use futures::future::poll_fn;
                         use sb_transport::yamux::{Config, Connection, Mode};
@@ -170,11 +199,12 @@ async fn serve_inner(
                         let mut config = Config::default();
                         config.set_max_num_streams(mux_cfg.max_num_streams);
                         let mut connection = Connection::new(stream.compat(), config, Mode::Server);
+                        let mut streams = JoinSet::new();
                         while let Some(result) = poll_fn(|cx| connection.poll_next_inbound(cx)).await {
                             match result {
                                 Ok(stream) => {
                                     let cfg_inner = cfg_clone.clone();
-                                    tokio::spawn(async move {
+                                    streams.spawn(async move {
                                         use tokio_util::compat::FuturesAsyncReadCompatExt;
                                         let mut stream = stream.compat();
                                         if let Err(e) = handle_conn_stream(
@@ -192,6 +222,8 @@ async fn serve_inner(
                                 }
                             }
                         }
+                        streams.abort_all();
+                        while streams.join_next().await.is_some() {}
                     } else {
                         let mut stream = stream;
                         if let Err(e) = handle_conn_stream(
@@ -209,15 +241,22 @@ async fn serve_inner(
             }
         }
     }
+    connections.abort_all();
+    while connections.join_next().await.is_some() {}
     Ok(())
 }
 
-fn report_ready_error<E: std::fmt::Display>(
-    ready: &mut Option<sb_core::adapter::InboundReadySender>,
-    error: &E,
-) {
-    if let Some(sender) = ready.take() {
-        let _ = sender.send(Err(std::io::Error::other(error.to_string())));
+fn report_startup_error<E: std::fmt::Display>(startup: &mut Option<StartupReporter>, error: &E) {
+    if let Some(reporter) = startup.take() {
+        let error = std::io::Error::other(error.to_string());
+        match reporter {
+            StartupReporter::Ready(sender) => {
+                let _ = sender.send(Err(error));
+            }
+            StartupReporter::Bound(sender) => {
+                let _ = sender.send(Err(error));
+            }
+        }
     }
 }
 
@@ -483,7 +522,8 @@ impl InboundTaskDriver for VmessInboundAdapter {
             .enable_all()
             .build()
             .map_err(std::io::Error::other)?;
-        rt.block_on(async { serve_inner(self.config.clone(), &mut rx, ready).await })
+        let startup = ready.map(StartupReporter::Ready);
+        rt.block_on(async { serve_inner(self.config.clone(), &mut rx, startup).await })
             .map_err(|e| std::io::Error::other(e.to_string()))
     }
 
