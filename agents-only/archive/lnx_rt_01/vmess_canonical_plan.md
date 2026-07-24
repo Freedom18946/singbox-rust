@@ -85,4 +85,13 @@ sing-box wrappers: `protocol/vmess/{outbound,inbound}.go`, `option/vmess.go`.
 - Canonical `v1.mux.cool` CommandMux: the repo keeps yamux-outer mux; each substream runs
   canonical VMess. Go mux interop is a separate card.
 - UDP/packet VMess: out of scope; TCP dataplane only.
+
+## Scope Correction (2026-07-24)
+
+This closed task established canonical VMess AEAD over TCP only. Its historical
+note that `vmess_tls_variants_e2e` passed was regression evidence for the tests
+available at that time; it did not prove production standard-TLS ownership,
+configuration lowering, transport composition, or crossed Go/Rust TLS
+dataplanes. Those separate requirements were implemented and accepted later by
+VMESS-TLS-01; see `agents-only/archive/vmess_tls_01/acceptance.md`.
 </content>

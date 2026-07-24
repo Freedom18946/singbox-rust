@@ -1,7 +1,7 @@
 <!-- tier: C -->
 # VMESS-TLS-01 Acceptance
 
-Status: IN PROGRESS
+Status: CLOSED (2026-07-24)
 
 ## Scope
 
@@ -313,6 +313,17 @@ target/registry/git volumes and restored repeatable execution.
 - transport/multiplex closure: `786ea4e08544b0ee4179c37e5f0ddce61d7fd562`
 - strict local TLS matrix: `98de7cae36f3a07452c15c3109de36fe587dcd55`
 - strict dual-kernel case: `31e97570d07cabe92282c332b70109256216ebcb`
+- Linux/full-gate hardening: `d9cdc74b8b58a2a498b2a30f5a159edb7cb94e3b`
 
-Group H implementation/evidence commit and final closeout commit are appended
-after their hashes exist.
+The final archive/status commit is the commit containing this CLOSED line; its
+hash is recorded in the task handoff because a commit cannot contain its own
+stable hash.
+
+## Closure Verdict
+
+VMESS-TLS-01 is production-ready within its declared scope. macOS and Linux
+prove production standard TLS, crossed Go/Rust dataplanes, strict both-kernel
+parity, transport composition, project-yamux ordering, negative behavior,
+fail-loud configuration, and clean shutdown. No scoped test is ignored, no
+plaintext fallback exists, and no further VMESS-TLS-01 implementation action
+remains.

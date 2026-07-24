@@ -6,7 +6,7 @@
 > Other docs point here, not copy.
 
 ---
-## Resume (2026-07-24) - VMESS-TLS-01 implementation + full gates DONE; final closeout active
+## Resume (2026-07-24) - VMESS-TLS-01 CLOSED
 
 - Production raw TCP, WebSocket, HTTPUpgrade, and project-yamux VMess paths own
   standard TLS exactly once and pass live Rust→Go plus Go→production-Rust tests.
@@ -26,8 +26,10 @@
   ANSI-free production logs, parallel source-port reuse testing, and cold Linux
   startup budget. No VMess special case or weakened assertion was added.
 - Ledger remains coverage-neutral: 127 cases, 66 both/strict, 75/79 BHV.
-  Remaining action: final archive correction/status, commit hashes, clean-tree
-  audit, commit, and push. Evidence: `archive/vmess_tls_01/acceptance.md`.
+  No scoped implementation action remains. Do not reopen this line for canonical
+  Go mux, packet/XUDP, REALITY, ECH, or legacy alterId/CFB; those require separate
+  mandates. Existing four BHV gaps are upstream-structural/not-feasible.
+  Evidence: `archive/vmess_tls_01/acceptance.md`.
 
 ## Resume (2026-07-24) - dual-kernel strict ledger correction DONE
 
