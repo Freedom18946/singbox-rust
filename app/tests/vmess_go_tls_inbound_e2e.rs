@@ -101,7 +101,12 @@ fn app_binary() -> PathBuf {
 }
 
 fn go_binary() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../go_fork_source/sing-box-1.13.13/sing-box")
+    std::env::var_os("INTEROP_GO_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../go_fork_source/sing-box-1.13.13/sing-box")
+        })
 }
 
 async fn unused_loopback_addr() -> SocketAddr {
@@ -250,6 +255,7 @@ async fn start_rust_app_with_transport(
         .arg("run")
         .arg("-c")
         .arg(&config_path)
+        .env("NO_COLOR", "1")
         .stdin(Stdio::null())
         .stdout(Stdio::from(stdout))
         .stderr(Stdio::from(stderr))

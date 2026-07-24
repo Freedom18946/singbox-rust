@@ -219,48 +219,100 @@ normalized diff was `clean=true`, `traffic_mismatches=0`, and `gate_score=0`:
 Ledger effect is coverage-neutral: inventory moves to 127 cases and 66 strict
 both cases; distinct covered behavior remains 75/79.
 
-## Evidence So Far
+## Group H Full-Gate Evidence
+
+### macOS
+
+- `cargo test -p sb-config vmess_ -- --nocapture`: 17 passed, 0 failed,
+  0 ignored across library and integration targets.
+- `cargo test -p sb-transport --features
+  'transport_tls transport_ws transport_httpupgrade transport_mux'`: 152 passed,
+  0 failed, 1 unrelated ignored.
+- `cargo test -p sb-adapters --features adapter-vmess vmess`: 18 passed,
+  0 failed, 0 ignored.
+- production app live suites: TLS variants 9/9, Rust outbound→Go 6/6,
+  Go→production Rust inbound 7/7, TLS-yamux 1/1, plain yamux 6/6,
+  protocol chain 8/8, WebSocket outbound 4/4, and WebSocket inbound 5/5.
+  No scoped test failed or was ignored.
+- strict local TLS stress: 20 rounds × 9 tests = 180 passed, 0 failed,
+  0 ignored under 16 test threads.
+- strict both-kernel case: 20/20 repeated runs passed; 40/40 kernel snapshots
+  passed; 20/20 normalized diffs were clean with zero traffic mismatch and
+  gate score zero.
+- `cargo test -p interop-lab`: 61 passed, 0 failed, 0 ignored. The fixed-source
+  port regression also passed five isolated repeats and the normal parallel
+  suite.
+- acceptance app build, default app check, repository `make clippy`,
+  focused all-feature/all-target adapter Clippy, `cargo fmt --all --check`,
+  `git diff --check`, boundary validation (430 assertions), consistency
+  validation, and typed dual-kernel ledger validation all passed.
+
+### Linux
+
+Docker Desktop 4.82.0 supplied Engine 29.6.1 on Linux arm64 with overlayfs.
+The reusable test image was `singbox-rust-dev:1.92-alpine`; Rust and Cargo were
+pinned to 1.92.0. The Go oracle was built from the pinned 1.13.13 fork with
+Go 1.25.10, `CGO_ENABLED=0`, and `with_clash_api`; its reported revision was
+`31e97570d07cabe92282c332b70109256216ebcb`.
+
+- production TLS variants: 9 passed, 0 failed, 0 ignored.
+- Rust outbound→Go server: 6 passed, 0 failed, 0 ignored.
+- Go client→production Rust inbound: 7 passed, 0 failed, 0 ignored.
+- project TLS-yamux: 1 passed, 0 failed, 0 ignored.
+- `cargo check -p app --features acceptance,clash_api,adapters`: passed.
+- `cargo clippy -p sb-adapters --features adapter-vmess --lib --tests`:
+  passed with only pre-existing warnings.
+- final strict both-kernel run:
+  `20260724T103124Z-3b7affcf-3691-4846-9f79-a6a6565dfb5d`, outcome PASS.
+
+Docker's sparse disk cap was expanded from 61,035 MiB to 81,920 MiB after a
+no-space linker failure. No image, container, volume, or Cargo cache was
+deleted. A prior no-space event had left the stargz snapshot metadata
+inconsistent; switching the snapshotter to overlayfs preserved the named
+target/registry/git volumes and restored repeatable execution.
+
+## Red-Team Fixes During Full Gates
+
+- Background-command resolution expanded `${INTEROP_GO_BINARY}` too early,
+  turning an unset variable into an empty command before fallback resolution.
+  Both command paths now preserve the placeholder; the resolver also finds the
+  repository Go binary from the interop package working directory. A unit
+  regression and an override-free macOS strict run prove fallback behavior.
+- `TlsConfig::Standard` was destructured as the only enum variant. All-feature
+  builds add REALITY/ECH variants, so the code did not compile. Conditional
+  lowering now preserves standard-TLS ALPN defaults and rejects no other
+  variant by destructuring.
+- Linux app logs carried ANSI field styling into a file, making a successful
+  WebSocket+TLS dataplane fail its text assertion. The spawned production app
+  now receives `NO_COLOR=1`; the 7-test inbound suite passes on both systems.
+- The interop source-port reuse test selected a listener-free port, dropped the
+  probe, then raced parallel tests before its first connection. It now selects
+  the port through a successful first connection and asserts immediate reuse
+  on the second; five focused repeats and the 61-test parallel suite pass.
+- Cold Linux acceptance builds could exceed the strict case's 600-second Rust
+  startup budget. The budget is now 900 seconds; warm and cold-path evidence
+  no longer confuses build latency with kernel readiness.
+
+## Security and Inventory Review
+
+- TLS verification remains enabled by default; `insecure` stays client-only.
+- Wrong SNI, untrusted CA, expired/not-yet-valid certificates, wrong UUID,
+  malformed material, TLS/plain mismatch, version mismatch, ALPN mismatch,
+  timeout, and peer-close negatives fail closed.
+- No private key, PEM body, raw credential, external endpoint, generated Go
+  binary, Docker artifact, or interop run artifact is tracked.
+- Coverage accounting is neutral: 127 total cases, 66 strict both-kernel cases,
+  79 active BHVs, and 75/79 distinct BHVs covered.
+
+## Recorded Commits
 
 - ledger correction: `ce99c0a1ab4cd82c42a021d00f364b76a9b6d0ac`
 - config/TLS lowering: `74fd5f68ef276fd53d4df7b4db92a191487c8c0d`
 - outbound TLS closure: `248c84a4349a0d2b0bf08c7c04a159bed35c3163`
 - inbound TLS closure: `426ef5e405c5e35193e9385fba60ca208aaf7120`
 - transport/multiplex closure: `786ea4e08544b0ee4179c37e5f0ddce61d7fd562`
-- config focused tests: 7 passed, 0 failed, 0 ignored
-- shared TLS focused tests: 12 passed, 0 failed, 0 ignored
-- adapter TLS-lowering focused tests: 4 passed, 0 failed, 0 ignored
-- VMess zero/AES/ChaCha canonical round trips: 3 passed, 0 failed, 0 ignored
-- security selection regressions: 3 passed, 0 failed, 0 ignored
-- production builder TLS/security fail-loud regressions: 2 passed, 0 failed, 0 ignored
-- TLS negotiated ALPN/version runtime check: 1 passed, 0 failed, 0 ignored
-- Rust outbound → real Go 1.13.13 server: 3 tests passed, 0 failed,
-  0 ignored; TLS 1.2/1.3, verified local CA, correct/wrong SNI,
-  untrusted CA, insecure, no-version-overlap, explicit AES/zero,
-  TLS-auto zero, 32 KiB+ payload, and three repeated connections covered
-- typed inbound TLS bridge regression: 1 passed, 0 failed, 0 ignored
-- Go 1.13.13 client → production Rust app: 4 tests passed, 0 failed,
-  0 ignored; TLS 1.2/1.3, ALPN, correct/wrong SNI, untrusted CA, wrong UUID,
-  malformed-key pre-readiness rejection, 20/32 KiB+ payload, three repeated
-  connections, graceful shutdown, and plain VMess covered
-- production pre-fix run: 0 passed, 3 failed because the registry VMess inbound
-  thread panicked with `there is no reactor running`; the runtime/readiness fix
-  makes the same three dataplanes pass, and the suite now carries four tests
-- canonical VMess unit regressions: 11 passed, 0 failed, 0 ignored
-- app multiplex/protocol-chain focused regressions: 14 passed, 0 failed, 0 ignored
-- plain project-yamux VMess regression: 6 passed, 0 failed, 0 ignored
-- V2Ray transport unit/integration suite: 85 unit tests passed plus 23 integration
-  tests and 19 doc tests; 0 failed, 1 unrelated ignored
-- live Go/Rust transport matrix: inbound 7 passed, outbound 6 passed, project
-  TLS-yamux 1 passed; 0 failed, 0 ignored
-- project TLS-yamux regression: 4 logical VMess streams over 1 verified TLS
-  physical connection; non-mux negative opens a separate verified connection
-  and receives no echo
-- strict local TLS regression: 9 passed, 0 failed, 0 ignored per round; 20
-  consecutive 16-thread rounds produced 180 passed, 0 failed, 0 ignored
-- strict dual-kernel production VMess+TLS: 20/20 repeated runs PASS; 40/40
-  kernel snapshots PASS; 20/20 normalized diffs clean with gate score zero
-- interop-lab unit suite after harness extension: 60 passed, 0 failed, 0 ignored
+- strict local TLS matrix: `98de7cae36f3a07452c15c3109de36fe587dcd55`
+- strict dual-kernel case: `31e97570d07cabe92282c332b70109256216ebcb`
 
-Remaining sections—live matrices, strict interop IDs, Linux verdict, full gates,
-inventory accounting, and complete commit list—will be filled only from final
-mechanical evidence.
+Group H implementation/evidence commit and final closeout commit are appended
+after their hashes exist.

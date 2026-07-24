@@ -849,8 +849,10 @@ async fn execute_command_start_action(
         };
     }
 
-    let resolved_command =
-        resolve_command_with_fallback(&resolve_with_env(&harness.resolve_templates(command)));
+    // Preserve command placeholders until the command resolver sees them.
+    // In particular, `${INTEROP_GO_BINARY}` has a repository-local fallback
+    // that would be lost if generic environment expansion turned it into "".
+    let resolved_command = resolve_command_with_fallback(&harness.resolve_templates(command));
     let resolved_args: Vec<String> = args
         .iter()
         .map(|arg| resolve_with_env(&harness.resolve_templates(arg)))
@@ -3050,6 +3052,22 @@ bootstrap: {}
         assert!(!result.success, "readiness detail: {}", result.detail);
         assert_eq!(result.detail["exit_code"], json!(7));
         cleanup_background_commands(&mut background_commands).await;
+        harness.shutdown().await;
+    }
+
+    #[tokio::test]
+    async fn command_start_preserves_go_placeholder_for_fallback_resolution() {
+        let harness = start_upstreams(&[]).await.expect("empty harness");
+        let expected = resolve_command_with_fallback("${INTEROP_GO_BINARY}");
+        let resolved =
+            resolve_command_with_fallback(&harness.resolve_templates("${INTEROP_GO_BINARY}"));
+        assert_eq!(resolved, expected);
+        if std::env::var_os("INTEROP_GO_BINARY").is_none() {
+            assert!(
+                !resolved.is_empty(),
+                "repository-local Go runtime fallback must resolve"
+            );
+        }
         harness.shutdown().await;
     }
 }

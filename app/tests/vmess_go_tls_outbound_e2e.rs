@@ -95,7 +95,12 @@ impl Drop for EchoServer {
 }
 
 fn go_binary() -> PathBuf {
-    Path::new(env!("CARGO_MANIFEST_DIR")).join("../go_fork_source/sing-box-1.13.13/sing-box")
+    std::env::var_os("INTEROP_GO_BINARY")
+        .map(PathBuf::from)
+        .unwrap_or_else(|| {
+            Path::new(env!("CARGO_MANIFEST_DIR"))
+                .join("../go_fork_source/sing-box-1.13.13/sing-box")
+        })
 }
 
 async fn unused_loopback_addr() -> SocketAddr {

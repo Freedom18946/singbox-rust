@@ -472,10 +472,12 @@ impl TransportConfig {
         use sb_transport::TcpDialer;
 
         let effective_tls = tls_config.cloned().map(|mut tls| {
-            let sb_transport::TlsConfig::Standard(config) = &mut tls;
-            if config.alpn.is_empty() {
-                if let Some(default_alpn) = self.default_tls_alpn() {
-                    config.alpn.push(default_alpn.to_string());
+            #[allow(irrefutable_let_patterns)]
+            if let sb_transport::TlsConfig::Standard(config) = &mut tls {
+                if config.alpn.is_empty() {
+                    if let Some(default_alpn) = self.default_tls_alpn() {
+                        config.alpn.push(default_alpn.to_string());
+                    }
                 }
             }
             tls

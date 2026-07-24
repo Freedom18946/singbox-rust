@@ -6,32 +6,28 @@
 > Other docs point here, not copy.
 
 ---
-## Resume (2026-07-24) - VMESS-TLS-01 strict dual-kernel DONE; Linux/full closure active
+## Resume (2026-07-24) - VMESS-TLS-01 implementation + full gates DONE; final closeout active
 
-- VMess raw TCP and WebSocket/HTTPUpgrade, with and without standard TLS, pass
-  live Rust→Go and Go→production-Rust dataplanes. TLS is built once and owned by
-  the physical chain: TCP → TLS → V2Ray transport → VMess.
-- WS/HTTP Host stays independent from TLS SNI. HTTPUpgrade now matches Go's
-  non-WebSocket handshake and preserves bytes buffered past upgrade headers;
-  WebSocket byte-stream writes now flush instead of hanging.
-- Project yamux remains an explicit non-Go outer layer:
-  TCP → verified TLS → yamux → canonical VMess per substream. Four logical streams
-  reuse one TLS connection; failure opens no plaintext fallback.
-- Typed config rejects unsupported/multiple transports, malformed TLS material,
-  invalid versions, and incomplete identities instead of falling back to TCP/plain.
-- Raw TLS live coverage includes TLS 1.2/1.3, ALPN, SNI/CA/UUID/version negatives,
-  repeated 32 KiB+ echo, startup readiness, and graceful shutdown.
-- Replaced five ignored/fake TLS variants with nine real local E2E tests. Twenty
-  16-thread rounds passed (180/0/0). Stress exposed and fixed cancellation of
-  in-progress TLS accepts by heartbeat/task-reap select branches.
-- New strict both case crosses production peers in both directions: Go client→Rust
-  server and Rust client→Go server. Verified TLS 1.3/SNI/ALPN, 32 KiB hash-exact
-  echo, UUID/SNI rejection, bounded readiness/teardown; 20/20 runs PASS and every
-  normalized diff is clean with gate score zero.
-- Current ledger: 127 cases, 66 both/strict; behavioral coverage remains 75/79
-  (coverage-neutral VMess/TLS variant). Remaining: Linux proof/full gates, final
-  archive/review/commit.
-  Evidence: `archive/vmess_tls_01/acceptance.md`.
+- Production raw TCP, WebSocket, HTTPUpgrade, and project-yamux VMess paths own
+  standard TLS exactly once and pass live Rust→Go plus Go→production-Rust tests.
+  TLS 1.2/1.3, ALPN, SNI/CA/UUID/version/material/lifecycle negatives, repeated
+  large echo, readiness, graceful shutdown, and no-plaintext-fallback are covered.
+- Nine strict local TLS tests passed 20 rounds under 16 threads (180/0/0).
+  Strict `p2_vmess_tls_dual_dataplane_local` crossed production peers both ways
+  for 20/20 macOS runs; all 40 snapshots and normalized diffs passed with gate
+  score zero.
+- Linux arm64 Rust 1.92 closure passed 9 TLS variants, 6 Rust→Go, 7 Go→Rust,
+  1 TLS-yamux, acceptance-feature check, focused Clippy, and strict both-kernel
+  run `20260724T103124Z-3b7affcf-3691-4846-9f79-a6a6565dfb5d`.
+- Full macOS gates pass: focused config/transport/adapter/app suites,
+  interop-lab 61/61, acceptance build, default check, repository Clippy,
+  fmt, diff-check, boundaries, consistency, and typed ledger validation.
+- Red-team gate fixes hardened Go command fallback, all-feature TLS lowering,
+  ANSI-free production logs, parallel source-port reuse testing, and cold Linux
+  startup budget. No VMess special case or weakened assertion was added.
+- Ledger remains coverage-neutral: 127 cases, 66 both/strict, 75/79 BHV.
+  Remaining action: final archive correction/status, commit hashes, clean-tree
+  audit, commit, and push. Evidence: `archive/vmess_tls_01/acceptance.md`.
 
 ## Resume (2026-07-24) - dual-kernel strict ledger correction DONE
 

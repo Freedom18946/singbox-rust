@@ -1502,9 +1502,10 @@ pub async fn run_traffic_plan(
                 timeout_ms,
                 expect_exit,
             } => {
-                let resolved_command = resolve_command_with_fallback(&resolve_with_env(
-                    &harness.resolve_templates(command),
-                ));
+                // Preserve `${INTEROP_GO_BINARY}` for the command resolver's
+                // repository-local fallback before generic env expansion.
+                let resolved_command =
+                    resolve_command_with_fallback(&harness.resolve_templates(command));
                 let resolved_args: Vec<String> = args
                     .iter()
                     .map(|arg| resolve_with_env(&harness.resolve_templates(arg)))
@@ -2820,14 +2821,6 @@ mod tests {
     async fn tcp_connect_binds_and_immediately_reuses_requested_source_port() {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();
         let target = listener.local_addr().unwrap();
-        // Keep source port outside OS ephemeral range so concurrent socket
-        // tests cannot hand us a just-used outbound port in TIME_WAIT.
-        let source_probe = (20_000..40_000)
-            .find_map(|port| std::net::TcpListener::bind(("127.0.0.1", port)).ok())
-            .expect("reserve non-ephemeral source port");
-        let source_port = source_probe.local_addr().unwrap().port();
-        drop(source_probe);
-
         let (accepted_tx, mut accepted_rx) = tokio::sync::mpsc::channel(2);
         let accepted = tokio::spawn(async move {
             let mut peers = Vec::new();
@@ -2839,13 +2832,37 @@ mod tests {
             }
             peers
         });
-        for _ in 0..2 {
-            let stream = connect_tcp(&target.to_string(), Some(source_port))
-                .await
-                .unwrap();
-            drop(stream);
-            accepted_rx.recv().await.unwrap();
+
+        // Keep source port outside OS ephemeral range. Select it with an actual
+        // connection so parallel tests cannot claim it between probe and use.
+        let mut first_connection = None;
+        for source_port in 20_000..40_000 {
+            match connect_tcp(&target.to_string(), Some(source_port)).await {
+                Ok(stream) => {
+                    first_connection = Some((source_port, stream));
+                    break;
+                }
+                Err(error)
+                    if error.chain().any(|cause| {
+                        cause
+                            .downcast_ref::<std::io::Error>()
+                            .is_some_and(|io_error| {
+                                io_error.kind() == std::io::ErrorKind::AddrInUse
+                            })
+                    }) => {}
+                Err(error) => panic!("select reusable source port: {error:#}"),
+            }
         }
+        let (source_port, stream) =
+            first_connection.expect("find usable non-ephemeral source port");
+        drop(stream);
+        accepted_rx.recv().await.unwrap();
+
+        let stream = connect_tcp(&target.to_string(), Some(source_port))
+            .await
+            .unwrap();
+        drop(stream);
+        accepted_rx.recv().await.unwrap();
 
         let peers = accepted.await.unwrap();
         assert!(peers.iter().all(|peer| peer.port() == source_port));

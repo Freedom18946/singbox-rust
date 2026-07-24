@@ -56,15 +56,14 @@ pub fn resolve_command_with_fallback(input: &str) -> String {
 }
 
 fn find_go_runtime_fallback() -> Option<String> {
-    for candidate in [
-        "go_fork_source/sing-box-1.13.13/sing-box",
-        "./go_fork_source/sing-box-1.13.13/sing-box",
-    ] {
-        if Path::new(candidate).is_file() {
-            return Some(candidate.to_string());
-        }
-    }
-    None
+    [
+        PathBuf::from("go_fork_source/sing-box-1.13.13/sing-box"),
+        Path::new(env!("CARGO_MANIFEST_DIR"))
+            .join("../../go_fork_source/sing-box-1.13.13/sing-box"),
+    ]
+    .into_iter()
+    .find(|candidate| candidate.is_file())
+    .map(|candidate| candidate.display().to_string())
 }
 
 fn looks_like_legacy_debug_app(path: &str) -> bool {
