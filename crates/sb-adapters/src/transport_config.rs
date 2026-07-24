@@ -23,6 +23,36 @@
 #[cfg(feature = "sb-transport")]
 use std::sync::Arc;
 
+#[cfg(feature = "sb-transport")]
+struct FailedDialer {
+    reason: String,
+}
+
+#[cfg(feature = "sb-transport")]
+impl FailedDialer {
+    fn boxed(reason: impl Into<String>) -> Box<dyn sb_transport::Dialer> {
+        Box::new(Self {
+            reason: reason.into(),
+        })
+    }
+}
+
+#[cfg(feature = "sb-transport")]
+#[async_trait::async_trait]
+impl sb_transport::Dialer for FailedDialer {
+    async fn connect(
+        &self,
+        _host: &str,
+        _port: u16,
+    ) -> Result<sb_transport::IoStream, sb_transport::DialError> {
+        Err(sb_transport::DialError::Other(self.reason.clone()))
+    }
+
+    fn as_any_mut(&mut self) -> &mut dyn std::any::Any {
+        self
+    }
+}
+
 /// Transport type selection.
 ///
 /// Specifies the underlying transport protocol for proxy connections.
@@ -202,7 +232,7 @@ impl TransportConfig {
 
     /// Creates a dialer for this transport configuration.
     ///
-    /// Falls back to TCP if the required transport feature is not enabled.
+    /// Returns a dialer that fails loudly if the requested feature is absent.
     #[cfg(feature = "sb-transport")]
     #[must_use]
     pub fn create_dialer(&self) -> Box<dyn sb_transport::Dialer> {
@@ -227,12 +257,9 @@ impl TransportConfig {
             }
 
             #[cfg(not(feature = "transport_ws"))]
-            Self::WebSocket(_) => {
-                tracing::error!(
-                    "WebSocket transport requested but transport_ws feature not enabled"
-                );
-                Box::new(TcpDialer::default())
-            }
+            Self::WebSocket(_) => FailedDialer::boxed(
+                "WebSocket transport requested but transport_ws feature is not enabled",
+            ),
 
             #[cfg(feature = "transport_grpc")]
             Self::Grpc(grpc_config) => {
@@ -252,10 +279,9 @@ impl TransportConfig {
             }
 
             #[cfg(not(feature = "transport_grpc"))]
-            Self::Grpc(_) => {
-                tracing::error!("gRPC transport requested but transport_grpc feature not enabled");
-                Box::new(TcpDialer::default())
-            }
+            Self::Grpc(_) => FailedDialer::boxed(
+                "gRPC transport requested but transport_grpc feature is not enabled",
+            ),
 
             #[cfg(feature = "transport_httpupgrade")]
             Self::HttpUpgrade(http_config) => {
@@ -271,33 +297,116 @@ impl TransportConfig {
             }
 
             #[cfg(not(feature = "transport_httpupgrade"))]
-            Self::HttpUpgrade(_) => {
-                tracing::error!(
-                    "HTTPUpgrade transport requested but transport_httpupgrade feature not enabled"
-                );
-                Box::new(TcpDialer::default())
-            }
+            Self::HttpUpgrade(_) => FailedDialer::boxed(
+                "HTTPUpgrade transport requested but transport_httpupgrade feature is not enabled",
+            ),
         }
     }
 
-    /// Creates a dialer with TLS wrapping.
+    #[cfg(all(feature = "sb-transport", feature = "transport_tls"))]
+    fn tcp_with_tls(
+        tls_config: &sb_transport::TlsConfig,
+    ) -> Result<Box<dyn sb_transport::Dialer>, String> {
+        use sb_transport::{TcpDialer, TlsConfig, TlsDialer};
+
+        match tls_config {
+            TlsConfig::Standard(config) => {
+                let client_config = sb_transport::build_standard_client_config(config)
+                    .map_err(|error| error.to_string())?;
+                let sni_override = config
+                    .server_name
+                    .as_ref()
+                    .filter(|name| !name.trim().is_empty())
+                    .cloned();
+                Ok(Box::new(TlsDialer {
+                    inner: Box::new(TcpDialer::default()) as Box<dyn sb_transport::Dialer>,
+                    config: client_config,
+                    sni_override,
+                    // ALPN is already compiled into client_config.
+                    alpn: None,
+                }))
+            }
+            #[allow(unreachable_patterns)]
+            _ => Err(
+                "non-standard TLS cannot be lowered through the standard V2Ray transport dialer"
+                    .to_string(),
+            ),
+        }
+    }
+
+    #[cfg(feature = "sb-transport")]
+    fn create_layered_dialer(
+        &self,
+        tls_config: Option<&sb_transport::TlsConfig>,
+    ) -> Box<dyn sb_transport::Dialer> {
+        use sb_transport::TcpDialer;
+
+        let physical: Box<dyn sb_transport::Dialer> = match tls_config {
+            #[cfg(feature = "transport_tls")]
+            Some(tls_config) => match Self::tcp_with_tls(tls_config) {
+                Ok(dialer) => dialer,
+                Err(reason) => return FailedDialer::boxed(format!("TLS configuration: {reason}")),
+            },
+            #[cfg(not(feature = "transport_tls"))]
+            Some(_) => {
+                return FailedDialer::boxed(
+                    "TLS requested but transport_tls feature is not enabled",
+                )
+            }
+            None => Box::new(TcpDialer::default()),
+        };
+
+        match self {
+            Self::Tcp => physical,
+            #[cfg(feature = "transport_ws")]
+            Self::WebSocket(ws_config) => {
+                let config = sb_transport::websocket::WebSocketConfig {
+                    path: ws_config.path.clone(),
+                    headers: ws_config.headers.clone(),
+                    max_message_size: ws_config.max_message_size,
+                    max_frame_size: ws_config.max_frame_size,
+                    early_data: false,
+                    early_data_header_name: "Sec-WebSocket-Protocol".to_string(),
+                    max_early_data: 0,
+                };
+                Box::new(sb_transport::websocket::WebSocketDialer::new(
+                    config, physical,
+                ))
+            }
+            #[cfg(not(feature = "transport_ws"))]
+            Self::WebSocket(_) => FailedDialer::boxed(
+                "WebSocket transport requested but transport_ws feature is not enabled",
+            ),
+            #[cfg(feature = "transport_httpupgrade")]
+            Self::HttpUpgrade(http_config) => {
+                let config = sb_transport::httpupgrade::HttpUpgradeConfig {
+                    path: http_config.path.clone(),
+                    headers: http_config.headers.clone(),
+                    host: String::new(),
+                };
+                Box::new(sb_transport::httpupgrade::HttpUpgradeDialer::new(
+                    config, physical,
+                ))
+            }
+            #[cfg(not(feature = "transport_httpupgrade"))]
+            Self::HttpUpgrade(_) => FailedDialer::boxed(
+                "HTTPUpgrade transport requested but transport_httpupgrade feature is not enabled",
+            ),
+            Self::Grpc(_) if tls_config.is_some() => FailedDialer::boxed(
+                "standard TLS with gRPC transport is not implemented; refusing plaintext fallback",
+            ),
+            Self::Grpc(_) => self.create_dialer(),
+        }
+    }
+
+    /// Creates TCP -> TLS -> configured V2Ray transport.
     #[cfg(feature = "sb-transport")]
     #[must_use]
     pub fn create_dialer_with_tls(
         &self,
-        _tls_config: &sb_transport::TlsConfig,
+        tls_config: &sb_transport::TlsConfig,
     ) -> Box<dyn sb_transport::Dialer> {
-        let inner = self.create_dialer();
-
-        // TlsDialer expects a concrete inner type, so we pass the Box itself
-        let client_config = sb_transport::webpki_roots_config();
-
-        Box::new(sb_transport::TlsDialer {
-            inner,
-            config: client_config,
-            sni_override: None,
-            alpn: None,
-        })
+        self.create_layered_dialer(Some(tls_config))
     }
 
     /// Creates a dialer with optional TLS and multiplex layers.
@@ -308,23 +417,8 @@ impl TransportConfig {
         tls_config: Option<&sb_transport::TlsConfig>,
         multiplex_config: Option<&sb_transport::multiplex::MultiplexConfig>,
     ) -> Arc<dyn sb_transport::Dialer> {
-        // Start with base transport
-        let dialer: Box<dyn sb_transport::Dialer> = self.create_dialer();
-
-        // Add TLS layer if configured
-        let dialer: Box<dyn sb_transport::Dialer> = if let Some(_tls_cfg) = tls_config {
-            // TlsDialer expects a concrete inner type, so we pass the Box itself
-            let client_config = sb_transport::webpki_roots_config();
-
-            Box::new(sb_transport::TlsDialer {
-                inner: dialer,
-                config: client_config,
-                sni_override: None,
-                alpn: None,
-            })
-        } else {
-            dialer
-        };
+        // Physical order: TCP -> TLS -> V2Ray transport -> project yamux.
+        let dialer = self.create_layered_dialer(tls_config);
 
         // Add multiplex layer if configured
         if let Some(mux_cfg) = multiplex_config {
@@ -636,5 +730,55 @@ mod tests {
         let config = TransportConfig::Tcp;
         let _dialer = config.create_dialer();
         // Just verify it compiles and creates successfully
+    }
+
+    #[cfg(all(feature = "sb-transport", feature = "transport_tls"))]
+    #[tokio::test]
+    async fn standard_tls_dialer_applies_alpn_and_version() {
+        use sb_transport::{StandardTlsConfig, TlsConfig, TlsVersion};
+
+        let rcgen::CertifiedKey { cert, key_pair } =
+            rcgen::generate_simple_self_signed(vec!["localhost".to_string()])
+                .expect("generate certificate");
+        let acceptor = sb_transport::build_standard_tls_acceptor(&StandardTlsConfig {
+            cert_pem: Some(cert.pem()),
+            key_pem: Some(key_pair.serialize_pem()),
+            alpn: vec!["h2".to_string()],
+            min_version: Some(TlsVersion::V1_3),
+            max_version: Some(TlsVersion::V1_3),
+            ..Default::default()
+        })
+        .expect("server TLS config");
+        let listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("bind TLS server");
+        let addr = listener.local_addr().expect("TLS server address");
+        let server = tokio::spawn(async move {
+            let (tcp, _) = listener.accept().await.expect("accept TCP");
+            let tls = acceptor.accept(tcp).await.expect("accept TLS");
+            (
+                tls.get_ref().1.alpn_protocol().map(<[u8]>::to_vec),
+                tls.get_ref().1.protocol_version(),
+            )
+        });
+
+        let tls = TlsConfig::Standard(StandardTlsConfig {
+            server_name: Some("localhost".to_string()),
+            alpn: vec!["h2".to_string()],
+            insecure: true,
+            min_version: Some(TlsVersion::V1_3),
+            max_version: Some(TlsVersion::V1_3),
+            ..Default::default()
+        });
+        let dialer = TransportConfig::Tcp.create_dialer_with_layers(Some(&tls), None);
+        let stream = dialer
+            .connect(&addr.ip().to_string(), addr.port())
+            .await
+            .expect("TLS dial");
+        drop(stream);
+
+        let (alpn, version) = server.await.expect("server task");
+        assert_eq!(alpn.as_deref(), Some(b"h2".as_slice()));
+        assert_eq!(format!("{version:?}"), "Some(TLSv1_3)");
     }
 }

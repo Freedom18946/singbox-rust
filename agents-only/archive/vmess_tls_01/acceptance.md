@@ -51,7 +51,7 @@ had no TLS runtime dependency or termination.
 | client cert/key | optional pair | pair required together; read/parse error during adapter build |
 | `insecure` | client skips certificate verification | client-only; inbound use is rejected, never auto-generates a cert |
 | multiplex | mux is above physical VMess dial path | project yamux remains outer to TLS physical connection; not Go mux |
-| security `auto` with TLS | Go selects `zero` | pending VMess wire implementation/live proof |
+| security `auto` with TLS | Go selects `zero` | SECURITY_NONE request byte, option=0, raw TCP body after protected AEAD headers |
 | startup/reload/close | TLS config starts/closes with adapter | material read and rustls config built once; lifecycle proof pending |
 
 ## Config and TLS Lowering
@@ -64,12 +64,38 @@ client identity. A single adapter lowering module converts IR to
 apply ALPN/SNI/version policy, and return reusable rustls client/server configs.
 No PEM or private-key content appears in errors.
 
+## Outbound TLS Closure
+
+Production registry construction now lowers VMess outbound TLS instead of
+hard-coding `None`; unknown security names produce an invalid-config connector.
+The shared transport chain is TCP → standard TLS → WebSocket/HTTPUpgrade when
+present → project yamux. Requested features/configuration failures return errors
+and never fall back to plain TCP. TLS client config carries server name,
+verification roots/insecure mode, ALPN, and protocol-version bounds; the
+connector timeout bounds TCP plus TLS plus transport establishment.
+
+Go `sing-vmess` v0.2.8 source and live Go 1.13.13 interop confirmed that both
+`none` and `zero` encode SECURITY_NONE (5), TCP option 0, and an unframed body
+inside TLS while keeping AEAD request/response headers. Rust implements that
+mode without changing AES-128-GCM or ChaCha20-Poly1305. Plain `auto` remains AES
+on this architecture; TLS `auto` selects zero.
+
 ## Evidence So Far
 
 - ledger correction: `ce99c0a1ab4cd82c42a021d00f364b76a9b6d0ac`
+- config/TLS lowering: `74fd5f68ef276fd53d4df7b4db92a191487c8c0d`
 - config focused tests: 7 passed, 0 failed, 0 ignored
 - shared TLS focused tests: 12 passed, 0 failed, 0 ignored
 - adapter TLS-lowering focused tests: 4 passed, 0 failed, 0 ignored
+- VMess zero/AES/ChaCha canonical round trips: 3 passed, 0 failed, 0 ignored
+- security selection regressions: 3 passed, 0 failed, 0 ignored
+- production builder TLS/security fail-loud regressions: 2 passed, 0 failed, 0 ignored
+- TLS negotiated ALPN/version runtime check: 1 passed, 0 failed, 0 ignored
+- Rust outbound → real Go 1.13.13 server: 3 tests passed, 0 failed,
+  0 ignored; TLS 1.2/1.3, verified local CA, correct/wrong SNI,
+  untrusted CA, insecure, no-version-overlap, explicit AES/zero,
+  TLS-auto zero, 32 KiB+ payload, and three repeated connections covered
+- plain project-yamux VMess regression: 6 passed, 0 failed, 0 ignored
 
 Remaining sections—live matrices, strict interop IDs, Linux verdict, full gates,
 inventory accounting, and complete commit list—will be filled only from final

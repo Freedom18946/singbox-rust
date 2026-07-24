@@ -8,7 +8,9 @@
 
 use crate::outbound::prelude::*;
 use crate::transport_config::TransportConfig;
-use crate::vmess::{client_connect, command_key, SECURITY_AES128_GCM, SECURITY_CHACHA20_POLY1305};
+use crate::vmess::{
+    client_connect, command_key, SECURITY_AES128_GCM, SECURITY_CHACHA20_POLY1305, SECURITY_NONE,
+};
 use std::collections::HashMap;
 use uuid::Uuid;
 
@@ -218,15 +220,22 @@ impl VmessConnector {
         }
     }
 
-    /// Resolve the effective VMess body security byte (wire constant), mapping
-    /// `Auto` to AES-128-GCM as Go does on amd64/arm64.
+    /// Resolve the effective VMess body security byte (wire constant).
+    ///
+    /// Go sing-box rewrites `auto` to `zero` when TLS is enabled. Without TLS,
+    /// amd64/arm64 select AES-128-GCM. Explicit `none` and `zero` share Go's
+    /// TCP SECURITY_NONE wire mode.
     fn security_byte(&self) -> Result<u8> {
+        #[cfg(feature = "transport_tls")]
+        let tls_enabled = self.config.tls.is_some();
+        #[cfg(not(feature = "transport_tls"))]
+        let tls_enabled = false;
+
         match self.config.auth.security {
+            Security::Auto if tls_enabled => Ok(SECURITY_NONE),
             Security::Auto | Security::Aes128Gcm => Ok(SECURITY_AES128_GCM),
             Security::ChaCha20Poly1305 => Ok(SECURITY_CHACHA20_POLY1305),
-            Security::None | Security::Zero => Err(AdapterError::Other(
-                "VMess 'none'/'zero' security is not supported for the AEAD dataplane".to_string(),
-            )),
+            Security::None | Security::Zero => Ok(SECURITY_NONE),
         }
     }
 
@@ -334,3 +343,66 @@ crate::impl_canonical_outbound!(
         .unwrap_or_else(|| "vmess".to_string()),
     crate::outbound::TCP
 );
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn connector(security: Security, tls: bool) -> VmessConnector {
+        let mut config = VmessConfig::default();
+        config.auth.security = security;
+        #[cfg(feature = "transport_tls")]
+        if tls {
+            config.tls = Some(sb_transport::TlsConfig::Standard(
+                sb_transport::StandardTlsConfig {
+                    insecure: true,
+                    ..Default::default()
+                },
+            ));
+        }
+        #[cfg(not(feature = "transport_tls"))]
+        assert!(!tls, "TLS feature required by this test");
+        VmessConnector::new(config)
+    }
+
+    #[test]
+    fn plain_auto_keeps_aes_body_security() {
+        assert_eq!(
+            connector(Security::Auto, false).security_byte().unwrap(),
+            SECURITY_AES128_GCM
+        );
+    }
+
+    #[cfg(feature = "transport_tls")]
+    #[test]
+    fn tls_auto_uses_go_zero_body_security() {
+        assert_eq!(
+            connector(Security::Auto, true).security_byte().unwrap(),
+            SECURITY_NONE
+        );
+    }
+
+    #[test]
+    fn explicit_security_modes_are_preserved() {
+        assert_eq!(
+            connector(Security::Aes128Gcm, false)
+                .security_byte()
+                .unwrap(),
+            SECURITY_AES128_GCM
+        );
+        assert_eq!(
+            connector(Security::ChaCha20Poly1305, false)
+                .security_byte()
+                .unwrap(),
+            SECURITY_CHACHA20_POLY1305
+        );
+        assert_eq!(
+            connector(Security::Zero, false).security_byte().unwrap(),
+            SECURITY_NONE
+        );
+        assert_eq!(
+            connector(Security::None, false).security_byte().unwrap(),
+            SECURITY_NONE
+        );
+    }
+}

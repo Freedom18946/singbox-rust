@@ -874,12 +874,23 @@ fn build_vmess_outbound(
             }
         };
 
-    // Map security string
-    let security = match ir.security.as_deref() {
-        Some("none") => Security::None,
-        Some("chacha20-poly1305") | Some("chacha20-ietf-poly1305") => Security::ChaCha20Poly1305,
-        Some("auto") => Security::Auto,
-        _ => Security::Aes128Gcm,
+    // Match sing-vmess names exactly. Unknown values must not silently become AES.
+    let security = match ir.security.as_deref().unwrap_or("auto") {
+        "" | "auto" => Security::Auto,
+        "none" => Security::None,
+        "zero" => Security::Zero,
+        "aes-128-gcm" => Security::Aes128Gcm,
+        "chacha20-poly1305" | "chacha20-ietf-poly1305" => Security::ChaCha20Poly1305,
+        unsupported => {
+            let reason =
+                format!("vmess outbound {outbound_name:?}: unsupported security {unsupported:?}");
+            warn!("{reason}");
+            return canonicalize_outbound_result(
+                invalid_config_outbound("vmess", reason),
+                param,
+                ir,
+            );
+        }
     };
 
     let auth = VmessAuth {
@@ -890,6 +901,19 @@ fn build_vmess_outbound(
     };
 
     let transport_layer = build_transport_config(ir);
+
+    #[cfg(feature = "transport_tls")]
+    let tls = match crate::standard_tls::lower_vmess_outbound_tls(ir) {
+        Ok(tls) => tls,
+        Err(reason) => {
+            warn!("{reason}");
+            return canonicalize_outbound_result(
+                invalid_config_outbound("vmess", reason),
+                param,
+                ir,
+            );
+        }
+    };
 
     let cfg = VmessConfig {
         tag: ir.name.clone().or_else(|| param.name.clone()),
@@ -904,7 +928,7 @@ fn build_vmess_outbound(
         #[cfg(feature = "transport_mux")]
         multiplex: build_multiplex_config_client(&ir.multiplex.clone().or(param.multiplex.clone())),
         #[cfg(feature = "transport_tls")]
-        tls: None,
+        tls,
     };
 
     let connector = VmessConnector::new(cfg);
@@ -2921,6 +2945,7 @@ mod tests {
         feature = "adapter-wireguard-outbound",
         feature = "adapter-shadowtls",
         feature = "adapter-vless",
+        feature = "adapter-vmess",
     ))]
     use sb_config::ir::{OutboundIR, OutboundType};
 
@@ -2936,6 +2961,82 @@ mod tests {
             ..Default::default()
         };
         assert_eq!(inbound_auth_users(&param), Some(vec![credential]));
+    }
+
+    #[test]
+    #[cfg(feature = "adapter-vmess")]
+    fn vmess_builder_rejects_unknown_security_without_aes_fallback() {
+        let ir = OutboundIR {
+            ty: OutboundType::Vmess,
+            name: Some("vmess-bad-security".to_string()),
+            server: Some("127.0.0.1".to_string()),
+            port: Some(443),
+            uuid: Some("12345678-1234-1234-1234-123456789abc".to_string()),
+            security: Some("mystery-cipher".to_string()),
+            ..Default::default()
+        };
+        let param = OutboundParam {
+            kind: "vmess".to_string(),
+            name: ir.name.clone(),
+            ..Default::default()
+        };
+        let context = sb_core::context::Context::new();
+        let bridge = Arc::new(sb_core::adapter::Bridge::new(context));
+        let ctx = sb_core::registry::AdapterOutboundContext {
+            context: sb_core::context::ContextRegistry::from(&bridge.context),
+            bridge,
+        };
+        let connector = build_vmess_outbound(&param, &ir, &ctx).expect("invalid connector");
+        let error = futures::executor::block_on(connector.dial(&sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new("test"),
+            sb_types::TargetAddr::domain("example.com", 443),
+        )))
+        .err()
+        .expect("unknown security must reject dial");
+        assert!(error.to_string().contains("unsupported security"));
+        assert!(error.to_string().contains("mystery-cipher"));
+    }
+
+    #[test]
+    #[cfg(all(feature = "adapter-vmess", feature = "transport_tls"))]
+    fn vmess_builder_executes_tls_lowering_before_dial() {
+        use sb_config::ir::OutboundTlsOptionsIR;
+
+        let ir = OutboundIR {
+            ty: OutboundType::Vmess,
+            name: Some("vmess-bad-root".to_string()),
+            server: Some("127.0.0.1".to_string()),
+            port: Some(443),
+            uuid: Some("12345678-1234-1234-1234-123456789abc".to_string()),
+            tls: Some(OutboundTlsOptionsIR {
+                enabled: true,
+                certificate: Some(vec!["not a certificate".to_string()]),
+                ..Default::default()
+            }),
+            ..Default::default()
+        };
+        let param = OutboundParam {
+            kind: "vmess".to_string(),
+            name: ir.name.clone(),
+            ..Default::default()
+        };
+        let context = sb_core::context::Context::new();
+        let bridge = Arc::new(sb_core::adapter::Bridge::new(context));
+        let ctx = sb_core::registry::AdapterOutboundContext {
+            context: sb_core::context::ContextRegistry::from(&bridge.context),
+            bridge,
+        };
+        let connector = build_vmess_outbound(&param, &ir, &ctx).expect("invalid connector");
+        let error = futures::executor::block_on(connector.dial(&sb_types::Session::new(
+            0,
+            sb_types::InboundTag::new("test"),
+            sb_types::TargetAddr::domain("example.com", 443),
+        )))
+        .err()
+        .expect("malformed root must reject before network dial");
+        assert!(error.to_string().contains("TLS root CA"));
+        assert!(error.to_string().contains("no certificates"));
     }
 
     #[test]

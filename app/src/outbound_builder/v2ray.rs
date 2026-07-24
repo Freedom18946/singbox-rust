@@ -130,8 +130,12 @@ fn build_vmess_outbound(outbound: &OutboundIR) -> Option<V2RayOutboundSpec> {
         server: server.clone(),
         port,
         id,
-        security: "aes-128-gcm".to_string(),
-        alter_id: 0,
+        security: outbound
+            .security
+            .clone()
+            .filter(|value| !value.is_empty())
+            .unwrap_or_else(|| "auto".to_string()),
+        alter_id: outbound.alter_id.unwrap_or(0),
         transport: outbound.transport.clone(),
         ws_path: outbound.ws_path.clone(),
         ws_host: outbound.ws_host.clone(),
@@ -283,13 +287,15 @@ mod tests {
     }
 
     #[test]
-    fn vmess_builder_uses_legacy_defaults_and_tls_tokens() {
+    fn vmess_builder_preserves_security_alter_id_and_tls_tokens() {
         let outbound = OutboundIR {
             ty: OutboundType::Vmess,
             name: Some("vmess".to_string()),
             server: Some("vmess.example.com".to_string()),
             port: Some(443),
             uuid: Some("12345678-1234-1234-1234-123456789abc".to_string()),
+            security: Some("zero".to_string()),
+            alter_id: Some(7),
             alpn: Some("h2, http/1.1".to_string()),
             ..Default::default()
         };
@@ -301,11 +307,30 @@ mod tests {
 
         assert_eq!(built.server, "vmess.example.com");
         assert_eq!(built.port, 443);
-        assert_eq!(built.security, "aes-128-gcm");
-        assert_eq!(built.alter_id, 0);
+        assert_eq!(built.security, "zero");
+        assert_eq!(built.alter_id, 7);
         assert_eq!(
             built.tls_alpn,
             Some(vec!["h2".to_string(), "http/1.1".to_string()])
         );
+    }
+
+    #[test]
+    fn vmess_builder_defaults_missing_security_to_auto() {
+        let outbound = OutboundIR {
+            ty: OutboundType::Vmess,
+            name: Some("vmess".to_string()),
+            server: Some("vmess.example.com".to_string()),
+            port: Some(443),
+            uuid: Some("12345678-1234-1234-1234-123456789abc".to_string()),
+            ..Default::default()
+        };
+
+        let V2RayOutboundSpec::Vmess(built) =
+            build_v2ray_outbound("vmess", &outbound).expect("vmess config")
+        else {
+            panic!("expected vmess variant");
+        };
+        assert_eq!(built.security, "auto");
     }
 }

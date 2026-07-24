@@ -26,7 +26,7 @@ use super::{
     client_parse_response_header, client_parse_response_len, encode_client_request,
     encode_server_response, RequestRandomness, ServerRequest, SessionKeys, CIPHER_OVERHEAD,
     OPTION_CHUNK_MASKING, OPTION_CHUNK_STREAM, SECURITY_AES128_GCM, SECURITY_CHACHA20_POLY1305,
-    SERVER_PREFIX_LEN, WRITE_CHUNK_SIZE,
+    SECURITY_NONE, SERVER_PREFIX_LEN, WRITE_CHUNK_SIZE,
 };
 
 const MAX_CHUNK: usize = 16384 + CIPHER_OVERHEAD;
@@ -128,7 +128,7 @@ enum RespStage {
 }
 
 struct ReadHalf {
-    cipher: BodyCipher,
+    cipher: Option<BodyCipher>,
     base_nonce: [u8; 12],
     counter: u16,
     shake: Option<Shake128Reader>,
@@ -232,7 +232,10 @@ impl ReadHalf {
                     let nonce = chunk_nonce(&self.base_nonce, self.counter);
                     let plain = {
                         let ct = &self.raw[self.raw_pos..self.raw_pos + sealed];
-                        self.cipher.open(&nonce, ct)?
+                        self.cipher
+                            .as_ref()
+                            .expect("framed VMess body has cipher")
+                            .open(&nonce, ct)?
                     };
                     self.counter = self.counter.wrapping_add(1);
                     self.raw_pos += sealed;
@@ -247,7 +250,7 @@ impl ReadHalf {
 }
 
 struct WriteHalf {
-    cipher: BodyCipher,
+    cipher: Option<BodyCipher>,
     base_nonce: [u8; 12],
     counter: u16,
     shake: Option<Shake128Reader>,
@@ -258,7 +261,11 @@ struct WriteHalf {
 impl WriteHalf {
     fn encode_frame(&mut self, piece: &[u8]) {
         let nonce = chunk_nonce(&self.base_nonce, self.counter);
-        let sealed = self.cipher.seal(&nonce, piece);
+        let sealed = self
+            .cipher
+            .as_ref()
+            .expect("framed VMess body has cipher")
+            .seal(&nonce, piece);
         self.counter = self.counter.wrapping_add(1);
         let mask = next_mask(&mut self.shake);
         let masked = (sealed.len() as u16) ^ mask;
@@ -272,6 +279,7 @@ pub struct VmessStream<S> {
     inner: S,
     r: ReadHalf,
     w: WriteHalf,
+    raw_body: bool,
 }
 
 impl<S> VmessStream<S> {
@@ -285,17 +293,29 @@ impl<S> VmessStream<S> {
         read_nonce: [u8; 16],
         write_key: [u8; 16],
         write_nonce: [u8; 16],
-        mask: bool,
+        option: u8,
         resp: Option<RespState>,
     ) -> Result<Self> {
         let mut read_base = [0u8; 12];
         read_base.copy_from_slice(&read_nonce[..12]);
         let mut write_base = [0u8; 12];
         write_base.copy_from_slice(&write_nonce[..12]);
+        let raw_body = security == SECURITY_NONE && option & OPTION_CHUNK_STREAM == 0;
+        let mask = option & OPTION_CHUNK_MASKING != 0;
+        let read_cipher = if raw_body {
+            None
+        } else {
+            Some(BodyCipher::new(security, &read_key)?)
+        };
+        let write_cipher = if raw_body {
+            None
+        } else {
+            Some(BodyCipher::new(security, &write_key)?)
+        };
         Ok(Self {
             inner,
             r: ReadHalf {
-                cipher: BodyCipher::new(security, &read_key)?,
+                cipher: read_cipher,
                 base_nonce: read_base,
                 counter: 0,
                 shake: mask.then(|| shake_seed(&read_nonce)),
@@ -308,13 +328,14 @@ impl<S> VmessStream<S> {
                 resp,
             },
             w: WriteHalf {
-                cipher: BodyCipher::new(security, &write_key)?,
+                cipher: write_cipher,
                 base_nonce: write_base,
                 counter: 0,
                 shake: mask.then(|| shake_seed(&write_nonce)),
                 out: Vec::new(),
                 out_pos: 0,
             },
+            raw_body,
         })
     }
 }
@@ -362,7 +383,7 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for VmessStream<S> {
                 return Poll::Ready(Ok(()));
             }
             // First consume the lazily-read response header (client only), then
-            // decrypt body chunks.
+            // decode framed AEAD or expose Go's TCP zero/none raw body.
             let need_fill = if this.r.resp.is_some() {
                 match this.r.try_prelude().map_err(io_err)? {
                     Step::Produced => {
@@ -372,6 +393,15 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncRead for VmessStream<S> {
                     Step::NeedMore => true,
                     Step::Eof => true,
                 }
+            } else if this.raw_body {
+                if this.r.avail() > 0 {
+                    let n = buf.remaining().min(this.r.avail());
+                    buf.put_slice(&this.r.raw[this.r.raw_pos..this.r.raw_pos + n]);
+                    this.r.raw_pos += n;
+                    return Poll::Ready(Ok(()));
+                }
+                this.r.compact();
+                return Pin::new(&mut this.inner).poll_read(cx, buf);
             } else {
                 match this.r.try_frame().map_err(io_err)? {
                     Step::Produced => continue,
@@ -414,6 +444,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for VmessStream<S> {
         data: &[u8],
     ) -> Poll<io::Result<usize>> {
         let this = self.get_mut();
+        if this.raw_body {
+            return Pin::new(&mut this.inner).poll_write(cx, data);
+        }
         match this.flush_out(cx) {
             Poll::Ready(Ok(())) => {}
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
@@ -435,6 +468,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for VmessStream<S> {
 
     fn poll_flush(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
+        if this.raw_body {
+            return Pin::new(&mut this.inner).poll_flush(cx);
+        }
         match this.flush_out(cx) {
             Poll::Ready(Ok(())) => {}
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
@@ -445,6 +481,9 @@ impl<S: AsyncRead + AsyncWrite + Unpin> AsyncWrite for VmessStream<S> {
 
     fn poll_shutdown(self: Pin<&mut Self>, cx: &mut Context<'_>) -> Poll<io::Result<()>> {
         let this = self.get_mut();
+        if this.raw_body {
+            return Pin::new(&mut this.inner).poll_shutdown(cx);
+        }
         match this.flush_out(cx) {
             Poll::Ready(Ok(())) => {}
             Poll::Ready(Err(e)) => return Poll::Ready(Err(e)),
@@ -466,7 +505,14 @@ pub async fn client_connect<S>(
 where
     S: AsyncRead + AsyncWrite + Unpin,
 {
-    let option = OPTION_CHUNK_STREAM | OPTION_CHUNK_MASKING;
+    // Go sing-vmess maps both "zero" and "none" to SECURITY_NONE. For TCP it
+    // sends option=0 and exposes a raw body inside the protected outer
+    // transport; the AEAD response header remains canonical.
+    let option = if security == SECURITY_NONE {
+        0
+    } else {
+        OPTION_CHUNK_STREAM | OPTION_CHUNK_MASKING
+    };
     // Generate all randomness up front and drop the (non-Send) RNG before any
     // await, so the returned future stays `Send`.
     let r = {
@@ -504,7 +550,6 @@ where
     // The response header is read lazily on the first body read: a canonical
     // server writes its response only on its first write, so eagerly reading it
     // here would deadlock when the application writes first.
-    let mask = keys.option & OPTION_CHUNK_MASKING != 0;
     let resp = Some(RespState {
         keys,
         stage: RespStage::Len,
@@ -517,7 +562,7 @@ where
         keys.resp_nonce,
         keys.req_key,
         keys.req_nonce,
-        mask,
+        keys.option,
         resp,
     )
 }
@@ -543,7 +588,6 @@ where
     let resp = encode_server_response(keys);
     inner.write_all(&resp).await?;
     inner.flush().await?;
-    let mask = keys.option & OPTION_CHUNK_MASKING != 0;
     // server reads client->server (req), writes server->client (resp)
     VmessStream::new(
         inner,
@@ -552,7 +596,7 @@ where
         keys.req_nonce,
         keys.resp_key,
         keys.resp_nonce,
-        mask,
+        keys.option,
         None,
     )
 }
@@ -577,6 +621,12 @@ mod tests {
             let req = server_read_request(&mut server_io, &cmd_key).await.unwrap();
             assert_eq!(req.host, "example.com");
             assert_eq!(req.port, 443);
+            assert_eq!(req.keys.security, security);
+            if security == SECURITY_NONE {
+                assert_eq!(req.keys.option, 0);
+            } else {
+                assert_eq!(req.keys.option, OPTION_CHUNK_STREAM | OPTION_CHUNK_MASKING);
+            }
             let mut stream = server_finish(server_io, &req.keys).await.unwrap();
             let mut buf = vec![0u8; 4096];
             loop {
@@ -616,5 +666,10 @@ mod tests {
     #[tokio::test]
     async fn round_trip_chacha20() {
         run_case(SECURITY_CHACHA20_POLY1305).await;
+    }
+
+    #[tokio::test]
+    async fn round_trip_zero_uses_unframed_tcp_body() {
+        run_case(SECURITY_NONE).await;
     }
 }
