@@ -1,4 +1,4 @@
-use crate::ir::{InboundTlsOptionsIR, Listable};
+use crate::ir::{InboundTlsOptionsIR, Listable, OutboundTlsOptionsIR};
 use sb_types::IssueCode;
 use serde::de::DeserializeOwned;
 use serde::Serialize;
@@ -210,6 +210,50 @@ pub(crate) fn parse_inbound_tls_options(value: Option<&Value>) -> Option<Inbound
             .get("key_path")
             .and_then(|v| v.as_str())
             .map(|s| s.to_string()),
+    })
+}
+
+pub(crate) fn parse_outbound_tls_options(value: Option<&Value>) -> Option<OutboundTlsOptionsIR> {
+    let obj = value.and_then(Value::as_object)?;
+    Some(OutboundTlsOptionsIR {
+        enabled: obj.get("enabled").and_then(Value::as_bool).unwrap_or(false),
+        disable_sni: obj
+            .get("disable_sni")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        server_name: obj
+            .get("server_name")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        insecure: obj
+            .get("insecure")
+            .and_then(Value::as_bool)
+            .unwrap_or(false),
+        alpn: extract_string_list(obj.get("alpn")),
+        min_version: obj
+            .get("min_version")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        max_version: obj
+            .get("max_version")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        cipher_suites: extract_string_list(obj.get("cipher_suites")),
+        certificate: extract_string_list(obj.get("certificate")),
+        certificate_path: obj
+            .get("certificate_path")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        client_certificate: extract_string_list(obj.get("client_certificate")),
+        client_certificate_path: obj
+            .get("client_certificate_path")
+            .and_then(Value::as_str)
+            .map(str::to_string),
+        client_key: extract_string_list(obj.get("client_key")),
+        client_key_path: obj
+            .get("client_key_path")
+            .and_then(Value::as_str)
+            .map(str::to_string),
     })
 }
 

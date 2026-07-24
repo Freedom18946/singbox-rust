@@ -722,6 +722,10 @@ pub struct InboundIR {
     pub grpc_service: Option<String>,
 
     // TLS options
+    /// Go-shaped standard TLS options. Legacy flat fields remain accepted for
+    /// backward compatibility and are normalized by runtime lowering.
+    #[serde(default)]
+    pub tls: Option<super::InboundTlsOptionsIR>,
     /// Enable TLS for this inbound.
     /// 为此入站启用 TLS。
     #[serde(default)]

@@ -6,7 +6,7 @@ use super::{
     raw::{
         RawDerpDialOptionsIR, RawDerpDomainResolverIR, RawDerpMeshPeerIR,
         RawDerpOutboundTlsOptionsIR, RawDerpStunOptionsIR, RawDerpVerifyClientUrlIR,
-        RawInboundTlsOptionsIR,
+        RawInboundTlsOptionsIR, RawOutboundTlsOptionsIR,
     },
     Listable, StringOrObj,
 };
@@ -69,6 +69,53 @@ impl<'de> Deserialize<'de> for InboundTlsOptionsIR {
         D: serde::Deserializer<'de>,
     {
         RawInboundTlsOptionsIR::deserialize(deserializer).map(Into::into)
+    }
+}
+
+/// Outbound standard TLS options (Go parity: `option.OutboundTLSOptions`).
+///
+/// Advanced ECH/uTLS/REALITY fields remain owned by their existing dedicated
+/// IR fields. This object is the single typed source for standard TLS.
+#[derive(Debug, Clone, Serialize, PartialEq, Eq, Default)]
+pub struct OutboundTlsOptionsIR {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub disable_sni: bool,
+    #[serde(default)]
+    pub server_name: Option<String>,
+    #[serde(default)]
+    pub insecure: bool,
+    #[serde(default)]
+    pub alpn: Option<Vec<String>>,
+    #[serde(default)]
+    pub min_version: Option<String>,
+    #[serde(default)]
+    pub max_version: Option<String>,
+    #[serde(default)]
+    pub cipher_suites: Option<Vec<String>>,
+    /// Inline custom root CA line array (PEM).
+    #[serde(default)]
+    pub certificate: Option<Vec<String>>,
+    /// Custom root CA path (PEM).
+    #[serde(default)]
+    pub certificate_path: Option<String>,
+    #[serde(default)]
+    pub client_certificate: Option<Vec<String>>,
+    #[serde(default)]
+    pub client_certificate_path: Option<String>,
+    #[serde(default)]
+    pub client_key: Option<Vec<String>>,
+    #[serde(default)]
+    pub client_key_path: Option<String>,
+}
+
+impl<'de> Deserialize<'de> for OutboundTlsOptionsIR {
+    fn deserialize<D>(deserializer: D) -> Result<Self, D::Error>
+    where
+        D: serde::Deserializer<'de>,
+    {
+        RawOutboundTlsOptionsIR::deserialize(deserializer).map(Into::into)
     }
 }
 

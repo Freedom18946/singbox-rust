@@ -141,6 +141,8 @@ pub mod outbound;
 /// enabling protocol-agnostic routing and connection management.
 pub mod traits;
 
+#[cfg(feature = "transport_tls")]
+pub mod standard_tls;
 /// Transport layer configuration and types.
 ///
 /// Defines how underlying connections are established and secured, supporting

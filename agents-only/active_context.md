@@ -6,6 +6,17 @@
 > Other docs point here, not copy.
 
 ---
+## Resume (2026-07-24) - VMESS-TLS-01 config contract DONE
+
+- Go 1.13.13 source audit fixed raw/transport TLS ownership, disabled/default,
+  SNI/ALPN/version/material/custom-root/insecure, mux, and lifecycle contracts.
+- Added strict Go-shaped VMess inbound/outbound TLS IR plus one typed
+  IR-to-runtime lowering path and reusable rustls client/server builders.
+- Invalid versions, unknown fields, missing/malformed material, incomplete client
+  identity, and inbound `insecure` now fail instead of degrading to plain.
+- Live VMess, WS layering, zero security, strict interop, and Linux proof remain active.
+  Evidence: `archive/vmess_tls_01/acceptance.md`.
+
 ## Resume (2026-07-24) - dual-kernel strict ledger correction DONE
 
 - Added a typed case-YAML + structured S3/S6 Markdown validator at
@@ -183,38 +194,6 @@
 - Superseded 2026-07-20: success-path ServerHello cipher/keyshare/record-framing borrowing closed
   locally; only real-network camouflage measurement remains external. Tier-2 healthy cohort is
   banked by R93.
-
-## Resume (2026-07-17) - LNX-RT-01 Linux runtime closure DONE
-
-- Pinned Debian Rust 1.92.0 / Go 1.24.7 amd64 lane: VMess multiplex 6/6, workspace
-  all-feature test, all-target/all-feature check, repository-policy clippy, and fmt PASS.
-- Rebuilt `with_clash_api` Go oracle and interop runner. Committed
-  `p2_vmess_dual_dataplane_local` now has strict full assertions and passes `--kernel both`;
-  evidence `20260717T142243Z-34b05275-47aa-41ff-bcfa-39220788da3d`.
-- Linux dual-kernel result: **40 PASS / 1 DIV-COVERED / 0 ENV-LIMITED**. FakeIP keeps only
-  its registered S4 coverage; VMess uses no S4 label. BHV denominator remains 52/56.
-- Native arm64 best-effort image built with the same pins; focused VMess suite 6/6 PASS.
-- Closed portability/isolation defects in custom-target binary discovery, Python helper,
-  rate-limit env/accounting, Trojan router ownership/pooling, and test binary lookup.
-- Track archived at `archive/lnx_rt_01/`; raw logs remain in `/private/tmp`.
-- R93 subsequently banked the healthy-cohort tier; real-network camouflage remains external.
-
-## Resume (2026-07-17) - canonical VMess (Go sing-vmess wire-compatible) DONE
-
-- Replaced the non-canonical Rust-to-Rust VMess dialect with a faithful port of Go `sing-vmess`:
-  MD5 cmdKey, nested HMAC-SHA256 KDF, AES-ECB AuthID+crc32, AEAD request/response headers
-  (PortThenAddress, fnv1a), chunked AEAD body with SHAKE128 masked-length framing. New module
-  `crates/sb-adapters/src/vmess/`; in/outbound rewired; client reads response lazily to match
-  Go's lazy server write.
-- Verified against REAL Go `sing-vmess` both directions (aes-128-gcm + chacha20, incl. 20 KB
-  multi-chunk): Rust outbound → Go Service PASS; Go Client → Rust inbound PASS. Crypto locked to
-  Go-generated vectors (cmdKey/KDF/AuthID). `multiplex_vmess_e2e` 6/6 (was 6 fail). Adapters suite,
-  vmess/websocket/tls app tests, fmt, clippy, boundaries (W200-11 → injected-router like VLESS,
-  +W200-11b forbid `rules_global::global`), consistency all PASS.
-- Resolves the LNX-RT-01 VMess decision (`archive/lnx_rt_01/vmess_canonical_plan.md`): chose
-  canonical Go interop over the bespoke patch / deferral. Linux strict closure is recorded above.
-- Scope: VMess TCP AEAD dataplane only. Non-goals: legacy aes-128-cfb (alterId>0), canonical
-  v1.mux.cool CommandMux (repo keeps yamux-outer), UDP/packet.
 
 ## Strategic State
 

@@ -19,6 +19,7 @@ use super::dialer::{DialError, Dialer, IoStream};
 use super::tls::TlsDialer;
 use async_trait::async_trait;
 use rustls::{ClientConfig, RootCertStore};
+use serde::{Deserialize, Serialize};
 use sha2::{Digest, Sha256};
 use std::sync::Arc;
 
@@ -43,7 +44,7 @@ pub struct TlsSecurityConfig {
 
 /// Supported TLS protocol versions
 /// 支持的 TLS 协议版本
-#[derive(Debug, Clone, Copy, PartialEq)]
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 pub enum TlsVersion {
     /// TLS 1.2
     V1_2,

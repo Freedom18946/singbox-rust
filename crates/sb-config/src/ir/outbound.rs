@@ -282,6 +282,9 @@ pub struct OutboundIR {
     pub http_upgrade_headers: Vec<HeaderEntry>,
     /// Optional TLS SNI and ALPN list
     /// 可选的 TLS SNI 和 ALPN 列表
+    /// Go-shaped standard TLS options.
+    #[serde(default)]
+    pub tls: Option<super::OutboundTlsOptionsIR>,
     #[serde(default)]
     pub tls_sni: Option<String>,
     /// TLS ALPN list (Vec). Previously CSV string; standardized here.

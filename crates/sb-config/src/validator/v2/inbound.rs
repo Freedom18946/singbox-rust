@@ -3,7 +3,7 @@ use sb_types::IssueCode;
 use serde_json::Value;
 use std::collections::HashSet;
 
-use super::{emit_issue, insert_keys, object_keys};
+use super::{emit_issue, insert_keys, object_keys, parse_inbound_tls_options};
 
 fn allowed_inbound_keys() -> HashSet<String> {
     let mut set = object_keys(crate::ir::InboundIR::default());
@@ -248,6 +248,89 @@ fn validate_inbound_tls(ib: &Value, index: usize, issues: &mut Vec<Value>) {
         ));
         return;
     };
+    let allowed_tls = [
+        "enabled",
+        "server_name",
+        "sni",
+        "insecure",
+        "alpn",
+        "min_version",
+        "max_version",
+        "cipher_suites",
+        "curve_preferences",
+        "certificate",
+        "certificate_path",
+        "client_authentication",
+        "client_certificate",
+        "client_certificate_path",
+        "client_certificate_public_key_sha256",
+        "key",
+        "key_path",
+        "kernel_tx",
+        "kernel_rx",
+        "acme",
+        "ech",
+        "reality",
+    ];
+    for key in tls.keys() {
+        if !allowed_tls.contains(&key.as_str()) {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::UnknownField,
+                &format!("{base}/{key}"),
+                "unknown inbound TLS field",
+                "remove it",
+            ));
+        }
+    }
+    for field in ["enabled", "insecure"] {
+        if tls.get(field).is_some_and(|value| !value.is_boolean()) {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                &format!("{base}/{field}"),
+                "TLS boolean option must be boolean",
+                "use true or false",
+            ));
+        }
+    }
+    validate_tls_versions(tls, &base, issues);
+
+    if ib.get("type").and_then(Value::as_str) == Some("vmess")
+        && tls.get("enabled").and_then(Value::as_bool) == Some(true)
+    {
+        let has_certificate = has_tls_material(tls.get("certificate"))
+            || has_tls_material(tls.get("certificate_path"));
+        let has_key = has_tls_material(tls.get("key")) || has_tls_material(tls.get("key_path"));
+        if !has_certificate {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::MissingRequired,
+                &format!("{base}/certificate"),
+                "VMess TLS requires certificate or certificate_path",
+                "configure server certificate material",
+            ));
+        }
+        if !has_key {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::MissingRequired,
+                &format!("{base}/key"),
+                "VMess TLS requires key or key_path",
+                "configure server private key material",
+            ));
+        }
+        if tls.get("insecure").and_then(Value::as_bool) == Some(true) {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::Conflict,
+                &format!("{base}/insecure"),
+                "insecure is client-only and cannot configure VMess TLS server verification",
+                "remove insecure",
+            ));
+        }
+    }
+
     let Some(reality_value) = tls.get("reality") else {
         return;
     };
@@ -450,6 +533,66 @@ fn validate_inbound_tls(ib: &Value, index: usize, issues: &mut Vec<Value>) {
     }
 }
 
+fn has_tls_material(value: Option<&Value>) -> bool {
+    match value {
+        Some(Value::String(value)) => !value.trim().is_empty(),
+        Some(Value::Array(values)) => values
+            .iter()
+            .any(|value| value.as_str().is_some_and(|value| !value.trim().is_empty())),
+        _ => false,
+    }
+}
+
+fn validate_tls_versions(
+    tls: &serde_json::Map<String, Value>,
+    base: &str,
+    issues: &mut Vec<Value>,
+) {
+    fn version_rank(value: &str) -> Option<u8> {
+        match value {
+            "1.2" => Some(12),
+            "1.3" => Some(13),
+            _ => None,
+        }
+    }
+
+    let mut parsed = [None, None];
+    for (index, field) in ["min_version", "max_version"].into_iter().enumerate() {
+        let Some(value) = tls.get(field) else {
+            continue;
+        };
+        let Some(value) = value.as_str() else {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                &format!("{base}/{field}"),
+                "TLS version must be a string",
+                "use 1.2 or 1.3",
+            ));
+            continue;
+        };
+        parsed[index] = version_rank(value);
+        if parsed[index].is_none() {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::InvalidEnum,
+                &format!("{base}/{field}"),
+                "unsupported TLS version",
+                "use 1.2 or 1.3",
+            ));
+        }
+    }
+    if matches!((parsed[0], parsed[1]), (Some(min), Some(max)) if min > max) {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::Conflict,
+            &format!("{base}/min_version"),
+            "TLS min_version exceeds max_version",
+            "use an ordered version range",
+        ));
+    }
+}
+
 /// Validate `/inbounds` array structure, types, required fields, and unknown fields.
 ///
 /// 校验 `/inbounds` 数组结构、类型、必填字段及未知字段。
@@ -575,6 +718,8 @@ pub(crate) fn validate_inbounds(doc: &Value, allow_unknown: bool, issues: &mut V
 
         if ib.get("type").and_then(Value::as_str) == Some("vless") {
             validate_vless_inbound(ib, i, issues);
+        }
+        if ib.get("tls").is_some() {
             validate_inbound_tls(ib, i, issues);
         }
 
@@ -817,6 +962,7 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
             "dns" => InboundType::Dns,
             "ssh" => InboundType::Ssh,
             "shadowsocks" => InboundType::Shadowsocks,
+            "vmess" => InboundType::Vmess,
             "vless" => InboundType::Vless,
             "hysteria" => InboundType::Hysteria,
             "hysteria2" => InboundType::Hysteria2,
@@ -926,6 +1072,11 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
                     .and_then(|users| users.first().and_then(|u| u.flow.clone()))
             });
         let reality = lower_inbound_reality(i, tls_server_name.as_deref());
+        let standard_tls = if matches!(ty, InboundType::Vmess) {
+            parse_inbound_tls_options(i.get("tls"))
+        } else {
+            None
+        };
 
         ir.inbounds.push(crate::ir::InboundIR {
             // Read both "tag" (raw V2 input, used by direct callers like
@@ -1046,6 +1197,7 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
             h2_path: None,
             h2_host: None,
             grpc_service: None,
+            tls: standard_tls,
             tls_enabled,
             tls_cert_path: None,
             tls_key_path: None,
@@ -1093,6 +1245,13 @@ pub(crate) fn lower_inbounds(doc: &Value, ir: &mut ConfigIR) {
 }
 
 #[cfg(test)]
+fn lower_inbounds_for_test(doc: &Value) -> Vec<crate::ir::InboundIR> {
+    let mut ir = ConfigIR::default();
+    lower_inbounds(doc, &mut ir);
+    ir.inbounds
+}
+
+#[cfg(test)]
 mod tests {
     use super::*;
     use serde_json::json;
@@ -1101,6 +1260,126 @@ mod tests {
         let mut issues = vec![];
         validate_inbounds(doc, allow_unknown, &mut issues);
         issues
+    }
+
+    fn vmess_inbound(tls: Option<Value>) -> Value {
+        let mut inbound = serde_json::Map::from_iter([
+            ("type".to_string(), json!("vmess")),
+            ("listen".to_string(), json!("127.0.0.1")),
+            ("listen_port".to_string(), json!(8443)),
+            (
+                "uuid".to_string(),
+                json!("00000000-0000-0000-0000-000000000001"),
+            ),
+        ]);
+        if let Some(tls) = tls {
+            inbound.insert("tls".to_string(), tls);
+        }
+        json!({"inbounds": [Value::Object(inbound)]})
+    }
+
+    #[test]
+    fn vmess_tls_go_shape_lowers_inline_options() {
+        let doc = vmess_inbound(Some(json!({
+            "enabled": true,
+            "alpn": ["h2", "http/1.1"],
+            "min_version": "1.2",
+            "max_version": "1.3",
+            "certificate": ["-----BEGIN CERTIFICATE-----", "AA==", "-----END CERTIFICATE-----"],
+            "key": ["-----BEGIN PRIVATE KEY-----", "AA==", "-----END PRIVATE KEY-----"]
+        })));
+        assert!(run_validate(&doc, false).is_empty());
+        let ir = super::lower_inbounds_for_test(&doc);
+        let tls = ir[0].tls.as_ref().expect("VMess TLS must lower");
+        assert!(tls.enabled);
+        assert_eq!(tls.alpn.as_ref().map(Vec::len), Some(2));
+        assert_eq!(tls.min_version.as_deref(), Some("1.2"));
+        assert_eq!(tls.max_version.as_deref(), Some("1.3"));
+        assert!(tls.certificate.is_some());
+        assert!(tls.key.is_some());
+    }
+
+    #[test]
+    fn vmess_tls_disabled_and_plain_remain_backward_compatible() {
+        let disabled = vmess_inbound(Some(json!({"enabled": false})));
+        assert!(run_validate(&disabled, false).is_empty());
+        assert_eq!(
+            super::lower_inbounds_for_test(&disabled)[0]
+                .tls
+                .as_ref()
+                .map(|tls| tls.enabled),
+            Some(false)
+        );
+
+        let plain = vmess_inbound(None);
+        assert!(run_validate(&plain, false).is_empty());
+        assert!(super::lower_inbounds_for_test(&plain)[0].tls.is_none());
+    }
+
+    #[test]
+    fn vmess_tls_paths_validate_and_lower() {
+        let doc = vmess_inbound(Some(json!({
+            "enabled": true,
+            "certificate_path": "/tmp/server-cert.pem",
+            "key_path": "/tmp/server-key.pem"
+        })));
+        assert!(run_validate(&doc, false).is_empty());
+        let ir = super::lower_inbounds_for_test(&doc);
+        let tls = ir[0].tls.as_ref().unwrap();
+        assert_eq!(
+            tls.certificate_path.as_deref(),
+            Some("/tmp/server-cert.pem")
+        );
+        assert_eq!(tls.key_path.as_deref(), Some("/tmp/server-key.pem"));
+    }
+
+    #[test]
+    fn vmess_tls_rejects_unknown_missing_pair_and_bad_versions() {
+        let cases = [
+            (
+                json!({
+                    "enabled": true,
+                    "certificate_path": "/tmp/cert.pem",
+                    "key_path": "/tmp/key.pem",
+                    "mystery": true
+                }),
+                "UnknownField",
+            ),
+            (
+                json!({"enabled": true, "certificate_path": "/tmp/cert.pem"}),
+                "MissingRequired",
+            ),
+            (
+                json!({"enabled": true, "key_path": "/tmp/key.pem"}),
+                "MissingRequired",
+            ),
+            (
+                json!({
+                    "enabled": true,
+                    "certificate_path": "/tmp/cert.pem",
+                    "key_path": "/tmp/key.pem",
+                    "min_version": "1.4"
+                }),
+                "InvalidEnum",
+            ),
+            (
+                json!({
+                    "enabled": true,
+                    "certificate_path": "/tmp/cert.pem",
+                    "key_path": "/tmp/key.pem",
+                    "min_version": "1.3",
+                    "max_version": "1.2"
+                }),
+                "Conflict",
+            ),
+        ];
+        for (tls, expected_code) in cases {
+            let issues = run_validate(&vmess_inbound(Some(tls)), false);
+            assert!(
+                issues.iter().any(|issue| issue["code"] == expected_code),
+                "missing {expected_code}: {issues:?}"
+            );
+        }
     }
 
     // --- /inbounds non-array ---

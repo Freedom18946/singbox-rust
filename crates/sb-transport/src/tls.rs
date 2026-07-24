@@ -1003,6 +1003,10 @@ pub struct StandardTlsConfig {
     #[serde(skip_serializing_if = "Option::is_none")]
     pub server_name: Option<String>,
 
+    /// Suppress SNI while retaining hostname verification.
+    #[serde(default)]
+    pub disable_sni: bool,
+
     /// ALPN protocols
     /// ALPN 协议列表
     #[serde(default, skip_serializing_if = "Vec::is_empty")]
@@ -1012,6 +1016,38 @@ pub struct StandardTlsConfig {
     /// 跳过证书验证（不安全，仅用于测试）
     #[serde(default)]
     pub insecure: bool,
+
+    /// Minimum supported TLS version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub min_version: Option<crate::tls_secure::TlsVersion>,
+
+    /// Maximum supported TLS version.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub max_version: Option<crate::tls_secure::TlsVersion>,
+
+    /// TLS 1.2 cipher suite names. Non-empty custom lists are rejected until
+    /// exact Go-name lowering is implemented.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub cipher_suites: Vec<String>,
+
+    /// Custom root CA paths. When present, these replace built-in roots,
+    /// matching Go `OutboundTLSOptions.Certificate*` semantics.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ca_paths: Vec<String>,
+
+    /// Inline custom root CA PEM blocks.
+    #[serde(default, skip_serializing_if = "Vec::is_empty")]
+    pub ca_pem: Vec<String>,
+
+    /// Optional client authentication certificate and private key.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_cert_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_key_path: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_cert_pem: Option<String>,
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub client_key_pem: Option<String>,
 
     /// Certificate path (server-side)
     /// 证书路径（服务端）
@@ -1032,6 +1068,241 @@ pub struct StandardTlsConfig {
     /// 私钥内容（PEM 格式，服务端）
     #[serde(skip_serializing_if = "Option::is_none")]
     pub key_pem: Option<String>,
+}
+
+/// Resolve client verification name and SNI fallback in one place.
+pub fn standard_tls_server_name(
+    config: &StandardTlsConfig,
+    server_host: &str,
+) -> Result<String, DialError> {
+    let name = config
+        .server_name
+        .as_deref()
+        .filter(|name| !name.trim().is_empty())
+        .unwrap_or(server_host);
+    if name.trim().is_empty() {
+        return Err(DialError::Tls(
+            "standard TLS requires server_name or non-empty server host".to_string(),
+        ));
+    }
+    Ok(name.to_string())
+}
+
+fn standard_tls_versions(
+    min: Option<crate::tls_secure::TlsVersion>,
+    max: Option<crate::tls_secure::TlsVersion>,
+) -> Result<&'static [&'static rustls::SupportedProtocolVersion], DialError> {
+    use crate::tls_secure::TlsVersion;
+    const TLS12_ONLY: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS12];
+    const TLS13_ONLY: &[&rustls::SupportedProtocolVersion] = &[&rustls::version::TLS13];
+    const TLS12_AND_TLS13: &[&rustls::SupportedProtocolVersion] =
+        &[&rustls::version::TLS13, &rustls::version::TLS12];
+
+    match (min, max) {
+        (Some(TlsVersion::V1_3), Some(TlsVersion::V1_2)) => Err(DialError::Tls(
+            "standard TLS min_version exceeds max_version".to_string(),
+        )),
+        (Some(TlsVersion::V1_2), Some(TlsVersion::V1_2)) | (None, Some(TlsVersion::V1_2)) => {
+            Ok(TLS12_ONLY)
+        }
+        (Some(TlsVersion::V1_3), Some(TlsVersion::V1_3)) | (Some(TlsVersion::V1_3), None) => {
+            Ok(TLS13_ONLY)
+        }
+        _ => Ok(TLS12_AND_TLS13),
+    }
+}
+
+fn read_tls_pem(
+    inline: Option<&str>,
+    path: Option<&str>,
+    label: &str,
+) -> Result<Option<Vec<u8>>, DialError> {
+    if let Some(inline) = inline {
+        return Ok(Some(inline.as_bytes().to_vec()));
+    }
+    path.map(|path| {
+        std::fs::read(path)
+            .map_err(|error| DialError::Tls(format!("failed to read {label} from {path}: {error}")))
+    })
+    .transpose()
+}
+
+fn parse_certificates(
+    bytes: &[u8],
+    label: &str,
+) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, DialError> {
+    let mut reader = std::io::Cursor::new(bytes);
+    let certificates = rustls_pemfile::certs(&mut reader)
+        .collect::<Result<Vec<_>, _>>()
+        .map_err(|error| DialError::Tls(format!("failed to parse {label} PEM: {error}")))?;
+    if certificates.is_empty() {
+        return Err(DialError::Tls(format!(
+            "no certificates found in {label} PEM"
+        )));
+    }
+    Ok(certificates)
+}
+
+fn parse_private_key(
+    bytes: &[u8],
+    label: &str,
+) -> Result<rustls::pki_types::PrivateKeyDer<'static>, DialError> {
+    let mut reader = std::io::Cursor::new(bytes);
+    rustls_pemfile::private_key(&mut reader)
+        .map_err(|error| DialError::Tls(format!("failed to parse {label} PEM: {error}")))?
+        .ok_or_else(|| DialError::Tls(format!("no private key found in {label} PEM")))
+}
+
+fn standard_tls_client_identity(
+    config: &StandardTlsConfig,
+) -> Result<
+    Option<(
+        Vec<rustls::pki_types::CertificateDer<'static>>,
+        rustls::pki_types::PrivateKeyDer<'static>,
+    )>,
+    DialError,
+> {
+    let certificate = read_tls_pem(
+        config.client_cert_pem.as_deref(),
+        config.client_cert_path.as_deref(),
+        "TLS client certificate",
+    )?;
+    let key = read_tls_pem(
+        config.client_key_pem.as_deref(),
+        config.client_key_path.as_deref(),
+        "TLS client private key",
+    )?;
+    match (certificate, key) {
+        (None, None) => Ok(None),
+        (Some(certificate), Some(key)) => Ok(Some((
+            parse_certificates(&certificate, "TLS client certificate")?,
+            parse_private_key(&key, "TLS client private key")?,
+        ))),
+        _ => Err(DialError::Tls(
+            "TLS client certificate and private key must be configured together".to_string(),
+        )),
+    }
+}
+
+/// Build reusable rustls client config from standard TLS runtime options.
+pub fn build_standard_client_config(
+    config: &StandardTlsConfig,
+) -> Result<Arc<rustls::ClientConfig>, DialError> {
+    if !config.cipher_suites.is_empty() {
+        return Err(DialError::Tls(
+            "custom TLS cipher_suites are not supported".to_string(),
+        ));
+    }
+    ensure_rustls_crypto_provider();
+    let versions = standard_tls_versions(config.min_version, config.max_version)?;
+    let builder = rustls::ClientConfig::builder_with_protocol_versions(versions);
+    let identity = standard_tls_client_identity(config)?;
+    let mut built =
+        if config.insecure {
+            let builder = builder
+                .dangerous()
+                .with_custom_certificate_verifier(Arc::new(NoVerifier));
+            match identity {
+                Some((certificates, key)) => builder
+                    .with_client_auth_cert(certificates, key)
+                    .map_err(|error| {
+                        DialError::Tls(format!("invalid TLS client certificate or key: {error}"))
+                    })?,
+                None => builder.with_no_client_auth(),
+            }
+        } else {
+            let mut roots = rustls::RootCertStore::empty();
+            if config.ca_paths.is_empty() && config.ca_pem.is_empty() {
+                roots.extend(webpki_roots::TLS_SERVER_ROOTS.iter().cloned());
+            } else {
+                for path in &config.ca_paths {
+                    let bytes = std::fs::read(path).map_err(|error| {
+                        DialError::Tls(format!("failed to read TLS root CA from {path}: {error}"))
+                    })?;
+                    for certificate in parse_certificates(&bytes, "TLS root CA")? {
+                        roots.add(certificate).map_err(|error| {
+                            DialError::Tls(format!("invalid TLS root CA certificate: {error}"))
+                        })?;
+                    }
+                }
+                for pem in &config.ca_pem {
+                    for certificate in parse_certificates(pem.as_bytes(), "TLS root CA")? {
+                        roots.add(certificate).map_err(|error| {
+                            DialError::Tls(format!("invalid TLS root CA certificate: {error}"))
+                        })?;
+                    }
+                }
+            }
+            let builder = builder.with_root_certificates(roots);
+            match identity {
+                Some((certificates, key)) => builder
+                    .with_client_auth_cert(certificates, key)
+                    .map_err(|error| {
+                        DialError::Tls(format!("invalid TLS client certificate or key: {error}"))
+                    })?,
+                None => builder.with_no_client_auth(),
+            }
+        };
+    built.enable_sni = !config.disable_sni;
+    built.alpn_protocols = config
+        .alpn
+        .iter()
+        .map(|protocol| protocol.as_bytes().to_vec())
+        .collect();
+    Ok(Arc::new(built))
+}
+
+/// Build reusable rustls server config. Certificate files are read once.
+pub fn build_standard_server_config(
+    config: &StandardTlsConfig,
+) -> Result<Arc<rustls::ServerConfig>, DialError> {
+    if config.insecure {
+        return Err(DialError::Tls(
+            "insecure is client-only and invalid for a TLS server".to_string(),
+        ));
+    }
+    if !config.cipher_suites.is_empty() {
+        return Err(DialError::Tls(
+            "custom TLS cipher_suites are not supported".to_string(),
+        ));
+    }
+    let certificate = read_tls_pem(
+        config.cert_pem.as_deref(),
+        config.cert_path.as_deref(),
+        "TLS server certificate",
+    )?
+    .ok_or_else(|| DialError::Tls("missing TLS server certificate".to_string()))?;
+    let key = read_tls_pem(
+        config.key_pem.as_deref(),
+        config.key_path.as_deref(),
+        "TLS server private key",
+    )?
+    .ok_or_else(|| DialError::Tls("missing TLS server private key".to_string()))?;
+    ensure_rustls_crypto_provider();
+    let versions = standard_tls_versions(config.min_version, config.max_version)?;
+    let mut built = rustls::ServerConfig::builder_with_protocol_versions(versions)
+        .with_no_client_auth()
+        .with_single_cert(
+            parse_certificates(&certificate, "TLS server certificate")?,
+            parse_private_key(&key, "TLS server private key")?,
+        )
+        .map_err(|error| {
+            DialError::Tls(format!(
+                "invalid TLS server certificate or private key: {error}"
+            ))
+        })?;
+    built.alpn_protocols = config
+        .alpn
+        .iter()
+        .map(|protocol| protocol.as_bytes().to_vec())
+        .collect();
+    Ok(Arc::new(built))
+}
+
+pub fn build_standard_tls_acceptor(
+    config: &StandardTlsConfig,
+) -> Result<tokio_rustls::TlsAcceptor, DialError> {
+    build_standard_server_config(config).map(tokio_rustls::TlsAcceptor::from)
 }
 
 // Default is derived above
@@ -1242,35 +1513,13 @@ impl TlsTransport {
         use rustls::pki_types::ServerName;
         use tokio_rustls::TlsConnector;
 
-        // Create rustls client config
-        ensure_rustls_crypto_provider();
-        let mut tls_config = if config.insecure {
-            // Insecure mode: skip certificate verification
-            rustls::ClientConfig::builder()
-                .dangerous()
-                .with_custom_certificate_verifier(Arc::new(NoVerifier))
-                .with_no_client_auth()
-        } else {
-            // Secure mode: use webpki roots
-            let root_store = rustls::RootCertStore::empty();
-            // In production, load webpki-roots or system roots here
-            rustls::ClientConfig::builder()
-                .with_root_certificates(root_store)
-                .with_no_client_auth()
-        };
-
-        // Configure ALPN
-        if !config.alpn.is_empty() {
-            tls_config.alpn_protocols = config.alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
-        }
-
-        // Parse server name
-        let sni = config.server_name.as_deref().unwrap_or(server_name);
+        let tls_config = build_standard_client_config(config)?;
+        let sni = standard_tls_server_name(config, server_name)?;
         let server_name = ServerName::try_from(sni.to_string())
             .map_err(|e| DialError::Tls(format!("Invalid server name: {:?}", e)))?;
 
         // Perform TLS handshake
-        let connector = TlsConnector::from(Arc::new(tls_config));
+        let connector = TlsConnector::from(tls_config);
         let tls_stream = connector
             .connect(server_name, stream)
             .await
@@ -1290,34 +1539,7 @@ impl TlsTransport {
     {
         use tokio_rustls::TlsAcceptor;
 
-        // Validate server configuration
-        let cert_path = config
-            .cert_path
-            .as_ref()
-            .ok_or_else(|| DialError::Tls("Server certificate path not configured".to_string()))?;
-        let key_path = config
-            .key_path
-            .as_ref()
-            .ok_or_else(|| DialError::Tls("Server private key path not configured".to_string()))?;
-
-        // Load certificate and private key
-        let certs = load_certs(cert_path)?;
-        let key = load_private_key(key_path)?;
-
-        // Create rustls server config
-        ensure_rustls_crypto_provider();
-        let mut tls_config = rustls::ServerConfig::builder()
-            .with_no_client_auth()
-            .with_single_cert(certs, key)
-            .map_err(|e| DialError::Tls(format!("Invalid certificate or key: {}", e)))?;
-
-        // Configure ALPN
-        if !config.alpn.is_empty() {
-            tls_config.alpn_protocols = config.alpn.iter().map(|s| s.as_bytes().to_vec()).collect();
-        }
-
-        // Perform TLS handshake
-        let acceptor = TlsAcceptor::from(Arc::new(tls_config));
+        let acceptor = TlsAcceptor::from(build_standard_server_config(config)?);
         let tls_stream = acceptor
             .accept(stream)
             .await
@@ -1409,57 +1631,6 @@ impl TlsTransport {
 
         Ok(Box::new(tls_stream))
     }
-}
-
-/// Helper: Load certificates from PEM file
-/// 助手函数：从 PEM 文件加载证书
-fn load_certs(path: &str) -> Result<Vec<rustls::pki_types::CertificateDer<'static>>, DialError> {
-    use std::io::BufReader;
-
-    let file = std::fs::File::open(path)
-        .map_err(|e| DialError::Tls(format!("Failed to open certificate file: {}", e)))?;
-
-    let mut reader = BufReader::new(file);
-    let certs = rustls_pemfile::certs(&mut reader)
-        .collect::<Result<Vec<_>, _>>()
-        .map_err(|e| DialError::Tls(format!("Failed to parse certificates: {}", e)))?;
-
-    if certs.is_empty() {
-        return Err(DialError::Tls("No certificates found in file".to_string()));
-    }
-
-    Ok(certs)
-}
-
-/// Helper: Load private key from PEM file
-/// 助手函数：从 PEM 文件加载私钥
-fn load_private_key(path: &str) -> Result<rustls::pki_types::PrivateKeyDer<'static>, DialError> {
-    use std::io::BufReader;
-
-    let file = std::fs::File::open(path)
-        .map_err(|e| DialError::Tls(format!("Failed to open private key file: {}", e)))?;
-
-    let mut reader = BufReader::new(file);
-
-    // Try to read as PKCS8 first
-    if let Some(key) = rustls_pemfile::pkcs8_private_keys(&mut reader).next() {
-        return key
-            .map(rustls::pki_types::PrivateKeyDer::Pkcs8)
-            .map_err(|e| DialError::Tls(format!("Failed to parse PKCS8 private key: {}", e)));
-    }
-
-    // Reset reader and try RSA
-    let file = std::fs::File::open(path)
-        .map_err(|e| DialError::Tls(format!("Failed to reopen private key file: {}", e)))?;
-    let mut reader = BufReader::new(file);
-
-    if let Some(key) = rustls_pemfile::rsa_private_keys(&mut reader).next() {
-        return key
-            .map(rustls::pki_types::PrivateKeyDer::Pkcs1)
-            .map_err(|e| DialError::Tls(format!("Failed to parse RSA private key: {}", e)));
-    }
-
-    Err(DialError::Tls("No private key found in file".to_string()))
 }
 
 /// Adapter to convert sb_tls::TlsIoStream to sb_transport::IoStream
@@ -1762,6 +1933,12 @@ mod ech_tests {
 mod tls_transport_tests {
     use super::*;
 
+    fn test_certificate() -> (String, String) {
+        let rcgen::CertifiedKey { cert, key_pair } =
+            rcgen::generate_simple_self_signed(vec!["localhost".to_string()]).unwrap();
+        (cert.pem(), key_pair.serialize_pem())
+    }
+
     #[test]
     fn test_tls_config_standard_default() {
         let config = StandardTlsConfig::default();
@@ -1770,6 +1947,101 @@ mod tls_transport_tests {
         assert!(!config.insecure);
         assert!(config.cert_path.is_none());
         assert!(config.key_path.is_none());
+    }
+
+    #[test]
+    fn standard_tls_builders_accept_inline_material_and_custom_root() {
+        let (certificate, key) = test_certificate();
+        let server = StandardTlsConfig {
+            cert_pem: Some(certificate.clone()),
+            key_pem: Some(key),
+            alpn: vec!["h2".to_string()],
+            min_version: Some(crate::TlsVersion::V1_2),
+            max_version: Some(crate::TlsVersion::V1_3),
+            ..Default::default()
+        };
+        let built_server = build_standard_server_config(&server).unwrap();
+        assert_eq!(built_server.alpn_protocols, vec![b"h2".to_vec()]);
+
+        let client = StandardTlsConfig {
+            server_name: Some("localhost".to_string()),
+            ca_pem: vec![certificate],
+            alpn: vec!["h2".to_string()],
+            min_version: Some(crate::TlsVersion::V1_2),
+            max_version: Some(crate::TlsVersion::V1_2),
+            ..Default::default()
+        };
+        let built_client = build_standard_client_config(&client).unwrap();
+        assert_eq!(built_client.alpn_protocols, vec![b"h2".to_vec()]);
+        assert!(built_client.enable_sni);
+        assert_eq!(
+            standard_tls_server_name(&client, "127.0.0.1").unwrap(),
+            "localhost"
+        );
+    }
+
+    #[test]
+    fn standard_tls_disable_sni_keeps_verification_name() {
+        let config = StandardTlsConfig {
+            server_name: Some("verify.example".to_string()),
+            disable_sni: true,
+            insecure: true,
+            ..Default::default()
+        };
+        assert!(!build_standard_client_config(&config).unwrap().enable_sni);
+        assert_eq!(
+            standard_tls_server_name(&config, "127.0.0.1").unwrap(),
+            "verify.example"
+        );
+    }
+
+    #[test]
+    fn standard_tls_builders_reject_invalid_material_and_ranges() {
+        for config in [
+            StandardTlsConfig::default(),
+            StandardTlsConfig {
+                cert_pem: Some("not a certificate".to_string()),
+                key_pem: Some("not a key".to_string()),
+                ..Default::default()
+            },
+            StandardTlsConfig {
+                cert_path: Some("/definitely/missing/vmess-cert.pem".to_string()),
+                key_path: Some("/definitely/missing/vmess-key.pem".to_string()),
+                ..Default::default()
+            },
+            StandardTlsConfig {
+                min_version: Some(crate::TlsVersion::V1_3),
+                max_version: Some(crate::TlsVersion::V1_2),
+                cert_pem: Some("unused".to_string()),
+                key_pem: Some("unused".to_string()),
+                ..Default::default()
+            },
+            StandardTlsConfig {
+                insecure: true,
+                cert_pem: Some("unused".to_string()),
+                key_pem: Some("unused".to_string()),
+                ..Default::default()
+            },
+        ] {
+            assert!(build_standard_server_config(&config).is_err());
+        }
+
+        assert!(build_standard_client_config(&StandardTlsConfig {
+            min_version: Some(crate::TlsVersion::V1_3),
+            max_version: Some(crate::TlsVersion::V1_2),
+            ..Default::default()
+        })
+        .is_err());
+        assert!(build_standard_client_config(&StandardTlsConfig {
+            client_cert_pem: Some("certificate only".to_string()),
+            ..Default::default()
+        })
+        .is_err());
+        assert!(build_standard_client_config(&StandardTlsConfig {
+            ca_paths: vec!["/definitely/missing/vmess-ca.pem".to_string()],
+            ..Default::default()
+        })
+        .is_err());
     }
 
     #[test]
@@ -1883,6 +2155,7 @@ mod tls_transport_tests {
             key_path: None,
             cert_pem: None,
             key_pem: None,
+            ..Default::default()
         });
 
         let json = serde_json::to_string(&config).unwrap();
@@ -2056,6 +2329,7 @@ mod tls_transport_tests {
             key_path: Some("/path/to/key.pem".to_string()),
             cert_pem: None,
             key_pem: None,
+            ..Default::default()
         };
 
         assert_eq!(config.server_name, Some("example.com".to_string()));
@@ -2410,6 +2684,7 @@ mod tls_transport_tests {
             key_path: Some("/key.pem".to_string()),
             cert_pem: None,
             key_pem: None,
+            ..Default::default()
         });
 
         let json = serde_json::to_string(&original).unwrap();
@@ -2457,6 +2732,7 @@ mod tls_transport_tests {
             key_path: None,
             cert_pem: None,
             key_pem: None,
+            ..Default::default()
         });
 
         let cloned = original.clone();
@@ -2606,6 +2882,7 @@ mod tls_transport_tests {
             key_path: None,
             cert_pem: None,
             key_pem: None,
+            ..Default::default()
         });
 
         let transport = TlsTransport::new(config);
@@ -2633,6 +2910,7 @@ mod tls_transport_tests {
             key_path: Some("/key.pem".to_string()),
             cert_pem: None,
             key_pem: None,
+            ..Default::default()
         };
 
         assert!(valid_config.server_name.is_some());
@@ -2648,6 +2926,7 @@ mod tls_transport_tests {
             key_path: None, // Missing
             cert_pem: None,
             key_pem: None,
+            ..Default::default()
         };
 
         assert!(invalid_config.cert_path.is_some());

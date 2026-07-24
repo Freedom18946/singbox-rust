@@ -6,7 +6,7 @@ use crate::ir::{ConfigIR, Credentials, HeaderEntry};
 
 use super::{
     emit_issue, extract_string_list, insert_keys, object_keys, parse_millis_field,
-    parse_seconds_field_to_millis, parse_u32_field,
+    parse_outbound_tls_options, parse_seconds_field_to_millis, parse_u32_field,
 };
 
 const DEFAULT_URLTEST_URL: &str = "http://www.gstatic.com/generate_204";
@@ -358,6 +358,7 @@ pub(super) fn lower_outbounds(doc: &Value, ir: &mut ConfigIR) {
             grpc_metadata: Vec::new(),
             http_upgrade_path: None,
             http_upgrade_headers: Vec::new(),
+            tls: parse_outbound_tls_options(o.get("tls")),
             tls_sni: o
                 .get("tls_sni")
                 .and_then(|v| v.as_str())
@@ -1075,7 +1076,142 @@ pub(crate) fn validate_outbounds(doc: &Value, allow_unknown: bool, issues: &mut 
                     }
                 }
             }
+            validate_outbound_tls(ob, i, issues);
         }
+    }
+}
+
+fn validate_outbound_tls(ob: &Value, index: usize, issues: &mut Vec<Value>) {
+    let Some(value) = ob.get("tls") else {
+        return;
+    };
+    let base = format!("/outbounds/{index}/tls");
+    let Some(tls) = value.as_object() else {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::TypeMismatch,
+            &base,
+            "tls must be an object",
+            "use a TLS options object",
+        ));
+        return;
+    };
+    let allowed = [
+        "enabled",
+        "disable_sni",
+        "server_name",
+        "sni",
+        "insecure",
+        "allow_insecure",
+        "skip_cert_verify",
+        "alpn",
+        "min_version",
+        "max_version",
+        "cipher_suites",
+        "curve_preferences",
+        "certificate",
+        "certificate_path",
+        "certificate_public_key_sha256",
+        "client_certificate",
+        "client_certificate_path",
+        "client_key",
+        "client_key_path",
+        "fragment",
+        "fragment_fallback_delay",
+        "record_fragment",
+        "kernel_tx",
+        "kernel_rx",
+        "ech",
+        "utls",
+        "reality",
+        // Existing Rust compatibility spellings.
+        "ca_paths",
+        "ca_pem",
+    ];
+    for key in tls.keys() {
+        if !allowed.contains(&key.as_str()) {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::UnknownField,
+                &format!("{base}/{key}"),
+                "unknown outbound TLS field",
+                "remove it",
+            ));
+        }
+    }
+    for field in [
+        "enabled",
+        "disable_sni",
+        "insecure",
+        "allow_insecure",
+        "skip_cert_verify",
+    ] {
+        if tls.get(field).is_some_and(|value| !value.is_boolean()) {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                &format!("{base}/{field}"),
+                "TLS boolean option must be boolean",
+                "use true or false",
+            ));
+        }
+    }
+    let rank = |value: &str| match value {
+        "1.2" => Some(12),
+        "1.3" => Some(13),
+        _ => None,
+    };
+    let mut parsed = [None, None];
+    for (slot, field) in ["min_version", "max_version"].into_iter().enumerate() {
+        let Some(value) = tls.get(field) else {
+            continue;
+        };
+        let Some(value) = value.as_str() else {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::TypeMismatch,
+                &format!("{base}/{field}"),
+                "TLS version must be a string",
+                "use 1.2 or 1.3",
+            ));
+            continue;
+        };
+        parsed[slot] = rank(value);
+        if parsed[slot].is_none() {
+            issues.push(emit_issue(
+                "error",
+                IssueCode::InvalidEnum,
+                &format!("{base}/{field}"),
+                "unsupported TLS version",
+                "use 1.2 or 1.3",
+            ));
+        }
+    }
+    if matches!((parsed[0], parsed[1]), (Some(min), Some(max)) if min > max) {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::Conflict,
+            &format!("{base}/min_version"),
+            "TLS min_version exceeds max_version",
+            "use an ordered version range",
+        ));
+    }
+    let has_client_cert = tls
+        .get("client_certificate")
+        .or_else(|| tls.get("client_certificate_path"))
+        .is_some();
+    let has_client_key = tls
+        .get("client_key")
+        .or_else(|| tls.get("client_key_path"))
+        .is_some();
+    if has_client_cert != has_client_key {
+        issues.push(emit_issue(
+            "error",
+            IssueCode::Conflict,
+            &format!("{base}/client_certificate"),
+            "TLS client certificate and key must be configured together",
+            "configure both client certificate and client key",
+        ));
     }
 }
 
@@ -1313,6 +1449,94 @@ mod tests {
     use crate::ir::ConfigIR;
     use crate::validator::v2::{to_ir_v1, validate_v2};
     use serde_json::json;
+
+    fn vmess_outbound(tls: Value) -> Value {
+        json!({
+            "schema_version": 2,
+            "outbounds": [{
+                "type": "vmess",
+                "name": "vmess-out",
+                "server": "127.0.0.1",
+                "port": 443,
+                "uuid": "00000000-0000-0000-0000-000000000001",
+                "security": "auto",
+                "tls": tls
+            }]
+        })
+    }
+
+    #[test]
+    fn vmess_outbound_tls_go_shape_validates_and_lowers() {
+        let doc = vmess_outbound(json!({
+            "enabled": true,
+            "disable_sni": true,
+            "server_name": "vmess.example",
+            "insecure": true,
+            "alpn": ["h2"],
+            "min_version": "1.2",
+            "max_version": "1.3",
+            "certificate_path": "/tmp/root.pem",
+            "client_certificate_path": "/tmp/client.pem",
+            "client_key_path": "/tmp/client.key"
+        }));
+        let issues = validate_v2(&doc, false);
+        assert!(issues.is_empty(), "{issues:?}");
+        let ir = to_ir_v1(&doc);
+        let tls = ir.outbounds[0].tls.as_ref().expect("TLS must lower");
+        assert!(tls.enabled);
+        assert!(tls.disable_sni);
+        assert!(tls.insecure);
+        assert_eq!(tls.server_name.as_deref(), Some("vmess.example"));
+        assert_eq!(tls.alpn, Some(vec!["h2".to_string()]));
+        assert_eq!(tls.min_version.as_deref(), Some("1.2"));
+        assert_eq!(tls.certificate_path.as_deref(), Some("/tmp/root.pem"));
+    }
+
+    #[test]
+    fn vmess_outbound_tls_disabled_is_preserved() {
+        let doc = vmess_outbound(json!({"enabled": false}));
+        let issues = validate_v2(&doc, false);
+        assert!(issues.is_empty(), "{issues:?}");
+        assert_eq!(
+            to_ir_v1(&doc).outbounds[0]
+                .tls
+                .as_ref()
+                .map(|tls| tls.enabled),
+            Some(false)
+        );
+    }
+
+    #[test]
+    fn vmess_outbound_tls_rejects_unknown_bad_version_and_client_pair() {
+        for (tls, expected_code) in [
+            (json!({"enabled": true, "mystery": true}), "UnknownField"),
+            (
+                json!({"enabled": true, "min_version": "1.1"}),
+                "InvalidEnum",
+            ),
+            (
+                json!({
+                    "enabled": true,
+                    "min_version": "1.3",
+                    "max_version": "1.2"
+                }),
+                "Conflict",
+            ),
+            (
+                json!({
+                    "enabled": true,
+                    "client_certificate_path": "/tmp/client.pem"
+                }),
+                "Conflict",
+            ),
+        ] {
+            let issues = validate_v2(&vmess_outbound(tls), false);
+            assert!(
+                issues.iter().any(|issue| issue["code"] == expected_code),
+                "missing {expected_code}: {issues:?}"
+            );
+        }
+    }
 
     #[test]
     fn test_validate_outbounds_not_array() {

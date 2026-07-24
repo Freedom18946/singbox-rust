@@ -43,15 +43,16 @@ pub use raw::{
     RawDnsRuleIR, RawDnsServerIR, RawDomainResolveOptionsIR, RawEndpointIR, RawHeaderEntry,
     RawHysteria2UserIR, RawHysteriaUserIR, RawInboundIR, RawInboundRealityIR,
     RawInboundTlsOptionsIR, RawLogIR, RawMasqueradeFileIR, RawMasqueradeIR, RawMasqueradeProxyIR,
-    RawMasqueradeStringIR, RawMultiplexOptionsIR, RawNtpIR, RawOutboundIR, RawRouteIR, RawRuleIR,
-    RawRuleSetIR, RawServiceIR, RawShadowTlsHandshakeIR, RawShadowTlsUserIR, RawShadowsocksUserIR,
-    RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR, RawVlessUserIR, RawVmessUserIR,
-    RawWireGuardPeerIR,
+    RawMasqueradeStringIR, RawMultiplexOptionsIR, RawNtpIR, RawOutboundIR, RawOutboundTlsOptionsIR,
+    RawRouteIR, RawRuleIR, RawRuleSetIR, RawServiceIR, RawShadowTlsHandshakeIR, RawShadowTlsUserIR,
+    RawShadowsocksUserIR, RawTrojanUserIR, RawTuicUserIR, RawTunOptionsIR, RawVlessUserIR,
+    RawVmessUserIR, RawWireGuardPeerIR,
 };
 pub use route::{DomainResolveOptionsIR, RouteIR, RuleAction, RuleIR, RuleSetIR};
 pub use service::{
     DerpDialOptionsIR, DerpDomainResolverIR, DerpMeshPeerIR, DerpOutboundTlsOptionsIR,
-    DerpStunOptionsIR, DerpVerifyClientUrlIR, InboundTlsOptionsIR, ServiceIR, ServiceType,
+    DerpStunOptionsIR, DerpVerifyClientUrlIR, InboundTlsOptionsIR, OutboundTlsOptionsIR, ServiceIR,
+    ServiceType,
 };
 pub use validated::{CertificateIR, ConfigIR, LogIR, NtpIR};
 pub use value_wrappers::{Listable, StringOrObj};

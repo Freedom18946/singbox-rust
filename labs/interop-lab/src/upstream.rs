@@ -885,6 +885,7 @@ async fn start_single_upstream(
                         key_path: Some(INTEROP_KEY_PATH.to_string()),
                         cert_pem: None,
                         key_pem: None,
+                        ..Default::default()
                     },
                 )),
                 router: Some(router),

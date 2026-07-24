@@ -30,6 +30,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         key_path: None,
         cert_pem: None,
         key_pem: None,
+        ..Default::default()
     });
 
     let _transport = TlsTransport::new(standard_config);
@@ -91,6 +92,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         key_path: None,
         cert_pem: None,
         key_pem: None,
+        ..Default::default()
     });
 
     let json = serde_json::to_string_pretty(&config)?;

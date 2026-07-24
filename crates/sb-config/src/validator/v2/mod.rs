@@ -20,8 +20,8 @@ pub use outbound::check_tls_capabilities;
 
 pub(super) use helpers::{
     extract_listable_strings, extract_string_list, insert_keys, object_keys, parse_fwmark_field,
-    parse_inbound_tls_options, parse_listable, parse_millis_field, parse_seconds_field_to_millis,
-    parse_u16_field, parse_u32_field,
+    parse_inbound_tls_options, parse_listable, parse_millis_field, parse_outbound_tls_options,
+    parse_seconds_field_to_millis, parse_u16_field, parse_u32_field,
 };
 
 /// Lightweight schema validation: coordinates the v2 root, nested block,

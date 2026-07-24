@@ -480,6 +480,7 @@ impl NaiveInboundAdapter {
             key_path,
             cert_pem,
             key_pem,
+            ..Default::default()
         };
 
         let tls = sb_transport::TlsConfig::Standard(standard_tls);

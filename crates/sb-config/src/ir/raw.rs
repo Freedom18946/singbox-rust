@@ -139,9 +139,9 @@ use super::{
     DerpOutboundTlsOptionsIR, DerpStunOptionsIR, DerpVerifyClientUrlIR, DomainResolveOptionsIR,
     EndpointIR, EndpointType, ExperimentalIR, HeaderEntry, Hysteria2UserIR, HysteriaUserIR,
     InboundIR, InboundRealityIR, InboundTlsOptionsIR, InboundType, Listable, OutboundIR,
-    OutboundType, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR, ServiceType,
-    ShadowTlsHandshakeIR, ShadowTlsUserIR, ShadowsocksUserIR, StringOrObj, TrojanUserIR,
-    TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR, WireGuardPeerIR,
+    OutboundTlsOptionsIR, OutboundType, RouteIR, RuleAction, RuleIR, RuleSetIR, ServiceIR,
+    ServiceType, ShadowTlsHandshakeIR, ShadowTlsUserIR, ShadowsocksUserIR, StringOrObj,
+    TrojanUserIR, TuicUserIR, TunOptionsIR, VlessUserIR, VmessUserIR, WireGuardPeerIR,
 };
 
 // ─────────────────── Root-owned leaf Raw types ───────────────────
@@ -1023,6 +1023,61 @@ impl From<RawInboundTlsOptionsIR> for InboundTlsOptionsIR {
             certificate_path: raw.certificate_path,
             key: raw.key,
             key_path: raw.key_path,
+        }
+    }
+}
+
+/// Raw outbound standard TLS options.
+#[derive(Debug, Clone, Deserialize)]
+#[serde(deny_unknown_fields)]
+pub struct RawOutboundTlsOptionsIR {
+    #[serde(default)]
+    pub enabled: bool,
+    #[serde(default)]
+    pub disable_sni: bool,
+    #[serde(default)]
+    pub server_name: Option<String>,
+    #[serde(default)]
+    pub insecure: bool,
+    #[serde(default)]
+    pub alpn: Option<Vec<String>>,
+    #[serde(default)]
+    pub min_version: Option<String>,
+    #[serde(default)]
+    pub max_version: Option<String>,
+    #[serde(default)]
+    pub cipher_suites: Option<Vec<String>>,
+    #[serde(default)]
+    pub certificate: Option<Vec<String>>,
+    #[serde(default)]
+    pub certificate_path: Option<String>,
+    #[serde(default)]
+    pub client_certificate: Option<Vec<String>>,
+    #[serde(default)]
+    pub client_certificate_path: Option<String>,
+    #[serde(default)]
+    pub client_key: Option<Vec<String>>,
+    #[serde(default)]
+    pub client_key_path: Option<String>,
+}
+
+impl From<RawOutboundTlsOptionsIR> for OutboundTlsOptionsIR {
+    fn from(raw: RawOutboundTlsOptionsIR) -> Self {
+        Self {
+            enabled: raw.enabled,
+            disable_sni: raw.disable_sni,
+            server_name: raw.server_name,
+            insecure: raw.insecure,
+            alpn: raw.alpn,
+            min_version: raw.min_version,
+            max_version: raw.max_version,
+            cipher_suites: raw.cipher_suites,
+            certificate: raw.certificate,
+            certificate_path: raw.certificate_path,
+            client_certificate: raw.client_certificate,
+            client_certificate_path: raw.client_certificate_path,
+            client_key: raw.client_key,
+            client_key_path: raw.client_key_path,
         }
     }
 }
@@ -2074,6 +2129,8 @@ pub struct RawInboundIR {
     #[serde(default)]
     pub tls_enabled: Option<bool>,
     #[serde(default)]
+    pub tls: Option<RawInboundTlsOptionsIR>,
+    #[serde(default)]
     pub tls_cert_path: Option<String>,
     #[serde(default)]
     pub tls_key_path: Option<String>,
@@ -2179,6 +2236,7 @@ impl From<RawInboundIR> for InboundIR {
             h2_host: raw.h2_host,
             grpc_service: raw.grpc_service,
             tls_enabled: raw.tls_enabled,
+            tls: raw.tls.map(Into::into),
             tls_cert_path: raw.tls_cert_path,
             tls_key_path: raw.tls_key_path,
             tls_cert_pem: raw.tls_cert_pem,
@@ -2440,6 +2498,8 @@ pub struct RawOutboundIR {
     #[serde(default)]
     pub tls_sni: Option<String>,
     #[serde(default)]
+    pub tls: Option<RawOutboundTlsOptionsIR>,
+    #[serde(default)]
     pub tls_alpn: Option<Vec<String>>,
     #[serde(default)]
     pub dns_transport: Option<String>,
@@ -2645,6 +2705,7 @@ impl From<RawOutboundIR> for OutboundIR {
                 .map(Into::into)
                 .collect(),
             tls_sni: raw.tls_sni,
+            tls: raw.tls.map(Into::into),
             tls_alpn: raw.tls_alpn,
             dns_transport: raw.dns_transport,
             dns_tls_server_name: raw.dns_tls_server_name,

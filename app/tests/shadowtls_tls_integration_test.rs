@@ -24,6 +24,7 @@ mod shadowtls_tests {
             key_path: Some("/path/to/key.pem".to_string()),
             cert_pem: None,
             key_pem: None,
+            ..Default::default()
         });
 
         // Verify configuration
